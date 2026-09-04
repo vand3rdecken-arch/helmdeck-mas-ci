@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import util from "tweetnacl-util";
 import { useConfig } from "@/data/config";
 import { qrDataUrl } from "@/data/qrgen";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -429,16 +429,28 @@ export default function Settings() {
   const goDoor = (d: DoorId) => { setDoor(d); router.setParams({ door: d }); };
   const goList = () => { setDoor(null); router.setParams({ door: undefined }); };
 
-  // Android back gesture/button used to skip goList entirely and pop the
-  // whole screen (back to Mehr), unlike the chevron in ScreenHeader which
-  // only ever leaves the DOOR. `door` is local state, not a router entry, so
-  // the OS back handler never saw it. Intercept while a door is open and
-  // make it do what the chevron does; only once `door` is null does the
-  // event fall through to the real screen pop.
+  // HOW the door was entered decides where its back goes. The Mehr tab
+  // deep-links straight INTO a door (/settings?door=X), so "back = show the
+  // door list" invented a middle level the user never visited: Mehr -> door
+  // -> back landed on "Einstellungen" instead of Mehr (owner report
+  // 2026-09-04). Entered via deep-link -> back pops the screen (to Mehr);
+  // entered from this screen's own list (goDoor) -> back unfolds the list,
+  // as before. A ref, not state: the entry mode is a fact about THIS mount,
+  // and goDoor after a goList must not flip it.
+  const enteredInDoor = useRef(door !== null).current;
+  const leaveDoor = () => { enteredInDoor ? router.back() : goList(); };
+
+  // Android back gesture/button used to skip leaveDoor entirely and pop the
+  // whole screen, unlike the chevron in ScreenHeader. `door` is local state,
+  // not a router entry, so the OS back handler never saw it. Intercept while
+  // a door is open and make it do what the chevron does; only once `door` is
+  // null does the event fall through to the real screen pop. (When
+  // enteredInDoor, leaveDoor pops the screen itself - same destination the
+  // fall-through would reach, just via the chevron's one code path.)
   useFocusEffect(() => {
     if (!door) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      goList();
+      leaveDoor();
       return true;
     });
     return () => sub.remove();
@@ -498,7 +510,7 @@ export default function Settings() {
   // ------------------------------------------------------ door 1: Mein Profil
   if (door === "general") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         {/* The account's own rows, straight from the schema on /me - so a
             client role, who cannot read /settings at all, still lands on a
             door with something in it. */}
@@ -523,7 +535,7 @@ export default function Settings() {
   // ---------------------------------------------------------- door 2: Boards
   if (door === "boards") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         <Panel>
           <SectionLabel text={tr("hub.boards.mine")} />
           <Hint text={tr("hub.boards.hint")} />
@@ -575,7 +587,7 @@ export default function Settings() {
   // ------------------------------------------------ door 3: Agenten/Autonomie
   if (door === "automation") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         {pmEnabled ? (
           <Panel>
             <SectionLabel text={tr("pm.title")} />
@@ -614,7 +626,7 @@ export default function Settings() {
   // ----------------------------------------------------------- door 4: Zellen
   if (door === "cells") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         <Panel>
           <CellsCatalog />
         </Panel>
@@ -626,7 +638,7 @@ export default function Settings() {
   // ------------------------------------------------------ door 5: Verbindungen
   if (door === "connections") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("nav.connectors")} />
@@ -663,7 +675,7 @@ export default function Settings() {
   // ---------------------------------------------------- door 6: Team & Geräte
   if (door === "team") {
     return (
-      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("settings.sec.mobile")} />
@@ -833,7 +845,7 @@ export default function Settings() {
 
   // -------------------------------------------------------------- door 7: System
   return (
-    <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+    <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
       {/* Workspace defaults - what a NEW account starts with, not this
           owner's own language/theme. Moved here from "Mein Profil" (owner
           request 2026-09-04): other apps (Slack, Notion, Linear) never put
