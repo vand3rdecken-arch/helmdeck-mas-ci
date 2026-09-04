@@ -320,4 +320,11 @@ export const board: Dict = {
   "boards.addColumn": { de: "Spalte hinzufügen", en: "Add column" },
   "boards.save": { de: "Speichern", en: "Save" },
   "boards.delete": { de: "Board löschen", en: "Delete board" },
+  // Henry's context chip on this screen's chat entry - the WORKFLOW a board's
+  // cards run (gate before review, deploy) is his, even though the column
+  // layout on this screen is edited by hand (boards.intro says as much).
+  "boards.askContext": {
+    de: "Es geht um das Board „{name}“ (Spalten sind hier bearbeitbar, der Ablauf ist Henrys).",
+    en: "This is about the \"{name}\" board (columns are edited here, the workflow is Henry's).",
+  },
 };

@@ -23,6 +23,8 @@ import { LANGS, useT, type Lang } from "@/i18n";
 import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
+import { HenryChat } from "@/ui/henry_chat";
+import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
@@ -88,6 +90,39 @@ const DOORS: readonly Door[] = DOOR_IDS.map((id) => ({ id, ...DOOR_META[id] }));
 
 const LANG_LABELS = LANGS.map((l) => l.label);
 const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
+
+/**
+ * THE CHROME EVERY DOOR SHARES - including Henry.
+ *
+ * Chat is now the entry point on EVERY settings screen, not only Board and
+ * Prozesse (owner directive 2026-09-03). The knobs stay tappable; what changes
+ * is that "sag Henry, er soll das ändern" works from wherever the owner already
+ * is, carrying WHICH door he is looking at - so "mach das aus" resolves against
+ * these rows instead of against nothing. The launcher is the shared one
+ * (ui/henry_chat.tsx), so this is not a second chat and not a second FAB style.
+ *
+ * MODULE SCOPE on purpose. This used to be a `Frame` closure declared inside
+ * Settings(), which makes it a NEW component type on every render - React then
+ * unmounts and remounts the entire door. Harmless for read-only panels, not
+ * harmless once the docked chat lives in here: a background refetch of
+ * /settings would have wiped whatever the owner was typing into the composer.
+ * Same trap settings_schema_page.tsx documents for its Control component.
+ */
+function DoorFrame({ title, onBack, wide, context, children }: {
+  title: string; onBack: () => void; wide: boolean;
+  context: ChatContext; children: React.ReactNode;
+}) {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
+      <ScreenHeader title={title} onBack={onBack} />
+      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 60, width: "100%",
+        maxWidth: wide ? 1100 : undefined, alignSelf: "center" }}>{children}</ScrollView>
+      <HenryChat context={context} />
+    </View>
+  );
+}
 
 export default function Settings() {
   const t = useTheme();
@@ -430,17 +465,18 @@ export default function Settings() {
   }
 
   const doorMeta = DOORS.find((d) => d.id === door)!;
-  const Frame = ({ children }: { children: React.ReactNode }) => (
-    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title={tr(doorMeta.labelKey)} onBack={goList} />
-      <ScrollView contentContainerStyle={content}>{children}</ScrollView>
-    </View>
-  );
+  const doorLabel = tr(doorMeta.labelKey);
+  const doorContext: ChatContext = { label: doorLabel, hint: tr("hub.door.askContext", { label: doorLabel }) };
+  // NOT a local `const Frame = (...) => <DoorFrame .../>` closure: redefining a
+  // wrapper on every render makes React treat it as a brand-new component type
+  // and remount everything inside it - including the docked chat panel's
+  // composer - on the very first refetch. DoorFrame is called directly below
+  // instead, exactly the trap its own comment documents.
 
   // ------------------------------------------------------ door 1: Mein Profil
   if (door === "general") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         {/* The account's own rows, straight from the schema on /me - so a
             client role, who cannot read /settings at all, still lands on a
             door with something in it. */}
@@ -474,14 +510,14 @@ export default function Settings() {
               onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
           </Panel>
         ) : null}
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // ---------------------------------------------------------- door 2: Boards
   if (door === "boards") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         <Panel>
           <SectionLabel text={tr("hub.boards.mine")} />
           <Hint text={tr("hub.boards.hint")} />
@@ -526,14 +562,14 @@ export default function Settings() {
             this door links into. Two values, two scopes, two honest badges -
             which is what debt board-scope-still-in-settings-json asked for. */}
         <SchemaDoor door="boards" schema={schema} />
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // ------------------------------------------------ door 3: Agenten/Autonomie
   if (door === "automation") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         {pmEnabled ? (
           <Panel>
             <SectionLabel text={tr("pm.title")} />
@@ -570,26 +606,26 @@ export default function Settings() {
           {autoRepos.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("automation.noRepos")}</Text> :
             autoRepos.map((r) => <Text key={r} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{r}</Text>)}
         </Panel>
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // ----------------------------------------------------------- door 4: Zellen
   if (door === "cells") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         <Panel>
           <CellsCatalog />
         </Panel>
         <SchemaDoor door="cells" schema={schema} />
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // ------------------------------------------------------ door 5: Verbindungen
   if (door === "connections") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("nav.connectors")} />
@@ -619,14 +655,14 @@ export default function Settings() {
           <Btn label={busyImp ? "…" : tr("settings.import.page")} onPress={importUrl} disabled={busyImp} />
         </Panel>
         <SchemaDoor door="connections" schema={schema} />
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // ---------------------------------------------------- door 6: Team & Geräte
   if (door === "team") {
     return (
-      <Frame>
+      <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("settings.sec.mobile")} />
@@ -790,13 +826,13 @@ export default function Settings() {
           <Btn label={tr("settings.reg.save")} onPress={saveReg} />
         </Panel>
         <SchemaDoor door="team" schema={schema} />
-      </Frame>
+      </DoorFrame>
     );
   }
 
   // -------------------------------------------------------------- door 7: System
   return (
-    <Frame>
+    <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
       <UsagePanel />
       {/* Business + machine knobs: schema-rendered since phase 4. This was a
           hand-built nine-field FormGrid with its own saveBusiness(). */}
@@ -829,6 +865,6 @@ export default function Settings() {
           onActivated={(msg) => setGxpMsg(msg)}
         />
       ) : null}
-    </Frame>
+    </DoorFrame>
   );
 }

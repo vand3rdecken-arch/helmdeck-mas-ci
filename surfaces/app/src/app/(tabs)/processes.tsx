@@ -8,9 +8,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { api } from "@/data/client";
-import { useCellEnabled } from "@/data/cells";
+import { HenryChat } from "@/ui/henry_chat";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -550,7 +549,6 @@ export default function Processes() {
   const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 8000 });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["processes"] });
-  const copilotEnabled = useCellEnabled("copilot");
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
@@ -565,20 +563,10 @@ export default function Processes() {
       {/* ONE floating chat entry, same as the board screen's FAB - not a
           "Henry fragen" button on every single process card (owner
           pushback 2026-09-03: "das soll ein Chat-Fenster wie auf dem Board
-          sein, nicht ein Button überall"). Desktop opens the docked panel,
-          phone takes the /chat route - identical to board.tsx. */}
-      {copilotEnabled ? (
-        <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat" as never)}
-          style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, width: 48, height: 48, borderRadius: 15,
-            backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
-            alignItems: "center", justifyContent: "center",
-            ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
-        </Pressable>
-      ) : null}
-      {/* self-guards on !wide||!open (chat.tsx) - same pattern board.tsx and
-          loopmap.tsx use for their own chat entry points. */}
-      <CopilotOverlay />
+          sein, nicht ein Button überall"). Since it is the SHARED launcher,
+          "identical to board.tsx" is now a property of the code rather than
+          something two copies have to keep agreeing on. */}
+      <HenryChat />
     </View>
   );
 }

@@ -40,6 +40,16 @@ export const settings: Dict = {
   "hub.door.system": { de: "System", en: "System" },
   "hub.door.system.sub": { de: "Geschäft, Nutzung, Updates", en: "Business, usage, updates" },
 
+  // Henry's context chip on a door's chat (settings-ia-redesign follow-up,
+  // owner directive 2026-09-04: chat is the entry point on EVERY door, not
+  // only Board/Prozesse). Names the door in Henry's own vocabulary, the same
+  // pattern rule.askContext (harness_rules.ts) uses for a single row - so
+  // "mach das aus" resolves against THIS door's knobs instead of nothing.
+  "hub.door.askContext": {
+    de: "Es geht um die Tür „{label}“ in den Einstellungen.",
+    en: "This is about the \"{label}\" door in settings.",
+  },
+
   // ---- scope badges (accounts-boards-prd phase 4) ----
   // The five layers of PRD section 3, in the words a user would use for "who
   // does changing this affect". Every schema row wears one, so "why did my

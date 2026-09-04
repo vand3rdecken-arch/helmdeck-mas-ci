@@ -5,8 +5,8 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
 import { api, type BehaviorRule, type CellInfo, type HarnessConfig, type LoopMap, type LoopNode, type RepoTemplates } from "@/data/client";
+import { HenryChat, useOpenHenry } from "@/ui/henry_chat";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -279,6 +279,7 @@ export default function LoopMapScreen() {
   // 200-character measure nobody reads. Same cap the automation hub uses.
   const { wide } = useResponsive();
   const qc = useQueryClient();
+  const openHenry = useOpenHenry();
 
   // HENRY'S RULES, resolved for the repo the page is showing (harness-config-ui
   // phase 3). A second query rather than a fatter /loop/map: the stations and
@@ -416,18 +417,17 @@ export default function LoopMapScreen() {
 
   /** "Henry fragen" (design doc 5.5): open the docked chat carrying THIS row.
    *  Desktop gets the in-page panel over the dimmed screen; the phone takes the
-   *  /chat route - the same split the board FAB has always used, so there is
-   *  one chat and one way it opens. */
+   *  /chat route - that split is useOpenHenry's job now (ui/henry_chat.tsx), so
+   *  there is one chat and ONE implementation of how it opens. */
   function askHenry(rule: BehaviorRule) {
     const label = tr(rule.labelKey);
-    useCopilotPanel.getState().show({
+    openHenry({
       label,
       // Henry's own vocabulary: the rule key is what `configure` and the rule
       // table both name it, so he can act on the answer instead of guessing
       // which of twenty rows the owner meant.
       hint: tr("rule.askContext", { label, key: rule.key }),
     });
-    if (!wide) router.push("/chat" as never);
   }
 
   /** THE ONE WRITE PATH for a rule. A null value CLEARS it (restores
@@ -991,17 +991,9 @@ export default function LoopMapScreen() {
           same session, same history, same transcript and composer. The card's
           non-goal is explicit that a third assembly of those parts would break
           the one-chat law, so nothing here is a new chat; it is the existing
-          one, at this address. The phone takes the /chat route exactly as the
-          board FAB does. */}
-      <Pressable testID="harness-ask-henry"
-        onPress={() => { useCopilotPanel.getState().show(); if (!wide) router.push("/chat" as never); }}
-        style={{ position: "absolute", right: 18, bottom: 24, width: 48, height: 48, borderRadius: 15,
-          backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
-          alignItems: "center", justifyContent: "center",
-          ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
-        <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
-      </Pressable>
-      <CopilotOverlay />
+          one, at this address. bottom 24 on every width: this is a root route,
+          so there is no tab bar underneath to clear. */}
+      <HenryChat bottom={24} testID="harness-ask-henry" />
     </View>
   );
 }

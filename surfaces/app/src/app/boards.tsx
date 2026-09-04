@@ -14,6 +14,7 @@ import { laneColor, useTheme } from "@/theme";
 // policy.lane_labels, then the translated default), so the placeholder in a
 // column's label field is literally what leaving it empty will draw.
 import { useLaneLabels } from "@/ui/board";
+import { HenryChat } from "@/ui/henry_chat";
 import { useResponsive } from "@/ui/responsive";
 
 /**
@@ -285,6 +286,10 @@ export default function BoardsScreen() {
           </>
         )}
       </ScrollView>
+      {/* Same shared entry point every settings sub-area carries - the WORKFLOW
+          this board runs is Henry's (which stations exist, gate, deploy), even
+          though the column layout above is edited by hand on this screen. */}
+      <HenryChat context={current ? { label: current.name, hint: tr("boards.askContext", { name: current.name }) } : undefined} />
     </View>
   );
 }

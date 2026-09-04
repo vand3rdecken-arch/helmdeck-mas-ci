@@ -1,7 +1,5 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { ActivityIndicator, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -9,7 +7,7 @@ import { useCellEnabled } from "@/data/cells";
 import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
-import { CopilotOverlay, useCopilotPanel } from "@/app/chat";
+import { HenryChat } from "@/ui/henry_chat";
 import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, Tiles, TriageFollowUp, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
 import { PMStatusPanel } from "@/ui/pm_panel";
 import { useResponsive } from "@/ui/responsive";
@@ -18,7 +16,6 @@ export default function DashboardTab() {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { wide } = useResponsive();
   const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
@@ -84,23 +81,10 @@ export default function DashboardTab() {
           })()
         ) : null}
       </ScrollView>
-      {/* same agent chat as the board: floating button (desktop opens the in-page
-          panel over the dimmed dashboard, phone routes to /chat) + the overlay.
-          Copilot has no nav.tabs entry to hide (it's a FAB, not a tab), so it
-          gates itself directly off the copilot cell flag. */}
-      {copilotEnabled ? (
-        <>
-          <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84 }}>
-            <Pressable onPress={() => wide ? useCopilotPanel.getState().show() : router.push("/chat")}
-              style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle,
-                alignItems: "center", justifyContent: "center",
-                ...(Platform.OS === "web" ? { boxShadow: "0 4px 14px rgba(0,0,0,0.3)" } as any : { elevation: 4 }) }}>
-              <Ionicons name="chatbubble-ellipses-outline" size={20} color={t.accent} />
-            </Pressable>
-          </View>
-          <CopilotOverlay />
-        </>
-      ) : null}
+      {/* same agent chat as the board - the SHARED launcher (ui/henry_chat.tsx),
+          which self-gates on the copilot cell and picks the desktop panel vs. the
+          /chat route itself. */}
+      <HenryChat />
     </View>
   );
 }

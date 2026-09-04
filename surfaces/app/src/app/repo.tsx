@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api, type LoopMap } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { HenryChat } from "@/ui/henry_chat";
 import { RepoPipeline } from "@/ui/repo_pipeline";
 import { RepoTypePicker } from "@/ui/repo_type_picker";
 import { useResponsive } from "@/ui/responsive";
@@ -74,6 +75,11 @@ export default function RepoScreen() {
           </View>
         ) : null}
       </ScrollView>
+      {/* repo.intro's own promise ("Feintuning geht danach über den Chat") is
+          only true if the chat is actually reachable from here - the shared
+          launcher, carrying which repo is open so "kein Deploy mehr" resolves
+          against THIS one instead of default_repo. */}
+      <HenryChat context={repo ? { label: repo, hint: tr("repo.askContext", { repo }) } : undefined} />
     </View>
   );
 }

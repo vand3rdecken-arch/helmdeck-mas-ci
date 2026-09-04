@@ -10,6 +10,7 @@ import { useT } from "@/i18n";
 import { statusColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Chip, Empty, Panel, ScreenHeader } from "@/ui/kit";
+import { HenryChat } from "@/ui/henry_chat";
 import { confirmAsync } from "@/ui/settings_sections";
 import { isWeb, useResponsive } from "@/ui/responsive";
 
@@ -205,6 +206,11 @@ export default function Connectors() {
           />
         ))}
       </ScrollView>
+      {/* Building a new connector (build_integration) has no button on this
+          screen at all - by design, an AGENT writes it as a card. Chat is
+          therefore not an alternative path here, it is THE path - same
+          shared launcher every other settings screen carries. */}
+      <HenryChat context={{ label: tr("nav.connectors"), hint: tr("connectors.askContext") }} />
     </View>
   );
 }

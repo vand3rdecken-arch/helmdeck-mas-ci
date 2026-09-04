@@ -185,6 +185,15 @@ export const screens: Dict = {
     en: "None yet – give it a run.",
   },
   "connectors.empty": { de: "Keine Connectors.", en: "No connectors." },
+  // Henry's context chip on this screen's chat entry (settings-ia-redesign
+  // follow-up): building a new connector (build_integration) has no button
+  // here at all - it is chat-only by design (an AGENT writes the connector as
+  // a card) - so this hint says so explicitly rather than leaving the owner to
+  // guess why "connector build" isn't a form.
+  "connectors.askContext": {
+    de: "Es geht um Connectors (bauen, laufen lassen, planen, zurückrollen).",
+    en: "This is about connectors (build, run, schedule, roll back).",
+  },
 
   // ---- history (commit graph, checkpoints, debt) --------------------------
   "history.unset": { de: "(nicht gesetzt)", en: "(unset)" },
@@ -443,6 +452,13 @@ export const screens: Dict = {
   "repo.pathPlaceholder": { de: "C:\\Pfad\\zum\\Repo", en: "C:\\path\\to\\repo" },
   "repo.pickType": { de: "Repo-Typ", en: "Repo type" },
   "repo.pipeline": { de: "So läuft dieses Repo", en: "How this repo runs" },
+  // repo.intro promises "Feintuning geht danach über den Chat" - this is the
+  // context that makes that promise true from THIS screen instead of sending
+  // the owner hunting for the chat elsewhere.
+  "repo.askContext": {
+    de: "Es geht um die Pipeline für {repo} (Stationen, Deploy, Vorlage).",
+    en: "This is about the pipeline for {repo} (stations, deploy, template).",
+  },
   "loopmap.laws": { de: "Harness-Gesetze", en: "Harness laws" },
   "loopmap.lawsHint": {
     de: "Die sieben Sätze, die über allem stehen. Kein Schalter, kein Chat und keine Karte kann sie aufweichen — jeder nennt das Modul, das ihn durchsetzt.",
