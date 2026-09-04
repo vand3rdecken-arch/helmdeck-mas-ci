@@ -27,7 +27,7 @@ import { HenryChat } from "@/ui/henry_chat";
 import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
 import { UsagePanel } from "@/ui/dash_panels";
-import { HarnessSection } from "@/ui/harness_section";
+// import { HarnessSection } from "@/ui/harness_section";  // commented out with its render below
 // import { GxpActivate } from "@/ui/gxp_activate";  // commented out with the door render below
 import { PMControls } from "@/ui/pm_panel";
 import { SchemaDoor, ScopeBadge, useSchema } from "@/ui/settings_schema_page";
@@ -91,7 +91,8 @@ const DOOR_META: Record<DoorId, Omit<Door, "id">> = {
 // journal - on one screen with no folding, "zu kompliziert"). DOOR_META and
 // the door === "cells" render branch below stay in place rather than
 // deleted, so this is a one-line revert if it comes back simplified.
-const HIDDEN_DOORS: readonly DoorId[] = ["cells"];
+// "connections" hidden the same way, same day: not needed right now.
+const HIDDEN_DOORS: readonly DoorId[] = ["cells", "connections"];
 const DOORS: readonly Door[] = DOOR_IDS.filter((id) => !HIDDEN_DOORS.includes(id)).map((id) => ({ id, ...DOOR_META[id] }));
 
 const LANG_LABELS = LANGS.map((l) => l.label);
@@ -598,7 +599,9 @@ export default function Settings() {
           <View style={{ height: 12 }} />
           <Btn label={nsBusy ? "…" : tr("automation.save")} onPress={saveNsRepos} disabled={nsBusy} />
         </Panel>
-        <HarnessSection />
+        {/* Harness brief editor - commented out (owner request 2026-09-04):
+            too raw/advanced for this door right now, kept in place rather
+            than deleted in case it comes back. <HarnessSection /> */}
         <Panel>
           <SectionLabel text={tr("automation.repos", { n: autoRepos.length })} />
           {autoRepos.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("automation.noRepos")}</Text> :
