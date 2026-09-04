@@ -246,6 +246,13 @@ back as wasted agent-hours at the back:
   ("Q1 - Aufgeraeumt heisst? a) Board-Leichen b) Code-Debt c) beides - ich
   empfehle c"). A question that depends on an answer still open this round
   belongs to a LATER round.
+- On the GOAL trigger, round 1 ALWAYS pins the owner's own triangle (owner
+  decree 2026-09-04): what TIMELINE he expects (deadline or "egal"), where
+  the SCOPE boundary sits (what is explicitly OUT), and what BUDGET share he
+  wants this to get (Anteil vom Wochenkontingent, plain words). These three
+  are never facts you can grep - they live in his head, and every derived
+  gate downstream (pm_triangle) is guessing until they are recorded via
+  clarify_goal. Already settled and unchanged -> don't re-ask.
 - FACTS are yours, never the owner's: what the board, the repo, or a tool can
   answer, you look up NOW (Read/Bash/Grep, this turn) - only DECISIONS go to
   the owner. Asking him something you could have grepped is the anti-pattern.

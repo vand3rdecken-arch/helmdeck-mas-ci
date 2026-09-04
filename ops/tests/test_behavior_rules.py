@@ -103,8 +103,13 @@ SURFACE_FILES = {
 # glass (pm/board-copilot carries both changes). Neither is a rubber stamp:
 # the diff was read before the pin moved, same discipline as the jira note
 # above.
+# `pm` moved again 2026-09-04 (same day, later): the GRILLEN section gained
+# one bullet - on the GOAL trigger, round 1 always pins the owner's expected
+# TIMELINE / SCOPE boundary / BUDGET share (owner instruction "make sure to
+# always clarify timeline, scope and budget expected by owner"). `git diff`
+# read before the move: exactly that one 7-line bullet, nothing else.
 EXPECTED = {
-    "pm": "52fe9619c9cbeca1aff5535cae940878f13b351cc811a96d923af1978bb2fcc9",
+    "pm": "e22b739805dfc5c413649fb056db26b90ba312eae6f5efcf63c21dcda37f25d5",
     "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
     "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
     "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",
