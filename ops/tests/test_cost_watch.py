@@ -14,8 +14,11 @@ the window - never flat shadow-euros.
 3. Priority earns budget: low = 0.5x the base, urgent = 2x.
 4. Crowding: (100% - reserve) split over the working set caps the BAC when
    many cards share the window.
-5. Unit degradation: cost-calibration missing -> token calibration; both cold
-   -> API-equivalent $ ladder (never labeled EUR); API plan with a cap -> EUR.
+5. Unit degradation: cost-calibration missing -> token calibration; nothing
+   reachable at all (no calibration, no live usage fetch either) -> an
+   honest raw token count against a token floor, NEVER a fake $/EUR figure
+   (owner decree 2026-09-04, "echte Kosten oder gar nicht oder Anteil");
+   API plan with a cap -> EUR.
 6. ctx_tokens absolute floor: fire on crossing, clear under (compaction),
    fire again on the next crossing.
 7. Leaving 'working' drops the watch entry; re-entering re-baselines.
@@ -25,8 +28,8 @@ the window - never flat shadow-euros.
    the proxy card id.
 
 Self-sandboxing: pm's _pm/_save_loopstate/_activity/_escalate, events'
-plan_effective/plan_calibration and notify's push_fcm are patched - nothing
-touches disk, chat, FCM or the real board.
+plan_effective/plan_calibration, usage's snapshot, and notify's push_fcm are
+patched - nothing touches disk, chat, FCM, the network or the real board.
 
 Run: py -3.12 ops/tests/test_cost_watch.py
 """
@@ -42,6 +45,7 @@ from spine.comms import notify
 from spine.comms import notice
 from spine.comms import presence
 from spine.storage import events
+from spine.ops import usage
 
 FAILS = []
 
@@ -60,7 +64,7 @@ def track(tid, lane="working", cost=0.0, tok=0, ctx=0, prio="medium", archived=F
 
 # --- sandbox pm + events -----------------------------------------------------
 _orig_escalate = pm._escalate
-CFG = dict(pm.PM_DEFAULTS)                     # base 5%, reserve 40%, floor $5, ctx 150k
+CFG = dict(pm.PM_DEFAULTS)                     # base 5%, reserve 40%, floor 2M tok, ctx 150k
 pm._pm = lambda: dict(CFG)   # _cost_watch imports _pm LAZILY (fresh each call) - this seam still works
 pm_watchdog._save_loopstate = lambda s: None
 pm_watchdog._activity = lambda *a, **k: None
@@ -76,8 +80,10 @@ pm_watchdog._to_henry = lambda kind, detail, card=None, feed="": HENRY.append(
     {"kind": kind, "detail": detail, "card": card, "feed": feed})
 PLAN = ["max"]                                 # mutable so scenarios can flip it
 CALIB = [{"cost_per_pct": 1.0, "tokens_per_pct": 1_000_000.0}]   # $1 = 1%, 1M tok = 1%
+USAGE_OK = [True]                              # can a live fetch warm a cold cache?
 events.plan_effective = lambda s=None: (PLAN[0], "test")
 events.plan_calibration = lambda ev=None, s=None: CALIB[0]
+usage.snapshot = lambda: ({"status": "ok"} if USAGE_OK[0] else None)
 
 print("1. baseline on first tick, no escalation")
 st = {}
@@ -132,22 +138,26 @@ pm._cost_watch(st, grown)
 check("crowded BAC (4%) fires where solo (5%) would not", len(ESC) == 1
       and ESC[0]["tid"] == "c0")
 
-print("6. unit degradation: tokens when cost-calib missing, $ ladder when cold")
+print("6. unit degradation: tokens when cost-calib missing, honest tokens (never a fake $/EUR) when totally cold")
 CALIB[0] = {"tokens_per_pct": 1_000_000.0}       # no cost basis -> token basis
 st = {}; ESC.clear()
 pm._cost_watch(st, [track("t")])
 pm._cost_watch(st, [track("t", tok=5_500_000)])  # 5.5% of the week in tokens
 check("token calibration fires the same 5% budget", len(ESC) == 1)
 CALIB[0] = None                                  # calibration cold
+USAGE_OK[0] = False                              # ...and a live fetch can't rescue it either
 st = {}; ESC.clear()
 pm._cost_watch(st, [track("d")])
-pm._cost_watch(st, [track("d", cost=4.0)])
-check("cold: under the $5 floor stays silent", not ESC)
-pm._cost_watch(st, [track("d", cost=5.5)])
-check("cold: shadow-$ ladder fires", len(ESC) == 1)
-check("cold: labeled API-equivalent $, never EUR",
-      "$" in ESC[0]["text"] and "API-Gegenwert" in ESC[0]["text"])
+pm._cost_watch(st, [track("d", tok=1_800_000)])  # under the 2M-token floor
+check("cold+offline: under the token floor stays silent", not ESC)
+pm._cost_watch(st, [track("d", tok=2_100_000)])
+check("cold+offline: token floor fires", len(ESC) == 1)
+check("cold+offline: labeled in tokens with the 'no conversion possible' icon, no fake dollars",
+      "Tokens" in ESC[0]["text"] and "📊" in ESC[0]["text"] and "$" not in ESC[0]["text"])
+check("cold+offline: honest about no %/€ conversion, not dressed up as an API-equivalent",
+      "Umrechnung" in ESC[0]["text"] and "API-Gegenwert" not in ESC[0]["text"])
 CALIB[0] = {"cost_per_pct": 1.0, "tokens_per_pct": 1_000_000.0}
+USAGE_OK[0] = True
 
 print("7. API plan with a cap: budget in real money")
 PLAN[0] = "api"; CFG["monthly_eur"] = 200        # medium BAC = 5% of 200 = 10

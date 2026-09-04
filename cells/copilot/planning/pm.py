@@ -48,7 +48,9 @@ PM_DEFAULTS = {
     # -- per-card budget watchdog (_cost_watch: code thresholds, no LLM) ------
     "watch_base_pct": 5.0,      # BAC of a MEDIUM card: absolute % of the plan budget
     "watch_reserve_pct": 40.0,  # management reserve: share never allocated to cards
-    "watch_floor_usd": 5.0,     # fallback ladder (API-equivalent $) while calibration is cold
+    "watch_floor_tokens": 2_000_000,  # fallback ladder in TOKENS - the one honest unit
+                                       # left when no €/% calibration is reachable at all
+                                       # (owner decree 2026-09-04: never a shadow-$ price)
     "watch_ctx_floor": 150_000, # context tokens considered runaway (window nearly full)
 }
 
