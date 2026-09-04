@@ -11,25 +11,46 @@ material; when the two disagree, the code wins and both are wrong.
 
 ---
 
-## 1. What `ops/harness/` contains
+## 1. What `ops/harness/` and `cells/<id>/harness/` contain
+
+Since 2026-09-04 a brief lives with its owning cell, not in `ops/`: "the tree
+IS the architecture" (CLAUDE.md) means Henry's character is `cells/copilot/`
+policy, a card worker's rules are `cells/engineer/` policy, same as their UI
+units already were. `ops/harness/` keeps only what has NO single cell owner:
 
 ```
+cells/<id>/harness/
+  agents/     that cell's briefs (frontmatter + prompt body), same shape as below
+  settings/   that cell's settings layers
+
+cells/engineer/harness/{agents,settings}/   card-worker.md, machine-worker.md, card.json
+cells/copilot/harness/{agents,settings}/    board-copilot.md, pm.md, ship-advisor.md,
+                                             glass-brief.md, voice-style.md, wear-brief.md,
+                                             copilot.json
+
 ops/harness/
-  agents/     one .md per surface - YAML frontmatter + the prompt as the body
-    card-worker.md      an agent working ONE card in an isolated git worktree
-    machine-worker.md   a task on the owner's own PC (no worktree, no branch)
-    board-copilot.md    the board copilot / PM surface (~10 KB of board vocabulary)
-  settings/   one .json per surface - a standard Claude Code settings file
-    card.json           used by BOTH worker surfaces
-    copilot.json        the copilot's own layer
+  agents/     any brief not yet claimed by a cell (empty today - see AGENT_CELL below)
+  settings/   likewise for settings layers
   schema/     JSON Schema for each of the two file kinds, referenced by $schema
     agent.schema.json      validates the FRONTMATTER (the body is free prose)
     settings.schema.json   validates the settings layer
-  .versions/  every write archives the bytes it replaced (git-ignored)
+  templates/  repo-type templates (documents/software-dev) - infrastructure, no cell owns these
+  .versions/  every write archives the bytes it replaced (git-ignored) - stays
+              CENTRALISED here regardless of which tree the live file lives in
 ```
 
 Loaded by `spine/registry/harness.py`. The agent-file convention (frontmatter + body) is
 Claude Code's own, deliberately, so these files need no translation layer.
+
+**Resolution order**, per name: `spine/registry/harness.AGENT_CELL` /
+`SETTINGS_CELL` name which cell owns which brief/settings key. `_agent_path()`
+/ `_settings_path()` check that cell's `harness/` dir FIRST (if the file
+exists there) and fall back to the legacy `ops/harness/` location otherwise -
+so an unclaimed name, or a cell dir a broken install never shipped, degrades
+to exactly the old lookup, never an error. Writes (`write_agent`/
+`write_settings`) always target the CELL location for a claimed name, creating
+the directory on first write - a fresh edit never re-plants a file back into
+`ops/harness/`.
 
 ### The one law of the loader
 

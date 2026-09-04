@@ -813,7 +813,7 @@ def request_ship_decision(t, origin):
         "ship-decision", card=t["id"],
         detail=("Aenderung gelandet (%s, Karte %s). Entscheide, ob JETZT geshippt "
                 "wird - kein Automatismus mehr (Owner-Dekret 2026-09-01).\n"
-                "Brief: ops/harness/agents/ship-advisor.md. Evidenz IMMER frisch "
+                "Brief: cells/copilot/harness/agents/ship-advisor.md. Evidenz IMMER frisch "
                 "holen: py -3.12 ops/tools/ship_facts.py\n"
                 "Antworte mit action \"ship\" und kind none|ota|native "
                 "(none = nichts zu shippen, kurz begruenden). Der Harness fuehrt "

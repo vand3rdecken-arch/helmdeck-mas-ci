@@ -88,7 +88,7 @@ ALLOWED_CONFIG = {"policy", "capacity", "value_per_card", "default_repo",
 
 # -- never dead-end: every refusal carries the route that IS open -------------
 # Same rule the PM coordinator follows (pm._unblock_proposal) and the card
-# agents follow (ops/harness/agents/card-worker.md): a boundary must produce a pointer to the
+# agents follow (cells/engineer/harness/agents/card-worker.md): a boundary must produce a pointer to the
 # workflow, not a full stop. These helpers make the ACTION layer obey it too -
 # the model can be prompted to be helpful, but the code must not answer a
 # missed card reference with "failed." and nothing else.

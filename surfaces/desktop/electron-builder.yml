@@ -59,12 +59,19 @@ extraResources:
       - "!**/*"
       - "**/*.py"
       - "**/*.md"
-  # ops/harness = the agent briefs + settings layers (POLICY AS DATA). Shipping
-  # it is what lets the code hold NO copy of any role text (the 17 KB
-  # board-copilot constant rotted ~1.9k chars behind the file before this): a
-  # packaged install resolves the same files a git checkout does, and the
-  # in-code floors are true emergency stubs. Only current *.md/*.json ship -
-  # .versions/ (machine-local undo history) stays out via the allowlist shape.
+      # each cell's own harness/settings/*.json (harness-reorg-under-cells,
+      # 2026-09-04) - the ONE .json extension allowed under cells/, and only
+      # inside a harness/settings/ dir, so a future cell-local state file
+      # (something a running cell writes, not policy an owner edits) does not
+      # quietly start shipping through the same rule.
+      - "**/harness/settings/*.json"
+  # ops/harness = the agent briefs + settings layers NOT claimed by a cell
+  # (POLICY AS DATA) plus schema/ + templates/, which are infrastructure and
+  # have no cell owner. Most agent briefs moved under cells/<id>/harness/ in
+  # the reorg above and ship via the cells/ block; this stays for whatever a
+  # future surface has not been given a cell home yet, and for schema/templates.
+  # Only current *.md/*.json ship - .versions/ (machine-local undo history)
+  # stays out via the allowlist shape.
   - from: ../../ops/harness
     to: ops/harness
     filter:
@@ -73,6 +80,7 @@ extraResources:
       - "agents/*.md"
       - "settings/*.json"
       - "schema/*.json"
+      - "templates/*.md"
   # the single Expo web export (static SPA) that main.js serves locally - one
   # codebase for phone/web/desktop, replacing the old Next.js standalone server.
   - from: ../app/dist

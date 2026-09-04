@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: card-worker
 description: Standing brief for an agent working ONE card in an isolated git worktree.
 settings: card

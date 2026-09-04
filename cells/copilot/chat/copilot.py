@@ -26,7 +26,7 @@ from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip
 # mechanism - the same argument that took board-copilot.md out of here - and as
 # a Python constant it was one of the seven prose sources that make a Henry and
 # that the owner could neither see nor change. It now lives in
-# ops/harness/agents/voice-style.md with the length law as a rendered slot.
+# cells/copilot/harness/agents/voice-style.md with the length law as a rendered slot.
 def voice_style(project=""):
     """The spoken-turn overlay, rendered for `project`. A function and not a
     constant because the length rule now has a value: reading it at call time is
@@ -421,7 +421,7 @@ def _chat_routing_policy(card):
         pass                  # a broken row must never block a chat turn
     return out
 
-# HENRY'S ROLE IS DATA, IN EXACTLY ONE PLACE: ops/harness/agents/board-copilot.md
+# HENRY'S ROLE IS DATA, IN EXACTLY ONE PLACE: cells/copilot/harness/agents/board-copilot.md
 # (owner-editable, versioned via /harness, shipped with every install - the
 # desktop bundle carries ops/harness as an extraResource). The 17 KB copy that
 # used to live here rotted ~1.9k chars behind the file exactly as harness.py's
@@ -646,7 +646,7 @@ def _snapshot(full=False):
         # NOT a silent cap: Henry is told exactly what is missing and how to get
         # it, so "I don't know" is never the honest answer to a history question.
         # EXACTLY this relative form: it is what the copilot settings layer
-        # pre-approves (ops/harness/settings/copilot.json permissions.allow -
+        # pre-approves (cells/copilot/harness/settings/copilot.json permissions.allow -
         # headless -p has no permission prompt, an unapproved variant just
         # dies), and Henry's cwd IS daemon/ (henry_pmode docstring), so the
         # relative path resolves. The absolute-path form told him before
@@ -1624,7 +1624,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # mid-conversation instead of being refreshed away by every
             # unchanged turn.
             _snap_hash = None
-    # The ROLE is data: ops/harness/agents/board-copilot.md (the only copy).
+    # The ROLE is data: cells/copilot/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
     from spine.registry import harness

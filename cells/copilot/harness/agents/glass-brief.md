@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: glass-brief
 description: Turn overlay for the Meta Ray-Ban display glasses - 600x600, tap-only, advisory.
 settings: ""

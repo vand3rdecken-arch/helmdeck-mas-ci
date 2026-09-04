@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """PM / CTO planning ROLE, run by the thin harness here.
 
-The PM's brain is DATA (ops/harness/agents/pm.md + settings.pm), not code. This module only:
+The PM's brain is DATA (cells/copilot/harness/agents/pm.md + settings.pm), not code. This module only:
   - gathers signals (board + REAL economics + quota/velocity + goal),
   - runs the configured role for ONE plan-mode turn,
   - prices/times the plan in code (LLM judges effort in turns, code converts to
@@ -112,7 +112,7 @@ def _clarifications_block():
 
 
 def _role():
-    # The role is DATA in the harness layer (ops/harness/agents/pm.md - owner-
+    # The role is DATA in the harness layer (cells/copilot/harness/agents/pm.md - owner-
     # editable, versioned). brief() is total: a missing/mangled file degrades
     # to the short JSON-shape floor in harness._DEFAULTS, never breaks a plan.
     from spine.registry import harness

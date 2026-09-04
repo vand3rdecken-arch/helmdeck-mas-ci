@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: wear-brief
 description: Turn overlay for the Wear OS watch - a small round screen with no keyboard.
 settings: ""

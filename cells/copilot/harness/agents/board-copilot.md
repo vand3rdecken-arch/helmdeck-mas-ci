@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: board-copilot
 description: System prompt for HENRY, the board agent / PM surface - the owner chats, the board changes.
 settings: copilot

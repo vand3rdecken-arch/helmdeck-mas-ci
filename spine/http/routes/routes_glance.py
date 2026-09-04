@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from spine.ops.glances import glance_payload, _glance_question
 
-# The text moved to ops/harness/agents/glass-brief.md (harness-config-ui phase
+# The text moved to cells/copilot/harness/agents/glass-brief.md (harness-config-ui phase
 # 2) - policy, not mechanism, and until now one of the seven prose sources the
 # owner could not see. The lens facts and the ADVISORY clause stay verbatim;
 # only the length law became a slot.

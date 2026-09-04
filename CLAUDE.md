@@ -6,11 +6,15 @@ everything buildable walks charter → card → gate → accept.
 The tree IS the architecture - four folders (owner decree 2026-08-24):
 `spine/` = shared infrastructure no cell owns (auth, http, storage, registry,
 turn, ...); `cells/<id>/` = each agentic system's logic AND its UI unit
-(engineer, pm, process, connectors, copilot); `surfaces/` = the delivery
-vehicles (`app/` - the ONE Expo frontend for phone/web/desktop -, `desktop/`
-Electron shell, `glasses/`, `relay/`); `ops/` = everything operational
-(`deploy/` one entrypoint per surface, `tools/`, `tests/`, `harness/` =
-policy-as-data briefs, `docs/` incl. the card queue `docs/backlog/`).
+(engineer, pm, process, connectors, copilot) - **and, since 2026-09-04, its
+agent brief(s)**: `cells/<id>/harness/agents/*.md` + `harness/settings/*.json`
+is that cell's policy prose (Henry's character, a worker's rules), same
+reasoning as the UI unit - a cell's brain lives where its code lives, not in
+`ops/`; `surfaces/` = the delivery vehicles (`app/` - the ONE Expo frontend
+for phone/web/desktop -, `desktop/` Electron shell, `glasses/`, `relay/`);
+`ops/` = everything operational (`deploy/` one entrypoint per surface,
+`tools/`, `tests/`, `harness/` = the schema/templates infrastructure PLUS any
+brief not yet claimed by a cell, `docs/` incl. the card queue `docs/backlog/`).
 Plus `daemon/`: ONLY the thin launcher + machine-local runtime data (db,
 settings, events, certs) - code does not go there. Builds belong to
 surfaces, never to cells.

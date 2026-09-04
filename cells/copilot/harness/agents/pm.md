@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: pm
 description: The PM/CTO planning role - board + economics + policy in, founder-grade plan out.
 settings: ""
