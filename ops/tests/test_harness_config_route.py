@@ -111,7 +111,7 @@ check(isinstance(doc, dict) and doc.get("project"), "resolves a project key (%r)
 rules = (doc or {}).get("rules") or []
 check(len(rules) >= 20, "carries the whole rule table (%d rules)" % len(rules))
 blocks = [b["key"] for b in (doc or {}).get("blocks") or []]
-check(blocks == ["tone", "initiative", "hands", "report", "memory"],
+check(blocks == ["tone", "initiative", "hands", "report", "memory", "routing"],
       "blocks arrive in the server's order (%r)" % blocks)
 check((doc or {}).get("layers") == ["default", "seed", "workspace", "project"],
       "the layer vocabulary is server-owned (%r)" % (doc or {}).get("layers"))

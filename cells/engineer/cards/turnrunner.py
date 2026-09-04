@@ -33,6 +33,32 @@ GATE_CUT_NOTE = ("gate/merge pipeline died mid-run (daemon restart) - nothing wa
                  "landed; move the card to Review again to re-run the gate")
 
 
+def _routing_policy(t):
+    """This CARD's effective model-routing policy - the engineer cell's own
+    reading of spine/registry/behavior.py's routing.* rules (owner decree
+    2026-09-04: which model when is engineer/Henry policy per project, not a
+    spine constant). Same shape as copilot.py::henry_pmode: resolve the
+    project overlay for each row, default to turnopts' own DEFAULT_ROUTING_
+    POLICY - never raise, a broken row must never block a turn from spawning.
+
+    project = for_card(t): the card's own repo, fixed at dispatch - the same
+    resolution turnopts_project already uses for pm.py's other project reads."""
+    from spine.agent import turnopts
+    out = dict(turnopts.DEFAULT_ROUTING_POLICY)
+    try:
+        from spine.storage import projectconfig
+        project = projectconfig.for_card(t)
+        for key, path in (("auto_model", "rule.routing.auto_model.all"),
+                          ("escalate_value", "rule.routing.escalate_value.all"),
+                          ("escalate_urgent", "rule.routing.escalate_urgent.all")):
+            got = projectconfig.resolve(path, project)
+            if got["value"] is not None:
+                out[key] = got["value"]
+    except Exception:                                          # noqa: BLE001
+        pass                  # a broken row must never block a turn from spawning
+    return out
+
+
 def _turn(t, prompt, model=None, perm=None, idle_timeout=None, by=None):
     """THE choke point every turn passes through - and therefore the ONE owner
     of the turn-intent registration (drivers.turn_intent).
@@ -91,7 +117,7 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
             "value": t.get("value"), "priority": t.get("priority"),
             "turns": t.get("turns"), "failed": bool(t.get("gate_failed")),
             "fails": events.consecutive_gate_fails(t["id"]),
-            "ctx_tokens": t.get("ctx_tokens")})
+            "ctx_tokens": t.get("ctx_tokens")}, policy=_routing_policy(t))
     if model:
         cfg = {**cfg, "model": model}
     if perm:

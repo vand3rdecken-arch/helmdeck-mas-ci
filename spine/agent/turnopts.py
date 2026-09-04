@@ -224,16 +224,37 @@ def _allowed_ids():
     return {m["id"] for m in list_models()}
 
 
-def pick_model(text, has_attach=False, signals=None):
+# The mechanism's own defaults - what every caller gets when it passes no
+# `policy` (or a caller that hasn't been migrated yet). These are no longer
+# the only answer: cells/engineer/cards/turnrunner.py::_routing_policy and
+# cells/copilot/chat/copilot.py resolve the project-overridable rows
+# (spine/registry/behavior.py: routing.auto_model/escalate_value/
+# escalate_urgent) and pass the effective policy in. turnopts itself stays
+# the MECHANISM - whitelist, window law, explicit-wins - never the policy
+# owner (owner decree 2026-09-04: routing policy is Henry/engineer logic per
+# project, not a spine constant).
+DEFAULT_ROUTING_POLICY = {
+    "auto_model": "claude-sonnet-5",
+    "strong_model": "claude-opus-5",
+    "cheap_model": "claude-haiku-4-5",
+    "escalate_value": HIGH_VALUE,
+    "escalate_urgent": True,
+}
+
+
+def pick_model(text, has_attach=False, signals=None, policy=None):
     """Auto routing: cheap for trivial, strong for hard/high-stakes. Returns a
     concrete id. `signals` (optional) carries the card's own facts:
     {value: float, priority: str, turns: int, ctx_tokens: int} - these are the
     PRIMARY routing inputs; the prompt text is only a weak fallback. Only used
     when the user picked "Auto"; an explicit model always wins (see
     resolve_model). `ctx_tokens` is a HARD constraint, not a preference - see
-    fits_window."""
+    fits_window. `policy` (optional) overrides DEFAULT_ROUTING_POLICY - the
+    per-project routing.* rows resolved by the calling cell; missing keys fall
+    back to the default so an unmigrated caller sees no change."""
     s = signals or {}
     t = text or ""
+    p = {**DEFAULT_ROUTING_POLICY, **(policy or {})}
     prio = str(s.get("priority") or "").lower()
     value = float(s.get("value") or 0)
     turns = int(s.get("turns") or 0)
@@ -250,9 +271,10 @@ def pick_model(text, has_attach=False, signals=None):
     # next turn after a gate rejection gets the strong model, no retry loop.
     ctx = s.get("ctx_tokens")
     # Owner decree 2026-09-04: Sonnet 5 IS the Auto model for card
-    # implementation. Three former STRONG triggers got dropped because each
-    # was measured to fire on ordinary cards and starve Sonnet, exactly like
-    # the length/backtick pair before them:
+    # implementation (now `policy["auto_model"]`, project-overridable). Three
+    # former STRONG triggers got dropped because each was measured to fire on
+    # ordinary cards and starve Sonnet, exactly like the length/backtick pair
+    # before them:
     #  - prio "high": Henry mints practically every chat-born direct card
     #    priority=high (all recent -direct cards -> 100% Opus);
     #  - turns >= ESCALATE_TURNS(3): a normal implementation card reaches 3
@@ -260,26 +282,29 @@ def pick_model(text, has_attach=False, signals=None):
     #    cards) - turn count is age, not difficulty;
     #  - _HARD keywords: German card prose trips them constantly ("Design",
     #    "Root Cause", "migrat..." in 2 of 5 recent cards).
-    # What still escalates is deliberate or measured: "urgent", a card worth
-    # HIGH_VALUE, an attachment, or a real gate failure (retry gets strength).
+    # What still escalates is deliberate or measured: "urgent" (unless the
+    # project switched escalate_urgent off), a card worth escalate_value, an
+    # attachment, or a real gate failure (retry gets strength).
     if (has_attach
-            or prio == "urgent"
-            or (value and value >= HIGH_VALUE)
+            or (p["escalate_urgent"] and prio == "urgent")
+            or (value and value >= float(p["escalate_value"]))
             or failed):
-        return fits_window("claude-opus-5", ctx)
+        return fits_window(p["strong_model"], ctx)
     # CHEAP tier - ONLY clear chatter (greetings/acks). A short imperative like
     # "add a null check" is still work -> it falls through to Sonnet, never Haiku.
     if len(t) < 40 and _EASY.search(t):
-        return fits_window("claude-haiku-4-5", ctx)
-    return fits_window("claude-sonnet-5", ctx)
+        return fits_window(p["cheap_model"], ctx)
+    return fits_window(p["auto_model"], ctx)
 
 
-def resolve_model(model, text, has_attach=False, signals=None):
+def resolve_model(model, text, has_attach=False, signals=None, policy=None):
     """(cli_model_id_or_None, chosen). '' -> driver default (None). 'auto' ->
     signal-based pick. A known model id (manifest or settings.json) -> itself.
     Unknown -> default. Server-side whitelist: arbitrary ids from the client are
     rejected. THE USER'S EXPLICIT CHOICE ALWAYS WINS - routing only runs for
-    'auto'. `signals` = the card facts passed through to pick_model.
+    'auto'. `signals` = the card facts passed through to pick_model. `policy` =
+    the project's resolved routing.* rows, passed through to pick_model
+    untouched - an explicit model pick never reads it.
 
     ONE exception to "explicit wins", and it is a capability limit rather than a
     preference: a model whose measured window cannot hold the session about to
@@ -291,7 +316,7 @@ def resolve_model(model, text, has_attach=False, signals=None):
     window we positively measured (see fits_window / CTX_WINDOWS)."""
     ctx = (signals or {}).get("ctx_tokens")
     if model == "auto":
-        mid = pick_model(text, has_attach, signals)
+        mid = pick_model(text, has_attach, signals, policy)
         return mid, mid
     model = _ALIAS.get(model, model)
     if model and model in _allowed_ids():
