@@ -191,7 +191,7 @@ export const board: Dict = {
   "dash.sow.totalMany": { de: "gesamt ({n} SoWs)", en: "total ({n} SoWs)" },
 
   // ---- capacity panel -----------------------------------------------------
-  "dash.triangle.title": { de: "Ziel & Dreieck", en: "Goal & triangle" },
+  "dash.triangle.title": { de: "Ziel, Timeline & Budget", en: "Goal, timeline & budget" },
   "dash.triangle.budget": { de: "Budget", en: "Budget" },
   "dash.triangle.timeline": { de: "Timeline", en: "Timeline" },
   "dash.triangle.scope": { de: "Scope", en: "Scope" },
