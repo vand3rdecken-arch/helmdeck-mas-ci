@@ -478,8 +478,6 @@ export default function Settings() {
             style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
             <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
           </Pressable>
-          <DesktopUpdateBanner />
-          <UpdatesPanel />
         </ScrollView>
       </View>
     );
