@@ -220,6 +220,7 @@ export const board: Dict = {
   "dash.status.roadmap": { de: "Roadmap", en: "Roadmap" },
   "dash.status.msRunning": { de: "läuft", en: "running" },
   "dash.status.msPlanned": { de: "geplant", en: "planned" },
+  "dash.status.msProposal": { de: "Vorschlag", en: "proposed" },
   "dash.status.capOk": { de: "Kapazität reicht locker bis zum Wochen-Reset.", en: "Capacity comfortably lasts until the weekly reset." },
   "dash.status.capWarn": { de: "Kapazität wird knapp vor dem Wochen-Reset.", en: "Capacity is getting tight before the weekly reset." },
   "dash.status.details": { de: "Details", en: "Details" },
