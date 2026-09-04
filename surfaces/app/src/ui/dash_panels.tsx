@@ -372,11 +372,22 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
             {ms.map((mm, i) => {
               const done = mm.status === "done";
               const wait = !done && !!mm.calendar_wait;
-              const running = !done && !wait && mm.status === "in_progress";
-              const ic = done ? "checkmark-circle" : wait ? "pause-circle" : running ? "play-circle" : "ellipse-outline";
+              // "läuft" is BOARD-derived, never the LLM's status claim (owner
+              // caught M3 saying "läuft" with no card behind it, 2026-09-04:
+              // "Woher kam das? Ich sehe das nicht auf dem Board"). A
+              // milestone only runs if its card actually sits in the working
+              // lane; one with NO card at all is honestly a "Vorschlag" -
+              // the planner proposing work, which the board (the single
+              // truth) does not yet hold.
+              const lane = mm.card ? m.cards?.find((c) => c.id === mm.card)?.lane : undefined;
+              const running = !done && !wait && lane === "working";
+              const proposal = !done && !wait && !mm.card;
+              const ic = done ? "checkmark-circle" : wait ? "pause-circle" : running ? "play-circle"
+                : proposal ? "bulb-outline" : "ellipse-outline";
               const col = done ? t.ok : wait ? t.txtTertiary : running ? t.accent : t.txtTertiary;
               const word = done ? tr("dash.triangle.msDone") : wait ? tr("dash.triangle.msWait")
-                : running ? tr("dash.status.msRunning") : tr("dash.status.msPlanned");
+                : running ? tr("dash.status.msRunning")
+                : proposal ? tr("dash.status.msProposal") : tr("dash.status.msPlanned");
               return (
                 <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
                   style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
