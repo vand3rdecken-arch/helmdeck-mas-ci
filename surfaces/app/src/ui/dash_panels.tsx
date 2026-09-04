@@ -392,8 +392,12 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
                 <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
                   style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={16} color={col} />
+                  {/* "M2:"/"M3:" is the planner's internal milestone numbering
+                      (owner, 2026-09-04: "what does M2 and M3 mean? absolute
+                      trash if I can't understand it") - stripped here so even
+                      an old plan artifact renders clean. */}
                   <Text numberOfLines={1} style={{ color: done ? t.txtTertiary : t.txtSecondary, fontSize: 12.5, flex: 1,
-                    textDecorationLine: done ? "line-through" : "none" }}>{mm.name}</Text>
+                    textDecorationLine: done ? "line-through" : "none" }}>{(mm.name || "").replace(/^M\d+:\s*/, "")}</Text>
                   <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
                   {mm.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
                 </Pressable>
