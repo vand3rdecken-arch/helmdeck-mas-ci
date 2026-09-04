@@ -140,22 +140,6 @@ export default function MoreTab() {
           </Pressable>
         </Panel>
         ) : null}
-        {/* The device-local switches (Vorlesen, Analytics) MOVED to the
-            settings hub's door 1, with a "Gerät" badge next to them -
-            settings-ia-redesign's point B: Mehr = connection status +
-            protocols + one Einstellungen row + feedback, and every toggle
-            lives behind that one row. Kept as a pointer rather than a
-            duplicate form, because a second edit surface for the same switch
-            is the exact thing this redesign exists to end. */}
-        <Panel>
-          <SectionLabel text={tr("more.device.section")} />
-          <Pressable onPress={() => router.push("/settings?door=general" as never)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
-            <Ionicons name="person-circle-outline" size={18} color={t.txtSecondary} />
-            <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{tr("more.device.moved")}</Text>
-            <Ionicons name="chevron-forward" size={16} color={t.txtTertiary} />
-          </Pressable>
-        </Panel>
         {GROUPS.map(([grpKey, allLinks]) => {
           const links = allLinks.filter(([, , , , cap]) => can(me, cap));
           if (!links.length) return null;

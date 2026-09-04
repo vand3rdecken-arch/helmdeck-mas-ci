@@ -51,7 +51,7 @@ export const TABS: NavSurface[] = [
   // Tür 1 - Rest unsichtbar statt 403", and every owner-only ROUTE the hub
   // calls is still gated server-side exactly as before.
   { id: "tab.settings", title: "", path: "settings", route: "settings", nav: { group: "more", order: 9, icon: "settings-outline", labelKey: "nav.settings", desktopOnly: true } },
-  // The two REDIRECT routes (see (tabs)/automation.tsx and modules.tsx).
+  // The REDIRECT route (see (tabs)/automation.tsx).
   // Still registered, deliberately: _layout.tsx's navigator is built with
   // useOnlyUserDefinedScreens=true, so dropping them here would make
   // /automation and /modules UNREACHABLE rather than merely unlisted, and
@@ -60,7 +60,6 @@ export const TABS: NavSurface[] = [
   // a redirect must resolve for whoever follows the link, and the hub it
   // lands on does the role gating one screen later.
   { id: "tab.automation", title: "", path: "automation", route: "automation", nav: { group: "more", order: 8, icon: "git-branch-outline", labelKey: "nav.automation", hidden: true } },
-  { id: "tab.modules", title: "", path: "modules", route: "modules", nav: { group: "more", order: 10, icon: "cube-outline", labelKey: "nav.modules", hidden: true } },
   { id: "tab.more", title: "", path: "more", route: "more", nav: { group: "more", order: 11, icon: "ellipsis-horizontal", labelKey: "nav.more", phoneOnly: true } },
 ];
 

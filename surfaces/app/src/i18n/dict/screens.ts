@@ -100,10 +100,6 @@ export const screens: Dict = {
   "cfg.webUrl": { de: "Web-Oberfläche (URL)", en: "Web surface (URL)" },
   "cfg.webUrl.desc": { de: "Wohin dieser Daemon die alten Web-Pfade weiterleitet. Gilt nur für diese Maschine.",
                        en: "Where this daemon redirects the legacy web paths. This machine only." },
-  "automation.movedHint": {
-    de: "Loop, Harness & Automatik-Policy sind jetzt hier gebündelt.",
-    en: "Loop, harness & automation policy now live here.",
-  },
 
   // ---- harness (briefs, settings layers, spawn preview) --------------------
   "harness.section": { de: "Harness", en: "Harness" },
@@ -647,7 +643,6 @@ export const screens: Dict = {
   // the mix this dict exists to prevent. NOT here: the charter laws and the
   // journal lines themselves; those arrive from the daemon and stay as they
   // come, like every other audit line.
-  "modules.title": { de: "Module & Regeln", en: "Modules & rules" },
   "modules.sub": {
     de: "Alles ist ein Modul. Regeln sind aus dem Charter geseedet — anpassbar, jede Änderung wird protokolliert.",
     en: "Everything is a module. The rules are seeded from the charter — adjustable, and every change is recorded.",

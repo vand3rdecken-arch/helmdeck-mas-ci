@@ -62,10 +62,9 @@ export const TAB_FALLBACK: TabItem[] = [
   // door 1 became the account's profile (see tabs.ts). A cap here would make
   // /settings unreachable for a client, not merely unlisted.
   { name: "settings", labelKey: "nav.settings", icon: "settings-outline", desktopOnly: true },
-  // Registered, never drawn - the two hub redirects. Dropping these rows
-  // would unregister the routes (useOnlyUserDefinedScreens=true) and break
-  // every existing /automation and /modules link.
+  // Registered, never drawn - the hub redirect. Dropping this row would
+  // unregister the route (useOnlyUserDefinedScreens=true) and break every
+  // existing /automation link.
   { name: "automation", labelKey: "nav.automation", icon: "git-branch-outline", hidden: true },
-  { name: "modules", labelKey: "nav.modules", icon: "cube-outline", hidden: true },
   { name: "more", labelKey: "nav.more", icon: "ellipsis-horizontal", phoneOnly: true },
 ];

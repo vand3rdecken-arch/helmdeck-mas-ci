@@ -103,7 +103,7 @@ function Sidebar({ state, navigation }: any) {
   const disabledCells = useDisabledCellSurfaces();
   const registryNav = surfaces
     // `hidden` drops the row from the sidebar while the screen stays
-    // registered below - the hub redirects (/automation, /modules) are routes
+    // registered below - the hub redirect (/automation) is a route
     // with no nav presence (accounts-boards-prd phase 4).
     .filter((s) => s.route && s.nav && !s.nav.phoneOnly && !s.nav.hidden && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, sectionKey: s.nav!.sectionKey, cap: s.nav!.cap }));
