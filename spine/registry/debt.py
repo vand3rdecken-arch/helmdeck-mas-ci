@@ -3372,8 +3372,8 @@ DEBT = [
     },
     {
         "id": "glasses-native-uncompiled",
-        "title": "The glasses MIC seam and the DAT CAMERA service ship as source "
-                 "that has never been compiled",
+        "title": "The DAT CAMERA half of the glasses native seam is compiled and "
+                 "shipped but UNREACHABLE - nothing calls capture()",
         "status": "open",
         "what": "Owner decision 2026-08-21 ('write source here'), taken knowingly: "
                 "an APK cannot be built from a card worktree (DEPLOY.md 2, NDK "
@@ -3391,7 +3391,34 @@ DEBT = [
                 "NOT guessed - every symbol was read out of the real 0.9.0 AARs "
                 "with javap after fetching them from GitHub Packages, so the "
                 "signatures are measured even though the code is unbuilt.",
-        "why_it_bites": "⚠ UPDATED 2026-08-21 - point (1) is now PAID and the "
+        "why_it_bites": "⚠ UPDATED 2026-09-04 - THE 'UNCOMPILED' PREMISE IS DEAD "
+                        "and the entry is retitled to what actually remains. "
+                        "MEASURED against the shipped artifact, not reasoned: all "
+                        "four classes - app/helmdeck/voice/GlassVoiceService, "
+                        "app/helmdeck/glasses/GlassesRadio, app/helmdeck/glasses/"
+                        "GlassCameraService and app/helmdeck/glassesbridge/"
+                        "GlassesBridgeModule - are present in the dex of "
+                        "android/app/build/outputs/apk/release/app-release.apk "
+                        "(versionCode 88, native ship fe8a204 2026-09-03). The "
+                        "old residue (i) 'NO UI CALLS ANY OF IT' has SPLIT: the "
+                        "VOICE half is now called (surfaces/app/src/app/chat.tsx:"
+                        "659-669 reads settings.glance_origin + glance_token, "
+                        "calls configure() then listen(true) behind an owner-only "
+                        "header toggle) and its daemon path is proven end-to-end "
+                        "through the live worker. The CAMERA half is NOT: "
+                        "capture() and stopCamera() in surfaces/app/src/data/"
+                        "glasses.ts have ZERO callers anywhere in surfaces/app/"
+                        "src, so GlassCameraService and POST /glance/photo are "
+                        "compiled, shipped, allowlisted in the worker - and "
+                        "unreachable. That, plus 'has never run on real glasses', "
+                        "is the whole of what is still open here. Also still "
+                        "unreachable: listen(false) / ACTION_LISTEN_PHONE_MIC, "
+                        "because chat.tsx:669 hardcodes listen(true), so every "
+                        "turn collapses glasses audio to 8 kHz HFP even when the "
+                        "phone is in hand - the per-turn A2DP trade the seam was "
+                        "explicitly designed to offer has no control. "
+                        "Kept below, the 2026-08-21 history: "
+                        "(1) is PAID and the "
                         "other two stand. (1) COMPILES: the owner granted "
                         "access to C:\\hd, and :app:compileReleaseKotlin is "
                         "BUILD SUCCESSFUL against the real mwdat 0.9.0 - the "
@@ -4060,10 +4087,62 @@ DEBT = [
         "order": 54,
     },
     {
+        "id": "glasses-voice-unconfigured-origin",
+        "title": "Glasses voice was dead for one EMPTY setting, and nothing in "
+                 "any UI can set it",
+        "status": "paid",
+        "what": "settings.glance_origin (spine/storage/events.py:54) is the "
+                "public origin of the glance Worker - the only address "
+                "GlassVoiceService can reach, because it is a plain "
+                "HttpURLConnection client OUTSIDE the E2EE relay. It defaults to "
+                "\"\" and was EMPTY on the owner's live daemon while everything "
+                "around it was ready: glance_token set, glance_talk on, the "
+                "Worker deployed at https://glance.helmdeck.de, and all four "
+                "native classes in the shipped APK (versionCode 88). "
+                "surfaces/app/src/app/chat.tsx:660-668 reads it, finds it blank, "
+                "shows chat.glassesUnconfigured and RETURNS - so configure() and "
+                "listen() were never called and the microphone never opened. "
+                "PAID 2026-09-04 by setting it to the deployed Worker origin via "
+                "events.save_settings (audited, checkpointed). No code changed; "
+                "no rebuild was needed, because nothing was ever unbuilt.",
+        "why_it_bites": "PAID - kept because the FAILURE SHAPE is the lesson and "
+                        "it is still latent. Two debts (glasses-native-"
+                        "uncompiled, glass-listening-report-uncompiled) blamed an "
+                        "uncompiled Kotlin half for a symptom that was one empty "
+                        "string, and that misdiagnosis survived in the register "
+                        "long enough to be quoted as the reason the mic did not "
+                        "work. The register said 'build the APK'; the APK was "
+                        "already built. VERIFY THE PREMISE AGAINST THE ARTIFACT - "
+                        "a dex scan settled in one command what the prose had "
+                        "asserted for two weeks. What is STILL open and is why "
+                        "this stays listed: glance_origin has NO UI ANYWHERE. "
+                        "Grepping surfaces/app/src and surfaces/desktop finds "
+                        "only the reader at chat.tsx:660 and the i18n string that "
+                        "tells the owner to go set it 'in daemon settings' - a "
+                        "place with no field for it. It is settable only by "
+                        "direct save_settings from the repo, so the moment it is "
+                        "cleared or a fresh workspace is seeded, glasses voice "
+                        "silently reverts to a chat bubble and the next reader "
+                        "will again suspect the native build.",
+        "trigger": "A fresh workspace, a settings reset, or any redeploy of the "
+                   "glance Worker to a different origin. The daemon defaults it "
+                   "to empty, so a new install starts BROKEN and the only "
+                   "diagnosis surface is one German error bubble in the chat.",
+        "fix": "Give glance_origin a real field on the glasses/connectors "
+               "settings door, beside glance_token and the glance_talk switch - "
+               "so the setting that decides whether the microphone exists is "
+               "editable where the owner already goes to enable it. Better: have "
+               "ops/deploy/push_glance.sh write the origin it just deployed to "
+               "back into settings, so deploying the Worker configures the phone "
+               "by construction rather than by the owner remembering.",
+        "since": "2026-09-04",
+        "order": 56,
+    },
+    {
         "id": "glass-listening-report-uncompiled",
         "title": "The lens's LISTENING indicator depends on a GlassVoiceService "
                  "edit that has never been compiled",
-        "status": "open",
+        "status": "paid",
         "what": "The glasses conversation surface itself is verified: GET "
                 "/glance/chat, POST /glance/state and spine/ops/glassturn.py are "
                 "covered by ops/tests/test_glance_conversation.py, and the "
@@ -4077,7 +4156,32 @@ DEBT = [
                 "no mic opens). An APK cannot be built from a card worktree "
                 "(DEPLOY.md 2, NDK path length) - the same constraint that "
                 "produced glasses-native-uncompiled.",
-        "why_it_bites": "It DEGRADES rather than breaks, and that was a design "
+        "why_it_bites": "PAID 2026-09-04, and the premise was already stale when "
+                        "it was read - this entry claimed 'never compiled' while "
+                        "the class was sitting in the shipped APK. MEASURED, not "
+                        "reasoned: app/helmdeck/voice/GlassVoiceService is present "
+                        "in the dex of android/app/build/outputs/apk/release/"
+                        "app-release.apk (versionCode 88, native ship fe8a204), "
+                        "alongside GlassesRadio, GlassCameraService and "
+                        "GlassesBridgeModule, and the built manifest carries "
+                        "RECORD_AUDIO / MODIFY_AUDIO_SETTINGS / BLUETOOTH_CONNECT "
+                        "/ FOREGROUND_SERVICE_MICROPHONE, the typed <service> and "
+                        "the RecognitionService <queries>. So report() compiles - "
+                        "that was the entry's one genuinely open question. The "
+                        "INDICATOR PATH is now proven end-to-end through the "
+                        "public worker: POST /glance/state {state:listening,"
+                        "mic:glasses} -> 200, and GET /glance/chat immediately "
+                        "reports turn {state:'listening', mic:'glasses'}; idle "
+                        "clears it the same way. What blocked the indicator was "
+                        "never the Kotlin - it was settings.glance_origin being "
+                        "EMPTY, so the phone never called configure()/listen() at "
+                        "all (see glasses-voice-unconfigured-origin). STILL "
+                        "UNPROVEN and only observable on hardware: whether "
+                        "micWire() reports 'glasses' exclusively when the SCO "
+                        "route was genuinely obtained, and whether the fire-and-"
+                        "forget thread stays invisible to the recogniser. "
+                        "Kept for the original reasoning: "
+                        "it DEGRADES rather than breaks, and that was a design "
                         "constraint rather than luck. `listening` is the only "
                         "one of the five turn states that comes from the device; "
                         "heard/thinking/answered/failed are all set by the daemon "
