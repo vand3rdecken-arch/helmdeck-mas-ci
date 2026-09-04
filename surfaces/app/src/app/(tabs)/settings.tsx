@@ -86,7 +86,13 @@ const DOOR_META: Record<DoorId, Omit<Door, "id">> = {
   team: { labelKey: "hub.door.team", subKey: "hub.door.team.sub", icon: "people-outline", cap: "settings.read" },
   system: { labelKey: "hub.door.system", subKey: "hub.door.system.sub", icon: "hardware-chip-outline", cap: "settings.read" },
 };
-const DOORS: readonly Door[] = DOOR_IDS.map((id) => ({ id, ...DOOR_META[id] }));
+// "cells" is hidden from the door list on owner request (2026-09-04: the
+// door stacked six sections - cells, laws, engines, surfaces, charter,
+// journal - on one screen with no folding, "zu kompliziert"). DOOR_META and
+// the door === "cells" render branch below stay in place rather than
+// deleted, so this is a one-line revert if it comes back simplified.
+const HIDDEN_DOORS: readonly DoorId[] = ["cells"];
+const DOORS: readonly Door[] = DOOR_IDS.filter((id) => !HIDDEN_DOORS.includes(id)).map((id) => ({ id, ...DOOR_META[id] }));
 
 const LANG_LABELS = LANGS.map((l) => l.label);
 const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
