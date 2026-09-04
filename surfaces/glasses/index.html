@@ -32,7 +32,12 @@
         <button class="nav-item focusable primary" data-action="open-needs">Needs you
           <span class="badge-dot hidden" id="needs-badge" aria-hidden="true"></span>
         </button>
-        <button class="nav-item focusable" data-action="talk-start">Ask</button>
+        <!-- THE MIC TRIGGER. Replaces the old "Ask", which sent one hardcoded
+             sentence and could therefore only ever produce one answer - the
+             "generische Antwort" the owner called out. This asks the parked
+             phone service to open the GLASSES microphone; the lens itself
+             cannot capture (webview denies all capture, measured on-device). -->
+        <button class="nav-item focusable" data-action="talk-speak">Speak</button>
         <button class="nav-item focusable" data-action="open-sow">SoW</button>
         <button class="nav-item focusable" data-action="open-settings">⚙</button>
       </nav>

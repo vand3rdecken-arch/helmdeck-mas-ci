@@ -8,6 +8,9 @@ export interface GlassesBridge {
   cameraSupported(): boolean;
   /** `useGlassMic=false` keeps A2DP so the reply is not 8 kHz. */
   listen(useGlassMic: boolean): boolean;
+  /** Park the service on the lens's wake counter WITHOUT opening a mic, so the
+   *  glasses become the trigger and the phone stays in a pocket. */
+  arm(): boolean;
   stopListening(): boolean;
   /** One frame, attached to `cardId`. Refuses a blank id. */
   capture(cardId: string): boolean;

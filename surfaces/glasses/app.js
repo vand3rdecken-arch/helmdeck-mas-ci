@@ -732,6 +732,44 @@
   }
 
   /**
+   * ASK FOR THE MICROPHONE, from the glasses (owner, 2026-09-04: "warum ist der
+   * Knopf am Handy. Das geht nicht. Das muss in Brille aktiviert werden").
+   *
+   * The lens cannot capture audio - measured on-device, the webview denies all
+   * capture - so this does not record anything. It raises a counter the phone
+   * service is parked on, and that service opens the GLASSES microphone over
+   * Bluetooth. The handset stays in a pocket; it is the radio, not the button.
+   *
+   * audioUnlock() rides along because this gesture is the last one before the
+   * answer plays: browsers refuse programmatic audio until a gesture has played
+   * something, and the reply arrives seconds later with no gesture of its own.
+   */
+  function askToListen() {
+    if (!connected()) { toast('Not connected'); return; }
+    audioUnlock();
+    setText('talk-meta', '');
+    fetch(apiBase() + '/glance/listen', {
+      method: 'POST',
+      headers: glanceHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ token: cfg.token, mic: 'glasses' })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function () {
+      // No optimistic 'listening' state. Only the phone knows whether a mic
+      // actually opened, and it reports that itself a beat later via
+      // /glance/state - claiming it here would be the lens asserting something
+      // it cannot observe, which is the one thing this surface must never do.
+      toast('Sprich…');
+    }).catch(function (e) {
+      setText('talk-meta', String(e.message || e));
+      document.getElementById('talk-meta').className = 'header-meta warn';
+    });
+  }
+
+  /**
    * The owner's verdict on a draft (owner, 2026-09-04: "user kann bestaetigen
    * oder loeschen und neu sprechen").
    *
@@ -925,6 +963,8 @@
       case 'open-decide': openDecide(btn.getAttribute('data-id')); break;
       case 'pick': pick(btn.getAttribute('data-label')); break;
       case 'talk-start': talkStart(); break;
+      // the button that replaces the phone toggle - see askToListen()
+      case 'talk-speak': askToListen(); break;
       case 'talk-retry': talkStart(); break;
       case 'talk-replay': replay(); break;
       // the tapped option IS the next message - that is the whole conversation

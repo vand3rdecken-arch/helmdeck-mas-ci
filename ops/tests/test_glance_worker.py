@@ -214,6 +214,10 @@ else:
                 # /glance/decision is a read-only hanging GET returning one of
                 # those same words.
                 "/glance/decide", "/glance/decision",
+                # The trigger on the LENS, 2026-09-04. /glance/listen carries no
+                # text - it raises a counter meaning "the owner asked to talk" -
+                # and /glance/wake is the phone reading that counter back.
+                "/glance/listen", "/glance/wake",
             }
             check(set(got["routes"]) == EXPECTED_ROUTES,
                   "the allowlist is EXACTLY the expected set (+1 regex for audio)")

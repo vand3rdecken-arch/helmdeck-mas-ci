@@ -46,6 +46,7 @@ class GlassesBridgeModule : Module() {
     private const val CAMERA_SERVICE = "app.helmdeck.glasses.GlassCameraService"
 
     private const val ACTION_LISTEN = "app.helmdeck.voice.LISTEN"
+    private const val ACTION_ARM = "app.helmdeck.voice.ARM"
     private const val ACTION_LISTEN_PHONE_MIC = "app.helmdeck.voice.LISTEN_PHONE_MIC"
     private const val ACTION_VOICE_STOP = "app.helmdeck.voice.STOP"
     private const val ACTION_CAPTURE = "app.helmdeck.glasses.CAPTURE"
@@ -111,6 +112,20 @@ class GlassesBridgeModule : Module() {
      */
     Function("listen") { useGlassMic: Boolean ->
       start(VOICE_SERVICE, if (useGlassMic) ACTION_LISTEN else ACTION_LISTEN_PHONE_MIC)
+      true
+    }
+
+    /**
+     * Arm the glasses as the TRIGGER, without opening a microphone.
+     *
+     * Owner, 2026-09-04: "warum ist der Knopf am Handy. Das geht nicht. Das muss
+     * in Brille aktiviert werden." `listen` opens the mic there and then, which
+     * is precisely what made the handset the starting point. This parks the
+     * service on the lens's wake counter instead, so the owner starts talking by
+     * tapping his glasses and never touches the phone again.
+     */
+    Function("arm") {
+      start(VOICE_SERVICE, ACTION_ARM)
       true
     }
 

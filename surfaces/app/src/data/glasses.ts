@@ -117,6 +117,26 @@ export function listen(useGlassMic: boolean): boolean {
   }
 }
 
+/** Make the GLASSES the trigger: park the service on the lens's wake counter
+ *  without opening a microphone.
+ *
+ *  This is what the app should call instead of `listen`. `listen` opens the mic
+ *  immediately, which is what made the phone the starting point of a hands-free
+ *  surface (owner, 2026-09-04: "das muss in Brille aktiviert werden"). After
+ *  `arm`, the owner taps Speak on the lens and the phone can stay in a pocket.
+ *
+ *  Returns false on a binary that predates the bridge, exactly like the rest of
+ *  this file - an OTA bundle can always land on an older APK.
+ */
+export function arm(): boolean {
+  if (!Bridge || typeof (Bridge as any).arm !== "function") return false;
+  try {
+    return Bridge.arm();
+  } catch {
+    return false;
+  }
+}
+
 export function stopListening(): boolean {
   if (!Bridge) return false;
   try {
