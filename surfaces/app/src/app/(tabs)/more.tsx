@@ -146,7 +146,9 @@ export default function MoreTab() {
           // door: too much on one screen). GROUPS itself is untouched, so
           // this is a one-line revert if either group comes back.
           if (grpKey === "more.grp.control" || grpKey === "more.grp.logs") return null;
-          const links = allLinks.filter(([, , , , cap]) => can(me, cap));
+          // "repo" row hidden the same way (2026-09-04): rest of the pattern
+          // stays in more_groups.ts, revert by dropping this filter.
+          const links = allLinks.filter(([route, , , , cap]) => route !== "repo" && can(me, cap));
           if (!links.length) return null;
           return (
           <View key={grpKey} style={{ gap: 6 }}>
