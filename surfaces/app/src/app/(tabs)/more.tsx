@@ -141,6 +141,11 @@ export default function MoreTab() {
         </Panel>
         ) : null}
         {GROUPS.map(([grpKey, allLinks]) => {
+          // "Steuerung" (more.grp.control) and "Protokolle" (more.grp.logs)
+          // hidden on owner request (2026-09-04, same call as the Zellen
+          // door: too much on one screen). GROUPS itself is untouched, so
+          // this is a one-line revert if either group comes back.
+          if (grpKey === "more.grp.control" || grpKey === "more.grp.logs") return null;
           const links = allLinks.filter(([, , , , cap]) => can(me, cap));
           if (!links.length) return null;
           return (
