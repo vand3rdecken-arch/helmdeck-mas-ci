@@ -8,7 +8,7 @@ import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { HenryChat } from "@/ui/henry_chat";
-import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, Tiles, TriageFollowUp, TrianglePanel, WorkPanel } from "@/ui/dash_panels";
+import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, StatusPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
 import { PMStatusPanel } from "@/ui/pm_panel";
 import { useResponsive } from "@/ui/responsive";
 
@@ -49,8 +49,7 @@ export default function DashboardTab() {
             if (isOwner) {
               return (
                 <>
-                  <TrianglePanel />
-                  <TriageFollowUp m={data} wide={wide} defaultRepo={defaultRepo} />
+                  <StatusPanel m={data} wide={wide} defaultRepo={defaultRepo} />
                   {copilotEnabled ? <PMStatusPanel /> : null}
                 </>
               );

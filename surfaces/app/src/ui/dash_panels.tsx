@@ -261,49 +261,6 @@ function Meter({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-// ---- goal ↔ iron triangle (the PM's golden triage - the dashboard's FOCUS) ----
-/** A blocked corner is a BUTTON: tap to reveal its own issue list inline (the
- *  verifier's issues + open questions filtered to this corner - see
- *  _cornerIssues) - no network call, just the plan already fetched. */
-function TriCorner({ label, state, issues, open, onToggle }: {
-  label: string; state?: "ok" | "blocked"; issues?: string[]; open?: boolean; onToggle?: () => void;
-}) {
-  const t = useTheme();
-  const tr = useT();
-  const col = state === "blocked" ? t.danger : state === "ok" ? t.ok : t.txtTertiary;
-  const word = state === "blocked" ? tr("dash.triangle.red") : state === "ok" ? tr("dash.triangle.ok") : tr("dash.triangle.unknown");
-  const ic = state === "blocked" ? "alert-circle" : state === "ok" ? "checkmark-circle" : "ellipse-outline";
-  const tappable = state === "blocked" && !!issues?.length;
-  return (
-    <Pressable onPress={tappable ? onToggle : undefined} disabled={!tappable}
-      style={{ flex: 1, alignItems: "center", gap: 4, backgroundColor: t.surface2,
-      borderColor: col + "66", borderWidth: 1, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 6 }}>
-      <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={20} color={col} />
-      <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "700" }}>{label}</Text>
-      <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
-      {tappable ? <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={t.txtTertiary} /> : null}
-    </Pressable>
-  );
-}
-
-/** Split the plan's open questions by which corner they're actually about, so
- *  each button only shows ITS OWN. budget/kontingent/quota/€ words -> budget,
- *  tag/woche/kalender/termin -> timeline, else -> scope (most open_questions
- *  ARE scope decisions - that's the corner CODE now blocks on when this list
- *  is non-empty). Heuristic on real text the PM already wrote; nothing
- *  invented. (The old verifier's own issue list is gone with the verifier -
- *  pm-lean-advisor, 2026-09-04 - so open_questions is the whole source now.) */
-function cornerIssues(plan: PmBrief | null | undefined, corner: "budget" | "timeline" | "scope"): string[] {
-  const all = plan?.open_questions ?? [];
-  const BUDGET_RE = /budget|kontingent|quota|€|kosten|spend|kapazit/i;
-  const TIMELINE_RE = /tag|woche|kalender|termin|frist|deadline|datum|zeit/i;
-  return all.filter((x) => {
-    if (BUDGET_RE.test(x)) return corner === "budget";
-    if (TIMELINE_RE.test(x)) return corner === "timeline";
-    return corner === "scope";
-  });
-}
-
 /** The one ETA the app shows anywhere: a RANGE derived from measured pace,
  *  never a single day (pm-lean-advisor, 2026-09-04 - no surviving PM product
  *  lets an LLM commit a calendar date, and neither does this one anymore). */
@@ -314,69 +271,128 @@ function fmtEta(tr: ReturnType<typeof useT>, eta?: PmBrief["eta"]): string {
     : tr("dash.triangle.etaRange", { min: eta.days_min, max: eta.days_max });
 }
 
-/** THE dashboard focus: the goal gated by the golden triage. Big, first, loud - the
- *  three iron-triangle corners (budget/timeline/scope) green/red and a prominent
- *  plan-gate banner with the blocking reason. Every deep-dive (ETA, milestones,
- *  money, next actions) lives in TriageFollowUp below, keyed to one corner.
- *  Owner-only; renders nothing when no goal is set. */
-export function TrianglePanel() {
+// ---- the SENIOR-PM one-pager (owner directive 2026-09-04: "überlegt was ----
+// ---- ein Senior-PM zeigen würde") ------------------------------------------
+// A senior PM reports the CONCLUSION, never the analysis tool: verdict first,
+// then the one decision he needs from you (tappable), then the roadmap as
+// plain states - never effort units - then one situation sentence. The golden
+// triangle (Budget/Timeline/Scope corners, raw usage bars, velocity, WIP) is
+// his ANALYSIS - it lives behind "Details" (the unchanged TriageFollowUp),
+// for the day the owner wants to audit the conclusion. This replaced
+// TrianglePanel, which rendered the three analysis corners as the report.
+
+/** Code-derived RAG verdict: a measured budget/timeline red is a real risk;
+ *  otherwise an open owner decision means the project waits on YOU (warn,
+ *  not danger - nothing is broken, it needs an answer); else on course. */
+function verdictOf(plan: PmBrief | null | undefined): "risk" | "you" | "ok" {
+  const tri = plan?.triage ?? {};
+  if (tri.budget === "blocked" || tri.timeline === "blocked") return "risk";
+  if ((plan?.open_questions ?? []).some((q) => q?.trim())) return "you";
+  return "ok";
+}
+
+export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolean; defaultRepo?: string }) {
   const t = useTheme();
   const tr = useT();
+  const router = useRouter();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
-  const [openCorner, setOpenCorner] = React.useState<"budget" | "timeline" | "scope" | null>(null);
+  const [details, setDetails] = React.useState(false);
   const goal = data?.goal || data?.plan?.goal;
   if (!goal) return null;
   const plan = data?.plan;
-  const tri = plan?.triage;
-  const status = plan?.plan_status;
-  const blocked = !!status && status !== "ready";
-  const bannerCol = blocked ? t.danger : status === "ready" ? t.ok : t.txtTertiary;
-  const shownIssues = openCorner ? cornerIssues(plan, openCorner) : [];
-  // NO manual "Neu planen" (pm-lean-advisor, 2026-09-04): re-scoping is
-  // event-driven now (a card lands in Done and a triangle corner flips, or
-  // the goal changes) - nothing here waits on a model turn. This panel just
-  // reflects live_plan(), which recomputes Budget/Timeline on every read
-  // with no LLM call at all; "zuletzt geprüft" says when the one remaining
-  // planner turn last ran.
+  const ask = (plan?.open_questions ?? []).find((q) => q?.trim());
+  const verdict = verdictOf(plan);
+  const vCol = verdict === "risk" ? t.danger : verdict === "you" ? t.warn : t.ok;
+  const vTxt = tr(verdict === "risk" ? "dash.status.atRisk" : verdict === "you" ? "dash.status.needsYou" : "dash.status.onTrack");
+  const pct = Math.max(0, Math.min(100, plan?.done_pct ?? 0));
   const checkedAt = plan?.generated_at ? plan.generated_at.slice(11, 16) : null;
+  const b = plan?.budget;
+  const ms = plan?.milestones ?? [];
+  const risks = (plan?.risks ?? []).filter((r) => typeof r === "string" && r.trim()).slice(0, 2);
+  // capacity as a CONCLUSION sentence; the blocked case gets the measured
+  // note verbatim (pm_budget writes it in owner vocabulary since 794ecec).
+  const capLine = !b?.state ? "" : b.state === "ok" ? tr("dash.status.capOk")
+    : b.state === "warn" ? tr("dash.status.capWarn")
+    : (b.note || tr("dash.status.capWarn"));
   return (
-    <GlassPanel title={tr("dash.triangle.title")}>
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
-        <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, flex: 1 }}>{goal}</Text>
-        {checkedAt ? (
-          <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.triangle.checkedAt", { when: checkedAt })}</Text>
-        ) : null}
-      </View>
-      {/* the three corners as prominent status cards - tap a blocked one for its issues */}
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-        <TriCorner label={tr("dash.triangle.budget")} state={tri?.budget} issues={cornerIssues(plan, "budget")}
-          open={openCorner === "budget"} onToggle={() => setOpenCorner((c) => c === "budget" ? null : "budget")} />
-        <TriCorner label={tr("dash.triangle.timeline")} state={tri?.timeline} issues={cornerIssues(plan, "timeline")}
-          open={openCorner === "timeline"} onToggle={() => setOpenCorner((c) => c === "timeline" ? null : "timeline")} />
-        <TriCorner label={tr("dash.triangle.scope")} state={tri?.scope} issues={cornerIssues(plan, "scope")}
-          open={openCorner === "scope"} onToggle={() => setOpenCorner((c) => c === "scope" ? null : "scope")} />
-      </View>
-      {openCorner && shownIssues.length ? (
-        <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
-          borderRadius: 12, padding: 12, marginBottom: 12, gap: 4 }}>
-          {shownIssues.map((x, i) => (
-            <Text key={i} style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>• {x}</Text>
-          ))}
-        </View>
-      ) : null}
-      {/* plan-gate banner - the loud focus */}
-      {status ? (
-        <View style={{ backgroundColor: bannerCol + "1A", borderColor: bannerCol + "55", borderWidth: 1,
-          borderRadius: 12, padding: 12 }}>
-          <Text style={{ color: bannerCol, fontSize: 13, fontWeight: "700", marginBottom: blocked && plan?.gate ? 4 : 0 }}>
-            {blocked ? "⚠ " + tr("dash.triangle.blocked") : "✓ " + tr("dash.triangle.ready")}
-          </Text>
-          {blocked && plan?.gate ? (
-            <Text style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>{plan.gate}</Text>
+    <>
+      <GlassPanel title={tr("dash.status.title")}>
+        {/* goal + when the planner last actually ran */}
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, flex: 1 }}>{goal}</Text>
+          {checkedAt ? (
+            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.triangle.checkedAt", { when: checkedAt })}</Text>
           ) : null}
         </View>
-      ) : null}
-    </GlassPanel>
+        {/* THE verdict line - conclusion first */}
+        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 7 }}>
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: vCol }} />
+          <Text style={{ color: vCol, fontSize: 14, fontWeight: "800" }}>{vTxt}</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>
+            · {tr("dash.status.progress", { pct })} · {fmtEta(tr, plan?.eta)}
+          </Text>
+        </View>
+        <Meter pct={pct} color={verdict === "risk" ? t.danger : t.ok} />
+        {/* THE ask - the one decision only the owner can make, straight to chat */}
+        {ask ? (
+          <Pressable onPress={() => router.push("/chat" as never)}
+            style={{ backgroundColor: t.warn + "14", borderColor: t.warn + "55", borderWidth: 1,
+              borderRadius: 12, padding: 12, gap: 4 }}>
+            <Text style={{ color: t.warn, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" }}>
+              {tr("dash.status.needTitle")}
+            </Text>
+            <Text style={{ color: t.txtPrimary, fontSize: 13.5, lineHeight: 19 }}>{ask}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("dash.status.answerHint")}</Text>
+              <Ionicons name="arrow-forward-circle" size={15} color={t.accent} />
+            </View>
+          </Pressable>
+        ) : null}
+        {/* roadmap: milestones as STATES, never effort units */}
+        {ms.length ? (
+          <View style={{ gap: 7 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" }}>
+              {tr("dash.status.roadmap")}
+            </Text>
+            {ms.map((mm, i) => {
+              const done = mm.status === "done";
+              const wait = !done && !!mm.calendar_wait;
+              const running = !done && !wait && mm.status === "in_progress";
+              const ic = done ? "checkmark-circle" : wait ? "pause-circle" : running ? "play-circle" : "ellipse-outline";
+              const col = done ? t.ok : wait ? t.txtTertiary : running ? t.accent : t.txtTertiary;
+              const word = done ? tr("dash.triangle.msDone") : wait ? tr("dash.triangle.msWait")
+                : running ? tr("dash.status.msRunning") : tr("dash.status.msPlanned");
+              return (
+                <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={16} color={col} />
+                  <Text numberOfLines={1} style={{ color: done ? t.txtTertiary : t.txtSecondary, fontSize: 12.5, flex: 1,
+                    textDecorationLine: done ? "line-through" : "none" }}>{mm.name}</Text>
+                  <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
+                  {mm.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        {/* situation: capacity + risks as sentences, not gauges */}
+        {capLine || risks.length ? (
+          <View style={{ gap: 3 }}>
+            {capLine ? <Text style={{ color: t.txtTertiary, fontSize: 12, lineHeight: 17 }}>{capLine}</Text> : null}
+            {risks.map((r, i) => (
+              <Text key={i} style={{ color: t.warn, fontSize: 12, lineHeight: 17 }}>⚠ {r}</Text>
+            ))}
+          </View>
+        ) : null}
+        {/* the analysis, on demand */}
+        <Pressable onPress={() => setDetails((d) => !d)}
+          style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "600" }}>{tr("dash.status.details")}</Text>
+          <Ionicons name={details ? "chevron-up" : "chevron-down"} size={13} color={t.txtTertiary} />
+        </Pressable>
+      </GlassPanel>
+      {details ? <TriageFollowUp m={m} wide={wide} defaultRepo={defaultRepo} /> : null}
+    </>
   );
 }
 

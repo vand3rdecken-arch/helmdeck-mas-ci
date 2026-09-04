@@ -191,15 +191,12 @@ export const board: Dict = {
   "dash.sow.totalMany": { de: "gesamt ({n} SoWs)", en: "total ({n} SoWs)" },
 
   // ---- capacity panel -----------------------------------------------------
-  "dash.triangle.title": { de: "Ziel, Timeline & Budget", en: "Goal, timeline & budget" },
   "dash.triangle.budget": { de: "Budget", en: "Budget" },
   "dash.triangle.timeline": { de: "Timeline", en: "Timeline" },
   "dash.triangle.scope": { de: "Scope", en: "Scope" },
   "dash.triangle.ok": { de: "grün", en: "green" },
   "dash.triangle.red": { de: "blockiert", en: "blocked" },
   "dash.triangle.unknown": { de: "offen", en: "open" },
-  "dash.triangle.blocked": { de: "Plan-Gate ROT", en: "plan gate RED" },
-  "dash.triangle.ready": { de: "Plan-Gate grün — bereit", en: "plan gate green — ready" },
   // Standard PM vocabulary, owner-requested (2026-09-04: "man hat da eher
   // Velocity und Burnchart - kenne diese Sprache nicht" about the internal
   // word "Turns"): Restaufwand/Velocity are the terms a PM-literate owner
@@ -210,6 +207,22 @@ export const board: Dict = {
   "dash.triangle.checkedAt": { de: "zuletzt geprüft {when}", en: "last checked {when}" },
   "dash.triangle.msDone": { de: "fertig", en: "done" },
   "dash.triangle.msWait": { de: "wartet auf extern", en: "external wait" },
+  // ---- the senior-PM one-pager (StatusPanel) ------------------------------
+  // Conclusion first, in report language: a verdict, the ask, the roadmap as
+  // states. The analysis corners live behind "Details".
+  "dash.status.title": { de: "Status", en: "Status" },
+  "dash.status.onTrack": { de: "Auf Kurs", en: "On track" },
+  "dash.status.needsYou": { de: "Wartet auf dich", en: "Waiting on you" },
+  "dash.status.atRisk": { de: "In Gefahr", en: "At risk" },
+  "dash.status.progress": { de: "{pct}% geschafft", en: "{pct}% done" },
+  "dash.status.needTitle": { de: "Ich brauche von dir", en: "I need from you" },
+  "dash.status.answerHint": { de: "Antworten — öffnet den Chat", en: "Answer — opens the chat" },
+  "dash.status.roadmap": { de: "Roadmap", en: "Roadmap" },
+  "dash.status.msRunning": { de: "läuft", en: "running" },
+  "dash.status.msPlanned": { de: "geplant", en: "planned" },
+  "dash.status.capOk": { de: "Kapazität reicht locker bis zum Wochen-Reset.", en: "Capacity comfortably lasts until the weekly reset." },
+  "dash.status.capWarn": { de: "Kapazität wird knapp vor dem Wochen-Reset.", en: "Capacity is getting tight before the weekly reset." },
+  "dash.status.details": { de: "Details", en: "Details" },
   // ---- triage follow-up: the three corners own every deep-dive -------------
   "dash.corner.spentToDate": { de: "bisher {v}", en: "{v} spent" },
   "dash.corner.usageNote": {
