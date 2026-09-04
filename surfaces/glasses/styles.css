@@ -82,6 +82,12 @@ html, body {
    more transparent, so ambient light eats the difference - 0.65 keeps the
    hierarchy while staying readable outdoors (base .list-item is 0.8). */
 .list-item.muted { opacity: 0.65; }
+/* THE ONE AFFIRMATIVE ACTION in a two-button choice. Full opacity and a green
+   edge against the base row's 0.8, so on an additive waveguide - where dimmer
+   literally means more transparent - "Send" is the one that survives bright
+   ambient light. The reject stays an ordinary row: discarding is recoverable
+   (he just speaks again), sending is not. */
+.list-item.primary { opacity: 1; border-color: #31C46B; }
 
 /* detail */
 .detail-task { font-size: 22px; font-weight: 700; line-height: 1.35; }
@@ -141,6 +147,16 @@ html, body {
    record; it becomes an ordinary .msg the moment the transcript carries it. */
 .msg.pending .msg-body { border-style: dashed; border-color: #2A6DF4; }
 
+/* A DRAFT - spoken, shown, and NOT SENT until he says so. Amber rather than the
+   pending blue on purpose: blue here means "on its way to Henry", and a sentence
+   that is still his to throw away must not wear the colour of one that is gone.
+   Same amber as .msg-label, which is already this surface's "needs you" tone.
+   Slightly larger because reading it accurately IS the task - he is checking the
+   recogniser's work, not skimming a log. */
+.msg.pending.draft .msg-body { border-style: solid; border-color: #FFB020;
+  font-size: 17px; line-height: 1.35; }
+.msg.pending.draft .msg-who { color: #FFB020; }
+
 /* a MIRRORED card event ("Question - card name") - the same one-inbox lines the
    watch shows. Context here, never tappable: answering a card has exactly one
    path on this surface (the decide screen), and a second one would be drift. */
@@ -173,6 +189,11 @@ html, body {
 .turnbar.listening .turn-label { color: #FFFFFF; }
 .turnbar.heard .turn-dot,
 .turnbar.thinking .turn-dot { background: #2A6DF4; animation: pulse 1.9s ease-in-out infinite; }
+/* WAITING ON HIM. Steady amber, never pulsing: a pulse on this surface means
+   "something is happening" (mic open, Henry working), and a draft is the exact
+   opposite - everything has stopped until he decides. */
+.turnbar.draft .turn-dot { background: #FFB020; }
+.turnbar.draft .turn-label { color: #FFB020; }
 .turnbar.answered .turn-dot { background: #31C46B; }
 .turnbar.failed .turn-dot { background: #FF5A5F; }
 .turnbar.failed .turn-label { color: #FF5A5F; }

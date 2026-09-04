@@ -205,6 +205,15 @@ else:
             EXPECTED_ROUTES = {
                 "/glance", "/glance/answer", "/glance/talk", "/glance/photo",
                 "/glance/banner", "/glance/chat", "/glance/state",
+                # THE CONFIRM STEP, added 2026-09-04 - and this is the line this
+                # test exists to charge for. Both are narrow by construction:
+                # /glance/decide carries one word from a three-item closed
+                # vocabulary plus a seq, and the daemon refuses it unless a draft
+                # with that seq is live, so it can only release or discard words
+                # the owner just spoke himself - it can never introduce text.
+                # /glance/decision is a read-only hanging GET returning one of
+                # those same words.
+                "/glance/decide", "/glance/decision",
             }
             check(set(got["routes"]) == EXPECTED_ROUTES,
                   "the allowlist is EXACTLY the expected set (+1 regex for audio)")

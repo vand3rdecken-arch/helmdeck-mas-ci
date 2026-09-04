@@ -376,7 +376,7 @@ def _glance_messages():
 # daemon from its own request handling and can never be claimed from outside. A
 # token that could assert "answered" could paint a reply state the owner never
 # got, which is the one lie this whole surface is being built to remove.
-_CLIENT_STATES = ("listening", "idle")
+_CLIENT_STATES = ("listening", "idle", "draft")
 
 
 def glance_state(self, user, body):
@@ -414,9 +414,89 @@ def glance_state(self, user, body):
     mic = (body.get("mic") or "").strip()
     if state == "listening":
         glassturn.listening(mic=mic, text=body.get("text") or "")
+    elif state == "draft":
+        # WORDS, not yet sent. The seq goes back in the response because the
+        # caller's next move is to wait on THIS draft (GET /glance/decision) and
+        # a wait addressed to "whatever is current" is the stale-tap bug in
+        # another costume.
+        text = (body.get("text") or "").strip()
+        if not text:
+            return self._send(400, json.dumps({"error": "draft needs text"}))
+        return self._send(200, json.dumps(
+            {"ok": True, "seq": glassturn.draft(text, mic=mic)}))
     else:
         glassturn.idle(mic=mic)
     return self._send(200, json.dumps({"ok": True}))
+
+
+def glance_decide(self, user, body):
+    """The owner ruled on the draft, from the lens.
+
+    Separate from /glance/state because the DIRECTION is the opposite one: state
+    is the device telling the daemon what it observed, this is the owner telling
+    the device what to do. Collapsing them would put "what happened" and "what
+    should happen" behind one verb, and the lens would be able to fake a
+    microphone report.
+
+    A stale or unaddressed verdict is answered 409 rather than 200, so the lens
+    can say "das war ein alter Entwurf" instead of leaving the owner to wonder
+    why his tap did nothing.
+    """
+    from spine.storage import events
+    from spine.ops import glassturn
+    s = events.settings()
+    tok = s.get("glance_token") or ""
+    given = (body.get("token") or "").strip() or \
+        (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    if not s.get("glance_talk"):
+        return self._send(403, json.dumps(
+            {"error": "talking to the board agent from the glasses is "
+                      "off (set settings.glance_talk)"}))
+    value = (body.get("decision") or "").strip()
+    if value not in glassturn.DECISIONS:
+        return self._send(400, json.dumps(
+            {"error": "decision must be one of %s" % (", ".join(glassturn.DECISIONS),)}))
+    try:
+        seq = int(body.get("seq") or 0)
+    except (TypeError, ValueError):
+        seq = 0
+    if not glassturn.decide(value, seq=seq):
+        return self._send(409, json.dumps(
+            {"error": "no live draft for that seq"}))
+    return self._send(200, json.dumps({"ok": True, "decision": value}))
+
+
+def glance_decision(self, user):
+    """The mic owner waits here for the verdict on its draft. LONG-POLL.
+
+    Held open rather than polled for the reason glassturn.await_decision states:
+    the waiting party is a foreground service on a phone and the daemon already
+    owns the event that ends the wait. Bounded by glassturn.DECIDE_WAIT_S, and
+    the timeout answer is an empty decision - never a send. Nothing is ever
+    spoken in the owner's name because a request expired.
+    """
+    from spine.storage import events
+    from spine.ops import glassturn
+    s = events.settings()
+    q = parse_qs(urlparse(self.path).query)
+    tok = s.get("glance_token") or ""
+    given = (q.get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    if not s.get("glance_talk"):
+        return self._send(403, json.dumps(
+            {"error": "talking to the board agent from the glasses is "
+                      "off (set settings.glance_talk)"}))
+    try:
+        seq = int((q.get("seq") or ["0"])[0])
+    except (TypeError, ValueError):
+        seq = 0
+    if seq <= 0:
+        return self._send(400, json.dumps({"error": "seq required"}))
+    return self._send(200, json.dumps(
+        {"decision": glassturn.await_decision(seq)}))
 
 
 def glance_photo(self, user, body):
@@ -550,10 +630,12 @@ GET_ROUTES = {
     "/glance": glance_get,
     "/glance/banner": glance_banner_voice,
     "/glance/chat": glance_chat,
+    "/glance/decision": glance_decision,
 }
 POST_ROUTES = {
     "/glance/talk": glance_talk,
     "/glance/answer": glance_answer,
     "/glance/photo": glance_photo,
     "/glance/state": glance_state,
+    "/glance/decide": glance_decide,
 }

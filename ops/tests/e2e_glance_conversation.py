@@ -118,7 +118,9 @@ def main():
                            "text": text}).encode()
         r = urllib.request.Request(api + "/glance/state", data=body,
                                    headers={"Content-Type": "application/json"})
-        return urllib.request.urlopen(r, timeout=10).status
+        # The BODY, not just the status: a draft answers with the seq it was
+        # published as, and the confirm step is addressed to that seq.
+        return json.loads(urllib.request.urlopen(r, timeout=10).read() or b"{}")
 
     from playwright.sync_api import sync_playwright
 
@@ -172,6 +174,79 @@ def main():
             ok(page.locator(".msg.pending").count() == 1,
                "and they are marked as not-yet-sent, not mixed into the record")
             page.screenshot(path=os.path.join(SHOTS, "03-partial-transcript.png"))
+
+            # ---- STATE 2b: THE DRAFT, waiting on him -------------------------
+            # Owner, 2026-09-04: "wie auf watch erstmal per turn ... user kann
+            # bestaetigen oder loeschen und neu sprechen". The recogniser has
+            # finished; the words are NOT sent. Everything below is judged at the
+            # lens's real 600x600 because that is where the decision is made.
+            d = post_state("draft", mic="glasses",
+                           text="wie viele karten warten gerade auf mich")
+            draft_seq = d.get("seq")
+            ok(isinstance(draft_seq, int) and draft_seq > 0,
+               "the draft comes back with its own seq (%r)" % (draft_seq,))
+            page.wait_for_timeout(1500)
+            here = page.evaluate("document.querySelector('.screen:not(.hidden)').id")
+            ok(here == "talk",
+               "a draft PULLS the lens - words waiting on him must not sit on a "
+               "screen he is not looking at")
+            label = page.text_content("#turn-label")
+            ok("Send this?" in label,
+               "the bar asks the QUESTION rather than naming a state (%r)" % label)
+            ok("draft" in (page.get_attribute("#turnbar", "class") or ""),
+               "the turnbar carries the draft state")
+            ok("wie viele karten warten gerade auf mich" in page.text_content("#talk-chat"),
+               "HIS OWN WORDS are on the display, verbatim, before anything is sent")
+            ok(page.locator(".msg.pending.draft").count() == 1,
+               "and they are marked as a DRAFT - visually distinct from a line "
+               "already on its way to Henry")
+
+            # Exactly two ways forward, and no leftovers from the last answer.
+            opts = page.locator("#talk-options .list-item")
+            ok(opts.count() == 2,
+               "a draft offers exactly two choices - accept or re-record (%d)" % opts.count())
+            otext = page.text_content("#talk-options")
+            ok("Send" in otext and "Speak again" in otext,
+               "and they say what they do (%r)" % otext[:80])
+            ok(page.locator('#talk-options .list-item.primary').count() == 1,
+               "the affirmative one is the emphasised one - on an additive "
+               "waveguide the dimmer row is the one ambient light eats")
+            page.screenshot(path=os.path.join(SHOTS, "03b-draft-confirm.png"))
+
+            # LAYOUT, measured: the buttons he must tap have to be ON the lens.
+            dbox = page.evaluate("""() => {
+              const rows = [...document.querySelectorAll('#talk-options .list-item')];
+              const bar = document.getElementById('turnbar').getBoundingClientRect();
+              return {last: rows.length ? rows[rows.length-1].getBoundingClientRect().bottom : 0,
+                      first: rows.length ? rows[0].getBoundingClientRect().top : 0,
+                      barTop: bar.top};
+            }""")
+            ok(dbox["last"] <= 600.5,
+               "both choices fit inside the 600px lens (last row ends %.0f)" % dbox["last"])
+            ok(dbox["first"] >= 0, "the first choice is not clipped off the top")
+
+            # THE HANDOFF. A waiter is parked on /glance/decision exactly as the
+            # phone service parks there; the owner taps Send on the LENS; the
+            # phone must be woken with his verdict. This is the one link that
+            # makes the confirm step more than a picture.
+            got = {}
+
+            def _wait_decision():
+                try:
+                    u = api + "/glance/decision?token=%s&seq=%d" % (TOKEN, draft_seq)
+                    got["r"] = json.loads(urllib.request.urlopen(u, timeout=40).read())
+                except Exception as e:                       # noqa: BLE001
+                    got["r"] = {"error": str(e)}
+            th = threading.Thread(target=_wait_decision)
+            th.start()
+            time.sleep(0.5)
+            ok(th.is_alive(), "the phone's wait is HELD open, not answered empty")
+            page.click('[data-action="talk-send"]')
+            th.join(30)
+            ok((got.get("r") or {}).get("decision") == "send",
+               "tapping Send on the lens wakes the waiting microphone with "
+               "'send' (%r)" % (got.get("r"),))
+            ok(not errors, "no page errors during the confirm step: %r" % (errors[:3],))
 
             # ---- STATE 3: sent, Henry thinking -------------------------------
             # Driven through the REAL /glance/talk, so this is the actual

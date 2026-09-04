@@ -111,6 +111,17 @@ class GlassVoiceService : Service() {
     private var loopMic: Boolean? = null
     private var emptyTurns = 0
     private val MAX_EMPTY = 2
+
+    /**
+     * How long we keep asking whether the owner has accepted a draft, in total.
+     *
+     * Mirrors spine/ops/glassturn.DECIDE_TOTAL_S (150s) - and that is a mirror,
+     * not a coincidence, so the two halves of the confirm step give up at the
+     * same moment. One request only lasts DECIDE_WAIT_S (~25s, an edge limit -
+     * see awaitDecision); this is the human budget spent across however many of
+     * those it takes. Long enough to read a sentence, look up, think, and tap.
+     */
+    private val TOTAL_WAIT_MS = 150_000L
     private val main = Handler(Looper.getMainLooper())
 
     private val audio: AudioManager
@@ -381,7 +392,12 @@ class GlassVoiceService : Service() {
             if (text.isBlank()) { say("Nichts gehört"); emptyTurn(); return }
             emptyTurns = 0
             say("…$text")
-            Thread { ask(text) }.start()      // never network on the main thread
+            // THE CONFIRM STEP (owner, 2026-09-04: "wie auf watch erstmal per
+            // turn ... user kann bestaetigen oder loeschen und neu sprechen").
+            // These words are NOT sent from here any more - they are parked on
+            // the lens and only `confirmThenAsk` may promote them to a question,
+            // and only after the owner says so.
+            Thread { confirmThenAsk(text) }.start()   // never network on the main thread
         }
     }
 
@@ -416,6 +432,171 @@ class GlassVoiceService : Service() {
         main.postDelayed({
             if (loopMic != null) safe("relisten") { startListening(useGlassMic = mic) }
         }, 350)
+    }
+
+    // ---- the confirm step -------------------------------------------------
+
+    /**
+     * SHOW THE WORDS, WAIT FOR THE OWNER, ONLY THEN ASK.
+     *
+     * Owner decision 2026-09-04: "am besten einfach wie auf watch erstmal per
+     * turn. Also user spricht, es wird als text Transkript user kann bestaetigen
+     * oder loeschen und neu sprechen."
+     *
+     * WHY THIS IS BUILT HERE AND IS FREE ON THE WATCH. Wear gets the confirm step
+     * from the PLATFORM: HenryScreen launches ACTION_RECOGNIZE_SPEECH and the
+     * system dictation UI shows the transcript and takes the accept before ever
+     * handing the words back (plugins/wear/HenryScreen.kt:288-302). There is no
+     * such activity for the glasses - the display is a webview served by the
+     * Worker and this recogniser runs headless in a background service - so the
+     * same interaction has to be assembled from the pieces we own: park the words
+     * in the turn state, let the lens render them, block until the lens reports
+     * a verdict.
+     *
+     * ⚠ THIS SUPERSEDES THE 2026-08-23 "no tap per turn" DECREE, on the owner's
+     * own instruction and only for the SEND. The loop is still hands-free in the
+     * sense that mattered - he never taps to START listening and never taps to
+     * continue the conversation - but a sentence going to Henry in his name now
+     * costs one deliberate tap, because the recogniser is the one part of this
+     * chain that can be confidently wrong.
+     *
+     * FAILS CLOSED, everywhere. The only path that reaches ask() is an explicit
+     * "send". A timeout, a superseded turn, an unreachable daemon and a dropped
+     * connection all end the turn WITHOUT speaking in the owner's name - the
+     * whole point of the step. Losing a sentence costs him a repeat; sending one
+     * he did not confirm cannot be taken back.
+     */
+    private fun confirmThenAsk(transcript: String) {
+        val base = prefs.getString(KEY_BASE, "").orEmpty().trimEnd('/')
+        val token = prefs.getString(KEY_TOKEN, "").orEmpty()
+        if (base.isEmpty() || token.isEmpty()) {
+            loopMic = null      // a loop that can never reach Henry must not re-arm
+            main.post { say("Nicht verbunden - in HelmDeck koppeln") }
+            return
+        }
+        val seq = postDraft(base, token, transcript)
+        if (seq <= 0) {
+            // The lens will never show these words, so the owner cannot possibly
+            // confirm them. Dropping the turn is the only honest move: sending
+            // anyway would be the confirm step failing OPEN.
+            main.post { say("Entwurf nicht angekommen - nochmal sprechen") }
+            endConversation()
+            return
+        }
+        when (awaitDecision(base, token, seq)) {
+            "send" -> ask(transcript)
+            "redo" -> {
+                // He rejected the transcript. Straight back to the microphone -
+                // "loeschen und neu sprechen" is ONE gesture, not two.
+                val mic = loopMic
+                main.post { say("Nochmal…") }
+                if (mic != null) relisten(mic) else endConversation()
+            }
+            // The turn moved on under us (ACTION_STOP, or a newer draft). Whoever
+            // moved it owns what happens next - re-arming here would race them.
+            "superseded" -> {}
+            // Timed out, or the wait itself failed. Say so and stop: an open
+            // conversation nobody is tending is the state this service already
+            // refuses to leave behind (see emptyTurn).
+            else -> {
+                main.post { say("Nicht bestätigt - verworfen") }
+                endConversation()
+            }
+        }
+    }
+
+    /** End the conversation and leave NOTHING lit on the lens. Factored out
+     *  because three different give-up paths need exactly this pair, and a
+     *  give-up that forgot the report is how the display ends up claiming a
+     *  microphone that is closed. */
+    private fun endConversation() {
+        loopMic = null
+        report("idle")
+        main.post { stopSelf() }
+    }
+
+    /**
+     * Park the recognised words on the lens. Returns the turn seq they were
+     * published as, or 0 when they never landed.
+     *
+     * The seq is the whole reason this is a separate call from `report`: the wait
+     * that follows must be addressed to THIS draft. Without it, a verdict the
+     * owner gave about a sentence he rejected could be consumed by the next one -
+     * sending words he had just thrown away (spine/ops/glassturn.py `_decision`).
+     *
+     * Longer timeouts than `report` because this one is LOAD-BEARING: a dropped
+     * status ping costs a stale indicator, a dropped draft costs the turn.
+     */
+    private fun postDraft(base: String, token: String, transcript: String): Int {
+        var seq = 0
+        safe("draft") {
+            val c = (URL("$base/glance/state").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+                setRequestProperty("Content-Type", "application/json")
+            }
+            val body = JSONObject()
+                .put("token", token)
+                .put("state", "draft")
+                .put("mic", micWire())
+                .put("text", transcript)
+                .toString()
+            c.outputStream.use { it.write(body.toByteArray()) }
+            val code = c.responseCode
+            if (code in 200..299) {
+                val raw = c.inputStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                seq = JSONObject(raw).optInt("seq", 0)
+            }
+            c.disconnect()
+        }
+        return seq
+    }
+
+    /**
+     * Block until the owner rules on draft [seq].
+     *
+     * ⚠ RE-ARMED IN A LOOP, and the reason is an EDGE limit rather than a taste.
+     * This request goes through the Cloudflare Worker, which abandons an origin
+     * response at ~100s with a 524 - so the daemon holds each wait for only
+     * glassturn.DECIDE_WAIT_S (~25s, sized against the /glance/chat hanging GET
+     * that is already proven through the deployed Worker) and hands back an empty
+     * decision. Human patience is therefore OUR budget, spent here: keep asking
+     * until TOTAL_WAIT_MS, which is the same shape app.js's chatLoop uses.
+     *
+     * An empty answer means "not yet" and is retried; only running out of budget
+     * is a timeout, and a timeout never sends.
+     */
+    private fun awaitDecision(base: String, token: String, seq: Int): String {
+        val deadline = System.currentTimeMillis() + TOTAL_WAIT_MS
+        while (System.currentTimeMillis() < deadline) {
+            // ACTION_STOP while we were waiting - stop waiting.
+            if (loopMic == null) return "superseded"
+            var answer: String? = null
+            safe("decision") {
+                val c = (URL("$base/glance/decision?token=$token&seq=$seq")
+                    .openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    // comfortably past the daemon's own hold, so the SERVER is
+                    // what ends this wait rather than a client-side stopwatch
+                    readTimeout = 60000
+                }
+                val code = c.responseCode
+                val raw = (if (code in 200..299) c.inputStream else c.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                c.disconnect()
+                if (code in 200..299) answer = JSONObject(raw).optString("decision")
+            }
+            // safe{} swallowed a network failure: `answer` is still null. Treat
+            // that as fatal rather than spinning - a lens we cannot reach is a
+            // verdict we will never hear, and retrying a dead route until the
+            // budget runs out just delays the same drop.
+            if (answer == null) return ""
+            if (!answer.isNullOrBlank()) return answer!!
+        }
+        return ""
     }
 
     // ---- ask Henry, then play his answer ---------------------------------
