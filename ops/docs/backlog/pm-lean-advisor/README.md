@@ -123,6 +123,21 @@ Ziel gesetzt: "HelmDeck aufräumen, testen, stabilisieren und launchen."
 - Eskalations-Formulierung: aus einem Mess-Trigger (Budget-Riss,
   Kurs-Verlust) eine Henry-Frage mit 2 Optionen bauen (Phase 1).
 
+**Ziel-Intake: erst grillen, dann Checkliste** (Owner-Entscheid 2026-09-04,
+Disziplin aus mattpocock/skills "grilling"/"grill-with-docs" - Muster
+uebernommen, nicht die Dateien): Ziel setzen/aendern loest ein kurzes
+Interview aus (Entscheidungsbaum in Runden, max 3 antippbare Fragen mit
+empfohlener Antwort, Fakten holt das System selbst, nur ENTSCHEIDUNGEN gehen
+an den Owner, "spaeter klaeren" erlaubt + gemerkt). Antworten persistieren
+als Klarstellungen und fuettern jeden goal_check - das absorbiert die alte
+Karte 20260822 (_verify_plan blind fuer Klarstellungen; der Verifier faellt
+ohnehin weg). SCHON GELIEFERT als Brief-Data (2026-09-04): GRILLEN-Sektion in
+ops/harness/agents/board-copilot.md (Trigger: Ziel + BIG-OR-FUZZY-Builds)
+und die Intent-Frage-Regel in ship-advisor.md (Henrys Ship-Entscheidung
+fragt bei fehlender Owner-Absicht statt zu raten). Der Karten-Umbau
+verdrahtet dieselbe Disziplin in den Ziel-Set-Flow der App (Fragen als
+antippbare Optionen in "Wartet auf dich").
+
 **Phasen:**
 1. **Ehrlich + still:** Brief-Kern und Knopf raus; Übersicht-Panel zeigt
    gemessene Ampeln + ETA-Spanne + "zuletzt geprüft"; Mess-Trigger →
