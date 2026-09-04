@@ -16,7 +16,6 @@ export const chrome: Dict = {
   "nav.connectors": { de: "Connectoren", en: "Connectors" },
   "nav.automation": { de: "Automatik", en: "Automation" },
   "nav.settings": { de: "Einstellungen", en: "Settings" },
-  "nav.modules": { de: "Module", en: "Modules" },
   "nav.chat": { de: "Chat", en: "Chat" },
   "nav.escalations": { de: "Eskalationen", en: "Escalations" },
   "nav.audit": { de: "Audit-Log", en: "Audit log" },
@@ -44,9 +43,6 @@ export const chrome: Dict = {
   "more.sub.repo": { de: "Repo-Typ wählen — die Vorlage belegt den Rest vor", en: "Choose the repo type — the template presets the rest" },
   "more.sub.loopmap": { de: "Schaubild: wie Karten durch Gate & Review laufen", en: "Diagram: how cards flow through gate & review" },
   "more.sub.feedback": { de: "Wunsch oder Problem melden", en: "Report a wish or a problem" },
-  "more.device.section": { de: "Dieses Gerät", en: "This device" },
-  "more.device.moved": { de: "Vorlesen & Analytics: in Mein Profil",
-                         en: "Read-aloud & analytics: in My profile" },
   // The two language OPTIONS, for the generic chip renderer - a schema knob
   // ships option VALUES ("de"), never prose, so the labels live here.
   //
