@@ -491,7 +491,7 @@ export default function Settings() {
         {/* Device-local, badged as such: these never leave this device. */}
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <SectionLabel text={tr("more.device.section")} />
+            <SectionLabel text={tr("profile.deviceSection")} />
             <ScopeBadge scope="device" />
           </View>
           <Toggle label={tr("settings.voice.speakBlockers")} value={blockerVoiceOn} onChange={setBlockerVoice} />

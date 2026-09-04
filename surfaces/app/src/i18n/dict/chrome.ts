@@ -43,6 +43,7 @@ export const chrome: Dict = {
   "more.sub.repo": { de: "Repo-Typ wählen — die Vorlage belegt den Rest vor", en: "Choose the repo type — the template presets the rest" },
   "more.sub.loopmap": { de: "Schaubild: wie Karten durch Gate & Review laufen", en: "Diagram: how cards flow through gate & review" },
   "more.sub.feedback": { de: "Wunsch oder Problem melden", en: "Report a wish or a problem" },
+  "profile.deviceSection": { de: "Dieses Gerät", en: "This device" },
   // The two language OPTIONS, for the generic chip renderer - a schema knob
   // ships option VALUES ("de"), never prose, so the labels live here.
   //
