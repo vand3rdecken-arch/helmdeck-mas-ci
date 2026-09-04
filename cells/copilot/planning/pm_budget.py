@@ -65,7 +65,7 @@ def _goal_budget_text(goal, weekly, est, eta, pace, verdict):
             line += ", projiziert %s%% zum Reset (%s)" % (round(proj), _fmt_when(weekly.get("resetsAt")))
         parts.append(line + ".")
     if est:
-        parts.append("Zielpfad: ~%s Turns offen, ETA ~%s Tage (Tempo %s/Tag)." % (est, eta, pace))
+        parts.append("Zielpfad: Restaufwand ~%s Schritte, ETA ~%s Tage (Velocity %s/Tag)." % (est, eta, pace))
     else:
         parts.append("Noch kein bepreister Plan — sag 'plane', dann rechne ich Zielpfad + ETA.")
     if verdict == "at_risk":
@@ -161,7 +161,7 @@ def _budget_assess(econ, est_turns, pace):
              "velocity_turns_per_day": econ.get("velocity_turns_per_day"),
              "pace_turns_per_day": pace, "eta_days": _days(est_turns, pace),
              "state": state,
-             "note": "API: Projektion €%.2f gegen Cap €%s (Turns × Ø-Kosten)."
+             "note": "API: Projektion €%.2f gegen Cap €%s (Restaufwand × Ø-Kosten)."
                      % (projected, cap or "—")}
         return b, state
     # -- Max / flat plan: the usage allowance IS the budget --------------------
@@ -198,7 +198,10 @@ def _budget_assess(econ, est_turns, pace):
         head = {"ok": "reicht bis zum Reset.",
                 "warn": "wird eng vor dem Reset.",
                 "blocked": "reicht NICHT bis zum Reset - vorher erschöpft."}[state]
-        note = ("Max-Abo: Kontingent ist der Engpass (kein €). Bei %.1f Turns/Tag ist die "
+        # Owner vocabulary (2026-09-04, same rule as pm.md's style law):
+        # "Velocity", not the internal "Turns/Tag" - the owner reads PM
+        # language, not our unit names.
+        note = ("Max-Abo: Kontingent ist der Engpass (kein €). Bei Velocity %.1f/Tag ist die "
                 "Woche bei %d%%%s, Reset %s - %s%s"
                 % (vel, round(used or 0),
                    (" → projiziert %d%%" % round(proj)) if proj is not None else "",
