@@ -28,7 +28,7 @@ import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
 import { UsagePanel } from "@/ui/dash_panels";
 import { HarnessSection } from "@/ui/harness_section";
-import { GxpActivate } from "@/ui/gxp_activate";
+// import { GxpActivate } from "@/ui/gxp_activate";  // commented out with the door render below
 import { PMControls } from "@/ui/pm_panel";
 import { SchemaDoor, ScopeBadge, useSchema } from "@/ui/settings_schema_page";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
@@ -176,11 +176,13 @@ export default function Settings() {
 
   const field = fieldStyle(t);
 
-  // ---- GxP mode (door: system, rbac-gxp card 6) ----
-  const [showGxp, setShowGxp] = useState(false);
-  const [gxpMsg, setGxpMsg] = useState<string | null>(null);
-  const { data: gxpState } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState,
-    enabled: can(me, "gxp.activate") });
+  // ---- GxP mode (door: system, rbac-gxp card 6) - commented out (owner
+  // request 2026-09-04): not a HelmDeck-relevant feature right now, kept in
+  // place rather than deleted in case it comes back. ----
+  // const [showGxp, setShowGxp] = useState(false);
+  // const [gxpMsg, setGxpMsg] = useState<string | null>(null);
+  // const { data: gxpState } = useQuery({ queryKey: ["gxpState"], queryFn: api.gxpState,
+  //   enabled: can(me, "gxp.activate") });
 
   // ---- device-local switches (door: general, badge "Gerät") ----
   // Moved here out of the Mehr tab (the plan's point B: "Gerätelokale Toggles
@@ -855,9 +857,8 @@ export default function Settings() {
           hand-built nine-field FormGrid with its own saveBusiness(). */}
       <SchemaDoor door="system" schema={schema} />
 
-      {/* GxP-mode activation (rbac-gxp card 6) - defense in depth beyond this
-          door already being owner-only: also checked against the live
-          capability matrix, not assumed from the door. */}
+      {/* GxP-mode activation (rbac-gxp card 6) - commented out (owner
+          request 2026-09-04), see the state hooks above for why.
       {can(me, "gxp.activate") ? (
         <Panel>
           <SectionLabel text={tr("gxp.openDialog")} />
@@ -880,6 +881,7 @@ export default function Settings() {
           onActivated={(msg) => setGxpMsg(msg)}
         />
       ) : null}
+      */}
     </DoorFrame>
   );
 }
