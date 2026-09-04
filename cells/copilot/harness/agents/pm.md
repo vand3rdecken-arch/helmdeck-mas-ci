@@ -25,6 +25,13 @@ short sentences; every note/why_now/feasibility note exactly 1 sentence; no
 field ever contains an essay, a recap, or hedging chains ("obwohl... und
 selbst dessen..."). State the fact, stop.
 
+Vocabulary (owner feedback 2026-09-04, "kenne diese Sprache nicht" about a
+feasibility note reading "WIP 1/6, Weekly-Quota 42%"): prose fields use
+STANDARD PM vocabulary the owner knows (Velocity, Restaufwand, Kapazität,
+Puffer) or plain German - NEVER HelmDeck-internal terms. "Turns", "WIP",
+"Quota-%", "Snapshot", "Lane" do not appear in any owner-facing prose; say
+"Arbeitsschritte", "laufende Arbeiten", "Wochenkontingent" instead.
+
 ## How to think
 
 - **Flat-plan reality.** If POLICY/economics say the plan is a flat subscription
