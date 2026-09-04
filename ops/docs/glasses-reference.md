@@ -1670,3 +1670,82 @@ Everything else was driven for real — 45 route/state assertions
 real daemon with judged screenshots (`ops/tests/e2e_glance_conversation.py`,
 shots in `ops/docs/shots/glance-conversation/`). None of it has run on actual
 glasses.
+
+---
+
+## 13. A THIRD reference: `herald-backup` — how OTHER people shipped ~120 glasses apps
+
+Owner, 2026-09-04: *"Research wie andere mich integriert. Ich habe auch die herald
+apps heruntergeladen … Schaue wie die implementiert haben. Don't reinvent the
+wheel."* Correct instinct, and it produced the first **independent** confirmation
+of the finding this whole voice track rests on.
+
+`C:\Users\Tien Duy Vo\Downloads\herald-backup` — a reference copy of
+**herald.ascents.gg, "the glasses app store by Ascent"**, captured 2026-07-18
+(`README.txt:1-5`). Someone else's client-side code, never committed here.
+Layout: `_shared/glass-core.js` (156 KB shared runtime) + `a/<slug>/` per app,
+**~120 apps**. A mature, shipped third-party platform for the same device — the
+best "what does everyone else actually do" sample available.
+
+### 13.1 The mic verdict is now confirmed from THREE independent directions
+
+1. HelmDeck's own on-device probe — `apps/mic-test/verdict.md:14-16`, 2026-07-13:
+   *"the MRBD webview denies all capture — Mic no, Sprache-to-text no, Kamera no."*
+2. Meta's toolkit — no audio capability exposed to a web app at all (§6, §12.3).
+3. **NEW, and the valuable one, because Ascent had no contact with this project.**
+   `a/coach/app.js:11-13`: *"Cues are spoken through SpeechSynthesis and a short
+   tone marks each lap (**audio OUTPUT is allowed on the web path even though the
+   mic is not**)."*
+
+The negative evidence is as strong as the positive: a grep for
+`getUserMedia|mediaDevices|SpeechRecognition|MediaRecorder` across all ~120 apps
+and the shared runtime returns **zero** capture attempts. `glass-core.js` has no
+audio-input API whatsoever — its only "voice" hit is a brand colour for the
+Alexa/Google-Home app icons (`:1520-1521`).
+
+> **Nobody has lens-side microphone capture. It is not an unsolved problem, it is
+> a closed one.** Do not spend another hour looking for the trick.
+
+### 13.2 What they do INSTEAD — the established input pattern
+
+- `glass-core.js:5` — the focus model is **"Arrows / Enter / Escape only"**. That
+  is the entire key vocabulary a glasses web app receives. Directly relevant to
+  the open temple-tap question (§3.5): **no media key ever reaches the webview.**
+  It does not settle whether a temple tap reaches the phone's *Android* layer as
+  a media button — a different layer — but the lens half is answered: no.
+- `glass-core.js:7` — *"Device-code pairing with the backend (**no text input on
+  the glasses**)"*. The same conclusion §1/§3.6 reached, arrived at independently.
+- `glass-core.js:422-425` — how they DO take text: a **phone-relay screen**. The
+  lens shows a screen, the owner submits on his phone, the lens polls
+  `/relay/poll` **every 2.5 s** until it lands.
+- `a/telegram/app.js:2-3` — even a full messenger types by selection:
+  *"reply rail (quick replies, emoji, **D-pad keyboard**)"*.
+
+### 13.3 What this means for HelmDeck — we are AHEAD, not behind
+
+HelmDeck's glasses voice is **not a reinvention of something Ascent already
+solved**; it is a capability none of their 120 apps have. The architecture is the
+only one the evidence permits, and it now has outside corroboration:
+
+> the lens is the **BUTTON** (`POST /glance/listen`), the phone is the **RADIO**
+> (Bluetooth HFP, `GlassVoiceService`), and the daemon is the hub.
+
+Two places where we are already better than the reference, worth NOT regressing:
+- They **poll** `/relay/poll` at 2.5 s; we **long-poll** (`/glance/wake`,
+  `/glance/decision`), edge-sized to ~25 s. Fewer requests, faster wake.
+- Their phone hand-off needs the phone **in hand**; ours needs it only in
+  **Bluetooth range**.
+
+### 13.4 Worth borrowing (open, not built)
+
+- **A D-pad keyboard as the voice FALLBACK.** `glass-core.js` builds a `kbd`
+  screen (`:433`). HelmDeck's lens has no text path at all when the mic is
+  unavailable, and Ascent's answer to that is a solved, shipped widget.
+- **Feature-detect TTS rather than assume.** `a/coach/app.js:52-53` does
+  `HAS_TTS = 'speechSynthesis' in window` and falls back to **WebAudio earcons**,
+  calling webview TTS "unverified" (`:30`). HelmDeck measured `speechSynthesis`
+  ABSENT and went server-rendered (§4) — the stronger answer — but an earcon is a
+  cheap, useful signal for state changes where a rendered clip is overkill.
+- **Keep a permanent device-checker app.** `mic-test` was retired as a feature and
+  kept as a utility (`verdict.md:34-37`); it is what answered this question in one
+  read instead of a rebuild.
