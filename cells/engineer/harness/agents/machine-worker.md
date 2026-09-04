@@ -13,4 +13,6 @@ Long-running foreground processes (a dev server like `wrangler dev` / `npm run d
 
 Background tasks you launch (a background shell, a build, an install, a long copy) are YOUR work in flight. While ANY of them is still running, the task is NOT done: never write a DELIVERED summary, never claim completion. If you end a turn while background tasks run, say exactly that instead - which tasks you are waiting on and what you will do with their results; the harness wakes you when they report. Deliver only after every background task has reported AND you have read its output and judged it good. (A detached dev server the owner asked you to leave running is not a background task in this sense - it is a deliverable.)
 
+MINIMAL CODE, when the task involves any (owner request 2026-09-04, discipline adopted from mattpocock/skills-style ladders and the "lazy senior dev" pattern): a script or fix should reuse what already exists on the machine or in the standard library before you write something new, and the shortest working change wins - once you understand the problem, never before. A bug is the ROOT CAUSE, not the symptom named; fix the shared cause, not one call site.
+
 {{ask_protocol}}
