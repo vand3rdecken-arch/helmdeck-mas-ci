@@ -583,7 +583,12 @@
   // steals the screen. `decide` and `settings` are never interrupted: both are
   // active input flows the owner started deliberately, and the existing banner
   // code already refuses to talk over `decide` for the same reason.
-  var TALK_STATES = { listening: 1, heard: 1, thinking: 1 };
+  // `draft` belongs here above all the others: it is the one state that is
+  // WAITING ON HIM. Words he just spoke are held, unsent, until he accepts or
+  // rejects them - so a draft that failed to pull the screen would be a question
+  // asked into a void, and the mic owner would sit on a long-poll until it timed
+  // out and dropped the sentence.
+  var TALK_STATES = { listening: 1, draft: 1, heard: 1, thinking: 1 };
   function maybeOpenTalk() {
     if (turn.seq === lastTurnSeq) return;
     lastTurnSeq = turn.seq;
@@ -596,6 +601,10 @@
   var TURN_LABEL = {
     idle: 'Ready',
     listening: 'Listening',
+    // Phrased as the QUESTION it is, not as a status ("Draft"). The bar is the
+    // only thing above the sentence, so it has to say what the two buttons under
+    // it are for.
+    draft: 'Send this?',
     heard: 'Heard you',
     thinking: 'Henry is thinking',
     answered: 'Answered',
@@ -640,7 +649,8 @@
   // screen twice.
   function pendingText() {
     if (!turn.text) return '';
-    if (turn.state !== 'listening' && turn.state !== 'heard' && turn.state !== 'thinking') return '';
+    if (turn.state !== 'listening' && turn.state !== 'draft' &&
+        turn.state !== 'heard' && turn.state !== 'thinking') return '';
     for (var i = chatMsgs.length - 1; i >= 0; i--) {
       if (chatMsgs[i].mine) return chatMsgs[i].text === turn.text ? '' : turn.text;
     }
@@ -659,7 +669,13 @@
     });
     var pend = pendingText();
     if (pend) {
-      html += '<div class="msg mine pending"><div class="msg-who">You</div>'
+      // A DRAFT IS MARKED, and that is not decoration. Every other pending line
+      // is already on its way to Henry; this one is not sent and will be thrown
+      // away if he ignores it. Rendering the two identically would be the lens
+      // telling him the same thing about two opposite situations.
+      var draft = turn.state === 'draft';
+      html += '<div class="msg mine pending' + (draft ? ' draft' : '') + '">'
+        + '<div class="msg-who">' + (draft ? 'You said' : 'You') + '</div>'
         + '<div class="msg-body">' + esc(pend) + '</div></div>';
     }
     if (!html) {
@@ -676,6 +692,24 @@
     var list = document.getElementById('talk-options');
     if (!list) return;
     list.innerHTML = '';
+    // A DRAFT REPLACES THE OPTION LIST ENTIRELY. The old options belong to the
+    // previous answer, and showing them beside an unsent sentence would let one
+    // tap answer a question while another question is still on screen. Two
+    // choices, nothing else - this is the confirm step and it is the only thing
+    // the owner can do here.
+    if (turn.state === 'draft') {
+      [['talk-send', 'Send', 'ask Henry this'],
+       ['talk-redo', 'Speak again', 'discard and re-record']
+      ].forEach(function (o) {
+        var el = document.createElement('button');
+        el.className = 'list-item focusable' + (o[0] === 'talk-send' ? ' primary' : '');
+        el.setAttribute('data-action', o[0]);
+        el.innerHTML = '<div class="li-task">' + o[1] + '</div>'
+          + '<div class="li-sub">' + o[2] + '</div>';
+        list.appendChild(el);
+      });
+      return;
+    }
     // Nothing to offer while a turn is in flight: the options belong to the
     // PREVIOUS answer, and leaving them tappable invites a second question on
     // top of the one being answered.
@@ -695,6 +729,54 @@
   function talkStart() {
     audioUnlock();                       // MUST be inside the gesture
     talk('Where do things stand, and what should I do next?');
+  }
+
+  /**
+   * The owner's verdict on a draft (owner, 2026-09-04: "user kann bestaetigen
+   * oder loeschen und neu sprechen").
+   *
+   * DELIBERATELY NOT talk(). The lens does not send the sentence - it releases
+   * the PHONE to send it, and the phone is already blocked on /glance/decision
+   * waiting to hear which way. Posting to /glance/talk from here as well would
+   * ask Henry the same question twice, once from each device.
+   *
+   * So there is no optimistic turn state either: the mic owner drives what
+   * happens next and the stream reports it a beat later. Faking `heard` here
+   * would be this surface claiming an observation it did not make - and if the
+   * phone had meanwhile timed out and dropped the words, the claim would be
+   * false. `talkBusy` alone stops a double tap.
+   */
+  function decideDraft(decision) {
+    if (talkBusy) return;
+    if (!connected()) { toast('Not connected'); return; }
+    audioUnlock();                       // the answer plays after Send
+    talkBusy = true;
+    renderOptions();                     // buttons away - the tap registered
+    fetch(apiBase() + '/glance/decide', {
+      method: 'POST',
+      headers: glanceHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ token: cfg.token, decision: decision, seq: turn.seq })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    }).then(function () {
+      talkBusy = false;
+      // Nothing to render: the next real state (heard/listening) arrives on the
+      // stream from the party that actually did it.
+    }).catch(function (e) {
+      talkBusy = false;
+      // 409 is the stale-draft case and it has a specific, non-alarming
+      // meaning: the phone gave up on this one, or a newer draft replaced it.
+      // Say that rather than "error", or the owner re-taps a dead button.
+      setText('talk-meta', /409|no live draft/.test(String(e.message || e))
+        ? 'that draft expired - speak again'
+        : String(e.message || e));
+      document.getElementById('talk-meta').className = 'header-meta warn';
+      renderOptions();
+      focusFirst();
+    });
   }
 
   function talk(message) {
@@ -847,6 +929,9 @@
       case 'talk-replay': replay(); break;
       // the tapped option IS the next message - that is the whole conversation
       case 'talk-pick': audioUnlock(); talk(btn.getAttribute('data-label')); break;
+      // the confirm step: release the phone to send, or send it back to the mic
+      case 'talk-send': decideDraft('send'); break;
+      case 'talk-redo': decideDraft('redo'); break;
       case 'voice-toggle': toggleVoiceMuted(); break;
       case 'voice-repeat': repeatBlockerVoice(); break;
       case 'save-settings': doSaveSettings(); break;

@@ -28,8 +28,11 @@ folded in at EVENT TIME, mutated at exactly ONE owner. So:
 
     | state      | who observes it                              | ends when            |
     |------------|----------------------------------------------|----------------------|
-    | `listening`| the mic owner (GlassVoiceService), reported  | superseded by `heard`|
+    | `listening`| the mic owner (GlassVoiceService), reported  | superseded by `draft`|
     |            | from RecognitionListener's own callbacks     |                      |
+    | `draft`    | the mic owner, when the recogniser produced  | the owner accepts or |
+    |            | WORDS - parked for the owner to accept       | rejects, or it times |
+    |            | (`decide`), never auto-sent                   | out and is DROPPED   |
     | `heard`    | the daemon, when /glance/talk ARRIVES        | immediately thinking |
     | `thinking` | the daemon, before copilot.chat              | superseded by answer |
     | `answered` | the daemon, when copilot.chat returns        | TERMINAL             |
@@ -69,9 +72,45 @@ TEXT_MAX = 240
 # owner should see: only the glasses mic collapses his audio to 8 kHz HFP.
 MICS = ("glasses", "phone")
 
+# How long ONE /glance/decision request is held open.
+#
+# ⚠ THIS IS AN EDGE CONSTRAINT, NOT A UX ONE, and getting it from the wrong
+# place is how this route would have failed in production only. The lens and the
+# phone reach the daemon through the Cloudflare Worker, and Cloudflare gives up
+# on an origin response at ~100s with a 524 - so a hold sized to human patience
+# (the owner reading a sentence and deciding, easily a minute or two) would be
+# killed by the edge and look exactly like "the buttons do nothing". The
+# neighbouring hanging GET, /glance/chat, is ~20s and is PROVEN through the
+# deployed Worker, so this sits beside it rather than inventing a new number.
+#
+# Human patience is therefore the CLIENT's budget, not the server's: the mic
+# owner re-arms this wait until DECIDE_TOTAL_S is spent (GlassVoiceService.
+# awaitDecision), which is the same shape app.js's chatLoop already uses.
+DECIDE_WAIT_S = 25
+
+# The total the mic owner will keep re-arming for before it gives up, goes idle
+# and DROPS the words. Never sends: an unconfirmed sentence spoken in the
+# owner's name is the exact thing the confirm step exists to prevent, so the
+# timeout has to fail closed. Advisory here (the client owns the loop); stated
+# here so both halves read the same number from one place.
+DECIDE_TOTAL_S = 150
+
+# The closed vocabulary of what the owner may decide about a draft. Same reason
+# MICS is closed: this arrives from a client holding the shared glance token and
+# it steers whether words are sent in the owner's name.
+DECISIONS = ("send", "redo", "cancel")
+
 _lock = threading.Lock()
+# One Condition over the SAME lock as the turn itself, so a decision and the
+# state it is about can never be observed half-applied by the waiting service.
+_decided = threading.Condition(_lock)
 _turn = {"state": "idle", "text": "", "mic": "", "question": None,
          "seq": 0, "ts": 0}
+# The pending verdict on ONE draft, addressed by that draft's seq. Addressed
+# rather than boolean because the alternative is a stale tap: the owner rejects
+# draft N, speaks again, and the verdict meant for N is consumed by draft N+1 -
+# sending a sentence he had just discarded. `seq` is what makes that impossible.
+_decision = {"seq": 0, "value": ""}
 
 
 def _set(state, text=None, mic=None, question=None):
@@ -87,7 +126,7 @@ def _set(state, text=None, mic=None, question=None):
     asks, and a notify failure must never turn an observed transition into a
     dropped one. A waiting lens re-arms on its own timeout regardless.
     """
-    with _lock:
+    with _decided:
         _turn["state"] = state
         if text is not None:
             _turn["text"] = (text or "").strip()[:TEXT_MAX]
@@ -100,6 +139,11 @@ def _set(state, text=None, mic=None, question=None):
         _turn["question"] = question
         _turn["seq"] += 1
         _turn["ts"] = int(time.time())
+        # Wake anyone waiting on a draft verdict. A transition AWAY from their
+        # draft is itself an answer ("superseded"), so the waiter must not sleep
+        # through it - that is how a service ends up holding a thread for two
+        # minutes over a turn that is already gone.
+        _decided.notify_all()
     try:
         from spine.storage import db
         db.bump_glass()
@@ -127,6 +171,91 @@ def idle(mic=""):
     glasses button was toggled off on the phone, which is the same lie in the
     other direction: a mic indicator that stays lit with no mic open."""
     _set("idle", text="", mic=mic)
+
+
+def draft(text, mic=""):
+    """Words RECOGNISED but not yet sent - the confirm step (owner, 2026-09-04:
+    "wie auf watch erstmal per turn ... user kann bestaetigen oder loeschen und
+    neu sprechen").
+
+    WHY THIS STATE EXISTS AT ALL, and why the watch does not need it. On Wear the
+    confirm step is the SYSTEM's: HenryScreen launches ACTION_RECOGNIZE_SPEECH
+    and the platform dictation UI shows the transcript and takes the accept
+    before ever returning it to us (surfaces/app/plugins/wear/HenryScreen.kt:288-302).
+    The glasses have no such activity - the lens is a webview served by the
+    Worker and the recogniser runs headless in a phone service - so the same
+    interaction has to be built out of the pieces we own. This state is that
+    build: the mic owner parks its words here instead of posting them to
+    /glance/talk, and the lens renders them with an accept and a reject.
+
+    Returns the seq it just published, because the service must address its wait
+    to THIS draft and no other - see `_decision`.
+
+    Deliberately NOT terminal and deliberately not `heard`: `heard` means the
+    words are already on their way to Henry and is observed by the daemon at
+    /glance/talk. A draft is the owner's sentence sitting in front of him,
+    still his to throw away. Conflating them would put the confirm step after
+    the point of no return."""
+    _set("draft", text=text, mic=mic)
+    with _decided:
+        # Arm a fresh slot for exactly this draft. Clearing is the point: a
+        # verdict left over from the previous draft must never satisfy this one.
+        _decision["seq"] = 0
+        _decision["value"] = ""
+        return _turn["seq"]
+
+
+def decide(value, seq=0):
+    """The owner accepted or rejected the draft on the lens.
+
+    Refuses anything but a live draft, and refuses a verdict addressed to a seq
+    that is no longer the one on screen: both are the stale-tap case, and both
+    are answered False so the caller can say so rather than silently doing
+    nothing. Returns True when the verdict was recorded and a waiter (if any)
+    was woken."""
+    if value not in DECISIONS:
+        return False
+    with _decided:
+        if _turn["state"] != "draft":
+            return False
+        if seq and seq != _turn["seq"]:
+            return False
+        _decision["seq"] = _turn["seq"]
+        _decision["value"] = value
+        _decided.notify_all()
+        return True
+
+
+def await_decision(seq, timeout=None):
+    """Block until the owner rules on draft `seq`. Called by the mic owner.
+
+    A LONG-POLL rather than a poll loop, for the same reason /glance/chat is one:
+    the waiting party is a foreground service on a phone, and waking it every
+    second to be told "not yet" spends battery to learn nothing. The daemon
+    already owns the event that ends this wait, so it holds the request until it
+    happens.
+
+    Three distinct outcomes, and they are distinct because the service does
+    genuinely different things with them:
+      - one of DECISIONS - the owner ruled
+      - "superseded"     - the turn moved on under us (a new draft, an
+                           ACTION_STOP idle, anything). NOT an error and NOT a
+                           send: someone else already owns what happens next.
+      - ""               - nothing was decided in time. The service goes idle
+                           and the words are DROPPED, never sent on a timeout.
+    """
+    deadline = time.time() + (DECIDE_WAIT_S if timeout is None else timeout)
+    with _decided:
+        while True:
+            if _decision["seq"] == seq and _decision["value"]:
+                return _decision["value"]
+            # The draft we were asked about is no longer the live turn.
+            if _turn["state"] != "draft" or _turn["seq"] != seq:
+                return "superseded"
+            left = deadline - time.time()
+            if left <= 0:
+                return ""
+            _decided.wait(min(left, 5.0))
 
 
 def heard(text):

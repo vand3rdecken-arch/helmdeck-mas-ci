@@ -157,6 +157,79 @@ def main():
         ok(glassturn.snapshot()["mic"] == "",
            "an unrecognised mic name is dropped, never rendered")
 
+        # -- THE CONFIRM STEP -------------------------------------------------
+        # Owner, 2026-09-04: "wie auf watch erstmal per turn ... user kann
+        # bestaetigen oder loeschen und neu sprechen". The property that matters
+        # is not that confirming works - it is that NOTHING is sent without a
+        # confirmation, including when the owner never answers at all.
+        status, body = req("POST", "/glance/state",
+                           {"token": "tok-conv-1", "state": "draft",
+                            "text": "  wie viele karten warten  ", "mic": "glasses"},
+                           expect=200)
+        draft_seq = body["seq"]
+        snap = glassturn.snapshot()
+        ok(snap["state"] == "draft" and snap["text"] == "wie viele karten warten",
+           "a draft publishes the recognised words WITHOUT sending them")
+        ok(draft_seq == snap["seq"],
+           "the draft's own seq comes back, so the waiter can address THIS draft")
+
+        # A draft with no words is a bug in the caller, not an empty screen.
+        req("POST", "/glance/state",
+            {"token": "tok-conv-1", "state": "draft", "text": "   "}, expect=400)
+
+        # THE STALE-TAP CASE, and the reason the seq exists: a verdict meant for
+        # an older draft must never release a newer one.
+        status, body = req("POST", "/glance/decide",
+                           {"token": "tok-conv-1", "decision": "send",
+                            "seq": draft_seq + 99}, expect=409)
+        ok("draft" in (body.get("error") or ""),
+           "a verdict addressed to the wrong draft is refused, not silently applied")
+
+        # Free text cannot ride in on this route - it selects among our words.
+        req("POST", "/glance/decide",
+            {"token": "tok-conv-1", "decision": "send now please", "seq": draft_seq},
+            expect=400)
+
+        # The long-poll BLOCKS while the owner reads, then returns his verdict.
+        got = {}
+
+        def _wait():
+            got["r"] = req("GET", "/glance/decision?token=tok-conv-1&seq=%d" % draft_seq,
+                           expect=200, timeout=40)
+        th = threading.Thread(target=_wait)
+        th.start()
+        time.sleep(0.4)
+        ok(th.is_alive(), "/glance/decision holds the request open instead of polling")
+        req("POST", "/glance/decide",
+            {"token": "tok-conv-1", "decision": "send", "seq": draft_seq}, expect=200)
+        th.join(20)
+        ok(got.get("r") and got["r"][1].get("decision") == "send",
+           "the waiting microphone is woken with the owner's verdict")
+
+        # FAILS CLOSED. The one property worth the whole design: when the owner
+        # never answers, the words are DROPPED. A timeout that defaulted to
+        # "send" would speak an unconfirmed sentence in his name - exactly what
+        # the confirm step exists to prevent.
+        seq_t = glassturn.draft("etwas das er nie bestaetigt hat")
+        ok(glassturn.await_decision(seq_t, timeout=0.5) == "",
+           "an undecided draft times out to NOTHING - never to 'send'")
+
+        # A turn moving on under the waiter is an answer, not a hang.
+        seq_s = glassturn.draft("wird gleich ueberholt")
+        sup = {}
+        th2 = threading.Thread(
+            target=lambda: sup.setdefault("v", glassturn.await_decision(seq_s, timeout=20)))
+        th2.start()
+        time.sleep(0.3)
+        glassturn.idle()          # the owner hit STOP on the phone
+        th2.join(20)
+        ok(sup.get("v") == "superseded",
+           "a superseded draft wakes its waiter instead of stranding a thread")
+
+        # /glance/decision is behind the same two gates as the rest of the surface.
+        req("GET", "/glance/decision?token=nope&seq=1", expect=403)
+        req("GET", "/glance/decision?token=tok-conv-1", expect=400)
+
         # -- THE HANGING READ -------------------------------------------------
         # Up-to-date cursors must BLOCK (that is what makes this a stream and not
         # a poll), and a stale one must return at once.

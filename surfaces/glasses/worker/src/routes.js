@@ -63,6 +63,21 @@ export const PROXY_ROUTES = {
   // files at the machine - only to attach an image to a card that already
   // exists.
   "/glance/photo": "POST",
+  // THE CONFIRM STEP (owner, 2026-09-04: "user spricht, es wird als text
+  // Transkript, user kann bestaetigen oder loeschen und neu sprechen").
+  //
+  // /glance/decide is the owner's verdict on a draft, tapped on the lens. It
+  // carries a word from a three-item closed vocabulary (send/redo/cancel) and a
+  // seq, and the daemon refuses it unless a draft with that seq is live - so the
+  // widest thing it can do is release or discard words the owner just spoke
+  // himself. It cannot introduce text.
+  "/glance/decide": "POST",
+  // /glance/decision is the phone service waiting for that verdict. A HANGING
+  // GET like /glance/chat and sized against the SAME edge limit - ~25s per
+  // request, re-armed by the client - because Cloudflare abandons an origin
+  // response at ~100s and a longer hold would 524 (see glassturn.DECIDE_WAIT_S).
+  // Read-only: it returns one word and can change nothing.
+  "/glance/decision": "GET",
 };
 
 // Upstream bodies are small by construction (a spoken sentence, or a chosen
