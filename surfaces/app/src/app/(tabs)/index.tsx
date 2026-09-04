@@ -3,13 +3,11 @@ import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
-import { useCellEnabled } from "@/data/cells";
 import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { HenryChat } from "@/ui/henry_chat";
 import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, StatusPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
-import { PMStatusPanel } from "@/ui/pm_panel";
 import { useResponsive } from "@/ui/responsive";
 
 export default function DashboardTab() {
@@ -20,12 +18,6 @@ export default function DashboardTab() {
   const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const isOwner = me?.role === "owner";
-  // The pm cell merged into copilot (owner directive 2026-09-03): one switch
-  // now gates both Henry's chat and the backlog-planning loop PMStatusPanel
-  // shows. useCellEnabled fails OPEN for an unknown id, so this could NOT be
-  // left reading "pm" - the panel would have kept rendering forever once the
-  // pm cell id stopped existing in the manifest.
-  const copilotEnabled = useCellEnabled("copilot");
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
@@ -47,12 +39,7 @@ export default function DashboardTab() {
             // triage/settings surface on their payload).
             const defaultRepo = (data as { settings?: { default_repo?: string } })?.settings?.default_repo;
             if (isOwner) {
-              return (
-                <>
-                  <StatusPanel m={data} wide={wide} defaultRepo={defaultRepo} />
-                  {copilotEnabled ? <PMStatusPanel /> : null}
-                </>
-              );
+              return <StatusPanel m={data} wide={wide} defaultRepo={defaultRepo} />;
             }
             const panels = [...ALL_PANELS];
             const tiles = [...ALL_TILES];
