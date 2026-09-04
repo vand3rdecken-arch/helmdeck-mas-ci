@@ -251,6 +251,52 @@ function useResumeRefetch() {
   }, []);
 }
 
+// ARM THE GLASSES whenever the app is in front — so the owner never hunts for a
+// button on a handset to make the button on his FACE work.
+//
+// Owner, 2026-09-04: "Wie macht das mit normalen headset. Die sind auch einfach
+// verbunden oder. Warum brauchen die keine extra permission" — and the answer is
+// the reason this hook exists at all. A headset's button never reaches an app:
+// it travels as an HFP AT+BVRA command and ANDROID ITSELF launches whichever app
+// holds the assistant role. The OS is the thing that is always waiting, so no app
+// permission and no service are needed. We are not the assistant app, and Meta
+// owns the glasses' own gesture mapping (side-tap / media-button wake is recorded
+// as a fragile, never-confirmed dead end — glasses-reference.md §3.5), so
+// SOMETHING of ours has to do the waiting instead. This makes that something
+// start by itself.
+//
+// Cheap and silent by construction: arm() is a no-op returning false on iOS, on
+// web, and on any binary predating the native bridge, and configure() refuses
+// without a real origin+token. Nothing here can throw into the launch path.
+function useGlassesArm() {
+  useEffect(() => {
+    let cancelled = false;
+    async function arm() {
+      try {
+        const glasses = await import("@/data/glasses");
+        if (cancelled || !glasses.caps().available) return;
+        const { api } = await import("@/data/client");
+        const s = await api.settings().catch(() => null);
+        const origin = (s?.glance_origin || "").trim();
+        const token = (s?.glance_token || "").trim();
+        // No origin/token means glasses voice is not set up at all; arming would
+        // park a service that can never be woken.
+        if (!origin || !token) return;
+        if (!glasses.configure(origin, token)) return;
+        glasses.arm();
+      } catch {
+        // Never let this reach the launch path — it is a convenience, and the
+        // phone toggle remains as the explicit route.
+      }
+    }
+    arm();
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") arm();
+    });
+    return () => { cancelled = true; sub.remove(); };
+  }, []);
+}
+
 // Hydrate the persisted board BEFORE the screens mount, so a cold start paints
 // last-known data instead of an empty spinner (then queries revalidate in the
 // background). Gated with a short timeout so a slow/blocked AsyncStorage read can
@@ -286,6 +332,7 @@ export default function RootLayout() {
   usePortraitDefault();
   useGlobalStream();
   useResumeRefetch();
+  useGlassesArm();
   useSilentOta();
   usePresenceHeartbeat();
   const restored = useCacheGate();
