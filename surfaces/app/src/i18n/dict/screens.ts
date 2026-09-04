@@ -366,7 +366,7 @@ export const screens: Dict = {
   //   Brief      = the instructions an AGENT is spawned with
   // The screen mixed all three under one heading style, which is half the
   // reason it read as one undifferentiated wall of locks.
-  "loopmap.title": { de: "Loop & Harness", en: "Loop & harness" },
+  "loopmap.title": { de: "Harness", en: "Harness" },
   "loopmap.intro": {
     de: "Diese Seite zeigt drei verschiedene Dinge. Manches ist bewusst fest verdrahtet, anderes kannst du ändern — jeder Block sagt oben, was davon gilt.",
     en: "This page shows three different things. Some of it is deliberately hard-wired, some of it you can change — every block states which up front.",
