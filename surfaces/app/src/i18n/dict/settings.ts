@@ -376,6 +376,7 @@ export const settings: Dict = {
   "pm.recent": { de: "Zuletzt: {what}", en: "Recently: {what}" },
   "pm.goalPh": { de: "Ziel / MVP-Definition…", en: "Goal / MVP definition…" },
   "pm.setGoal": { de: "Ziel setzen & planen", en: "Set goal & plan" },
+  "pm.saving": { de: "Speichert…", en: "Saving…" },
   "pm.noGoal": { de: "Kein Ziel gesetzt — tippen, um das MVP-Ziel zu definieren.",
                  en: "No goal set — tap to define the MVP goal." },
   "pm.changeGoal": { de: "Ziel ändern", en: "Change the goal" },
