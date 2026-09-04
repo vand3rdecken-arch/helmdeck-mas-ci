@@ -261,8 +261,13 @@ def pick_model(text, has_attach=False, signals=None):
     # _HARD keyword match is the text signal that actually correlates with
     # real difficulty.
     ctx = s.get("ctx_tokens")
+    # "high" priority is NOT an escalation signal: Henry mints practically
+    # every chat-born direct card as priority=high (measured 2026-09-04, all
+    # recent -direct cards prio=high -> 100% Opus), which starved Sonnet the
+    # same way the length/backtick triggers did below. Owner decree: Sonnet 5
+    # is the Auto default for card implementation; only "urgent" escalates.
     if (has_attach
-            or prio in ("urgent", "high")
+            or prio == "urgent"
             or (value and value >= HIGH_VALUE)
             or failed
             or turns >= ESCALATE_TURNS
