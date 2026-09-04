@@ -354,6 +354,11 @@ export const settings: Dict = {
   "pm.weekdays": { de: "So,Mo,Di,Mi,Do,Fr,Sa", en: "Sun,Mon,Tue,Wed,Thu,Fri,Sat" },
   "pm.refresh": { de: "Aktualisieren", en: "Refresh" },
   "pm.planning": { de: "Plant…", en: "Planning…" },
+  "pm.planningFor": { de: "Plant… ({s}s)", en: "Planning… ({s}s)" },
+  "pm.planningHint": {
+    de: "Läuft im Hintergrund - ein echter Denk-Durchlauf, meist 2-3 Minuten. Kein Hänger.",
+    en: "Running in the background - a real thinking pass, usually 2-3 minutes. Not stuck.",
+  },
   "pm.launchTitle": { de: "Launch: Android Play Store", en: "Launch: Android Play Store" },
   "pm.daysLeft": { de: "noch {n} Tg", en: "{n} d left" },
   "pm.today": { de: "heute", en: "today" },
