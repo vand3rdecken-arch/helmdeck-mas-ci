@@ -30,7 +30,7 @@ WHERE IT WILL AND WILL NOT RUN
 ~/.claude/settings.json is the operator's PERSONAL layer. HelmDeck's own card
 and copilot spawns drop that layer (`--setting-sources project` / `""`), so this
 hook never runs inside a card - correctly, because a card cannot write to a
-memory directory at all (ops/harness/settings/card.json denies Write/Edit there,
+memory directory at all (cells/engineer/harness/settings/card.json denies Write/Edit there,
 measured against the real CLI). Interactive sessions are the only writers, and
 they are exactly what this covers.
 

@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: machine-worker
 description: Standing brief for a MACHINE card - no worktree, no branch, the owner's own PC is the workplace.
 settings: card

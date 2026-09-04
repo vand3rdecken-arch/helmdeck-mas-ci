@@ -64,10 +64,10 @@ def _digest(text):
 # via harness.SURFACES; the overlay surfaces got files of their own in this
 # phase (they were Python string constants before).
 SURFACE_FILES = {
-    "pm": "ops/harness/agents/board-copilot.md",
-    "voice": "ops/harness/agents/voice-style.md",
-    "wear": "ops/harness/agents/wear-brief.md",
-    "glass": "ops/harness/agents/glass-brief.md",
+    "pm": "cells/copilot/harness/agents/board-copilot.md",
+    "voice": "cells/copilot/harness/agents/voice-style.md",
+    "wear": "cells/copilot/harness/agents/wear-brief.md",
+    "glass": "cells/copilot/harness/agents/glass-brief.md",
 }
 
 # SHA-256 of each surface's brief rendered with every value on its default.
@@ -89,11 +89,25 @@ SURFACE_FILES = {
 # it moved only after the diff against 883c72f was shown to be EXACTLY one added
 # line (the jira line) and nothing else. The check going red is what forced that
 # proof; a pin updated without it would have been a rubber stamp.
+# ALL FOUR moved on owner decision 2026-09-04 (harness-reorg-under-cells):
+# briefs now live at cells/<id>/harness/agents/ instead of ops/harness/agents/
+# - SURFACE_FILES below points at the new paths. render() hashes the RAW file
+# _read() returns, frontmatter included, so two real changes moved the pins:
+# (1) `pm` (board-copilot.md) gained the GRILLEN section - a genuine,
+# intentional change to Henry's brief (goal-setting / big-or-fuzzy builds now
+# trigger a rounds-based interview instead of a guess). (2) all four briefs'
+# `$schema:` frontmatter line was repointed from the now-dangling
+# `../schema/agent.schema.json` (correct from the old ops/harness/agents/
+# location, broken from cells/<id>/harness/agents/) to the working relative
+# path - confirmed via `git diff` to be the ONLY byte change for voice/wear/
+# glass (pm/board-copilot carries both changes). Neither is a rubber stamp:
+# the diff was read before the pin moved, same discipline as the jira note
+# above.
 EXPECTED = {
-    "pm": "e329ebfc1c7694909e8b174a06809cb269a5f8a2551db063c34743dbe97f2e94",
-    "voice": "5cf6585d188be12914b8e5177313669c7f360b6426d86c4994f2ed6d25b408bd",
-    "wear": "c8c3090b5de4cba354c957c5772d277af317b46330087f1d27932a9342cac8c8",
-    "glass": "2ae3eaa11f2e60dd55e0e78dce277eaeb344fcc34b35ffa64c595e0cd703c628",
+    "pm": "52fe9619c9cbeca1aff5535cae940878f13b351cc811a96d923af1978bb2fcc9",
+    "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
+    "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
+    "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",
 }
 
 

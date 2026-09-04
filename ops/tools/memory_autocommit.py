@@ -40,7 +40,7 @@ WHERE IT RUNS
 ~/.claude/settings.json is the operator's PERSONAL layer, so HelmDeck's own card
 and copilot spawns never load it (`--setting-sources project` / `""`). This hook
 therefore fires only in interactive sessions - which is exactly right: a card
-cannot write to a memory directory at all (ops/harness/settings/card.json denies
+cannot write to a memory directory at all (cells/engineer/harness/settings/card.json denies
 Write/Edit there, verified against the real CLI), so there is nothing for it to
 commit. Interactive sessions are the only writers, and were the gap the
 permission deny never covered.

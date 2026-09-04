@@ -47,10 +47,10 @@ def test_no_drift():
     from cells.copilot.chat import copilot
     check(harness.brief("card-worker") == harness._resolve(
         harness._DEFAULT_CARD, harness._DEFAULTS["card-worker"][1]),
-        "ops/harness/agents/card-worker.md == the built-in card fallback")
+        "cells/engineer/harness/agents/card-worker.md == the built-in card fallback")
     check(harness.brief("machine-worker") == harness._resolve(
         harness._DEFAULT_MACHINE, harness._DEFAULTS["machine-worker"][1]),
-        "ops/harness/agents/machine-worker.md == the built-in machine fallback")
+        "cells/engineer/harness/agents/machine-worker.md == the built-in machine fallback")
     henry = harness.brief("board-copilot")
     check(len(henry) > 10000 and "degraded mode" not in henry,
         "board-copilot.md resolves as THE role (policy is data, no code copy)")
@@ -68,8 +68,7 @@ def test_ask_protocol():
     check(ask.BRIEF not in harness.brief("board-copilot", default="x"),
           "the copilot does NOT get the ask protocol (it answers with an actions block)")
     # the protocol must come from code, so a reworded .md cannot break ask.parse()
-    src = open(os.path.join(ROOT, "ops", "harness", "agents", "card-worker.md"),
-               encoding="utf-8").read()
+    src = open(harness._agent_path("card-worker"), encoding="utf-8").read()
     check("helmdeck-ask" not in src,
           "the .md does not hardcode the protocol - ask.py owns it")
 
@@ -80,7 +79,7 @@ def test_cli_args():
     check(a[:2] == ["--setting-sources", "project"],
           "a card drops the operator's ~/.claude but keeps the repo project layer")
     check("--settings" in a and a[a.index("--settings") + 1].endswith("card.json"),
-          "a card gets ops/harness/settings/card.json")
+          "a card gets cells/engineer/harness/settings/card.json")
     c = harness.cli_args("board-copilot")
     check(c[:2] == ["--setting-sources", ""],
           "the copilot loads NO ambient layer (not even the repo Stop hook)")
@@ -88,7 +87,7 @@ def test_cli_args():
           "the copilot gets its own settings file, not a cwd accident")
     for name in ("card", "copilot"):
         import json
-        p = os.path.join(ROOT, "ops", "harness", "settings", "%s.json" % name)
+        p = harness._settings_path(name)
         d = json.load(open(p, encoding="utf-8"))          # must be valid JSON
         blob = json.dumps(d)
         check("BEGIN PRIVATE KEY" not in blob and "sk-" not in blob,
@@ -99,6 +98,11 @@ def test_cli_args():
 def test_never_breaks_a_spawn():
     tmp = tempfile.mkdtemp(prefix="hd-harness-")
     real_agents, real_settings = harness.AGENTS, harness.SETTINGS
+    # same reason as Sandbox in test_harness.py: card-worker has a cell home
+    # now, which _agent_path() checks BEFORE the redirected AGENTS below.
+    saved_cells = (dict(harness.AGENT_CELL), dict(harness.SETTINGS_CELL))
+    harness.AGENT_CELL.clear()
+    harness.SETTINGS_CELL.clear()
     try:
         harness.AGENTS = os.path.join(tmp, "agents")
         harness.SETTINGS = os.path.join(tmp, "settings")
@@ -141,6 +145,8 @@ def test_never_breaks_a_spawn():
         check(harness.errors(), "a broken file is REPORTED in errors(), not swallowed")
     finally:
         harness.AGENTS, harness.SETTINGS = real_agents, real_settings
+        harness.AGENT_CELL.clear(); harness.AGENT_CELL.update(saved_cells[0])
+        harness.SETTINGS_CELL.clear(); harness.SETTINGS_CELL.update(saved_cells[1])
         harness._cache.clear()
         harness._errors.clear()
 

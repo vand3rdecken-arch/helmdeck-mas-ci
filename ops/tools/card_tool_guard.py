@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PreToolUse hook for a card worker (wired via ops/harness/settings/card.json).
+"""PreToolUse hook for a card worker (wired via cells/engineer/harness/settings/card.json).
 
 WHY THIS EXISTS - measured, not assumed (2026-08-24 probe session): the ONLY
 thing keeping a card's agent confined to its own worktree today is an

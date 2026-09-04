@@ -86,6 +86,17 @@ class Sandbox:
     def __enter__(self):
         self.tmp = tempfile.mkdtemp(prefix="hd-harness-test-")
         self.saved = (harness.AGENTS, harness.SETTINGS, harness.VERSIONS)
+        # card-worker/card now have a CELL home (cells/engineer/harness/) that
+        # _agent_path()/_settings_path() check BEFORE this sandbox's redirected
+        # AGENTS/SETTINGS - so a sandbox that only swaps those two constants
+        # would silently keep resolving to the real, un-redirected cell file,
+        # testing nothing. Neutralise cell ownership for the sandbox's
+        # lifetime instead: the legacy-path fallback behaviour under test is
+        # still exactly what a name with NO cell (or a not-yet-migrated one)
+        # goes through today.
+        self.saved_cells = (dict(harness.AGENT_CELL), dict(harness.SETTINGS_CELL))
+        harness.AGENT_CELL.clear()
+        harness.SETTINGS_CELL.clear()
         harness.AGENTS = os.path.join(self.tmp, "agents")
         harness.SETTINGS = os.path.join(self.tmp, "settings")
         harness.VERSIONS = os.path.join(self.tmp, ".versions")
@@ -111,6 +122,8 @@ class Sandbox:
 
     def __exit__(self, *a):
         harness.AGENTS, harness.SETTINGS, harness.VERSIONS = self.saved
+        harness.AGENT_CELL.clear(); harness.AGENT_CELL.update(self.saved_cells[0])
+        harness.SETTINGS_CELL.clear(); harness.SETTINGS_CELL.update(self.saved_cells[1])
         harness._cache.clear()
         harness._errors.clear()
         shutil.rmtree(self.tmp, ignore_errors=True)

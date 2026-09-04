@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: voice-style
 description: Turn overlay for SPOKEN replies - how Henry sounds when he is heard, not read.
 settings: ""

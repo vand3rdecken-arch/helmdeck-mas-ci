@@ -48,7 +48,7 @@ import json
 # speechSynthesis-less-webview quirks, no lens-specific facts), so it gets
 # its own text rather than reusing GLASS_BRIEF's glasses-specific claims
 # verbatim.
-# The text moved to ops/harness/agents/wear-brief.md (harness-config-ui phase
+# The text moved to cells/copilot/harness/agents/wear-brief.md (harness-config-ui phase
 # 2): it is policy, not mechanism, and as a constant it was invisible to the
 # owner and unreachable by the /harness editor. The length law is a rendered
 # slot there, so the watch can be terser than the chat without either number

@@ -1,5 +1,5 @@
 ---
-$schema: ../schema/agent.schema.json
+$schema: ../../../../ops/harness/schema/agent.schema.json
 name: ship-advisor
 description: Decides whether to ship, what kind, and what the next steps are - from evidence, not a stored hash.
 settings: ""

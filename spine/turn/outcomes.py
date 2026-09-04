@@ -12,7 +12,7 @@ _READY_TAIL_RE = re.compile(r"ready for review\b.*", re.I | re.S)
 
 def extract_outcome(reply):
     """A 1-2 line result sentence from a card's final reply: the agent's
-    DELIVERED summary (ops/harness/agents/card-worker.md convention, same anchor ask.py keys
+    DELIVERED summary (cells/engineer/harness/agents/card-worker.md convention, same anchor ask.py keys
     off) when present, else the reply's first lines. '' when nothing usable."""
     text = (reply or "").strip()
     if not text:

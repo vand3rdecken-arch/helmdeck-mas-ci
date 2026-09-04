@@ -1284,7 +1284,7 @@ DEBT = [
         "status": "open",
         "what": "Henry writes durable facts to daemon/henry_memory/ - a plain .md "
                 "directory plus an index, injected each turn by copilot._memory_digest "
-                "and instructed in ops/harness/agents/board-copilot.md. The claude CLI "
+                "and instructed in cells/copilot/harness/agents/board-copilot.md. The claude CLI "
                 "ALSO carries its own auto-memory directory under ~/.claude/projects/**. "
                 "We deliberately did not build on that one: harness._memory_isolation "
                 "records that the CLI derives its path from a project identity which "
@@ -1768,7 +1768,7 @@ DEBT = [
         "fix": "SHARE BUT READ-ONLY (option b of the three originally proposed), verified "
                "against the real CLI in both directions before shipping - the same "
                "'measured, not assumed' standard as probe_harness_settings.py. "
-               "ops/harness/settings/card.json and ops/harness/settings/copilot.json now deny "
+               "cells/engineer/harness/settings/card.json and cells/copilot/harness/settings/copilot.json now deny "
                "`Write(~/.claude/projects/**)` and `Edit(~/.claude/projects/**)`, the SAME "
                "Read/Write/Edit tool-pattern mechanism that already protects "
                "daemon/settings.json two lines above it - no new mechanism introduced. "

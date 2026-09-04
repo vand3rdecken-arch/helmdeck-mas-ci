@@ -38,6 +38,63 @@ HARNESS = os.path.join(ROOT, "ops", "harness")
 AGENTS = os.path.join(HARNESS, "agents")
 SETTINGS = os.path.join(HARNESS, "settings")
 
+# Cell ownership (owner decree 2026-09-04): a brief is that cell's policy, not
+# ops/'s - "the tree IS the architecture" (CLAUDE.md) means Henry's character
+# lives where Henry's code lives. Only agent/settings NAMES listed here have a
+# cell home; schema/ and templates/ are infrastructure and stay under
+# ops/harness/ - they are not any one cell's policy.
+AGENT_CELL = {
+    "card-worker": "engineer", "machine-worker": "engineer",
+    "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot",
+    "glass-brief": "copilot", "voice-style": "copilot", "wear-brief": "copilot",
+}
+SETTINGS_CELL = {"card": "engineer", "copilot": "copilot"}
+
+
+def _cell_agents_dir(cell):
+    return os.path.join(ROOT, "cells", cell, "harness", "agents")
+
+
+def _cell_settings_dir(cell):
+    return os.path.join(ROOT, "cells", cell, "harness", "settings")
+
+
+def _agent_path(name):
+    """Where <name>.md is READ from: the owning cell's harness/agents/ dir if
+    the file actually lives there, else the legacy ops/harness/agents/
+    location. Total by construction - an unclaimed name or a not-yet-migrated
+    file both resolve to the legacy path, which is exactly today's behaviour."""
+    cell = AGENT_CELL.get(name)
+    if cell:
+        p = os.path.join(_cell_agents_dir(cell), "%s.md" % name)
+        if os.path.exists(p):
+            return p
+    return os.path.join(AGENTS, "%s.md" % name)
+
+
+def _settings_path(key):
+    cell = SETTINGS_CELL.get(key)
+    if cell:
+        p = os.path.join(_cell_settings_dir(cell), "%s.json" % key)
+        if os.path.exists(p):
+            return p
+    return os.path.join(SETTINGS, "%s.json" % key)
+
+
+def _agent_write_path(name):
+    """Where <name>.md is WRITTEN: the owning cell's dir always (creating it
+    on first write), so an edit to a not-yet-migrated name starts its life at
+    the correct home instead of re-planting it in the legacy tree."""
+    cell = AGENT_CELL.get(name)
+    return os.path.join(_cell_agents_dir(cell), "%s.md" % name) if cell \
+        else os.path.join(AGENTS, "%s.md" % name)
+
+
+def _settings_write_path(key):
+    cell = SETTINGS_CELL.get(key)
+    return os.path.join(_cell_settings_dir(cell), "%s.json" % key) if cell \
+        else os.path.join(SETTINGS, "%s.json" % key)
+
 _lock = threading.Lock()
 _cache = {}          # path -> (stamp, parsed)
 _errors = {}         # path -> message   (cleared for a path once it loads clean)
@@ -133,7 +190,7 @@ _DEFAULTS = {
          "ask_protocol": False}),
     "board-copilot": (
         "You are HENRY, HelmDeck's board agent. Your full role file "
-        "(ops/harness/agents/board-copilot.md) is MISSING from this "
+        "(cells/copilot/harness/agents/board-copilot.md) is MISSING from this "
         "installation - you are running in degraded mode. Answer questions "
         "briefly, take no board actions, and tell the owner in your first "
         "sentence that the installation is broken (harness role file missing) "
@@ -300,7 +357,7 @@ def _parse_agent(raw):
 
 
 def _agent_file(name):
-    return _cached(os.path.join(AGENTS, "%s.md" % name), _parse_agent)
+    return _cached(_agent_path(name), _parse_agent)
 
 
 def _resolve(body, fm):
@@ -419,7 +476,7 @@ def settings_file(name):
     key = (meta(name) or {}).get("settings")
     if not key:
         return ""
-    path = os.path.join(SETTINGS, "%s.json" % key)
+    path = _settings_path(key)
     if _cached(path, json.loads) is None:
         return ""
     return path
@@ -455,10 +512,10 @@ def describe():
     out = []
     for name in sorted(_DEFAULTS):
         m = meta(name)
-        path = os.path.join(AGENTS, "%s.md" % name)
+        path = _agent_path(name)
         out.append({
             "name": name,
-            "source": "ops/harness/agents/%s.md" % name if os.path.exists(path) else "built-in default",
+            "source": _rel(path) if os.path.exists(path) else "built-in default",
             "settings": (os.path.relpath(settings_file(name), ROOT).replace("\\", "/")
                          if settings_file(name) else ""),
             "setting_sources": m.get("setting_sources"),
@@ -497,7 +554,7 @@ SURFACES = [
      "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
     {"key": "machine", "agent": "machine-worker", "label": "Maschine (Task auf dem PC)",
      "builder": "drivers.build_argv", "cwd": "<Arbeitsordner des Tasks>"},
-    # `agent` is the FILE key (ops/harness/agents/board-copilot.md) and deliberately
+    # `agent` is the FILE key (cells/copilot/harness/agents/board-copilot.md) and deliberately
     # keeps its old name: renaming the file would break every brief lookup and
     # the settings mapping for a cosmetic win. The LABEL is what the owner reads.
     {"key": "pm", "agent": "board-copilot", "label": "PM / Henry",
@@ -729,10 +786,11 @@ def settings_keys():
 
 
 def agent_doc(name):
-    """The raw markdown of ops/harness/agents/<name>.md plus what it resolves to.
-    `text` is "" when the file does not exist - the surface is then running on
-    the built-in default, and writing creates the file."""
-    path = os.path.join(AGENTS, "%s.md" % name)
+    """The raw markdown of <name>.md (the owning cell's copy if migrated, else
+    the legacy ops/harness/ one) plus what it resolves to. `text` is "" when
+    the file does not exist - the surface is then running on the built-in
+    default, and writing creates the file."""
+    path = _agent_path(name)
     raw = _read_text(path)
     m = meta(name)
     return {
@@ -746,8 +804,9 @@ def agent_doc(name):
 
 
 def settings_doc(key):
-    """The raw JSON of ops/harness/settings/<key>.json."""
-    path = os.path.join(SETTINGS, "%s.json" % key)
+    """The raw JSON of <key>.json (the owning cell's copy if migrated, else
+    the legacy ops/harness/ one)."""
+    path = _settings_path(key)
     raw = _read_text(path)
     return {
         "key": key, "path": _rel(path), "exists": raw is not None,
@@ -781,9 +840,10 @@ def write_agent(name, text, actor="owner"):
     if errs:
         raise ValueError("Frontmatter verletzt das Schema (%s): %s" % (validator, "; ".join(errs[:5])))
     st = fm.get("settings")
-    if st and not os.path.exists(os.path.join(SETTINGS, "%s.json" % st)):
-        raise ValueError("settings: %s zeigt auf ops/harness/settings/%s.json - die es nicht gibt" % (st, st))
-    path = os.path.join(AGENTS, "%s.md" % name)
+    if st and not os.path.exists(_settings_path(st)):
+        raise ValueError("settings: %s zeigt auf %s.json - die es nicht gibt" % (st, st))
+    path = _agent_write_path(name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     vid = _keep_version("agents", name, path, actor)
     _atomic_write(path, text if text.endswith("\n") else text + "\n")
     return {"path": _rel(path), "kept_version": vid, "validator": validator,
@@ -812,7 +872,8 @@ def write_settings(key, text, actor="owner"):
     errs, validator = validate(obj, "settings")
     if errs:
         raise ValueError("verletzt das Schema (%s): %s" % (validator, "; ".join(errs[:5])))
-    path = os.path.join(SETTINGS, "%s.json" % key)
+    path = _settings_write_path(key)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     vid = _keep_version("settings", key, path, actor)
     _atomic_write(path, text if text.endswith("\n") else text + "\n")
     return {"path": _rel(path), "kept_version": vid, "validator": validator, "sha256": _sha(text)}
@@ -964,7 +1025,7 @@ def preview(surface_key, cfg=None):
     agent = s["agent"]
     m = meta(agent)
     body = brief(agent)
-    apath = os.path.join(AGENTS, "%s.md" % agent)
+    apath = _agent_path(agent)
     araw = _read_text(apath)
     sf = settings_file(agent)
     out = {

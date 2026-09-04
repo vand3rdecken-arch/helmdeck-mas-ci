@@ -7,7 +7,7 @@ als Fliesstext und sind nirgends sichtbar oder einstellbar").
 
 THE MECHANIC, in one sentence: the brief stays a file and stays prose; the
 paragraphs that really carry a VALUE become SLOTS, and the values render into
-them. `{{rule:tone.length}}` in ops/harness/agents/board-copilot.md is
+them. `{{rule:tone.length}}` in cells/copilot/harness/agents/board-copilot.md is
 substituted here. The pattern is not new - harness.py already splices
 `{{ask_protocol}}` for exactly the same reason (prompt and parser have to ship
 together).
@@ -129,7 +129,7 @@ BEHAVIOR_RULES = [
              "knapp": "at most 2 short sentences",
              "normal": "at most 4 short sentences",
              "ausfuehrlich": "as long as the answer genuinely needs"}}},
-     "source": "ops/harness/agents/board-copilot.md:93"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:93"},
 
     {"key": "tone.address", "block": "tone", "wire": "slot", "kind": "policy",
      "control": "single", "options": ["du", "Sie"],
@@ -140,7 +140,7 @@ BEHAVIOR_RULES = [
      "surfaces": {
          "pm": {"default": "du", "renders": {
              "du": 'always "du"', "Sie": 'always "Sie"'}}},
-     "source": "ops/harness/agents/board-copilot.md:17"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:17"},
 
     {"key": "tone.language", "block": "tone", "wire": "slot", "kind": "policy",
      "control": "single", "options": ["de", "en"],
@@ -152,7 +152,7 @@ BEHAVIOR_RULES = [
      "surfaces": {
          "pm": {"default": "de", "renders": {
              "de": "German", "en": "English"}}},
-     "source": "ops/harness/agents/board-copilot.md:17"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:17"},
 
     {"key": "tone.humor", "block": "tone", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "workspace", "binds": [],
@@ -163,7 +163,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "Mild dry humor is allowed; cheerleading is not.",
              False: "Neither humor nor cheerleading; state it plainly."}}},
-     "source": "ops/harness/agents/board-copilot.md:20"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:20"},
 
     {"key": "tone.jargon", "block": "tone", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "workspace", "binds": [],
@@ -174,7 +174,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "and never internal jargon (Snapshot,\n   Lane, Gate, Worktree) in the owner's chat",
              False: "and internal terms are fine when they are\n   the precise word"}}},
-     "source": "ops/harness/agents/board-copilot.md:73"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:73"},
 
     {"key": "tone.house_rules", "block": "tone", "wire": "slot", "kind": "policy",
      "control": "text", "scope": "workspace", "binds": [],
@@ -191,7 +191,7 @@ BEHAVIOR_RULES = [
      "why": "\"examples are the law\" - die Do/Don't-Paare sind die eigentliche "
             "Tonvorgabe. Sie zu parametrisieren hiesse, den Ton zu loeschen.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "ops/harness/agents/board-copilot.md:25-42"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:25-42"},
 
     # ---------------------------------------------------------- initiative --
     {"key": "initiative.estimate", "block": "initiative", "wire": "slot", "kind": "policy",
@@ -203,7 +203,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: 'And release him from waiting: "dauert\n   ~10 Minuten, du musst nicht warten - ich meld mich" (true: the daemon\n   pushes your Rueckmeldung onto his phone).',
              False: "Do not promise to report back unless he asks."}}},
-     "source": "ops/harness/agents/board-copilot.md:69"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:69"},
 
     {"key": "initiative.progress", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "project", "binds": ["working"],
@@ -214,7 +214,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "The owner should never have to ask \"und, wie weit?\" -\n   a returning owner gets the Zwischenmeldung unprompted.",
              False: "Report progress only when he asks for it."}}},
-     "source": "ops/harness/agents/board-copilot.md:80"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:80"},
 
     {"key": "initiative.finish", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "project", "binds": ["review", "done"],
@@ -226,7 +226,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "When a card's work is done, DRIVE it home instead of\nparking it: move it to review (runs the gate), and when the verdict is green\nand cleanly mergeable, move it to done yourself - the harness gates, merges\nand deploys; you never bypass any of that, you just stop waiting for a human\ndrag.",
              False: "When a card's work is done, move it to review and STOP -\nthe owner accepts it himself."}}},
-     "source": "ops/harness/agents/board-copilot.md:254"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:254"},
 
     {"key": "initiative.questions", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "number", "scope": "project", "binds": ["backlog"],
@@ -242,7 +242,7 @@ BEHAVIOR_RULES = [
          1: "ask the ONE question that",
          2: "ask the 2-3 questions that",
          3: "ask the 3-4 questions that"}}},
-     "source": "ops/harness/agents/board-copilot.md:223"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:223"},
 
     {"key": "initiative.stale_check", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "project", "binds": [],
@@ -254,7 +254,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "A card's lane/status in the DB is not proof its\ntext still holds - the newer evidence wins.",
              False: "Cite a card's own text as it stands."}}},
-     "source": "ops/harness/agents/board-copilot.md:320"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:320"},
 
     {"key": "initiative.repo_default", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "single", "options": ["direkt", "worktree"],
@@ -267,7 +267,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": "direkt", "renders": {
              "direkt": "This is the DEFAULT for repo fixes and small/medium features the owner asks for",
              "worktree": "Use it only when the owner asks for the live tree explicitly"}}},
-     "source": "ops/harness/agents/board-copilot.md:119"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:119"},
 
     # --------------------------------------------------------------- hands --
     {"key": "hands.own_hands", "block": "hands", "wire": "slot", "kind": "policy",
@@ -279,7 +279,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "You HAVE HANDS (owner decree 2026-08-21: \"do\nstuff directly instead of waiting\"): for a SMALL, immediate fix - read a log,\ncorrect a config value, restart a stuck script, patch an obvious one-file bug -\nuse your own tools in this turn and tell the owner what you did. Do NOT file a\ncard for something you can finish yourself in under a few minutes.",
              False: "You have NO hands of your own: every change, however small,\ngoes to an agent you dispatch."}}},
-     "source": "ops/harness/agents/board-copilot.md:203"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:203"},
 
     {"key": "hands.protected_files", "block": "hands", "wire": "slot", "kind": "fixed",
      "control": "list", "scope": "workspace", "binds": ["working"],
@@ -293,7 +293,7 @@ BEHAVIOR_RULES = [
                             "spine/auth/charter.py", "spine/auth/policy.py",
                             "spine/auth/gxp.py", "ops/tools/run_gate.py"],
                 "renders": None}},
-     "source": "ops/harness/agents/board-copilot.md:244"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:244"},
 
     {"key": "hands.configure_allowlist", "block": "hands", "wire": "slot", "kind": "fixed",
      "control": "prose", "scope": "workspace", "binds": [],
@@ -312,7 +312,7 @@ BEHAVIOR_RULES = [
      "why": "Zerstoerendes ohne klaren Auftrag bleibt beim Menschen. Das ist "
             "keine Einstellung.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "ops/harness/agents/board-copilot.md:236"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:236"},
 
     {"key": "hands.permission_mode", "block": "hands", "wire": "code", "kind": "policy",
      "control": "single", "options": ["plan", "acceptEdits"],
@@ -436,7 +436,7 @@ BEHAVIOR_RULES = [
      "why": "Owner-Decree: Henry ist die eine Schnittstelle zu Maschine und "
             "Board. Ein \"kann ich nicht\" ist dort ein Defekt, keine Antwort.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "ops/harness/agents/board-copilot.md:202"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:202"},
 
     # -------------------------------------------------------------- memory --
     {"key": "memory.enabled", "block": "memory", "wire": "slot", "kind": "policy",
@@ -449,7 +449,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - schreib es\nsofort als eigene Datei dorthin und trag eine Zeile im Index nach.",
              False: "Lege KEINE neuen Notizen an; lies nur, was schon dort steht."}}},
-     "source": "ops/harness/agents/board-copilot.md:272"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:272"},
 
     {"key": "memory.index_path", "block": "memory", "wire": "readonly", "kind": "fixed",
      "control": "prose", "scope": "workspace", "binds": [],
