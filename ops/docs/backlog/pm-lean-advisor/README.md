@@ -1,5 +1,17 @@
 # PM-Lean-Advisor — den Briefing-Kern durch messbaren Rat ersetzen
 
+> **SHIPPED 2026-09-04** (Commit `4bd51a9`, direkt umgesetzt - "alle drei
+> Phasen direkt bauen"). Alle drei Phasen sind live: der Verify/Repair-Kern
+> ist komplett entfernt, `brief()` ist ein Turn, Budget/Timeline/Scope/Gate
+> sind vollständig code-abgeleitet, die ETA ist eine gemessene Spanne (nie
+> ein Datum), "Neu planen"-Knopf + Spinner sind ersatzlos raus (Umplanung
+> läuft ereignisgesteuert), `goal_check` (günstiger Turn, nur Karten-Titel)
+> und `duplicate_titles` (reiner Code) liefern Vorschläge über den
+> bestehenden `_ask_owner`-Fragen-Kanal mit Cooldown-Gedächtnis. Volle
+> Test-Sweep grün (gate, test_pm_clarifications neu ausgerichtet, neues
+> test_pm_lean_advisor.py, test_behavior_rules, test_harness(+_layer),
+> test_server_routes, App-tsc). Per OTA ausgeliefert.
+
 Owner-Beschwerde (2026-09-04, mehrfach in einer Session): "Neu planen" dauert
 7 Minuten, danach sieht das Board exakt gleich aus, und der Output ist
 "Infos, womit ich nichts anfangen kann". Owner-Steering für den Umbau:
