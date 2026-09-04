@@ -45,10 +45,24 @@ def _watch_budget_ctx():
                        of the weekly quota (cost basis when calibrated, else
                        tokens - see events.plan_calibration).
       ("eur", None)  - API plan with a monthly cap: real money.
-      ("usd", None)  - no plan size known (cold calibration, capless API):
-                       the measured API-equivalent $ - degraded but never
-                       silent, and never labeled as spend (ai_billing)."""
+      ("none", None) - no plan size known and no live usage reachable either
+                       (offline, no Claude login): genuinely nothing honest to
+                       show - never a shadow-$ standing in for it (owner
+                       decree 2026-09-04, "echte Kosten oder gar nicht oder
+                       Anteil" - a Max-plan card that showed "$770 API-
+                       Gegenwert" read as a real invoice, label or not).
+
+    plan_calibration() reads events.usage.cached() - a non-blocking, possibly
+    STALE snapshot, deliberately cheap for hot request paths (events.metrics()
+    polls it every few seconds). _cost_watch runs on the PM's own background
+    tick (every 120s, its own thread), not a request path, so it can afford
+    the one thing cached() can't: a bounded fresh fetch (15s timeout) when the
+    cache is cold, rather than falling back to a fake currency. Measured
+    2026-09-04: a cold-cache read returned None while a live fetch, taken
+    seconds later, returned real calibration (49% weekly, tokens_per_pct
+    ~36.2M) - the SAME real data, just not yet cached in this process."""
     from spine.storage import events
+    from spine.ops import usage
     from cells.copilot.planning.pm import _pm
     plan, _src = events.plan_effective()
     if plan == "api" and (_pm().get("monthly_eur") or 0) > 0:
@@ -59,7 +73,19 @@ def _watch_budget_ctx():
         calib = None
     if plan != "api" and calib and (calib.get("cost_per_pct") or calib.get("tokens_per_pct")):
         return "pct", calib
-    return "usd", None
+    if plan != "api":
+        try:
+            fresh = usage.snapshot()          # bounded fetch, not the cold cached()
+        except Exception:
+            fresh = None
+        if fresh and fresh.get("status") == "ok":
+            try:
+                calib = events.plan_calibration()   # re-read: usage.cached() is warm now
+            except Exception:
+                calib = None
+            if calib and (calib.get("cost_per_pct") or calib.get("tokens_per_pct")):
+                return "pct", calib
+    return "none", None
 
 
 def _watch_bac_pct(base_pct, reserve, prio, weight_sum):
@@ -144,9 +170,15 @@ def _cost_watch(st, tracks):
         elif kind == "eur":
             spent = d_cost
             budget = float(pm.get("monthly_eur") or 0) * bac_pct / 100.0
-        else:                                    # cold calibration: shadow-$ ladder
-            spent = d_cost
-            budget = (float(pm.get("watch_floor_usd") or 0) or 5.0) * _WATCH_PRIO.get(prio, 1.0)
+        else:
+            # NO calibration reachable at all (offline, no Claude login) and
+            # not an API plan either: TOKENS are the one honest absolute left
+            # - real, measured, never dressed as a currency (owner decree
+            # 2026-09-04, "echte Kosten oder gar nicht oder Anteil" - a
+            # shadow-"$770 API-Gegenwert" on a Max-plan card read as a real
+            # invoice, the "never labeled as spend" comment notwithstanding).
+            spent = float(d_tok)
+            budget = (float(pm.get("watch_floor_tokens") or 0) or 2_000_000.0) * _WATCH_PRIO.get(prio, 1.0)
         mult = float(w.get("mult") or 1.0)
         if budget > 0 and spent >= budget * mult:
             # jump PAST the current spend, so one huge turn fires ONE rung -
@@ -174,11 +206,14 @@ def _cost_watch(st, tracks):
                           % (spent, budget, bac_pct, prio, nxt, task), card=tid)
                 over = "~€%.2f statt der zugeteilten ~€%.2f" % (spent, budget)
             else:
-                _activity("blocked", "Budget ueberschritten (USD %.2f API-Gegenwert, "
-                          "Kalibrierung kalt, naechste Meldung ~%.2f): %s"
-                          % (spent, nxt, task), card=tid)
-                over = "~$%.2f API-Gegenwert" % spent
-            _ask_owner("💸 „%s“ hat %s verbraucht. Weiterlaufen lassen?" % (name, over),
+                _activity("blocked", "Ungewoehnlich viel Kontext verbraucht (%.1fM Tokens, "
+                          "keine Kalibrierung erreichbar, naechste Meldung ~%.1fM): %s"
+                          % (spent / 1e6, nxt / 1e6, task), card=tid)
+                over = "~%.1f Mio. Tokens (keine %%- oder €-Umrechnung moeglich)" % (spent / 1e6)
+            # 💸 only where money is the actual unit - a token count wearing a
+            # money-bag emoji is the exact misleading-currency bug under fix.
+            icon = "📊" if kind == "none" else "💸"
+            _ask_owner("%s „%s“ hat %s verbraucht. Weiterlaufen lassen?" % (icon, name, over),
                        _OVER_BUDGET_OPTIONS, header="Über Budget", card=tid,
                        title=_i18n.t("push.pmCost"))
         hot = ctx >= ctx_floor
