@@ -288,6 +288,7 @@ function verdictOf(plan: PmBrief | null | undefined): "risk" | "you" | "ok" {
   const tri = plan?.triage ?? {};
   if (tri.budget === "blocked" || tri.timeline === "blocked") return "risk";
   if ((plan?.open_questions ?? []).some((q) => q?.trim())) return "you";
+  if (plan?.critical_path?.[0]?.who === "du") return "you";
   return "ok";
 }
 
@@ -308,6 +309,7 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
   const checkedAt = plan?.generated_at ? plan.generated_at.slice(11, 16) : null;
   const b = plan?.budget;
   const ms = plan?.milestones ?? [];
+  const cp = plan?.critical_path ?? [];
   const risks = (plan?.risks ?? []).filter((r) => typeof r === "string" && r.trim()).slice(0, 2);
   // capacity as a CONCLUSION sentence; the blocked case gets the measured
   // note verbatim (pm_budget writes it in owner vocabulary since 794ecec).
@@ -348,63 +350,111 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
             <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12, flex: 1 }}>{runningNow}</Text>
           </View>
         ) : null}
-        {/* THE ask - the one decision only the owner can make, straight to chat */}
-        {ask ? (
-          <Pressable onPress={() => router.push("/chat" as never)}
-            style={{ backgroundColor: t.warn + "14", borderColor: t.warn + "55", borderWidth: 1,
-              borderRadius: 12, padding: 12, gap: 4 }}>
-            <Text style={{ color: t.warn, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" }}>
-              {tr("dash.status.needTitle")}
-            </Text>
-            <Text style={{ color: t.txtPrimary, fontSize: 13.5, lineHeight: 19 }}>{ask}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("dash.status.answerHint")}</Text>
-              <Ionicons name="arrow-forward-circle" size={15} color={t.accent} />
-            </View>
-          </Pressable>
-        ) : null}
-        {/* roadmap: milestones as STATES, never effort units */}
-        {ms.length ? (
+        {cp.length ? (
+          // "DER WEG" (pm-lean-advisor phase 3.1, 2026-09-04, owner: "ich
+          // muss noch an Release arbeiten, aber kann nicht releasen weil
+          // Google ein Video will - sobald das weg ist, kann ich releasen
+          // und mich auf Marketing konzentrieren" - a CHAIN, not a parallel
+          // list). Step 1 merges with the ask-card treatment when it is the
+          // owner's own move - that IS the decision, not a second thing to
+          // separately answer.
           <View style={{ gap: 7 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" }}>
-              {tr("dash.status.roadmap")}
+              {tr("dash.status.path")}
             </Text>
-            {ms.map((mm, i) => {
-              const done = mm.status === "done";
-              const wait = !done && !!mm.calendar_wait;
-              // "läuft" is BOARD-derived, never the LLM's status claim (owner
-              // caught M3 saying "läuft" with no card behind it, 2026-09-04:
-              // "Woher kam das? Ich sehe das nicht auf dem Board"). A
-              // milestone only runs if its card actually sits in the working
-              // lane; one with NO card at all is honestly a "Vorschlag" -
-              // the planner proposing work, which the board (the single
-              // truth) does not yet hold.
-              const lane = mm.card ? m.cards?.find((c) => c.id === mm.card)?.lane : undefined;
-              const running = !done && !wait && lane === "working";
-              const proposal = !done && !wait && !mm.card;
-              const ic = done ? "checkmark-circle" : wait ? "pause-circle" : running ? "play-circle"
-                : proposal ? "bulb-outline" : "ellipse-outline";
-              const col = done ? t.ok : wait ? t.txtTertiary : running ? t.accent : t.txtTertiary;
-              const word = done ? tr("dash.triangle.msDone") : wait ? tr("dash.triangle.msWait")
-                : running ? tr("dash.status.msRunning")
-                : proposal ? tr("dash.status.msProposal") : tr("dash.status.msPlanned");
+            {cp.map((step, i) => {
+              const isYou = step.who === "du";
+              const col = isYou ? t.warn : step.who === "extern" ? t.txtTertiary : t.accent;
+              const ic = isYou ? "person-circle" : step.who === "extern" ? "hourglass-outline" : "cog-outline";
+              const chip = tr(isYou ? "dash.status.whoDu" : step.who === "extern" ? "dash.status.whoExtern" : "dash.status.whoAgent");
               return (
-                <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={16} color={col} />
-                  {/* "M2:"/"M3:" is the planner's internal milestone numbering
-                      (owner, 2026-09-04: "what does M2 and M3 mean? absolute
-                      trash if I can't understand it") - stripped here so even
-                      an old plan artifact renders clean. */}
-                  <Text numberOfLines={1} style={{ color: done ? t.txtTertiary : t.txtSecondary, fontSize: 12.5, flex: 1,
-                    textDecorationLine: done ? "line-through" : "none" }}>{(mm.name || "").replace(/^M\d+:\s*/, "")}</Text>
-                  <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
-                  {mm.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
+                <Pressable key={i}
+                  onPress={() => isYou ? router.push("/chat" as never)
+                    : step.card ? router.push(`/card/${step.card}` as never) : undefined}
+                  disabled={!isYou && !step.card}
+                  style={isYou ? {
+                    backgroundColor: t.warn + "14", borderColor: t.warn + "55", borderWidth: 1,
+                    borderRadius: 12, padding: 12, gap: 4,
+                  } : { flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {isYou ? (
+                    <>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={14} color={t.warn} />
+                        <Text style={{ color: t.warn, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                          {tr("dash.status.needTitle")}
+                        </Text>
+                      </View>
+                      <Text style={{ color: t.txtPrimary, fontSize: 13.5, lineHeight: 19 }}>
+                        {step.step}{step.why ? " — " + step.why : ""}
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("dash.status.answerHint")}</Text>
+                        <Ionicons name="arrow-forward-circle" size={15} color={t.accent} />
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={16} color={col} />
+                      <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1 }}>{step.step}</Text>
+                      <Text style={{ color: col, fontSize: 10.5, fontWeight: "700", textTransform: "uppercase" }}>{chip}</Text>
+                      {step.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
+                    </>
+                  )}
                 </Pressable>
               );
             })}
           </View>
-        ) : null}
+        ) : (
+          // FALLBACK (no critical_path on this artifact - an older plan, or
+          // the model omitted it): the previous ask-card + milestone list,
+          // unchanged, so nothing ever renders blank.
+          <>
+            {ask ? (
+              <Pressable onPress={() => router.push("/chat" as never)}
+                style={{ backgroundColor: t.warn + "14", borderColor: t.warn + "55", borderWidth: 1,
+                  borderRadius: 12, padding: 12, gap: 4 }}>
+                <Text style={{ color: t.warn, fontSize: 11, fontWeight: "800", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  {tr("dash.status.needTitle")}
+                </Text>
+                <Text style={{ color: t.txtPrimary, fontSize: 13.5, lineHeight: 19 }}>{ask}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("dash.status.answerHint")}</Text>
+                  <Ionicons name="arrow-forward-circle" size={15} color={t.accent} />
+                </View>
+              </Pressable>
+            ) : null}
+            {ms.length ? (
+              <View style={{ gap: 7 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 10.5, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  {tr("dash.status.roadmap")}
+                </Text>
+                {ms.map((mm, i) => {
+                  const done = mm.status === "done";
+                  const wait = !done && !!mm.calendar_wait;
+                  const lane = mm.card ? m.cards?.find((c) => c.id === mm.card)?.lane : undefined;
+                  const running = !done && !wait && lane === "working";
+                  const proposal = !done && !wait && !mm.card;
+                  const ic = done ? "checkmark-circle" : wait ? "pause-circle" : running ? "play-circle"
+                    : proposal ? "bulb-outline" : "ellipse-outline";
+                  const col = done ? t.ok : wait ? t.txtTertiary : running ? t.accent : t.txtTertiary;
+                  const word = done ? tr("dash.triangle.msDone") : wait ? tr("dash.triangle.msWait")
+                    : running ? tr("dash.status.msRunning")
+                    : proposal ? tr("dash.status.msProposal") : tr("dash.status.msPlanned");
+                  return (
+                    <Pressable key={i} disabled={!mm.card} onPress={() => router.push(`/card/${mm.card}` as never)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons name={ic as keyof typeof Ionicons.glyphMap} size={16} color={col} />
+                      <Text numberOfLines={1} style={{ color: done ? t.txtTertiary : t.txtSecondary, fontSize: 12.5, flex: 1,
+                        textDecorationLine: done ? "line-through" : "none" }}>{(mm.name || "").replace(/^M\d+:\s*/, "")}</Text>
+                      <Text style={{ color: col, fontSize: 11, fontWeight: "600" }}>{word}</Text>
+                      {mm.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </>
+        )}
         {/* situation: capacity + risks as sentences, not gauges */}
         {capLine || risks.length ? (
           <View style={{ gap: 3 }}>

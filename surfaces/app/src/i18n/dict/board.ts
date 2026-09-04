@@ -218,6 +218,12 @@ export const board: Dict = {
   "dash.status.needTitle": { de: "Ich brauche von dir", en: "I need from you" },
   "dash.status.answerHint": { de: "Antworten — öffnet den Chat", en: "Answer — opens the chat" },
   "dash.status.roadmap": { de: "Roadmap", en: "Roadmap" },
+  // "Der Weg" (pm-lean-advisor phase 3.1, 2026-09-04): the dependency chain,
+  // not the parallel milestone list - who/du/agent/extern say whose move.
+  "dash.status.path": { de: "Der Weg", en: "The path" },
+  "dash.status.whoDu": { de: "Du", en: "You" },
+  "dash.status.whoAgent": { de: "Agent", en: "Agent" },
+  "dash.status.whoExtern": { de: "wartet extern", en: "external wait" },
   "dash.status.msRunning": { de: "läuft", en: "running" },
   "dash.status.msPlanned": { de: "geplant", en: "planned" },
   "dash.status.msProposal": { de: "Vorschlag", en: "proposed" },
