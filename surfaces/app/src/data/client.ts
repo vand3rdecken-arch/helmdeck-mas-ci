@@ -276,8 +276,19 @@ export interface PmBudget {
   // kind === "cash" (API)
   monthly_eur?: number; spent_to_date_eur?: number; cash_to_goal_eur?: number; projected_eur?: number;
 }
+/** "Der Weg" (pm-lean-advisor phase 3.1, 2026-09-04): the causal chain a
+ *  senior PM reports ("X blockiert → danach Y → dann Z"), not the parallel
+ *  milestone list - `who` says whose move each step is. This is the ONE
+ *  roadmap-shaped thing StatusPanel shows standing; milestones (the work
+ *  breakdown behind it) stay behind Details. Empty when the plan has none
+ *  (an old artifact, or the model omitted it) - the UI falls back to
+ *  milestones so nothing goes blank. */
+export interface PmCriticalPathStep {
+  step: string; who: "du" | "agent" | "extern"; why?: string; card?: string | null;
+}
 export interface PmBrief {
   summary?: string; done_pct?: number; milestones?: PmMilestone[];
+  critical_path?: PmCriticalPathStep[];
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
   budget?: PmBudget; economics?: Record<string, unknown>; goal?: string; generated_at?: string;
   // plan_status/triage/gate are ENTIRELY code-derived now (pm_triangle.

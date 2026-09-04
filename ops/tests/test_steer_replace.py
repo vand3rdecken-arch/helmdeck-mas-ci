@@ -82,7 +82,7 @@ _delivered = []                          # every prompt that REACHED the session
                                          # the conversation history - not lost)
 
 
-def _fake_turn(t, prompt, model=None, perm=None):
+def _fake_turn(t, prompt, model=None, perm=None, by=None):
     _delivered.append(prompt)
     ev = threading.Event()
     with _guard:

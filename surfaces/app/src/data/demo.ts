@@ -280,6 +280,11 @@ function pmPlan() {
       triage: { budget: "ok", timeline: "ok", scope: "ok" },
       eta: { known: true, days_min: 8, days_max: 14 },
       feasibility: { note: t("demo.pm.feasNote") },
+      critical_path: [
+        { step: t("demo.pm.m1"), who: "agent", card: "d2" },
+        { step: t("demo.pm.m2"), who: "agent", card: "d3" },
+        { step: t("demo.pm.m3"), who: "extern" },
+      ],
       budget: { plan: "max", fixed_monthly_eur: 90, spent_to_date_eur: 34.5,
         est_turns_to_goal: 120, velocity_turns_per_day: 18, eta_days: 7 },
       milestones: [

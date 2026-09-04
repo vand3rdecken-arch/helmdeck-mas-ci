@@ -565,6 +565,18 @@ def brief(goal=None, model=""):
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     # Style law: clip LLM prose at the SOURCE so every surface inherits the cap.
     out["summary"] = _clip_prose((out.get("summary") or "").strip(), 300)
+    # "Der Weg": the ONE thing StatusPanel shows standing (pm-lean-advisor
+    # phase 3.1, 2026-09-04). Malformed/oversized entries degrade to nothing
+    # rather than a half-rendered chain - the UI falls back to milestones.
+    cp = []
+    for step in (out.get("critical_path") or [])[:4]:
+        if not isinstance(step, dict) or not str(step.get("step") or "").strip():
+            continue
+        who = step.get("who") if step.get("who") in ("du", "agent", "extern") else "agent"
+        cp.append({"step": _clip_prose(str(step["step"]).strip(), 90), "who": who,
+                   "why": _clip_prose(str(step.get("why") or "").strip(), 110),
+                   "card": step.get("card") or None})
+    out["critical_path"] = cp
     # self-dedupe (the planner can still repeat itself in one turn) - the old
     # verifier-vs-planner merge is gone with the verifier, the utility stays
     # useful for this narrower job (ops/tests/test_pm_clarifications.py pins it).

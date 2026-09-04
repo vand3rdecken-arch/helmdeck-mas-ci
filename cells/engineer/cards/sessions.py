@@ -785,6 +785,11 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     from spine.agent import drivers
     events.emit("touch", tid, touch="steer", actor=actor)
     was_bounced = t.get("status") == "bounced"   # routing signal, read BEFORE 'running'
+    # same timing, for the SAME reason: this steer may be the owner resolving
+    # a pending question - captured before _begin() clears it below.
+    was_needs_you = t.get("status") == "needs_you"
+    pending_q = ((t.get("question") or {}).get("question")
+                or (t.get("question") or {}).get("header") or "")
     from spine.ops.actionlog import ActionLog
     log = ActionLog(t["run_dir"])
     # The owner typing /compact is a COMMAND, not a message to the worker. Sent
@@ -869,6 +874,26 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         tt.pop("question", None)
         tt["status"] = "running"
     t = _mutate(tid, _begin) or t
+    # A steer answering a WAITING goal-path card is the exact bug measured
+    # 2026-09-04 ("Owner macht jetzt das Video selbst und macht spaeter
+    # weiter" resolved the Play-Console video blocker, but only that one
+    # card's own turn log ever carried it - four days later the planner
+    # asked to release again, having forgotten). Fold it into the SAME
+    # ground-truth channel GRILLEN clarifications already use, so it
+    # outlives the card's next turn instead of getting overwritten by
+    # last_reply. Scoped to goal-path cards only (a milestone's own `card`)
+    # - a random unrelated card's Q&A is not the goal's ground truth, and
+    # add_clarification's 12-slot cap would just get spent on noise.
+    if was_needs_you:
+        try:
+            from cells.copilot.planning import pm
+            plan = pm.latest_plan() or {}
+            if pm.get_goal() and any((ms.get("card") == tid) for ms in (plan.get("milestones") or [])):
+                fact = "Karte '%s': %s -> Antwort: %s" % (
+                    (t.get("task") or "")[:80], pending_q[:200] if pending_q else "Rückfrage", text[:300])
+                pm.add_clarification(fact, actor=actor)
+        except Exception:
+            pass                          # a fold failure must never block the steer
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)
     # Auto routing sees the card's facts INCLUDING turn count - a card that's
     # already dragged on escalates to the strong model (cheap "escalate on

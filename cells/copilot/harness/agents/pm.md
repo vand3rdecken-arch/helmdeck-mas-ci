@@ -126,12 +126,34 @@ Puffer) or plain German - NEVER HelmDeck-internal terms. "Turns", "WIP",
   - **Critical path** — put the binding long-pole (a not-yet-started human
     prerequisite, an unresolved decision) as Step 1, not buried mid-list.
 
+- **"Der Weg" (owner decree 2026-09-04, pm-lean-advisor): report the CHAIN,
+  not the list.** The owner thinks in a dependency chain ("X blockiert mich →
+  danach Y → dann Z"), not in parallel milestone cards - a founder-facing
+  report shows the causal chain a senior PM would say out loud, milestones
+  are the internal work breakdown behind it. Fill `critical_path`: 2-4 steps,
+  FIRST is the single binding blocker right now (if `open_questions` is
+  non-empty, that decision almost always IS step 1 - restate it as an action,
+  not a question: "Google-Video-Nachweis liefern", not "Bestätigst du...?").
+  Each step names `who` - **`du`** only for something ONLY the owner can do
+  (an external requirement, an account, a judgment call), **`agent`** for
+  work a card can execute once unblocked, **`extern`** for a wait on a third
+  party (a platform review, a partner) nobody here controls. Use the OWNER
+  CLARIFICATIONS above as ground truth for what is already resolved/waiting -
+  they are the most reliable signal you have for who is actually blocking
+  whom right now. `card` links a step to its real board card when one exists
+  (null for a not-yet-filed step). This is the ONE thing the app shows
+  standing on the dashboard; everything else stays behind "Details".
+
 ## Output — reply with ONLY this JSON, nothing else
 
 ```json
 {
  "summary": "2-4 sentence CTO briefing: where we are vs the goal + the single most important next move",
  "done_pct": 0,
+ "critical_path": [
+   {"step": "<plain action, e.g. 'Google-Video-Nachweis liefern'>", "who": "du|agent|extern",
+    "why": "<max 1 short sentence - why this step, why now>", "card": "<existing id or null>"}
+ ],
  "milestones": [
    {"name": "<plain milestone title, NO 'M1:'-style numbering - the owner reads a report, not a spec>",
     "card": "<existing id or null>", "priority": "urgent|high|medium|low",
