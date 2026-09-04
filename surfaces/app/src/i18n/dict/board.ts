@@ -220,7 +220,7 @@ export const board: Dict = {
   "dash.corner.aiUse": { de: "KI {v} Tok (Flat)", en: "AI {v} tok (flat)" },
   "dash.corner.aiPlan": { de: "KI {v} vom Abo", en: "AI {v} of plan" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
-  "dash.corner.wip": { de: "WIP {wip}/{limit} · {n} frei", en: "WIP {wip}/{limit} · {n} free" },
+  "dash.corner.wip": { de: "Laufende Arbeit {wip}/{limit} · {n} Plätze frei", en: "Work in progress {wip}/{limit} · {n} slots free" },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",
