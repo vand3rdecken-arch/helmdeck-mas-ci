@@ -500,22 +500,6 @@ export default function Settings() {
           <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
           <Hint text={tr("settings.privacy.hint")} />
         </Panel>
-        {can(me, "settings.write") ? (
-          <Panel>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <SectionLabel text={tr("profile.wsSection")} />
-              <ScopeBadge scope="workspace" />
-            </View>
-            <Hint text={tr("profile.wsSection.hint")} />
-            <Caption text={tr("ui.language")} />
-            <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === wsLang)?.label ?? LANG_LABELS[0]]}
-              single onToggle={(label) => saveWsLang(langId(label))} />
-            <View style={{ height: 10 }} />
-            <Caption text={tr("settings.policy.backdrop")} />
-            <ChipPick options={["mesh", "aurora", "ember", "forest", "mono"]} selected={[wsBackdrop]} single
-              onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
-          </Panel>
-        ) : null}
       </DoorFrame>
     );
   }
@@ -839,6 +823,27 @@ export default function Settings() {
   // -------------------------------------------------------------- door 7: System
   return (
     <DoorFrame title={doorLabel} onBack={goList} wide={wide} context={doorContext}>
+      {/* Workspace defaults - what a NEW account starts with, not this
+          owner's own language/theme. Moved here from "Mein Profil" (owner
+          request 2026-09-04): other apps (Slack, Notion, Linear) never put
+          "my setting" and "org default" on the same personal-profile screen -
+          location signals ownership. This door is already owner-only. */}
+      {can(me, "settings.write") ? (
+        <Panel>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <SectionLabel text={tr("profile.wsSection")} />
+            <ScopeBadge scope="workspace" />
+          </View>
+          <Hint text={tr("profile.wsSection.hint")} />
+          <Caption text={tr("ui.language")} />
+          <ChipPick options={LANG_LABELS} selected={[LANGS.find((l) => l.id === wsLang)?.label ?? LANG_LABELS[0]]}
+            single onToggle={(label) => saveWsLang(langId(label))} />
+          <View style={{ height: 10 }} />
+          <Caption text={tr("settings.policy.backdrop")} />
+          <ChipPick options={["mesh", "aurora", "ember", "forest", "mono"]} selected={[wsBackdrop]} single
+            onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
+        </Panel>
+      ) : null}
       <UsagePanel />
       {/* Business + machine knobs: schema-rendered since phase 4. This was a
           hand-built nine-field FormGrid with its own saveBusiness(). */}
