@@ -314,6 +314,15 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
   const capLine = !b?.state ? "" : b.state === "ok" ? tr("dash.status.capOk")
     : b.state === "warn" ? tr("dash.status.capWarn")
     : (b.note || tr("dash.status.capWarn"));
+  // The ONE thing PMStatusPanel had that nothing else on this screen said:
+  // the loop is actively doing something RIGHT NOW. Everything else it
+  // showed (needs_you count, the follow-up text, "Plan-Gate rot") was
+  // already the verdict/ask above, once literally three times in a row
+  // (owner, 2026-09-04: "ist das noch nötig?" on a feed stacking identical
+  // "Plan geprüft - nichts Neues nötig." lines). Silent when nothing runs.
+  const act = data?.activity;
+  const runningNow = act?.loop_enabled && act?.state && act.state !== "IDLE" && act.state !== "OFF"
+    ? act.now?.[0] : undefined;
   return (
     <>
       <GlassPanel title={tr("dash.status.title")}>
@@ -333,6 +342,12 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
           </Text>
         </View>
         <Meter pct={pct} color={verdict === "risk" ? t.danger : t.ok} />
+        {runningNow ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="sync" size={12} color={t.accent} />
+            <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12, flex: 1 }}>{runningNow}</Text>
+          </View>
+        ) : null}
         {/* THE ask - the one decision only the owner can make, straight to chat */}
         {ask ? (
           <Pressable onPress={() => router.push("/chat" as never)}
