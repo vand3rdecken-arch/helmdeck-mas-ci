@@ -20,6 +20,13 @@ import { useTheme } from "@/theme";
 export function usePmReplan() {
   const qc = useQueryClient();
   const [planning, setPlanning] = useState(false);
+  // A bare spinner reads as stuck the moment it outlives the user's patience
+  // - and this one regularly runs 2-3 minutes (one real model turn, not an
+  // API call). Ticking elapsed seconds is what tells "still going" apart
+  // from "hung", the same distinction a download progress bar gives for
+  // free and a spinner alone never can.
+  const [elapsed, setElapsed] = useState(0);
+  const startedAt = useRef<number | undefined>(undefined);
   const baseline = useRef<string | undefined>(undefined);
   const bail = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000,
@@ -31,18 +38,25 @@ export function usePmReplan() {
       qc.invalidateQueries({ queryKey: ["tracks"] });
     }
   }, [planning, data?.plan?.generated_at, qc]);
+  useEffect(() => {
+    if (!planning || !startedAt.current) return;
+    const tick = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current!) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, [planning]);
   useEffect(() => () => { if (bail.current) clearTimeout(bail.current); }, []);
   const kick = useMutation({
     mutationFn: api.pmReplan,
     onMutate: () => {
       baseline.current = data?.plan?.generated_at;
+      startedAt.current = Date.now();
+      setElapsed(0);
       setPlanning(true);
       if (bail.current) clearTimeout(bail.current);
       bail.current = setTimeout(() => setPlanning(false), 5 * 60 * 1000);
     },
     onError: (e: unknown) => { setPlanning(false); Alert.alert("PM", String((e as Error).message)); },
   });
-  return { planning, replan: () => kick.mutate() };
+  return { planning, elapsed, replan: () => kick.mutate() };
 }
 
 // act.now lines are DAEMON prose (translated daemon-side, see daemon/i18n.py) -
@@ -125,7 +139,7 @@ export function PMControls() {
   const { data, isLoading } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [goal, setGoal] = useState<string | null>(null);
   const [editGoal, setEditGoal] = useState(false);
-  const { planning, replan } = usePmReplan();
+  const { planning, elapsed, replan } = usePmReplan();
 
   // Setting the goal used to POST /pm/report directly - the SAME synchronous,
   // full-model-turn endpoint usePmReplan's own comment above documents as
@@ -259,7 +273,9 @@ export function PMControls() {
           style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
             backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10 }}>
           {planning ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={15} color={t.txtSecondary} />}
-          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{planning ? tr("pm.planning") : tr("pm.refresh")}</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>
+            {planning ? tr("pm.planningFor", { s: elapsed }) : tr("pm.refresh")}
+          </Text>
         </Pressable>
         <Pressable onPress={consolidate} disabled={proposing}
           style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
@@ -268,6 +284,7 @@ export function PMControls() {
           <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{proposing ? tr("pm.proposing") : tr("pm.consolidate")}</Text>
         </Pressable>
       </View>
+      {planning ? <Text style={{ color: t.txtTertiary, fontSize: 10.5, textAlign: "center" }}>{tr("pm.planningHint")}</Text> : null}
       {isLoading && !plan ? <ActivityIndicator color={t.accent} /> : null}
       {plan?.generated_at ? <Text style={{ color: t.txtTertiary, fontSize: 10, textAlign: "right" }}>{tr("pm.asOf", { when: plan.generated_at })}</Text> : null}
     </View>
