@@ -256,7 +256,10 @@ export interface PmTask { title: string; card?: string | null; priority?: string
 export interface PmMilestone {
   name: string; card?: string | null; priority?: string; status?: string; repo?: string | null; stream?: string;
   user_story?: string; done_when?: string[]; why_now?: string; steps?: string[];
-  est_turns?: number; eta_days?: number | null; cumulative_eta_days?: number | null; target_date?: string | null;
+  // no date field of any kind (pm-lean-advisor, 2026-09-04): CODE derives the
+  // one ETA the app shows, as a RANGE, from measured pace - see PmBrief.eta.
+  // calendar_wait still means "this is a wait, not your effort" for that sum.
+  est_turns?: number; confidence?: "high" | "medium" | "low"; blocked_by?: string;
   calendar_wait?: boolean; why?: string; tasks?: PmTask[];
 }
 /** The PM computes a plan-aware budget block the board renders GENERICALLY by
@@ -277,17 +280,19 @@ export interface PmBrief {
   summary?: string; done_pct?: number; milestones?: PmMilestone[];
   next?: { title: string; reason?: string; card?: string | null }[]; risks?: string[];
   budget?: PmBudget; economics?: Record<string, unknown>; goal?: string; generated_at?: string;
-  // the golden triage + gate (PM planning gate)
-  plan_status?: "ready" | "blocked" | "needs_spike"; gate?: string;
+  // plan_status/triage/gate are ENTIRELY code-derived now (pm_triangle.
+  // _gate_triangle, pm-lean-advisor 2026-09-04) - no LLM writes any of these
+  // three anymore, so there is no second pass to disagree with the first.
+  plan_status?: "ready" | "blocked"; gate?: string;
   triage?: { budget?: "ok" | "blocked"; timeline?: "ok" | "blocked"; scope?: "ok" | "blocked" };
   // WHY a corner is red - filled by the measured triangle gate (pm._gate_triangle),
   // so a downgrade shows its reason instead of an unexplained red.
   triage_reasons?: { budget?: string; timeline?: string; scope?: string };
-  feasibility?: { budget?: string; earliest_done?: string; note?: string };
+  // a RANGE from measured pace, never a single invented date - unknown until
+  // at least one turn has been spent (pace > 0).
+  eta?: { known: boolean; days_min?: number | null; days_max?: number | null };
+  feasibility?: { budget?: string; note?: string };
   open_questions?: string[];
-  // the independent verifier's findings (pm._verify_plan) - why plan_status
-  // got downgraded, shown as detail on tap in a blocked corner.
-  verify?: { ready?: boolean; gate?: string; issues?: string[]; must_ask?: string[] };
 }
 export interface PmConfig { loop_enabled?: boolean; autonomy?: "notify" | "ask" | "act"; repos?: string[];
   idle_minutes?: number; max_dispatch_per_day?: number; window?: string }

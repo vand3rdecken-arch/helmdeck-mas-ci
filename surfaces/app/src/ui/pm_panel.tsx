@@ -1,62 +1,23 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
 import { api, type PmConfig, type PmData } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
-/** Shared "Neu planen" trigger for the Dashboard triangle panel + Settings'
- *  PM controls: kicks the async /nightshift/plan (answers instantly, the
- *  model turn runs server-side in a background thread) instead of holding
- *  api.pmReport()'s HTTP request open for the minutes a self-repair + verify
- *  pass can take - over the relay round trip that left a "Plant..." spinner
- *  stuck forever even after the plan had actually landed. Polls pmPlan while
- *  planning and stops the moment plan.generated_at moves past what it was
- *  before the kick; a 5-minute safety bail-out re-arms the button if the
- *  background run genuinely dies, since polling (unlike the old held-open
- *  request) is cheap to just retry. */
-export function usePmReplan() {
-  const qc = useQueryClient();
-  const [planning, setPlanning] = useState(false);
-  // A bare spinner reads as stuck the moment it outlives the user's patience
-  // - and this one regularly runs 2-3 minutes (one real model turn, not an
-  // API call). Ticking elapsed seconds is what tells "still going" apart
-  // from "hung", the same distinction a download progress bar gives for
-  // free and a spinner alone never can.
-  const [elapsed, setElapsed] = useState(0);
-  const startedAt = useRef<number | undefined>(undefined);
-  const baseline = useRef<string | undefined>(undefined);
-  const bail = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000,
-    refetchInterval: planning ? 4000 : false });
-  useEffect(() => {
-    if (!planning) return;
-    if (data?.plan?.generated_at && data.plan.generated_at !== baseline.current) {
-      setPlanning(false);
-      qc.invalidateQueries({ queryKey: ["tracks"] });
-    }
-  }, [planning, data?.plan?.generated_at, qc]);
-  useEffect(() => {
-    if (!planning || !startedAt.current) return;
-    const tick = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt.current!) / 1000)), 1000);
-    return () => clearInterval(tick);
-  }, [planning]);
-  useEffect(() => () => { if (bail.current) clearTimeout(bail.current); }, []);
-  const kick = useMutation({
-    mutationFn: api.pmReplan,
-    onMutate: () => {
-      baseline.current = data?.plan?.generated_at;
-      startedAt.current = Date.now();
-      setElapsed(0);
-      setPlanning(true);
-      if (bail.current) clearTimeout(bail.current);
-      bail.current = setTimeout(() => setPlanning(false), 5 * 60 * 1000);
-    },
-    onError: (e: unknown) => { setPlanning(false); Alert.alert("PM", String((e as Error).message)); },
-  });
-  return { planning, elapsed, replan: () => kick.mutate() };
+/** Kick an async re-scope with NO waiting UI at all (pm-lean-advisor,
+ *  2026-09-04: "kein Warte-Knopf" is UX rule 1 - re-scoping is event-driven
+ *  now - goal changed, a card landed in Done and a triangle corner flipped -
+ *  not something the owner ever watches happen). /nightshift/plan answers
+ *  instantly; the one remaining model turn runs server-side, and the next
+ *  ordinary poll of ["pmPlan"] (staleTime 30s) just shows the new result
+ *  whenever it lands - no local "planning" state, no spinner, nothing to
+ *  time out. Errors are silent on purpose: this is a background nudge, not
+ *  a user action with a result to report.*/
+function replanSilently() {
+  api.pmReplan().catch(() => {});
 }
 
 // act.now lines are DAEMON prose (translated daemon-side, see daemon/i18n.py) -
@@ -139,25 +100,21 @@ export function PMControls() {
   const { data, isLoading } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [goal, setGoal] = useState<string | null>(null);
   const [editGoal, setEditGoal] = useState(false);
-  const { planning, elapsed, replan } = usePmReplan();
 
-  // Setting the goal used to POST /pm/report directly - the SAME synchronous,
-  // full-model-turn endpoint usePmReplan's own comment above documents as
-  // regularly taking 2-3 minutes. Over the relay that request is bounded by
+  // Setting the goal used to POST /pm/report directly - a synchronous,
+  // full-model-turn endpoint. Over the relay that request is bounded by
   // REPLY_TIMEOUT (surfaces/relay/relay.py, 120s), so most goal edits died
   // with an unread 504 before the turn ever finished - "kann das nicht
   // bearbeiten" (bug found 2026-09-04). set_goal() itself is a plain settings
   // write, no LLM call; persist it instantly through /pm/config (already the
-  // fast, whitelisted path setCfg below uses) and let the existing async
-  // replan (usePmReplan -> /nightshift/plan -> pm.make_plan, backed by a
-  // background thread) pick up the new goal on its own schedule, same as
-  // every other proactive re-plan.
+  // fast, whitelisted path setCfg below uses) and nudge a silent background
+  // re-scope (replanSilently) - no waiting UI, see its own docstring.
   const saveGoal = useMutation({
     mutationFn: (g: string) => api.pmConfig({ goal: g }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pmPlan"] });
       setEditGoal(false);
-      replan();
+      replanSilently();
     },
     onError: (e: unknown) => Alert.alert("PM", String((e as Error).message)),
   });
@@ -267,24 +224,16 @@ export function PMControls() {
         </Text>
       </View>
 
-      {/* manual replan + consolidate */}
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable onPress={replan} disabled={planning}
-          style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-            backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10 }}>
-          {planning ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="refresh" size={15} color={t.txtSecondary} />}
-          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>
-            {planning ? tr("pm.planningFor", { s: elapsed }) : tr("pm.refresh")}
-          </Text>
-        </Pressable>
-        <Pressable onPress={consolidate} disabled={proposing}
-          style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-            backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10 }}>
-          {proposing ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="git-merge-outline" size={15} color={t.txtSecondary} />}
-          <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{proposing ? tr("pm.proposing") : tr("pm.consolidate")}</Text>
-        </Pressable>
-      </View>
-      {planning ? <Text style={{ color: t.txtTertiary, fontSize: 10.5, textAlign: "center" }}>{tr("pm.planningHint")}</Text> : null}
+      {/* consolidate only - manual replan removed (pm-lean-advisor,
+          2026-09-04, UX rule 1: no UI element ever waits on a model turn).
+          Re-scoping now happens on its own: goal changed (above) or a card
+          landing in Done flips a triangle corner (pm_triangle.on_card_done). */}
+      <Pressable onPress={consolidate} disabled={proposing}
+        style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+          backgroundColor: t.surface2, borderRadius: 10, paddingVertical: 10 }}>
+        {proposing ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="git-merge-outline" size={15} color={t.txtSecondary} />}
+        <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{proposing ? tr("pm.proposing") : tr("pm.consolidate")}</Text>
+      </Pressable>
       {isLoading && !plan ? <ActivityIndicator color={t.accent} /> : null}
       {plan?.generated_at ? <Text style={{ color: t.txtTertiary, fontSize: 10, textAlign: "right" }}>{tr("pm.asOf", { when: plan.generated_at })}</Text> : null}
     </View>

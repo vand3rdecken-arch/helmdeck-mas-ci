@@ -39,7 +39,7 @@ def live_plan():
     econ = economics()
     pace = _pace(econ)
     cum = sum(int(ms.get("est_turns") or 0) for ms in plan.get("milestones", [])
-              if str(ms.get("status")) != "done")
+              if str(ms.get("status")) != "done" and not ms.get("calendar_wait"))
     try:
         _gate_triangle(plan, econ, cum, pace)
     except Exception as e:
@@ -47,26 +47,46 @@ def live_plan():
     return plan
 
 
+def _eta_range(est_turns, pace):
+    """A RANGE, never a single invented day (pm-lean-advisor, 2026-09-04): the
+    old code stamped one `target_date` per milestone from the LLM's own
+    est_turns - a single number dressed as a commitment. Research shows LLMs
+    estimate durations near chance on hard cases, and no surviving PM product
+    lets a model commit a calendar date (Motion/LiquidPlanner predict from a
+    deterministic solver over human-entered estimates, never LLM judgement).
+    So: optimistic/pessimistic spread over the ONE thing that IS measured -
+    the pace itself, not the model's guess. `known=False` when there is no
+    pace yet (no turns spent) - an unknown stays unknown, never a fabricated
+    range around zero."""
+    if not pace or pace <= 0 or est_turns <= 0:
+        return {"known": False, "days_min": None, "days_max": None}
+    from cells.copilot.planning.pm_budget import _days
+    return {"known": True,
+            "days_min": _days(est_turns, pace * 1.3),   # optimistic: faster than measured
+            "days_max": _days(est_turns, pace * 0.7)}   # pessimistic: slower than measured
+
+
 def _gate_triangle(out, econ, est_turns, pace):
-    """Adversarially gate the golden triangle (Budget/Timeline/Scope). The LLM
-    plan proposed each corner's colour from narrative; this replaces that with a
-    MEASURED verdict that can only DOWNGRADE (green -> red), never upgrade a red
-    the planner set. Attaches out['budget'] (plan-aware panel data) and, per
-    downgraded corner, out['triage_reasons'][corner] so the board can say WHY.
+    """The golden triangle (Budget/Timeline/Scope), ENTIRELY code-derived
+    (pm-lean-advisor, 2026-09-04: the LLM no longer proposes a corner colour
+    at all - a second model pass grading the first model's optimism was the
+    self-verification anti-pattern research shows makes reasoning worse, and
+    it produced the Play-Store gate arguing with itself for two straight
+    weeks over the same invented live-date). Attaches out['budget'] (plan-
+    aware panel data), out['eta'] (a RANGE, see _eta_range), out['plan_status']
+    and out['gate'] (a short, code-authored sentence naming what's blocked -
+    never LLM prose grading itself).
 
     - Budget: the real bottleneck. Max -> subscription usage/pacing; API -> euro
-      vs the monthly cap (_budget_assess). A window pacing to exhaust before its
-      reset, or a projection over the cap, turns Budget red. Unlike timeline/
-      scope, Budget tracks BOTH directions (not only-tightens): it is 100%
-      code-measured from live usage.snapshot() on every read (live_plan() calls
-      this with no LLM involved), so there is no "planner's optimism" on this
-      axis to guard against - a corner frozen red after the quota recovers is
-      just stale, not a caught overclaim.
-    - Timeline: measured VELOCITY. No turns yet (pace 0) => the ETA is a guess,
-      not a commitment => red. Otherwise the launch date IS the measured ETA, so
-      the planner can't be more optimistic than the math.
-    - Scope: readiness. A plan the verifier left not-ready (open owner decision,
-      undefined scope) can't be green scope, whatever the planner wrote."""
+      vs the monthly cap (_budget_assess). Tracks BOTH directions (unlike
+      timeline/scope): 100% code-measured from live usage.snapshot() on every
+      read (live_plan() calls this with no LLM involved), so a corner frozen
+      red after the quota recovers would just be stale, not a caught overclaim.
+    - Timeline: measured VELOCITY. No turns yet (pace 0) => the ETA range is
+      unknown, not a guess dressed as a date => red.
+    - Scope: an OPEN OWNER QUESTION is unbounded scope, full stop - measured
+      directly from whether the planner's `open_questions` is empty, not from
+      a second opinion about whether the plan "feels" ready."""
     tri = out.get("triage")
     if not isinstance(tri, dict):
         tri = {}
@@ -87,14 +107,28 @@ def _gate_triangle(out, econ, est_turns, pace):
         reasons.pop("budget", None)
 
     # -- Timeline: measured velocity underwrites the ETA --------------------
+    out["eta"] = _eta_range(est_turns, pace)
     if not pace or pace <= 0:
         downgrade("timeline", "Kein gemessenes Tempo (noch keine Turns) - die ETA ist "
-                              "geschätzt, keine belastbare Zusage.")
+                              "unbekannt, keine belastbare Zusage.")
+    else:
+        tri["timeline"] = "ok"
+        reasons.pop("timeline", None)
 
-    # -- Scope: a not-ready plan can't be green scope -----------------------
-    if out.get("plan_status") in ("blocked", "needs_spike"):
-        downgrade("scope", reasons.get("scope")
-                  or "Plan ist nicht abnahmereif (offene Entscheidung / unklarer Scope).")
+    # -- Scope: an unresolved owner decision IS the open scope --------------
+    open_qs = [q for q in (out.get("open_questions") or []) if isinstance(q, str) and q.strip()]
+    if open_qs:
+        downgrade("scope", "Offene Entscheidung: %s" % open_qs[0])
+    else:
+        tri["scope"] = "ok"
+        reasons.pop("scope", None)
+
+    # plan_status + gate are the NAMES for the tri dict above, code-authored -
+    # no field an LLM writes reaches here. "ready" needs all three corners ok.
+    blocked = [c for c in ("budget", "timeline", "scope") if tri.get(c) == "blocked"]
+    out["plan_status"] = "blocked" if blocked else "ready"
+    out["gate"] = ("; ".join(reasons.get(c, "") for c in blocked if reasons.get(c))
+                   if blocked else "")
 
 
 def _triage_shape(plan):

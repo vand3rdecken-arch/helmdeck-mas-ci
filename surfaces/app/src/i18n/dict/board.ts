@@ -200,8 +200,10 @@ export const board: Dict = {
   "dash.triangle.unknown": { de: "offen", en: "open" },
   "dash.triangle.blocked": { de: "Plan-Gate ROT", en: "plan gate RED" },
   "dash.triangle.ready": { de: "Plan-Gate grün — bereit", en: "plan gate green — ready" },
-  "dash.triangle.eta": { de: "ETA ~{n} Tage", en: "ETA ~{n} days" },
-  "dash.triangle.earliest": { de: "frühestens fertig: {when}", en: "earliest done: {when}" },
+  "dash.triangle.etaRange": { de: "~{min}–{max} Tage", en: "~{min}–{max} days" },
+  "dash.triangle.checkedAt": { de: "zuletzt geprüft {when}", en: "last checked {when}" },
+  "dash.triangle.msDone": { de: "fertig", en: "done" },
+  "dash.triangle.msWait": { de: "Wartezeit", en: "waiting" },
   // ---- triage follow-up: the three corners own every deep-dive -------------
   "dash.corner.spentToDate": { de: "bisher {v}", en: "{v} spent" },
   "dash.corner.usageNote": {

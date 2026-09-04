@@ -234,63 +234,6 @@ def _ask(prompt, model=""):
         return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
 
 
-VERIFY_PROMPT = """You are a SKEPTICAL plan reviewer - a second, INDEPENDENT pass, not the
-planner. Given a PM plan plus the real economics, the live quota/budget and the board, find
-the reasons this plan is NOT ready to commit to firm estimates. Be adversarial: assume it is
-over-optimistic, and only pass a plan that genuinely holds up.
-
-Check specifically:
-- A milestone with a FIRM est_turns whose effort is actually UNKNOWN (needs a spike first)?
-- A fixed CALENDAR duration (an N-day test / trial / waiting period) estimated as if it were
-  effort instead of wait time?
-- A HUMAN prerequisite / LONG POLE (recruiting people, an approval, an account) that hasn't
-  started, gates everything after it, and isn't Step 1?
-- An unresolved OWNER decision the plan silently assumed away?
-- Budget/quota that cannot actually fund it by any stated deadline?
-
-A decision the OWNER CLARIFICATIONS below already answer is RESOLVED, not open: never put
-it in must_ask, not even reworded as a different question. An open question HOLDS EVERY
-DISPATCH, so re-asking an answered one stalls the whole board.
-
-Reply with ONLY this JSON:
-{"ready": true|false,
- "gate": "if not ready: the ONE binding reason - MAX 2 short sentences, plain owner language, no essay",
- "issues": ["each a single short sentence (max ~12 words), max 4 items"],
- "must_ask": ["owner decisions/questions that must be answered before firm estimates - each ONE short question"]}
-If the plan genuinely holds, ready=true with empty arrays."""
-
-
-def _verify_plan(plan, econ, quota, prev=None):
-    """The GATE's second opinion (paseo worker/verifier pattern): an independent, skeptical
-    pass that can DOWNGRADE a plan to not-ready (it never upgrades). Catches the over-confident
-    failure - a 14-day calendar test sized as 2 days, a not-yet-started recruiting long-pole,
-    an unresolved decision. Fail-open: if the pass errors, don't block.
-
-    INDEPENDENT of the planner, but NOT of the owner: this pass gets the same ground
-    truth brief()'s own prompt gets - the owner's chat clarifications and any reconciled
-    corner evidence. Without them it re-derived must_asks the owner had already answered
-    (a resolved question came back in different words), and since an open question is a
-    hard dispatch gate (_state's "ASK"), that answered question held the whole board."""
-    try:
-        from spine.agent import turnopts
-        # explicit "opus": this pass existed to get the strong tier and used to
-        # ride the prio-high Auto trigger, which was dropped 2026-09-04 (Sonnet
-        # is the Auto default for cards) - so the intent is stated outright now.
-        cli_model, _ = turnopts.resolve_model("opus", "verify plan")
-        keep = {k: plan.get(k) for k in ("goal", "summary", "milestones", "feasibility",
-                                         "assumptions", "open_questions", "budget")}
-        prompt = (VERIFY_PROMPT + "\n\nPLAN:\n" + json.dumps(keep)
-                  + "\n\nECONOMICS:\n" + json.dumps(econ)
-                  + "\n\nQUOTA/BUDGET (live):\n" + json.dumps(quota)
-                  + _reconcile_block(prev)
-                  + _clarifications_block())
-        v = _ask(prompt, cli_model)
-        return {"ready": bool(v.get("ready", True)), "gate": v.get("gate", "") or "",
-                "issues": v.get("issues") or [], "must_ask": v.get("must_ask") or []}
-    except Exception as e:
-        return {"ready": True, "gate": "", "issues": [], "must_ask": [], "error": str(e)[:120]}
-
-
 def _write_artifact(out):
     try:
         os.makedirs(PLANS, exist_ok=True)
@@ -331,7 +274,7 @@ def _memory(prev, econ):
         lines.append("  you then estimated %s turns / ~%s days to goal - was that on track?"
                      % (pb.get("est_turns_to_goal"), pb.get("eta_days")))
     for m in (prev.get("milestones") or [])[:6]:
-        lines.append("  - %s: was %s turns, eta ~%sd" % (m.get("name"), m.get("est_turns"), m.get("eta_days")))
+        lines.append("  - %s: was %s turns" % (m.get("name"), m.get("est_turns")))
     return "\n".join(lines)
 
 
@@ -349,13 +292,13 @@ def _reconcile_block(prev):
 
 
 # -- owner questions: one question, ONE identity ------------------------------
-# The verifier's must_ask list joins the planner's open_questions, and an open
-# question is a HARD dispatch gate (_state's "ASK"). A question asked twice in
-# two wordings therefore doesn't just read as noise - it holds the board, and
-# answering one copy leaves the other standing. The PRIMARY fix is that the
-# verifier now sees the owner's clarifications (_verify_plan above); this is the
-# second net, for when the two independent passes phrase the same ask
-# differently - which the `q not in oq` exact match at the merge never caught.
+# An open question is a HARD dispatch gate now (pm_triangle._gate_triangle:
+# non-empty open_questions blocks Scope), so the SAME question surfacing twice
+# in different words doesn't just read as noise - two "blocked" reasons for
+# one real ask. brief() self-dedupes its own list through this (the old
+# verifier used to be the second source merged in here; it is gone, but a
+# single planner turn can still repeat itself, and goal_check below runs a
+# second turn worth deduping against too).
 _Q_STOP = {
     # pure function words only, DE + EN. Quantifiers ("viele"), negations and
     # topic nouns deliberately stay: an over-eager stoplist collapses two
@@ -385,8 +328,8 @@ def _q_tokens(q):
 # on real PM question pairs the same ask reworded scores >= 0.571 Jaccard on its
 # content words, while two DIFFERENT asks about the same object ("Budget fuer den
 # Closed Test?" vs "Deadline fuer den Closed Test?") top out at 0.500. 0.55 is
-# that gap. It is a narrow one - which is why this is only the second net and
-# _verify_plan seeing the clarifications is the real fix.
+# that gap - narrow on purpose, since a false merge loses a question the owner
+# never gets asked (also reused by duplicate_titles() below, on card TITLES).
 _Q_SAME = 0.55
 
 
@@ -408,10 +351,10 @@ def _same_question(a, b):
 
 
 def _merge_questions(open_qs, must_ask):
-    """The planner's open_questions + the verifier's must_asks as ONE list with
-    one entry per DISTINCT question. First wording wins (the planner's, which
-    carries the plan's own context); order is preserved so _needs_from_owner
-    still asks the top question first."""
+    """Two question lists (or one list against an empty second one, for plain
+    self-dedup) as ONE list with one entry per DISTINCT question. First
+    wording wins; order is preserved so _needs_from_owner still asks the top
+    question first."""
     out = []
     for q in list(open_qs or []) + list(must_ask or []):
         if not isinstance(q, str) or not q.strip():
@@ -422,9 +365,160 @@ def _merge_questions(open_qs, must_ask):
     return out
 
 
+# -- goal_check / duplicate-title check: SUGGEST, never judge -----------------
+# pm-lean-advisor phases 2+3 (2026-09-04). Two small, cheap-model (or zero-
+# model) checks that turn "the board vs the goal" into a TAP, not a document:
+# goal_check asks whether active cards serve the goal and what's missing;
+# the duplicate check needs no LLM at all. Both go through _ask_owner (the
+# SAME tap-with-options channel PM budget/quota warnings already use) and
+# both remember what they last asked, so a dismissed/ignored suggestion is
+# not re-asked within the cooldown window - UX rule 4 ("abgelehnt = gemerkt").
+# There is no separate accept/reject event to listen for (a tapped option
+# routes to HENRY as an ordinary chat message, not back into this module), so
+# "remembered" here means "not re-surfaced for a while", the honest thing
+# code alone can guarantee without a second channel.
+_SUGGEST_COOLDOWN_S = 24 * 3600
+
+
+def _suggestion_due(sig):
+    """True the FIRST time this exact suggestion signature is seen, or again
+    once the cooldown has passed. Persisted in the same loop.json the PM
+    already owns (pm_state._loopstate), so it survives a daemon restart."""
+    st = _loopstate()
+    seen = st.setdefault("suggestions_asked", {})
+    last = seen.get(sig)
+    if last and time.time() - last < _SUGGEST_COOLDOWN_S:
+        return False
+    seen[sig] = time.time()
+    # cap growth: keep the 200 most recent signatures, oldest dropped first
+    if len(seen) > 200:
+        for k in sorted(seen, key=seen.get)[:len(seen) - 200]:
+            seen.pop(k, None)
+    _save_loopstate(st)
+    return True
+
+
+_GOAL_CHECK_PROMPT = """Given a GOAL and the TITLES of the active cards already on the
+board (no other detail - card bodies are not yours to judge, a title alone can be
+wrong: a card may already carry an update you cannot see), answer two questions:
+
+1. Which of these titles clearly serve the goal? (by title, verbatim)
+2. What CONCRETE work is missing to reach the goal that no active title covers?
+   Each item a short, filable card TITLE (not a task description) - 0-4 items,
+   empty if nothing material is missing. When unsure whether a gap is real,
+   leave it out - a missed suggestion costs nothing, a wrong one costs trust.
+
+Reply with ONLY this JSON:
+{"fits": ["<title from the list>", ...], "missing": ["<short new card title>", ...]}"""
+
+
+def goal_check(goal=None):
+    """ONE cheap turn (never the auto/strong model brief() uses): goal + active
+    card TITLES ONLY in, a fits/missing list out - never a date, never a
+    verdict on a card's WORTH (a title can mislead, see the Play-Store lesson
+    in pm-lean-advisor's README). A non-empty `missing` becomes a real,
+    tappable suggestion via _ask_owner; nothing here files a card by itself."""
+    from spine.agent import turnopts
+    from cells.engineer.cards import sessions
+    goal = (goal or get_goal() or "").strip()
+    if not goal:
+        return {"fits": [], "missing": []}
+    titles = [t.get("task", "").strip() for t in sessions.list_tracks()
+              if not t.get("archived") and t.get("lane") != "done" and t.get("task")]
+    cli_model, _ = turnopts.resolve_model("haiku", "goal check", signals={"priority": "low"})
+    prompt = (_GOAL_CHECK_PROMPT + "\n\nGOAL:\n" + goal
+              + "\n\nACTIVE CARD TITLES:\n" + ("\n".join("- " + x for x in titles) or "(keine)"))
+    try:
+        out = _ask(prompt, cli_model)
+    except Exception as e:
+        return {"fits": [], "missing": [], "error": str(e)[:150]}
+    missing = [_clip_prose(str(x).strip(), 90) for x in (out.get("missing") or [])
+              if isinstance(x, (str, int, float)) and str(x).strip()][:4]
+    return {"fits": out.get("fits") or [], "missing": missing}
+
+
+def goal_check_async(goal=None):
+    """Fire-and-forget: the caller (a route, a chat action) never waits on
+    this - it is a background nudge, same discipline as _bg("pm:plan", ...)
+    in routes_system.py. The cooldown gates the OWNER-FACING ask, not the
+    turn itself: whether a gap still exists can only be known by checking,
+    and the world can have changed since the last check (a card filed by
+    hand, a goal edit) - a cheap haiku turn re-verifying that is the right
+    cost, re-nagging the owner about an answer he already saw is not."""
+    def run():
+        try:
+            r = goal_check(goal)
+            missing = r.get("missing") or []
+            if not missing:
+                return
+            sig = "goal:" + "|".join(sorted(m.casefold() for m in missing))
+            if not _suggestion_due(sig):
+                return
+            items = ", ".join(missing)
+            _ask_owner(
+                "Ziel geprüft: %d Karte(n) passen. Es fehlen: %s - anlegen?"
+                % (len(r.get("fits") or []), items),
+                ["Anlegen", "Bearbeiten", "Nein"],
+                header="Ziel-Abgleich")
+        except Exception as e:
+            print("pm: goal_check failed:", e)
+    threading.Thread(target=run, daemon=True, name="pm-goal-check").start()
+
+
+def _normalize_title(s):
+    return " ".join(sorted(_q_tokens(s)))
+
+
+def duplicate_titles():
+    """PURE CODE, zero model cost: two ACTIVE cards whose titles are near-
+    identical (same content-word set, via the same Jaccard machinery
+    _same_question uses) are the one board-hygiene signal hard enough to
+    surface without a human reading both bodies first - a shared title is
+    evidence a title alone CAN give, unlike "is this card still needed"
+    (Play-Store lesson: a title never proves a card is stale). Conservative
+    by construction: _same_question already refuses to fire on two questions
+    that merely share their object, so it refuses here too on two titles that
+    merely share a topic."""
+    from cells.engineer.cards import sessions
+    tracks = [t for t in sessions.list_tracks()
+              if not t.get("archived") and t.get("lane") != "done" and (t.get("task") or "").strip()]
+    pairs = []
+    for i, a in enumerate(tracks):
+        for b in tracks[i + 1:]:
+            if _same_question(a["task"], b["task"]):
+                pairs.append((a, b))
+    return pairs
+
+
+def duplicate_check_async():
+    """Same shape as goal_check_async, but the check itself is free (no
+    thread needed for the compute - only for _ask_owner's chat/push I/O, kept
+    consistent with every other PM-speaks call)."""
+    def run():
+        try:
+            for a, b in duplicate_titles():
+                sig = "dup:" + "|".join(sorted([a["id"], b["id"]]))
+                if not _suggestion_due(sig):
+                    continue
+                _ask_owner(
+                    "Zwei Karten sehen fast identisch aus: „%s“ und „%s“. Zusammenlegen?"
+                    % (a["task"][:70], b["task"][:70]),
+                    ["Anzeigen", "Ignorieren"],
+                    header="Mögliches Duplikat", card=a["id"])
+                return   # one at a time - never more than one open question, see _ask_owner
+        except Exception as e:
+            print("pm: duplicate_check failed:", e)
+    threading.Thread(target=run, daemon=True, name="pm-dup-check").start()
+
+
 def brief(goal=None, model=""):
-    """The PM/CTO report: milestones with timelines, next actions, budget grounded
-    in quota-time (Max plan) or € (API). `goal` overrides + persists the MVP goal."""
+    """The PM/CTO report: milestones, next actions, risks. ONE model turn
+    (pm-lean-advisor, 2026-09-04: the old verify/repair/re-verify loop - up
+    to 4 turns, ~7 minutes, measured - was the self-verification anti-pattern
+    research shows makes reasoning WORSE, not better; the endless-red
+    Play-Store gate was its predicted symptom). `goal` overrides + persists
+    the MVP goal. CODE, not this turn, now owns dates/triage/plan_status -
+    see _gate_triangle in pm_triangle.py."""
     from cells.copilot.chat import copilot
     from spine.agent import turnopts
     from spine.storage import events
@@ -432,18 +526,11 @@ def brief(goal=None, model=""):
         set_goal(goal)
     goal = (goal or "").strip() or get_goal()
     econ = economics()
-    quota = _quota_signal()   # live budget, fed to the planner AND the verifier
+    quota = _quota_signal()
     prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
     prompt = (_role()
-              + "\n\nDATE RULE: never write calendar dates into milestone names/notes - "
-                "code derives each target date from your est_turns and the measured pace. "
-                "A fixed EXTERNAL wait (a review period, a trial window) is its own "
-                "milestone noted as wait time, never effort you can compress; if its "
-                "length is unknown, set that milestone's calendar_wait: true - code then "
-                "leaves its date (and every date after it) unknown instead of guessing, "
-                "until you flip it to status: done."
               + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
               + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
               + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
@@ -456,67 +543,18 @@ def brief(goal=None, model=""):
               + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
     out = _ask(prompt, cli_model)
 
-    # price + time in CODE: LLM judged est_turns; we convert to days, dates & €.
-    from datetime import datetime, timedelta
-    today = datetime.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")
-    pace = _pace(econ)
+    # Effort in CODE: the LLM judges est_turns per milestone; code sums the
+    # REMAINING work (done + calendar_wait milestones cost nothing - a wait is
+    # not your throughput). No dates are derived here at all anymore - see
+    # pm_triangle._eta_range, which turns this sum + measured pace into a
+    # RANGE, never a single invented day.
+    est_turns = 0
+    for ms in out.get("milestones", []):
+        done = str(ms.get("status")) == "done"
+        tt = 0 if (done or ms.get("calendar_wait")) else int(ms.get("est_turns") or 0)
+        ms["est_turns"] = int(ms.get("est_turns") or 0)
+        est_turns += tt
 
-    def _date_milestones(o):
-        cum = 0
-        wait_hit = False   # once an open calendar_wait milestone is hit, every date
-                            # from here on is unknown - cascades until it's done
-        for ms in o.get("milestones", []):
-            done = str(ms.get("status")) == "done"
-            tt = int(ms.get("est_turns") or 0) if not done else 0
-            cum += tt
-            ms["est_turns"] = tt
-            if ms.get("calendar_wait") and not done:
-                wait_hit = True
-            if wait_hit and not done:
-                ms["eta_days"] = None
-                ms["cumulative_eta_days"] = None
-                ms["target_date"] = None
-            else:
-                ms["eta_days"] = _days(tt, pace)
-                ms["cumulative_eta_days"] = _days(cum, pace)
-                # a concrete TARGET DATE, so the board Timeline lays the roadmap out and
-                # the milestone reads "by Thu" not just "~3d".
-                ms["target_date"] = (today + timedelta(days=ms["cumulative_eta_days"])).strftime("%Y-%m-%d")
-        return cum
-
-    est_turns = _date_milestones(out)
-    # GATE with SELF-REPAIR first (owner decree 2026-08-22: "Agent setzt die
-    # Timeline selbst fest und meckert dann, dass sie nicht passt"): findings
-    # the PLANNER itself caused - invented calendar dates, milestones that
-    # contradict the plan's own prose, a long-pole not put first - are the
-    # planner's to FIX, not the owner's to hear about. One repair round: feed
-    # the verifier's issues back, re-plan, re-verify. Only what still fails
-    # (or genuinely needs an owner decision via must_ask) reaches the gate.
-    ver = _verify_plan(out, econ, quota, prev)
-    if not ver.get("ready", True) and ver.get("issues"):
-        keep = {k: out.get(k) for k in ("goal", "summary", "milestones", "feasibility",
-                                        "assumptions", "open_questions", "budget")}
-        repair = (prompt
-                  + "\n\nYOUR PREVIOUS DRAFT:\n" + json.dumps(keep, ensure_ascii=False)
-                  + "\n\nSKEPTICAL REVIEWER FINDINGS on that draft - these are YOUR OWN "
-                    "inconsistencies; REPAIR them yourself, do NOT bounce them to the owner:\n"
-                  + json.dumps({"issues": ver.get("issues"), "gate": ver.get("gate")}, ensure_ascii=False)
-                  + "\n\nRepair rules: never write calendar dates into milestone names/notes - "
-                    "code derives target dates from est_turns; a fixed external wait (a review "
-                    "period, a trial window) is its own milestone with the wait as est note, not "
-                    "effort; a not-yet-started human long-pole goes FIRST; only a question the "
-                    "OWNER alone can answer belongs in open_questions.")
-        try:
-            out2 = _ask(repair, cli_model)
-            if out2.get("milestones"):
-                # carry over what the repair pass doesn't restate
-                for k in ("goal", "summary"):
-                    out2.setdefault(k, out.get(k))
-                out = out2
-                est_turns = _date_milestones(out)
-                ver = _verify_plan(out, econ, quota, prev)
-        except Exception as e:
-            ver.setdefault("issues", []).append("self-repair failed: %s" % str(e)[:120])
     out["economics"] = econ
     # carry forward any owner-run corner reconciliations so the evidence persists
     # across re-plans (and stays visible to the NEXT brief's _reconcile_block).
@@ -525,31 +563,18 @@ def brief(goal=None, model=""):
     out["goal"] = goal
     out["model"] = cli_model or "default"
     out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    # GATE: an independent verifier can only DOWNGRADE readiness, never upgrade
-    # it - `ver` is the verdict on the FINAL (possibly repaired) plan above.
-    # Style law: clip LLM prose at the SOURCE so every surface (board box,
-    # chat notice, push) inherits the cap.
-    ver["gate"] = _clip_prose((ver.get("gate") or "").strip(), 240)
-    ver["issues"] = [_clip_prose(i.strip(), 140) for i in (ver.get("issues") or [])
-                     if isinstance(i, str) and i.strip()][:4]
-    out["gate"] = _clip_prose((out.get("gate") or "").strip(), 240)
+    # Style law: clip LLM prose at the SOURCE so every surface inherits the cap.
     out["summary"] = _clip_prose((out.get("summary") or "").strip(), 300)
-    out["verify"] = ver
-    if not ver.get("ready", True):
-        out["plan_status"] = "blocked"
-        if not (out.get("gate") or "").strip():
-            out["gate"] = ver.get("gate", "")
-    # the verifier's must-asks join the planner's questions - deduped by MEANING,
-    # not by exact string. The two passes are independent and practically never
-    # word the same ask identically, so `q not in oq` let a re-derived duplicate
-    # through and the board sat on "ASK" with a question the owner had answered.
-    out["open_questions"] = _merge_questions(out.get("open_questions"), ver.get("must_ask"))
-    # CRITICAL GATE over the golden triangle - AFTER the verifier so it sees the
-    # final plan_status. The LLM PROPOSES each corner; this MEASURED check only
-    # DOWNGRADES (ok -> blocked), never beautifies - without it the triangle was
-    # the planner's own optimism ("Budget gruen" at 111% weekly pacing). Same
-    # "only tightens" law as the verifier and gate-before-review.
-    _gate_triangle(out, econ, est_turns, pace)
+    # self-dedupe (the planner can still repeat itself in one turn) - the old
+    # verifier-vs-planner merge is gone with the verifier, the utility stays
+    # useful for this narrower job (ops/tests/test_pm_clarifications.py pins it).
+    out["open_questions"] = _merge_questions(out.get("open_questions"), [])
+    # pm.py PROPOSES (milestones, scope, questions); pm_triangle DISPOSES -
+    # plan_status/triage/gate/eta are entirely CODE-derived from here on,
+    # never re-graded by a second model pass. Scope is blocked exactly when
+    # open_questions is non-empty: an unresolved owner decision IS the
+    # unbounded scope, measured rather than a second LLM's opinion about it.
+    _gate_triangle(out, econ, est_turns, pace=_pace(econ))
     _write_artifact(out)
     return out
 
@@ -597,9 +622,9 @@ def plan_items(b=None):
                       "description": _epic_description(ms),
                       "priority": ms.get("priority", "medium"),
                       "repo": ms.get("repo") or default_repo})
-        # due dates are NOT set here - the OVERVIEW loop state builds the
-        # Timeline from the plan, so that capability lives in the loop, not
-        # in this filing code (see _build_overview).
+        # no due date is set here or anywhere else from a milestone
+        # (pm-lean-advisor, 2026-09-04): dates are retired entirely, see
+        # pm_triangle._eta_range for the one remaining, code-derived ETA.
     items.sort(key=lambda x: order.get(x.get("priority"), 2))
     return items, b
 
@@ -935,10 +960,10 @@ def _plan_gate_notice(st):
         return
     tri = plan.get("triage") or {}
     red = [k for k in ("budget", "timeline", "scope") if tri.get(k) == "blocked"]
+    # `gate` is CODE-authored now (pm_triangle._gate_triangle) - a short sentence
+    # naming which measured corner is blocked and why, never a second model's
+    # prose grading the first one's optimism.
     gate = _clip_prose((plan.get("gate") or "").strip(), 240)
-    ver = plan.get("verify") or {}
-    issues = [_clip_prose(i.strip(), 140) for i in (ver.get("issues") or [])
-              if isinstance(i, str) and i.strip()]
     if not _notice_due(st, "plan_gate", "|".join(sorted(red)) or "noestimate"):
         return
     corner = {"budget": "Budget", "timeline": "Timeline", "scope": "Scope"}
@@ -946,14 +971,17 @@ def _plan_gate_notice(st):
             % ", ".join(corner[c] for c in red) if red else
             "Ziel-Plan-Gate ROT — ich kann noch nicht seriös schätzen. Kein Dispatch, bis geklärt.")
     msg = head + ((" Gate: %s" % gate) if gate else "")
-    if issues:
-        msg += "\n" + "\n".join("• " + i for i in issues[:4])
     if red:
-        # never dead-end: a red corner is ACTIONABLE - name the evidence check
-        # that can re-derive it (reconcile_corner), so Henry has the move and
-        # does not have to infer it.
-        msg += ("\nHenry: „prüfe %s“ holt die echte Evidenz zu der roten Ecke nach "
-                "und plant damit neu." % corner[red[0]])
+        # never dead-end: name the actual move for THIS corner. Scope-red is
+        # now measured directly from an unresolved open_question - point at
+        # answering it, not at re-investigating evidence that isn't the issue.
+        if "scope" in red:
+            oq = next((q for q in (plan.get("open_questions") or []) if isinstance(q, str) and q.strip()), "")
+            msg += ("\nOffene Entscheidung, die den Scope blockiert: %s" % oq if oq else
+                    "\nHenry: eine offene Entscheidung blockiert den Scope - klär sie mit dem Owner.")
+        else:
+            msg += ("\nHenry: „prüfe %s“ holt die echte Evidenz zu der roten Ecke nach "
+                    "und plant damit neu." % corner[red[0]])
     _to_henry("plan-gate-red", msg,
               feed="Plan-Gate ROT (%s) - kein Dispatch, an Henry"
                    % (", ".join(corner[c] for c in red) or "keine Schätzung"))
@@ -1105,8 +1133,6 @@ def _stakeholder_update(st):
     if feas.get("budget"):
         de = {"fits": "Budget reicht", "tight": "Budget knapp", "insufficient": "Budget reicht NICHT"}
         fl = de.get(feas["budget"], feas["budget"])
-        if feas.get("earliest_done"):
-            fl += " · frühestens fertig: %s" % feas["earliest_done"]
         if feas.get("note"):
             fl += " (%s)" % feas["note"]
         msg += " Machbarkeit: %s." % fl
@@ -1141,58 +1167,28 @@ def _stakeholder_update(st):
 
 
 def _overview_stale(plan, tracks):
-    """True if the plan's roadmap isn't reflected on the board yet: a card that
-    belongs to a dated milestone still lacks that due date (Timeline), or the
-    dashboard layout isn't set."""
+    """True if the dashboard layout isn't set yet. Used to give each card its
+    milestone's target date on the board Timeline (pm-lean-advisor, 2026-09-04:
+    retired - milestones no longer carry any date at all, LLM-estimated or
+    otherwise; stamping an LLM's est_turns-derived date onto a card's real due
+    field was exactly the invented-calendar-date class this rewrite removes)."""
     from spine.storage import events
-    if not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles"):
-        return True
-    byid = {t["id"]: t for t in tracks}
-    by_title = {(t.get("task") or "").strip().lower(): t for t in tracks}
-    for ms in (plan.get("milestones") or []):
-        d = ms.get("target_date")
-        if not d:
-            continue
-        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
-        if not c:
-            continue
-        if c.get("lane") != "done" and (c.get("due") or "") != d:
-            return True
-    return False
+    return not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles")
 
 
 def _build_overview(plan):
-    """OVERVIEW state action: build Dashboard + Timeline FROM THE PLAN.
-    - TIMELINE: give each board card its milestone's target date (due) -> the
-      board Timeline lays out the roadmap.
-    - DASHBOARD: ensure a sensible economics layout exists.
+    """OVERVIEW state action: ensure a sensible DASHBOARD layout exists.
+    (Per-milestone Timeline due-dating retired - see _overview_stale.)
     Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
-    from cells.engineer.cards import sessions
     from spine.storage import events
-    all_t = sessions.list_tracks()
-    byid = {t["id"]: t for t in all_t}
-    by_title = {(t.get("task") or "").strip().lower(): t for t in all_t}
-    n = 0
-    for ms in (plan.get("milestones") or []):
-        d = ms.get("target_date")
-        if not d:
-            continue
-        # match by the plan's card id first (reliable), then by title
-        c = byid.get(ms.get("card")) or by_title.get((ms.get("name") or "").strip().lower())
-        if not c:
-            continue
-        if c.get("lane") != "done" and (c.get("due") or "") != d:
-            try:
-                sessions.update_track(c["id"], {"due": d}, actor="pm"); n += 1
-            except Exception:
-                pass
     pol = dict(events.settings().get("policy") or {})
     if not (pol.get("dashboard") or {}).get("tiles"):
         pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
                             "panels": ["capacity", "gates", "work"]}
         events.save_settings({"policy": pol})
-    _activity("overview", "Uebersicht gebaut: %d Termine gesetzt (Timeline) + Dashboard-Layout." % n)
-    return n
+        _activity("overview", "Uebersicht gebaut: Dashboard-Layout gesetzt.")
+        return 1
+    return 0
 
 
 # The proactive loop is now a STATE MACHINE - same idea as ops/tools/loop_state.py:
@@ -1361,6 +1357,10 @@ def _tick():
         _plan_gate_notice(st)        # honest "blocked" over a shallow estimate
         _needs_from_owner(st)        # surface missing-info questions
         _stakeholder_update(st)      # goal vs budget, keep the owner informed
+        # Phase 3 (pm-lean-advisor, narrowest safe slice): PURE CODE, zero
+        # model cost, only on a real board change - never autonomous, always
+        # a tap-with-options via _ask_owner, and cooled down per pair.
+        duplicate_check_async()
 
     if not _in_window(pm) or not _board_idle(pm):
         return                                           # acting states need you away

@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Headless test: an ANSWERED owner question must not come back.
+"""Headless test: clarifications reach the ONE remaining planner turn, and the
+question-dedup primitives still hold (pm-lean-advisor, 2026-09-04).
 
-The bug class: brief()'s skeptical second pass (_verify_plan) built its prompt
-from the plan + economics + quota ONLY - no _clarifications_block(), no
-_reconcile_block(). So its INDEPENDENT must_ask pass re-derived questions the
-owner had already answered in chat, in different words; the exact-string merge
-(`q not in oq`) never matched a reworded duplicate, and since an open question
-is a hard dispatch gate (_state's "ASK"), an answered question held the board.
+pm.brief() used to run up to 4 turns (planner, verifier, repair, re-verify);
+the verifier/repair pair is GONE (a second model pass grading the first's
+optimism was the self-verification anti-pattern research shows makes
+reasoning worse - see ops/docs/backlog/pm-lean-advisor/README.md). This file
+used to test that the verifier's INDEPENDENT pass saw the owner's chat
+clarifications; with one turn left there is nothing independent to check -
+what still matters, and what stays under test here:
 
-Under test:
-  1. the verifier's prompt CARRIES the owner's clarifications (and reconciled
-     evidence),
-  2. a resolved question re-derived in other words is dropped at the merge,
-  3. a GENUINELY unresolved question (no clarification on file) still survives.
+  1. clarifications + reconciled evidence reach the (single) planner prompt,
+  2. the planner's own open_questions gets self-deduped (a planner CAN still
+     repeat itself in one turn - _merge_questions(qs, []) catches that),
+  3. the dedup primitives (_same_question/_merge_questions) still hold on
+     their own, unit-tested directly - GRILLEN's clarification flow and any
+     future goal_check turn depend on these being right.
 
 Self-sandboxing: pm's plan/loopstate files go to a temp dir, settings/economics/
 quota/snapshot are stubbed, and _ask (the LLM) is replaced by a scripted double -
@@ -43,12 +46,11 @@ def check(cond, msg):
         _fails.append(msg)
 
 
-# -- the two questions this test is about -------------------------------------
+# -- the questions this test is about -----------------------------------------
 ANSWERED = "Wie viele Tester brauchst du für den Closed Test?"
 CLARIFY = "Wir haben 12 Tester für den Closed Test, die sind schon zugesagt."
-# the same ask, re-derived by an independent pass in different words:
+# the same ask, the planner repeating itself in different words within ONE turn:
 REDERIVED = "Wie viele Tester stehen für den Closed Test bereit?"
-# no clarification on file for this one - it MUST survive:
 UNRESOLVED = "Gibt es einen harten Stichtag für den Store-Launch?"
 
 GOAL = "Play-Store-Launch der App"
@@ -57,19 +59,11 @@ PLAN = {"goal": GOAL, "summary": "Launch vorbereiten.",
         "milestones": [{"name": "Closed Test aufsetzen", "est_turns": 8, "priority": "high"}],
         "open_questions": [UNRESOLVED], "budget": {}}
 
-prompts = []          # every prompt _ask saw: (kind, text)
+prompts = []          # every prompt _ask saw
 
 
 def fake_ask(prompt, model=""):
-    """Scripted stand-in for the CLI. The verifier pass is the one that used to
-    re-derive an answered question - it does so here whenever the prompt does
-    NOT carry the clarification, which is exactly the regression under test."""
-    if prompt.startswith(pm.VERIFY_PROMPT):
-        prompts.append(("verify", prompt))
-        # an INDEPENDENT pass with no ground truth re-asks the answered question
-        must = [] if CLARIFY in prompt else [REDERIVED]
-        return {"ready": True, "gate": "", "issues": [], "must_ask": must}
-    prompts.append(("plan", prompt))
+    prompts.append(prompt)
     return json.loads(json.dumps(PLAN))
 
 
@@ -95,30 +89,27 @@ def run_brief():
     return pm.brief()
 
 
-print("\n[1] no clarification on file -> the verifier's ask is a NEW question")
+print("\n[1] one turn only")
 b0 = run_brief()
-check(len(prompts) == 2, "planner + verifier both ran (%d prompts)" % len(prompts))
-check(REDERIVED in b0.get("open_questions", []),
-      "without ground truth the re-derived question DOES surface (bug reproduces)")
+check(len(prompts) == 1, "brief() ran exactly ONE model turn (%d)" % len(prompts))
+check(UNRESOLVED in b0.get("open_questions", []), "the planner's own question survives")
 
-print("\n[2] owner answers in chat -> the verifier SEES it")
+print("\n[2] owner answers in chat -> the ONE turn SEES it")
 pm.add_clarification(CLARIFY)
 b1 = run_brief()
-vp = next((p for k, p in prompts if k == "verify"), "")
-check(CLARIFY in vp, "verifier prompt carries the OWNER CLARIFICATIONS block")
-check("OWNER CLARIFICATIONS" in vp, "...under the same header brief()'s own prompt uses")
+p = prompts[0]
+check(CLARIFY in p, "planner prompt carries the OWNER CLARIFICATIONS block")
+check("OWNER CLARIFICATIONS" in p, "...under its own header")
 
-print("\n[3] the resolved question does NOT come back")
-oq = b1.get("open_questions", [])
-check(REDERIVED not in oq, "re-derived duplicate of the answered question is gone")
-check(not any(pm._same_question(q, ANSWERED) for q in oq),
-      "no rewording of the answered question survives anywhere in open_questions")
+print("\n[3] reconciled evidence reaches the planner prompt too")
+prev = dict(b1, reconcile={"scope": "Testkonten existieren bereits"})
+pm._write_artifact(prev)
+run_brief()
+p2 = prompts[0]
+check("RECONCILED EVIDENCE" in p2 and "Testkonten" in p2,
+      "planner prompt carries the reconciled corner evidence")
 
-print("\n[4] a genuinely unresolved question still gets asked")
-check(UNRESOLVED in oq, "the deadline question (no clarification on file) survives")
-check(len(oq) == 1, "exactly one open question left (%r)" % (oq,))
-
-print("\n[5] the merge dedups by MEANING, not by exact string")
+print("\n[4] the merge dedups by MEANING, not by exact string")
 check(pm._merge_questions([ANSWERED], [REDERIVED]) == [ANSWERED],
       "two wordings of one ask collapse to the first")
 check(pm._merge_questions([ANSWERED], [UNRESOLVED]) == [ANSWERED, UNRESOLVED],
@@ -130,11 +121,12 @@ check(pm._merge_questions(["Wie ist das Budget?"], ["Wie ist die Deadline?"])
       "one-content-word questions are NOT collapsed (no over-eager merge)")
 check(pm._merge_questions([ANSWERED, REDERIVED, UNRESOLVED], [ANSWERED, REDERIVED])
       == [ANSWERED, UNRESOLVED],
-      "dupes WITHIN the planner's own list collapse too, order preserved")
+      "dupes WITHIN the planner's own list collapse too, order preserved - "
+      "this is the exact call brief() makes now (_merge_questions(qs, []))")
 check(pm._merge_questions(None, None) == [] and pm._merge_questions([""], [None, 7]) == [],
       "empty/None/non-string inputs are dropped, never crash")
 
-print("\n[5b] _Q_SAME sits in the MEASURED gap - both sides pinned")
+print("\n[5] _Q_SAME sits in the MEASURED gap - both sides pinned")
 # same ask, reworded -> MUST collapse (these score 0.571 / 0.667 Jaccard)
 for a, b in [(ANSWERED, REDERIVED),
              ("Was ist das Budget für den Launch?", "Wie hoch ist das Budget beim Launch?")]:
@@ -144,14 +136,6 @@ for a, b in [("Wie ist das Budget für den Closed Test?", "Wie ist die Deadline 
              ("Wer betreut den Closed Test?", "Wann startet der Closed Test?"),
              (UNRESOLVED, ANSWERED)]:
     check(not pm._same_question(a, b), "different asks stay apart: %r" % b[:44])
-
-print("\n[6] reconciled evidence reaches the verifier too")
-prev = dict(b1, reconcile={"scope": "Testkonten existieren bereits"})
-pm._write_artifact(prev)
-run_brief()
-vp2 = next((p for k, p in prompts if k == "verify"), "")
-check("RECONCILED EVIDENCE" in vp2 and "Testkonten" in vp2,
-      "verifier prompt carries the reconciled corner evidence")
 
 print("\n%s (%d failure(s))" % ("FAILED" if _fails else "PASS", len(_fails)))
 sys.exit(1 if _fails else 0)
