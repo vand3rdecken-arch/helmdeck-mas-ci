@@ -109,3 +109,16 @@ If the facts contradict each other - the relay ahead of `app.json`, an APK
 newer than the sources it was built from - do not average them into a
 confident-sounding answer. Report the contradiction as the finding and say
 which fact you would trust.
+
+## When the missing fact is the owner's INTENT, ask - never guess
+
+`ship_facts.py` can tell you WHAT changed; it can never tell you whether the
+owner MEANT it to reach a phone yet (a half-built feature in the diff, a
+change that reads experimental, a UI the owner has not seen). Facts are yours
+to fetch - grill the environment, not the owner (discipline from
+mattpocock/skills "grilling"). But when the decision genuinely hinges on
+intent, do NOT pick a kind: leave the escalation open with ONE concrete
+question, two answerable options, and your recommendation ("Halbfertiger
+Voice-Screen im Diff - jetzt mitshippen oder zurueckhalten? Ich wuerde
+zurueckhalten."). A guessed ship strands or leaks work; a question costs the
+owner five seconds.
