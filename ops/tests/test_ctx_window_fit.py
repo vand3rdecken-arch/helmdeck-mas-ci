@@ -77,8 +77,9 @@ ok(turnopts.pick_model("Ok", signals={"ctx_tokens": 0}) == "claude-haiku-4-5",
    "a zero reading is treated as no reading")
 ok(turnopts.pick_model("add a null check", signals={"ctx_tokens": 5_000})
    == "claude-sonnet-5", "ordinary work still routes to sonnet")
-ok(turnopts.pick_model("debug this", signals={"ctx_tokens": HENRY_CTX})
-   == "claude-opus-5", "hard work still routes to opus")
+ok(turnopts.pick_model("debug this", signals={"ctx_tokens": HENRY_CTX,
+                                              "priority": "urgent"})
+   == "claude-opus-5", "urgent work still routes to opus")
 ok(turnopts.resolve_model("claude-opus-5", "x", False, {"ctx_tokens": HENRY_CTX})[0]
    == "claude-opus-5", "an explicit pick that fits is untouched")
 ok(turnopts.resolve_model("haiku", "x", False, {"ctx_tokens": 5_000})[0]
