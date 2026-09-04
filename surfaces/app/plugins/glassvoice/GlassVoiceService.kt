@@ -62,6 +62,18 @@ class GlassVoiceService : Service() {
         const val ACTION_LISTEN = "app.helmdeck.voice.LISTEN"
         const val ACTION_STOP = "app.helmdeck.voice.STOP"
         /**
+         * ARM, but do not open a microphone: park on the lens's wake counter and
+         * wait to be asked (owner, 2026-09-04: "das muss in Brille aktiviert
+         * werden").
+         *
+         * This is what the app sends now instead of ACTION_LISTEN. The
+         * difference matters: ACTION_LISTEN opens the mic THERE AND THEN, which
+         * is what made the phone the trigger. This one only makes the glasses
+         * button work, and the owner starts talking whenever he likes without
+         * touching the handset again.
+         */
+        const val ACTION_ARM = "app.helmdeck.voice.ARM"
+        /**
          * Listen on the PHONE's microphone and leave the glasses on A2DP, so the
          * answer comes back in music quality instead of telephone quality.
          *
@@ -109,6 +121,10 @@ class GlassVoiceService : Service() {
      * pairing config.
      */
     private var loopMic: Boolean? = null
+    /** True while the wake-parker thread is alive. The service now OUTLIVES a
+     *  conversation on purpose - see park() - so this, not loopMic, is what
+     *  distinguishes "running, waiting for the lens" from "stopped". */
+    private var parked = false
     private var emptyTurns = 0
     private val MAX_EMPTY = 2
 
@@ -185,6 +201,9 @@ class GlassVoiceService : Service() {
             ACTION_STOP -> {
                 safe("stop") {
                     loopMic = null           // end the conversation, not just this turn
+                    parked = false           // and stop waiting for the lens - this
+                                             // is the explicit "off", the one intent
+                                             // that really does end the process
                     releaseMic()
                     player?.release(); player = null
                     // The owner switched the loop off from the phone. Nothing else
@@ -195,11 +214,16 @@ class GlassVoiceService : Service() {
                     stopSelf()
                 }
             }
+            // ARM: the glasses become the trigger. No mic opens here.
+            ACTION_ARM -> safe("arm") { say("Auf Brille tippen zum Sprechen"); park() }
             ACTION_LISTEN_PHONE_MIC -> safe("listen-phone") {
-                loopMic = false; emptyTurns = 0; startListening(useGlassMic = false)
+                loopMic = false; emptyTurns = 0; park(); startListening(useGlassMic = false)
             }
             else -> safe("listen") {
-                loopMic = true; emptyTurns = 0; startListening(useGlassMic = true)
+                // Still opens immediately (the phone toggle keeps working), but
+                // it ALSO parks - so once armed, every later turn can start from
+                // the lens and this is the last time the handset is involved.
+                loopMic = true; emptyTurns = 0; park(); startListening(useGlassMic = true)
             }
         }
         // START_STICKY: the point of a foreground service is surviving the moment
@@ -413,13 +437,13 @@ class GlassVoiceService : Service() {
         val mic = loopMic ?: return
         emptyTurns += 1
         if (emptyTurns >= MAX_EMPTY) {
-            loopMic = null
-            say("Gespräch beendet (nichts gehört)")
-            // The conversation is over and no further turn will re-report. Say so,
-            // or the lens keeps a listening indicator lit over a microphone that
-            // has been closed - the same lie in the other direction.
-            report("idle")
-            stopSelf()
+            say("Auf Brille tippen zum Sprechen")
+            // The conversation is over and no further turn will re-report. Clear
+            // the lens, or it keeps a listening indicator lit over a microphone
+            // that has been closed - the same lie in the other direction. Then
+            // PARK rather than stop, so the next conversation starts from the
+            // glasses instead of from the phone.
+            endConversation()
             return
         }
         relisten(mic)
@@ -508,11 +532,111 @@ class GlassVoiceService : Service() {
     /** End the conversation and leave NOTHING lit on the lens. Factored out
      *  because three different give-up paths need exactly this pair, and a
      *  give-up that forgot the report is how the display ends up claiming a
-     *  microphone that is closed. */
+     *  microphone that is closed.
+     *
+     *  ⚠ THIS NO LONGER STOPS THE SERVICE. Owner, 2026-09-04: "warum ist der
+     *  Knopf am Handy. Das geht nicht. Das muss in Brille aktiviert werden."
+     *  Stopping here is what forced the next conversation to begin on the phone,
+     *  because a stopped service cannot be woken by anything the owner is
+     *  wearing. It now goes back to PARKING on the lens's wake counter, so the
+     *  handset stays in his pocket. ACTION_STOP is the only thing that ends the
+     *  process - an explicit "off", which is a different intent from "this
+     *  conversation is over". */
     private fun endConversation() {
         loopMic = null
         report("idle")
-        main.post { stopSelf() }
+        park()
+    }
+
+    // ---- parked on the lens's button ---------------------------------------
+
+    /**
+     * WAIT FOR THE LENS TO ASK FOR THE MICROPHONE, forever.
+     *
+     * This is the inversion the owner asked for. The trigger used to be
+     * chat.tsx's glasses toggle - the only thing that could start this service -
+     * so a hands-free surface began by taking a handset out of a pocket.
+     *
+     * WHAT COULD NOT BE MOVED, and it is worth stating so nobody re-opens it:
+     * the LENS CANNOT CAPTURE AUDIO. Measured on-device 2026-07-13
+     * (glass-crud-harness mic-test/verdict.md, quoted in glasses-reference.md
+     * 11.6): "the MRBD webview denies all capture - Mic no, Sprache-to-text no,
+     * Kamera no." The glasses mic is an ordinary Bluetooth HFP headset mic and
+     * HFP terminates on the phone, so this process must stay in the path. But it
+     * is the RADIO, not the BUTTON - and only the button was ever the problem.
+     *
+     * Runs on its own thread (started from onStartCommand) and never returns
+     * until ACTION_STOP. A cursor rather than an event, so a wake raised while
+     * we were mid-request is served on the next pass instead of being lost - a
+     * dropped wake reads to the owner as a dead button on his face.
+     */
+    private fun park() {
+        if (parked) return                 // one parker, ever
+        parked = true
+        Thread {
+            var since = -1
+            while (parked) {
+                val base = prefs.getString(KEY_BASE, "").orEmpty().trimEnd('/')
+                val token = prefs.getString(KEY_TOKEN, "").orEmpty()
+                if (base.isEmpty() || token.isEmpty()) {
+                    // Unpaired: there is nothing to park on and no way to learn
+                    // that there is. Stop rather than spin a thread forever.
+                    main.post { say("Nicht verbunden - in HelmDeck koppeln"); stopSelf() }
+                    return@Thread
+                }
+                var woke = 0
+                var wantMic = "glasses"
+                var failed = false
+                safe("wake") {
+                    val url = if (since < 0) "$base/glance/wake?token=$token"
+                              else "$base/glance/wake?token=$token&since=$since"
+                    val c = (URL(url).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 15000
+                        readTimeout = 60000     // past the daemon's own ~25s hold
+                    }
+                    val code = c.responseCode
+                    val raw = (if (code in 200..299) c.inputStream else c.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    c.disconnect()
+                    if (code in 200..299) {
+                        val j = JSONObject(raw)
+                        woke = j.optInt("wake", 0)
+                        wantMic = j.optString("mic", "glasses").ifBlank { "glasses" }
+                        // The first pass ADOPTS the counter without acting on
+                        // it: a service that started while a wake was already
+                        // standing must not open a mic nobody just asked for.
+                        if (since < 0) { since = woke; woke = 0 }
+                    } else {
+                        failed = true
+                    }
+                }
+                if (!parked) return@Thread
+                if (failed) {
+                    // Unreachable daemon. Back off rather than hammering it -
+                    // the owner is not waiting on this, he has not tapped yet.
+                    Thread.sleep(10_000)
+                    continue
+                }
+                if (woke != 0 && woke != since) {
+                    // Advance the cursor FIRST and unconditionally: a wake we
+                    // deliberately decline must not be replayed on the next pass.
+                    since = woke
+                    val glass = wantMic != "phone"
+                    if (loopMic == null) {
+                        main.post {
+                            safe("wake-listen") {
+                                loopMic = glass; emptyTurns = 0
+                                startListening(useGlassMic = glass)
+                            }
+                        }
+                    }
+                    // else: a turn is already live. Opening a second recogniser
+                    // on top of it would drop the sentence he is in the middle
+                    // of - the tap is simply absorbed.
+                }
+            }
+        }.start()
     }
 
     /**

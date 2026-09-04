@@ -112,6 +112,30 @@ _turn = {"state": "idle", "text": "", "mic": "", "question": None,
 # sending a sentence he had just discarded. `seq` is what makes that impossible.
 _decision = {"seq": 0, "value": ""}
 
+# THE WAKE SLOT - "start listening", asked for FROM THE LENS.
+#
+# Owner, 2026-09-04: "warum ist der Knopf am Handy. Das geht nicht. Das muss in
+# Brille aktiviert werden."
+#
+# WHY THE PHONE IS STILL IN THIS PICTURE AT ALL, since that is the part that
+# looks wrong and is not: the lens CANNOT capture audio. Measured on-device
+# 2026-07-13 (glass-crud-harness mic-test/verdict.md, quoted in
+# ops/docs/glasses-reference.md 11.6): "the MRBD webview denies all capture - Mic
+# no, Sprache-to-text no, Kamera no." Meta's web path grants display, Neural
+# Band, IMU, GPS and storage, and no microphone; no webapp code changes that. The
+# glasses mic is an ordinary Bluetooth HFP headset mic, and HFP terminates on the
+# PHONE. So the phone is the radio, unavoidably - but it does not have to be the
+# BUTTON, and that was the actual defect.
+#
+# This slot inverts the trigger: the mic owner parks on `await_wake` instead of
+# stopping, and the lens raises a wake with `request_listen`. The phone stays in
+# a pocket for the whole conversation.
+#
+# A COUNTER, not a flag: two taps must not collapse into one wake, and a wake
+# raised while the mic is already open must not be silently lost - the reader
+# compares against the value it last consumed, exactly like the chat cursors.
+_wake = {"n": 0, "mic": "glasses"}
+
 
 def _set(state, text=None, mic=None, question=None):
     """The ONE writer. Everything else in this module funnels through here so no
@@ -255,6 +279,55 @@ def await_decision(seq, timeout=None):
             left = deadline - time.time()
             if left <= 0:
                 return ""
+            _decided.wait(min(left, 5.0))
+
+
+def request_listen(mic="glasses"):
+    """THE LENS ASKS FOR THE MICROPHONE. Returns the new wake counter.
+
+    This is the trigger moving to where the owner's hands are. It does NOT open
+    a mic - it cannot, nothing in this process can - it records that one was
+    asked for and wakes whoever is parked in `await_wake`.
+
+    Idempotence is deliberately NOT applied: every tap raises the counter. If the
+    owner taps twice because the first did not seem to take, he gets two wakes,
+    and the mic owner collapses them by consuming the latest counter - which is
+    the right place for that decision, since only it knows whether a mic is
+    already open."""
+    with _decided:
+        _wake["n"] += 1
+        _wake["mic"] = mic if mic in MICS else "glasses"
+        _decided.notify_all()
+        return _wake["n"]
+
+
+def wake_cursor():
+    """What the wake counter is right now - the value a mic owner should park
+    against so it never re-consumes a wake it already served."""
+    with _decided:
+        return _wake["n"]
+
+
+def await_wake(since, timeout=None):
+    """Park until the lens asks to listen. Called by the mic owner.
+
+    `since` is the counter the caller has already served. Returns the new
+    counter and the requested mic once it moves, or 0 on timeout - so a caller
+    that reconnects with a stale `since` gets the pending wake IMMEDIATELY
+    rather than sleeping through a tap that already happened. That is the whole
+    reason this is a cursor and not an event.
+
+    Same ~25s hold as await_decision, and for the same measured reason: the wait
+    crosses the Cloudflare Worker, which abandons an origin response at ~100s.
+    The client re-arms forever - a parked microphone has nothing better to do."""
+    deadline = time.time() + (DECIDE_WAIT_S if timeout is None else timeout)
+    with _decided:
+        while True:
+            if _wake["n"] != since:
+                return _wake["n"], _wake["mic"]
+            left = deadline - time.time()
+            if left <= 0:
+                return 0, ""
             _decided.wait(min(left, 5.0))
 
 

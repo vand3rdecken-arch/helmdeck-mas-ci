@@ -157,6 +157,42 @@ def main():
         ok(glassturn.snapshot()["mic"] == "",
            "an unrecognised mic name is dropped, never rendered")
 
+        # -- THE TRIGGER LIVES ON THE GLASSES ---------------------------------
+        # Owner, 2026-09-04: "warum ist der Knopf am Handy. Das geht nicht. Das
+        # muss in Brille aktiviert werden." The lens cannot capture audio (the
+        # webview denies all capture, measured on-device), so the phone stays the
+        # Bluetooth radio - but it must stop being the BUTTON.
+        status, body = req("GET", "/glance/wake?token=tok-conv-1", expect=200)
+        ok(body.get("adopted") is True and isinstance(body.get("wake"), int),
+           "a fresh mic owner ADOPTS the counter without consuming a wake meant "
+           "for the instance before it (%r)" % (body,))
+        cur = body["wake"]
+
+        status, body = req("POST", "/glance/listen",
+                           {"token": "tok-conv-1", "mic": "glasses"}, expect=200)
+        ok(body.get("wake") == cur + 1,
+           "tapping Speak on the LENS raises the wake counter (%r)" % (body,))
+
+        # The parked phone is released by that tap - the whole point.
+        status, body = req("GET", "/glance/wake?token=tok-conv-1&since=%d" % cur,
+                           expect=200, timeout=40)
+        ok(body.get("wake") == cur + 1 and body.get("mic") == "glasses",
+           "the parked microphone is released by a tap on the glasses (%r)" % (body,))
+
+        # A wake raised while the phone was mid-reconnect must not be lost: a
+        # dropped wake reads to the owner as a dead button on his face.
+        req("POST", "/glance/listen", {"token": "tok-conv-1", "mic": "glasses"}, expect=200)
+        t0 = time.time()
+        status, body = req("GET", "/glance/wake?token=tok-conv-1&since=%d" % (cur + 1),
+                           expect=200, timeout=40)
+        ok(time.time() - t0 < 3,
+           "a wake raised before the phone re-armed is served IMMEDIATELY, not "
+           "slept through (%.1fs)" % (time.time() - t0))
+
+        # /glance/listen carries no text - it cannot inject anything.
+        req("POST", "/glance/listen", {"token": "nope"}, expect=403)
+        req("GET", "/glance/wake?token=nope&since=0", expect=403)
+
         # -- THE CONFIRM STEP -------------------------------------------------
         # Owner, 2026-09-04: "wie auf watch erstmal per turn ... user kann
         # bestaetigen oder loeschen und neu sprechen". The property that matters

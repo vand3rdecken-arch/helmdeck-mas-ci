@@ -468,6 +468,75 @@ def glance_decide(self, user, body):
     return self._send(200, json.dumps({"ok": True, "decision": value}))
 
 
+def glance_listen(self, user, body):
+    """START LISTENING - asked for from the LENS (owner, 2026-09-04: "das muss
+    in Brille aktiviert werden").
+
+    The trigger used to live on the phone: chat.tsx's glasses toggle was the only
+    thing that could start GlassVoiceService, so a hands-free surface began with
+    taking a handset out of a pocket. This is the same start, moved to the only
+    surface the owner is actually wearing.
+
+    It does not - cannot - open a microphone here. The lens has no capture
+    (measured: glasses-reference.md 11.6) and this process has no radio. It
+    records the request and wakes the phone service parked on /glance/wake.
+    """
+    from spine.storage import events
+    from spine.ops import glassturn
+    s = events.settings()
+    tok = s.get("glance_token") or ""
+    given = (body.get("token") or "").strip() or \
+        (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    if not s.get("glance_talk"):
+        return self._send(403, json.dumps(
+            {"error": "talking to the board agent from the glasses is "
+                      "off (set settings.glance_talk)"}))
+    # The mic choice rides along because it is a real trade the owner makes
+    # (glasses = 5-mic beamforming but 8 kHz answers; phone = A2DP preserved).
+    # Defaulted rather than required: the lens's own button means "use the
+    # glasses", which is the whole point of asking from there.
+    mic = (body.get("mic") or "glasses").strip()
+    return self._send(200, json.dumps(
+        {"ok": True, "wake": glassturn.request_listen(mic)}))
+
+
+def glance_wake(self, user):
+    """The phone service PARKS here waiting to be told to listen. LONG-POLL.
+
+    This is what lets the phone stay in a pocket for a whole conversation: the
+    service holds this open instead of stopping, and the lens's button ends the
+    wait. Cursor-based (`since`), so a wake raised while the service was
+    reconnecting is delivered immediately rather than missed - a dropped wake
+    would read to the owner as a dead button, the exact failure this replaces.
+    """
+    from spine.storage import events
+    from spine.ops import glassturn
+    s = events.settings()
+    q = parse_qs(urlparse(self.path).query)
+    tok = s.get("glance_token") or ""
+    given = (q.get("token") or [""])[0]
+    if not tok or given != tok:
+        return self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+    if not s.get("glance_talk"):
+        return self._send(403, json.dumps(
+            {"error": "talking to the board agent from the glasses is "
+                      "off (set settings.glance_talk)"}))
+    try:
+        since = int((q.get("since") or ["-1"])[0])
+    except (TypeError, ValueError):
+        since = -1
+    # No `since` at all means "tell me where the counter is" - a fresh service
+    # must be able to adopt the cursor WITHOUT consuming a wake meant for the
+    # instance before it.
+    if since < 0:
+        return self._send(200, json.dumps(
+            {"wake": glassturn.wake_cursor(), "mic": "", "adopted": True}))
+    n, mic = glassturn.await_wake(since)
+    return self._send(200, json.dumps({"wake": n, "mic": mic}))
+
+
 def glance_decision(self, user):
     """The mic owner waits here for the verdict on its draft. LONG-POLL.
 
@@ -631,6 +700,7 @@ GET_ROUTES = {
     "/glance/banner": glance_banner_voice,
     "/glance/chat": glance_chat,
     "/glance/decision": glance_decision,
+    "/glance/wake": glance_wake,
 }
 POST_ROUTES = {
     "/glance/talk": glance_talk,
@@ -638,4 +708,5 @@ POST_ROUTES = {
     "/glance/photo": glance_photo,
     "/glance/state": glance_state,
     "/glance/decide": glance_decide,
+    "/glance/listen": glance_listen,
 }

@@ -78,6 +78,14 @@ export const PROXY_ROUTES = {
   // response at ~100s and a longer hold would 524 (see glassturn.DECIDE_WAIT_S).
   // Read-only: it returns one word and can change nothing.
   "/glance/decision": "GET",
+  // THE TRIGGER, moved off the phone (owner, 2026-09-04: "das muss in Brille
+  // aktiviert werden"). /glance/listen carries no text at all - it raises a
+  // counter that means "the owner asked to talk", so the widest thing the public
+  // internet can do with it is make the owner's own phone open his own
+  // microphone, which the lens then shows him. /glance/wake is the phone parked
+  // on that counter: read-only, returns an integer and a mic name.
+  "/glance/listen": "POST",
+  "/glance/wake": "GET",
 };
 
 // Upstream bodies are small by construction (a spoken sentence, or a chosen

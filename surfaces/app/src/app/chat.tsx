@@ -666,7 +666,14 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         });
         return;
       }
-      if (glassVoice.listen(true)) setGlassOn(true);
+      // ARM, not listen. `listen` opens the mic from HERE, which is exactly what
+      // made the phone the starting point of a hands-free surface (owner,
+      // 2026-09-04: "das muss in Brille aktiviert werden"). Arming parks the
+      // service on the lens's wake counter instead: the owner then taps Speak on
+      // the GLASSES, as often as he likes, without taking the phone out again.
+      // Falls back to the old behaviour on a binary predating arm(), so an OTA
+      // bundle landing on an older APK still works instead of doing nothing.
+      if (glassVoice.arm() || glassVoice.listen(true)) setGlassOn(true);
     } finally {
       setGlassBusy(false);
     }
