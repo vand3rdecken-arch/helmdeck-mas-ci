@@ -56,15 +56,22 @@ targets:
         embed: true
 
   HelmDeckWatch:
-    type: application.watchapp2
+    # PLAIN application + WKApplication key = the modern single-target watch
+    # app (Xcode 14+ template). NOT application.watchapp2: that is the legacy
+    # two-part layout where the app binary is Apple's WatchKit STUB (copied
+    # in by the build system) and code lives in a separate extension -
+    # giving a watchapp2 target its own sources makes two commands produce
+    # the same executable ("Multiple commands produce ... HelmDeckWatch",
+    # measured run 33964479850).
+    type: application
     platform: watchOS
     sources: [Watch]
     info:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: HelmDeck
+        WKApplication: true
         WKCompanionAppBundleIdentifier: app.helmdeck.watchcompanion
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
     # No aps-environment entitlement YET, deliberately: push wiring is a
     # follow-up card, and the entitlement forces a capability-enabled profile
     # - i.e. the known PUSH_NOTIFICATIONS capability-sync trap (DEPLOY.md,
