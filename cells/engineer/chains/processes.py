@@ -148,10 +148,17 @@ def _propose_steps(request_text):
     from spine.agent import drivers
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
+    # encoding="utf-8" is REQUIRED (the documented Windows trap, same as
+    # copilot.py's turn spawn): with text=True alone, Windows decodes claude's
+    # UTF-8 JSON as cp1252, so a proposed step's German title/desc arrives
+    # double-encoded ("für" -> "fÃ¼r"). That mojibake then rode into the card
+    # task, the delivered-parked escalation and Henry's chat message unaltered
+    # (owner screenshot 2026-09-05: "UI/UX-Entwurf fÃ¼r watchOS").
     r = subprocess.run(drivers._cmd_line([CLAUDE, "-p", "--output-format", "json",
                                           "--permission-mode", "plan"]),
                        input=PROPOSE_PROMPT % request_text,
-                       capture_output=True, text=True, timeout=300)
+                       capture_output=True, text=True, timeout=300,
+                       encoding="utf-8", errors="replace")
     d = json.loads(r.stdout)
     txt = d.get("result", "")
     m = re.search(r"\[.*\]", txt, re.S)
