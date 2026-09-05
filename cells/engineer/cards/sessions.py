@@ -539,6 +539,17 @@ _compact_interrupted = set()     # tids whose in-flight compaction we cut on pur
 _COMPACT_IDLE_S = 600
 _COMPACT_WAIT_S = 25
 
+# Steer SOURCES that are the harness continuing itself, with NO human waiting -
+# these must NOT cut an in-flight compaction with the short owner-wait above.
+# Found 2026-09-05 (owner "warum fail compact"): a COWORK card watching a red CI
+# run fired a `background-task` auto-steer on every task completion, each cutting
+# the compaction after 25s and re-queueing it - so a 97%/195k session livelocked,
+# the compaction starting and dying forever while the context never shrank. A
+# background continuation is the LEAST urgent steer there is; letting the session
+# compact FIRST is strictly better, and nobody feels the wait. Only genuine owner
+# input keeps the short 25s preemption.
+_COMPACT_DEFER_SOURCES = frozenset({"background-task"})
+
 
 def compacting(tid):
     """The in-flight compaction's completion Event for this card, or None.
@@ -820,7 +831,11 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # compaction AND (before the fix above) taught the probe a lie. So wait for
     # it - the wait is bounded by the compact turn's own 180s idle watchdog, no
     # new wall-clock cap - and only cut it if it wedges past that.
-    if await_compaction(tid, log):
+    # A harness background-continuation defers to a running compaction with the
+    # FULL idle patience (no human is waiting on it); only real owner input keeps
+    # the short 25s preemption. This is what breaks the CI-watch livelock above.
+    _cwait = _COMPACT_IDLE_S if source in _COMPACT_DEFER_SOURCES else _COMPACT_WAIT_S
+    if await_compaction(tid, log, timeout=_cwait):
         try:
             drivers.cancel(tid)
         except Exception:
