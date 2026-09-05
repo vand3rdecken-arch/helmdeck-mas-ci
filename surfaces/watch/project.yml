@@ -51,6 +51,14 @@ targets:
       configs:
         Release:
           PROVISIONING_PROFILE_SPECIFIER: HelmDeckWatchCompanion AppStore
+          # Target-level because XcodeGen's iOS-application preset injects
+          # an sdk-conditional CODE_SIGN_IDENTITY[sdk=iphoneos*]="iPhone
+          # Developer" at TARGET level - it beats the project-level Release
+          # override, and the sdk-conditional form beats the plain form
+          # (measured: "No signing certificate 'iOS Development' found"
+          # during a Manual-signed archive, run 33965883995).
+          CODE_SIGN_IDENTITY: Apple Distribution
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Distribution
     dependencies:
       - target: HelmDeckWatch
         embed: true
@@ -85,3 +93,6 @@ targets:
       configs:
         Release:
           PROVISIONING_PROFILE_SPECIFIER: HelmDeckWatch AppStore
+          # Same preset-override reasoning as the companion target above.
+          CODE_SIGN_IDENTITY: Apple Distribution
+          "CODE_SIGN_IDENTITY[sdk=watchos*]": Apple Distribution
