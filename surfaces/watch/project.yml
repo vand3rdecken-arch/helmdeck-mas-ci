@@ -5,6 +5,17 @@ options:
     iOS: "17.0"
     watchOS: "10.0"
 
+# SIGNING (measured across 4 CI runs, not reasoned): `xcodebuild archive`
+# under CODE_SIGN_STYLE=Automatic requests an *Apple Development* identity -
+# Xcode's model is "archive signs with Development, export re-signs with
+# Distribution". A Development identity is exactly what an ephemeral CI Mac
+# can never hold: automatic signing mints a cert whose private key lives in
+# that runner's keychain and dies with it (and Apple caps Development certs
+# at 2, so retries wedge the whole account). So Release signs MANUALLY with
+# the team's Apple Distribution cert imported from a .p12 secret + named
+# App Store profiles that build-watch.sh creates/fetches via fastlane sigh.
+# Debug stays Automatic - it is only ever built unsigned in CI
+# (CODE_SIGNING_ALLOWED=NO) or interactively on a real Mac.
 settings:
   base:
     DEVELOPMENT_TEAM: ${APPLE_TEAM_ID}
@@ -12,6 +23,10 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+  configs:
+    Release:
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: "Apple Distribution"
 
 targets:
   # A minimal, near-empty iOS app. Its only job is to carry the watch app to
@@ -35,7 +50,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
       configs:
         Release:
-          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: HelmDeckWatchCompanion AppStore
     dependencies:
       - target: HelmDeckWatch
         embed: true
@@ -50,10 +65,11 @@ targets:
         CFBundleDisplayName: HelmDeck
         WKCompanionAppBundleIdentifier: app.helmdeck.watchcompanion
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-    entitlements:
-      path: Watch/HelmDeckWatch.entitlements
-      properties:
-        aps-environment: production
+    # No aps-environment entitlement YET, deliberately: push wiring is a
+    # follow-up card, and the entitlement forces a capability-enabled profile
+    # - i.e. the known PUSH_NOTIFICATIONS capability-sync trap (DEPLOY.md,
+    # commit 5eb6a5b) - for zero benefit while no push code exists. Re-add it
+    # in the card that actually registers the watch's APNs token.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.helmdeck.watchcompanion.watchkitapp
@@ -61,4 +77,4 @@ targets:
         SKIP_INSTALL: false
       configs:
         Release:
-          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: HelmDeckWatch AppStore

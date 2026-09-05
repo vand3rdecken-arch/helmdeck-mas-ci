@@ -42,33 +42,76 @@ Grounded in three prior cards, not re-litigated here:
   once the same four `ASC_*`/`APPLE_TEAM_ID` GitHub secrets `desktop-mac.yml`
   already uses are present.
 
-## Provisioning - what to expect, not new research
+## Provisioning - measured, not assumed (4 red CI runs, 2026-09-05)
 
-Registering `app.helmdeck` itself (commit `5eb6a5b`) already proved an
-App Store Connect **Admin** API key can mint a Distribution Certificate and a
-Provisioning Profile with **no Apple ID login and no 2FA at any point** -
-`xcodebuild -allowProvisioningUpdates -authenticationKeyPath/-ID/-IssuerID`
-is Apple's CI-native equivalent of the `eas credentials` flow that did it.
-Two knowns carry over directly, already solved once:
+The original plan - `xcodebuild -allowProvisioningUpdates` + the ASC API key,
+automatic signing all the way - DOES NOT WORK on ephemeral CI, and the reason
+is structural, not a flag:
 
-1. **The capability-sync trap will very likely repeat.** `5eb6a5b` hit Apple
-   rejecting the automatic `PUSH_NOTIFICATIONS` capability patch on first
-   registration of a bundle ID; the fix was a single manual toggle
-   (developer.apple.com -> Identifiers -> the new App ID -> Capabilities ->
-   Push Notifications -> Save) after which the next run reports "No updates."
-   Expect the same for `app.helmdeck.watchcompanion.watchkitapp` the first
-   time `--archive` runs with secrets present. **This is the
-   "Account-Holder-Zugriff" this card's title anticipated** - one checkbox,
-   not a research problem.
-2. **The API key's role is fixed at creation** (Developer-role keys cannot
-   create certs/profiles at all) - already an Admin key on file
-   (`AZQRY4K34W`, see `surfaces/app/eas.json` / `DEPLOY.md`), so this should
-   not need a new key.
+- `xcodebuild archive` under Automatic signing requests an **Apple
+  Development** identity (Xcode's model: the archive signs with Development,
+  the *export* step re-signs with Distribution).
+- A Development identity's private key is minted into the build Mac's
+  keychain - a GitHub runner is destroyed after every run, so the key is
+  gone forever ("...but its private key is not installed in your keychain"),
+  and Apple caps Development certs at 2/account, so retries wedge the
+  account. Manually pinning `CODE_SIGN_IDENTITY: Apple Distribution` under
+  Automatic style is rejected outright ("conflicting provisioning
+  settings"). All measured in runs 33958823586..33963881033.
+
+What `5eb6a5b` actually proved still stands: the **Admin** ASC API key
+(`AZQRY4K34W`) mints certs/profiles with no Apple ID login and no 2FA. But
+the working mechanism there was **EAS' credential store** - the Distribution
+cert's private key lives on Expo's servers, never on a throwaway Mac. So CI
+here reuses exactly that: export the existing team Distribution cert from
+EAS once as a `.p12`, keep it as a GitHub secret, and every run imports it
+into a throwaway keychain + signs Release **manually** (identity and profile
+names pinned in `project.yml`; App Store profiles created/fetched by the
+runner's preinstalled `fastlane sigh` via the same API key - App Store
+profiles need no device UDIDs).
+
+### Owner: the one-time credential step
+
+From the **live repo** (`C:\Users\Tien Duy Vo\Downloads\swarmdeck`), in
+PowerShell/Windows Terminal:
+
+```powershell
+cd surfaces\app
+npx eas-cli@latest credentials -p ios
+#   -> select build profile "production"
+#   -> "credentials.json: Upload/Download credentials between EAS servers and your local json"
+#   -> "Download credentials from EAS to credentials.json"
+# writes credentials\ios\dist-cert.p12 + credentials.json (holds the p12 password)
+
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("credentials\ios\dist-cert.p12")) |
+  gh secret set APPLE_CERT_P12 --repo Tienduyvo/helmdeck
+gh secret set APPLE_CERT_PASSWORD --repo Tienduyvo/helmdeck
+#   (paste the password from credentials.json when prompted)
+
+Remove-Item -Recurse -Force credentials, credentials.json   # never commit these
+```
+
+Then re-run the `watchos-app` workflow (GitHub -> Actions -> newest run ->
+"Re-run all jobs"). Until those two secrets exist the workflow deliberately
+falls back to the unsigned compile-only build and stays green - a green run
+alone does NOT yet mean signing works; check the Build step's first lines
+for "signing: ON".
+
+**Cleanup worth doing once:** developer.apple.com -> Certificates - revoke
+the stale "Apple Development" certificates the failed runs minted (they
+belong to already-destroyed CI Macs; revoking breaks nothing and frees the
+2-per-account quota).
+
+**Deferred on purpose:** the watch target currently declares NO push
+entitlement, so plain App Store profiles suffice and the PUSH_NOTIFICATIONS
+capability-sync trap (`5eb6a5b`, DEPLOY.md) cannot fire yet. The card that
+wires the watch's APNs token re-adds `aps-environment` and handles that one
+portal checkbox then.
 
 What this scaffold does **not** need: no `.p8` files, no `.env`, no path
 under `C:/hd/secrets` - none of that is reachable from (or belongs in) this
-worktree. The actual signed run happens in GitHub Actions, reading the same
-repository secrets `desktop-mac.yml` already reads.
+worktree. The actual signed run happens in GitHub Actions, reading repository
+secrets.
 
 ## Explicitly not done here
 
