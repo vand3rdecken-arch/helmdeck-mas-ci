@@ -1,0 +1,80 @@
+# Build (and, once signing secrets exist, archive) the HelmDeck watchOS
+# companion target on a real macOS runner - same reasoning as desktop-mac.yml:
+# the owner's box is Windows, xcodebuild is macOS-only, so there is no
+# cross-build. This is also the ONLY verification available for this target
+# (ops/docs/backlog/watchos-ui-ux-entwurf/README.md SS5/SS6): no Mac, no
+# simulator reachable from the card's Windows worktree.
+#
+# Designed to SUCCEED WITH NO SECRETS AT ALL: no ASC key -> an unsigned,
+# compile-only build, still proof the target is sound. Add the signing
+# secrets later (same ones surfaces/desktop/build-mac.sh already uses) and
+# the same workflow starts archiving without a line changing.
+#
+# Optional repository secrets:
+#   ASC_API_KEY_P8   contents of AuthKey_XXXXXXXXXX.p8
+#   ASC_KEY_ID       the key id (must be an Admin-role key - see DEPLOY.md)
+#   ASC_ISSUER_ID    the issuer uuid
+#   APPLE_TEAM_ID    developer.apple.com -> Membership details
+name: watchos-app
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: "Full signed archive (needs the ASC secrets) instead of compile-only"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - "surfaces/watch/**"
+      - ".github/workflows/watchos-app.yml"
+  pull_request:
+    paths:
+      - "surfaces/watch/**"
+      - ".github/workflows/watchos-app.yml"
+
+concurrency:
+  group: watchos-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Written to a file because xcodebuild wants a path, not a blob. Skipped
+      # entirely when the secret is absent - build-watch.sh then just builds
+      # unsigned. Never echoed.
+      - name: Stage the App Store Connect API key
+        if: env.ASC_KEY_ID != ''
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          mkdir -p ~/.private_keys
+          key=~/.private_keys/AuthKey_${ASC_KEY_ID}.p8
+          printf '%s' "$ASC_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          if [ "${{ inputs.archive }}" = "true" ]; then
+            bash surfaces/watch/build-watch.sh --archive
+          else
+            bash surfaces/watch/build-watch.sh
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: helmdeck-watch
+          if-no-files-found: ignore
+          retention-days: 14
+          path: surfaces/watch/build/*.xcarchive
