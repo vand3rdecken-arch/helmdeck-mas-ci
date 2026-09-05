@@ -1,7 +1,9 @@
 # HelmDeck — App Store Connect / TestFlight-Metadaten (Entwurf)
 
-**Status: ANGEWENDET am 2026-09-02.** Die Texte unten stehen live in App Store
-Connect (`asc_metadata_draft.py apply --yes`, danach mit `show` verifiziert).
+**Status: ANGEWENDET am 2026-09-02, „What to Test" am 2026-09-05 im Repo
+neu entworfen (dieser Commit) für den nächsten Build — noch NICHT
+angewendet.** Der Rest der Felder (Beta App Review Detail, Localizations)
+steht seit 2026-09-02 live in App Store Connect und ändert sich hier nicht.
 Der Kontakt-Telefon-Platzhalter ist gefüllt — der Owner hat die Nummer am
 2026-09-02 geliefert.
 
@@ -105,12 +107,20 @@ gehört in die Datenschutzerklärung, sobald er umgebaut ist.
 
 ## 4. Beta Build Localization (pro Build, „What to Test")
 
-Für den aktuellen Build `e67d1247` (erster iOS-TestFlight-Build).
+`e67d1247` war der allererste iOS-TestFlight-Build (2026-08-14, §2c in
+`DEPLOY.md`); seither sind mehrere Builds gefolgt (zuletzt dokumentiert:
+`1.0.45 (7)`, eingereicht 2026-09-02, siehe `EXTERNAL_TESTFLIGHT.md`). Der
+Text unten ist der Entwurf für den **nächsten** Build (`app.json` steht auf
+`1.0.48`/versionCode 91, App-sichtbare Änderungen seit 1.0.45: Mehr-Tab neu
+sortiert, PM-Dashboard als ein Übersichtsblatt, Prozess-Schritte bearbeiten,
+History-500er behoben, Brillen-Mikrofon-Steuerung) — er wird erst mit
+`apply --yes` **nach** dem nächsten `eas submit` live, weil `apply` ihn an
+`_latest_build()` hängt.
 
 | Sprache | `whatsNew` |
 |---|---|
-| de-DE | Erster interner Testbuild. Bitte prüfen: Pairing per QR-Code vom Desktop, Board ansehen, eine Karte mit Foto-Anhang anlegen, Push-Benachrichtigung bei einer Agenten-Rückfrage. |
-| en-US | First internal test build. Please check: QR-code pairing from the desktop, viewing the board, creating a card with a photo attachment, receiving a push notification for an agent question. |
+| de-DE | Seit dem letzten Testbuild ist einiges dazugekommen. Bitte prüfen: der neu sortierte Mehr-Tab (Zurück-Navigation, doppelte Einträge entfernt), das PM-Dashboard (Ziel, Timeline & Budget als ein Übersichtsblatt statt Dreieck-Report), in einem Prozess einen Schritt hinzufügen/umsortieren/löschen, und der Verlauf (History) sollte wieder laden. Für Brillen-Besitzer: das Mikrofon wird jetzt von der Brille selbst gestartet, gesprochener Text wird vor dem Senden angezeigt und bestätigt. |
+| en-US | Many app changes landed since the last test build. Please check: the reorganized Mehr/Settings tab (back navigation, duplicate entries removed), the PM dashboard (goal, timeline & budget as one overview instead of the triangle report), adding/reordering/removing a step in a process, and that History loads again. For glasses owners: the microphone now starts from the glasses themselves, and spoken text is shown and confirmed before it is sent. |
 
 ## 5. Was hier bewusst NICHT gemacht wird
 
