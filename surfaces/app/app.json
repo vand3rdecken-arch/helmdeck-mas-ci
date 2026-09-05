@@ -33,7 +33,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 90,
+      "versionCode": 91,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
@@ -76,7 +76,6 @@
           "hosts": []
         }
       ],
-      "./plugins/withGlassVoice",
       [
         "expo-splash-screen",
         {
