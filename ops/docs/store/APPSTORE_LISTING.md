@@ -44,40 +44,79 @@ Kontakt-Mail steht dort. Marketing-URL identisch (`https://helmdeck.de`).
 ## Copyright
 
 `2026 Tien Duy Vo` — Apple-Format ist `<Jahr> <Rechtsinhaber>`, kein „©"
-davor nötig (Apple fügt es selbst hinzu). **Bitte prüfen**: Skript übernimmt
-`git config user.name`-Herkunft wie bei `contactFirstName`/`contactLastName`
-in `ASC_METADATA.md` — falls eine andere Rechtsform (Einzelunternehmen,
-GmbH) der korrekte Rechtsinhaber ist, hier vor `apply` ändern.
+davor nötig (Apple fügt es selbst hinzu). **Bitte prüfen**: aus
+`git config user.name`, wie bei `contactFirstName`/`contactLastName` in
+`ASC_METADATA.md` — falls eine andere Rechtsform (Einzelunternehmen, GmbH)
+der korrekte Rechtsinhaber ist, in `surfaces/app/store.config.json` →
+`apple.copyright` vor dem Push ändern.
 
 ## Kategorie
 
 Primär: **Produktivität** (identisch zu Play, `PRODUCTIVITY` in Apples
 Kategorie-Enum). Keine Sekundärkategorie.
 
+## Altersfreigabe (Age Rating / „Advisory")
+
+**Korrektur ggü. `EXTERNAL_TESTFLIGHT.md`:** dort stand, die ASC-API böte
+kein Age-Rating-Formular an — Stand 2026-09-02, zu dem Zeitpunkt vermutlich
+richtig recherchiert. Inzwischen existiert `ageRatingDeclarations`
+(`GET /v1/appStoreVersions/{id}/ageRatingDeclaration`,
+`PATCH /v1/ageRatingDeclarations/{id}`, ~29 Attribute, zuletzt erweitert um
+Social-Media-Fragen im Juli 2026) — per API schreibbar. Alle Kategorien auf
+`NONE`/`false` (kein Glücksspiel, keine Gewalt, keine Kontakte zu
+Fremden/UGC-Feed, kein uneingeschränkter Web-Zugriff — die App hat keinen
+eingebetteten Browser), erwartete Einstufung: **4+**. Deklariert in
+`surfaces/app/store.config.json` → `apple.advisory`, geschrieben via
+`eas metadata:push` (s. `APP_STORE_RELEASE.md`) — kein separater
+Web-UI-Schritt mehr nötig.
+
+## Export-Compliance
+
+Bereits erledigt, keine weitere Aktion: `ITSAppUsesNonExemptEncryption: false`
+steht im Binary (`app.json → ios.infoPlist`, s. `ASC_METADATA.md` §1) und
+gilt build-weit — dieselbe Antwort deckt TestFlight **und** Store-Release ab,
+da es keine pro-Vertriebskanal-Deklaration ist, sondern am Build hängt.
+
 ## Screenshots
 
-Play-Screenshots (`ops/docs/store/screenshots/01…04*.png`, 1080×2400) sind
-**nicht** in Apples Pflichtgrößen. Apples Anforderungen ändern sich
-erfahrungsgemäß zwischen Xcode-/ASC-Versionen häufiger als andere Store-
-Vorgaben — **vor dem Hochladen im ASC-Web-UI die aktuell verlangten
-Pixelmaße nachsehen**, nicht diese Datei als Wahrheit nehmen. Stand
-Erstellung dieser Notiz: 6,9"/6,7"-iPhone-Format ist die praktisch
-unvermeidbare Pflichtgröße, alles andere skaliert Apple aus dieser hoch/
-runter, sofern keine eigenen kleineren Formate hochgeladen werden.
+**Korrektur ggü. einer früheren Version dieser Datei:** die `play/*-1920.png`
+sind **keine** höher aufgelöste Quelle — sie sind 1080×1920 (0,5625
+Seitenverhältnis), eine frühere/kleinere Aufnahme *vor* dem finalen
+1080×2400-Play-Zuschnitt, also niedriger, nicht höher aufgelöst. Als Basis
+dienen die fertigen `01…04*.png` (1080×2400, Seitenverhältnis 0,45).
 
-Kein API-Pfad hier vorbereitet — Bild-Upload läuft über einen mehrstufigen
-Reservierungs-Flow (asset-Upload-Operationen, Checksum, Commit), den macht
-man praktisch schneller im ASC-Web-UI oder mit Apples `Transporter`-Tool
-als über ein schlankes Skript. Quelle für den Zuschnitt: die 1920px-Rohaufnahmen
-unter `ops/docs/store/screenshots/play/*-1920.png` (gleicher UI-Stand,
-höhere Auflösung als die fertig zugeschnittenen Play-Assets).
+Generiert per `py -3.12 ops/tools/make_appstore_screenshots.py` →
+`ops/docs/store/screenshots/appstore/iphone-6.9/0N-*.png` (1320×2868,
+Apples aktuelle iPhone-6,9"-Pflichtgröße, verifiziert per Websuche
+2026-09-05 — Zielgröße kann sich seither verschoben haben, vor dem Hochladen
+im ASC-Web-UI gegenprüfen). Skaliert auf Zielbreite, dann mittig auf
+Zielhöhe zugeschnitten (65px insgesamt, oben+unten je ~33px) — bei allen vier
+Screens geprüft: kein Content-Verlust, nur der leere Rand unterhalb der
+Tab-Bar wird knapper.
+
+**Offen: iPad-Screenshots.** `surfaces/app/app.json` setzt
+`ios.supportsTablet: true`, Apples aktuelle Pflichtgröße dafür ist 13"
+(2064×2752, Seitenverhältnis 0,75). Die vorhandenen Screenshots sind
+Phone-Aufnahmen (0,45) — auf die iPad-Fläche zuschneiden würde den Großteil
+der Breite abschneiden, aufpolstern (Letterboxing) sähe wie ein
+plattgedrücktes Phone-Bild aus, nicht wie eine echte iPad-Aufnahme. Bewusst
+**nicht** generiert, drei Optionen für den Owner:
+1. Echten Screenshot vom iPad-Simulator aufnehmen (braucht Xcode — nicht auf
+   dieser Windows-Box verfügbar, nur auf einem Mac).
+2. Im ASC-Upload-Dialog prüfen, ob für dieses Build (keine dedizierte
+   iPad-Oberfläche, nur hochskaliertes Phone-Layout) überhaupt ein
+   eigenständiges iPad-Set zwingend verlangt wird, bevor man Zeit investiert.
+3. `ios.supportsTablet` auf `false` setzen — braucht aber einen **neuen**
+   Build (Info.plist-Flag), widerspricht damit „kein Re-Upload nötig" für
+   den aktuellen TestFlight-Build.
 
 ## Pricing & Availability
 
-Kostenlos, keine IAP (identisch zu Play). Apples Preisschema-API
-(`appPriceSchedules`) hat mehrfach über Versionen hinweg die Form
-gewechselt (Tier-IDs → territoriale `appPricePoints`) — hier bewusst
-**kein** Skript dafür, um nicht auf veralteter API-Doku eine falsche
-Preis-Zeile zu schreiben. Web-UI-Schritt, einmalig: App Store Connect →
-App → **Preise und Verfügbarkeit** → „Kostenlos" + Länder (DACH zuerst,
-wie bei Play, oder gleich alle — kein technischer Unterschied).
+Kostenlos, keine IAP (identisch zu Play), **weltweit verfügbar** (Owner-
+Entscheidung 2026-09-05 — nicht DACH-first wie ursprünglich bei Play
+überlegt). Apples Preisschema-API (`appPriceSchedules`) hat mehrfach über
+Versionen hinweg die Form gewechselt (Tier-IDs → territoriale
+`appPricePoints`) — hier bewusst **kein** Skript dafür, um nicht auf
+veralteter API-Doku eine falsche Preis-Zeile zu schreiben. Web-UI-Schritt,
+einmalig: App Store Connect → App → **Preise und Verfügbarkeit** →
+„Kostenlos" + „Alle Länder/Regionen verfügbar machen".

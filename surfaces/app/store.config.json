@@ -1,0 +1,62 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0.45",
+    "copyright": "2026 Tien Duy Vo",
+    "categories": ["PRODUCTIVITY"],
+    "advisory": {
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "gambling": false,
+      "unrestrictedWebAccess": false,
+      "kidsAgeBand": null,
+      "ageRatingOverride": "NONE",
+      "koreaAgeRatingOverride": "NONE"
+    },
+    "release": {
+      "automaticRelease": false
+    },
+    "review": {
+      "firstName": "Tien Duy",
+      "lastName": "Vo",
+      "email": "tienduyvo@googlemail.com",
+      "phone": "+00000000000",
+      "demoRequired": false,
+      "notes": "HelmDeck is a companion app for the user's OWN HelmDeck installation (desktop/server). There is no central developer account and no demo login to hand out - pairing uses a QR code that the user's own installation displays. That is why 'demo account required' is No.\n\nFOR APP REVIEW - no pairing, no hardware, no account needed:\nOn the very first screen, below the pairing field, tap\n  \"Try it without your own computer\"\n  (German device language: \"Ohne eigenen Rechner ausprobieren\")\nThis opens the full app on a sample board. Boards, cards, the agent chat and settings are all browsable; a banner marks the session as demo data. This is the complete review path - please use it."
+    },
+    "info": {
+      "de-DE": {
+        "title": "HelmDeck",
+        "subtitle": "KI-Agenten erledigen Arbeit",
+        "description": "HelmDeck ist die Fernbedienung für deine eigene HelmDeck-Installation: ein Board, auf dem Tickets sich nicht nur verwalten lassen, sondern sich selbst erledigen. KI-Agenten arbeiten auf deinem Rechner an echten Projekten – du steuerst, beantwortest Rückfragen und nimmst Ergebnisse ab, vom Telefon aus.\n\nDEIN BOARD, ÜBERALL\n• Aufträge anlegen – mit Priorität, Wert, Kunde und Anhängen (Fotos, Dateien)\n• Live zusehen, wie der Agent arbeitet: jeder Schritt im Verlauf, Turn für Turn\n• „Wartet auf dich“: Rückfragen des Agenten direkt im Chat beantworten\n• Qualitäts-Gate vor jeder Abnahme: Prüfungen laufen automatisch, du siehst das Ergebnis, erst deine Freigabe merged und deployt\n• Push-Benachrichtigung, wenn eine Antwort da ist oder etwas zur Abnahme steht\n• Übersicht mit echten Zahlen: gelieferter Wert, KI-Kosten, Marge pro Karte\n\nDEINE DATEN BLEIBEN DEINE\n• Die App verbindet sich ausschließlich mit deinem eigenen HelmDeck-Daemon – direkt im LAN oder von unterwegs über ein Zero-Knowledge-Relay\n• Ende-zu-Ende-Verschlüsselung (Curve25519/XSalsa20-Poly1305): das Relay sieht nur Chiffretext, niemals Inhalte\n• Auch Push-Nachrichten sind Ende-zu-Ende-verschlüsselt\n• Keine Werbung, keine Analytics-Weitergabe an Dritte, kein Konto beim Entwickler\n\nWICHTIG\nHelmDeck ist eine Begleit-App: Sie benötigt eine laufende HelmDeck-Installation auf deinem eigenen Rechner. Die Kopplung dauert eine Minute – QR-Code auf dem Desktop scannen, fertig. Ohne eigenen Rechner? Auf dem ersten Screen unten „Ohne eigenen Rechner ausprobieren“ tippen und das Board mit Beispieldaten erkunden.\n\nDatenschutz: https://relay.helmdeck.de/privacy",
+        "keywords": ["KI", "Agent", "Automatisierung", "Board", "Produktivität", "Tickets", "Kanban", "Projektmanagement", "Team", "Workflow"],
+        "releaseNotes": "Erster App-Store-Release von HelmDeck.",
+        "promoText": "HelmDeck verbindet sich mit deiner eigenen Installation: KI-Agenten arbeiten an echten Aufgaben, du steuerst und nimmst ab – Ende-zu-Ende-verschlüsselt.",
+        "marketingUrl": "https://helmdeck.de",
+        "supportUrl": "https://helmdeck.de",
+        "privacyPolicyUrl": "https://relay.helmdeck.de/privacy"
+      },
+      "en-US": {
+        "title": "HelmDeck",
+        "subtitle": "AI agents get the work done",
+        "description": "HelmDeck is the remote control for your own HelmDeck installation: a board where tickets don't just get tracked — they get done. AI agents work on real projects on your machine; you steer, answer their questions and approve results from your phone.\n\nYOUR BOARD, ANYWHERE\n• File requests with priority, value, client and attachments (photos, files)\n• Watch the agent work live: every step in the timeline, turn by turn\n• \"Needs you\": answer the agent's questions right in the chat\n• Quality gate before every acceptance: checks run automatically, you see the report, and only your approval merges and deploys\n• Push notifications when a reply arrives or work is ready for review\n• A dashboard with real numbers: value delivered, AI cost, margin per card\n\nYOUR DATA STAYS YOURS\n• The app talks exclusively to your own HelmDeck daemon — directly on your LAN, or remotely through a zero-knowledge relay\n• End-to-end encryption (Curve25519/XSalsa20-Poly1305): the relay only ever sees ciphertext, never content\n• Push messages are end-to-end encrypted too\n• No ads, no third-party analytics sharing, no developer-hosted account\n\nNOTE\nHelmDeck is a companion app: it requires a running HelmDeck installation on your own computer. Pairing takes a minute — scan the QR code on your desktop and you're in. No computer handy? On the first screen, tap \"Try it without your own computer\" to explore the board with sample data.\n\nPrivacy policy: https://relay.helmdeck.de/privacy",
+        "keywords": ["AI", "agent", "automation", "board", "productivity", "tickets", "kanban", "project management", "workflow", "team"],
+        "releaseNotes": "Initial App Store release of HelmDeck.",
+        "promoText": "HelmDeck connects to your own installation: AI agents work on real tasks while you steer and approve — all end-to-end encrypted.",
+        "marketingUrl": "https://helmdeck.de",
+        "supportUrl": "https://helmdeck.de",
+        "privacyPolicyUrl": "https://relay.helmdeck.de/privacy"
+      }
+    }
+  }
+}
