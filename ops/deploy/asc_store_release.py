@@ -70,6 +70,18 @@ def _editable_version():
     return None
 
 
+def _submission_or_none(version_id):
+    """The appStoreVersionSubmission relationship 404s (not an empty 200) when
+    no submission exists yet for this version - that is Apple's normal shape
+    for "not submitted", not a real error."""
+    try:
+        return _get("/v1/appStoreVersions/%s/appStoreVersionSubmission" % version_id).get("data")
+    except RuntimeError as ex:
+        if "HTTP 404" in str(ex):
+            return None
+        raise
+
+
 def cmd_show(argv):
     print("--- appInfos ---")
     for info in _app_infos():
@@ -88,7 +100,7 @@ def cmd_show(argv):
         print("no editable appStoreVersion yet - run `eas metadata:push` first "
               "(surfaces/app/store.config.json)")
         return
-    sub = _get("/v1/appStoreVersions/%s/appStoreVersionSubmission" % ev["id"]).get("data")
+    sub = _submission_or_none(ev["id"])
     print("submission on editable version %s: %s" % (
         ev["id"], sub["attributes"] if sub else "NOT SUBMITTED"))
 
@@ -116,7 +128,7 @@ def cmd_submit(argv):
     if not ev:
         print("no editable appStoreVersion - run `eas metadata:push` first")
         sys.exit(2)
-    existing = _get("/v1/appStoreVersions/%s/appStoreVersionSubmission" % ev["id"]).get("data")
+    existing = _submission_or_none(ev["id"])
     if existing:
         print("already submitted: id=%s" % existing["id"])
         return
