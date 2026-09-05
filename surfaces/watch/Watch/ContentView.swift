@@ -1,11 +1,20 @@
 import SwiftUI
 
-// Placeholder only - deliberately no network/crypto code yet (ops/docs/backlog/
-// watchos-ui-ux-entwurf/README.md SS6 point 4). This proves the target
-// registers, signs and boots; the real screens land in a follow-up card.
+/// Root screen: paired -> Henry chat (the landing screen, owner decree
+/// mirrored from the Wear OS build - "chat first, board one tap away");
+/// unpaired -> the pairing flow. See PairingView.swift/ChatView.swift for
+/// the actual screens; project.yml's own README documents why this target
+/// carries real network/crypto code while iOSHost carries none.
 struct ContentView: View {
+    @EnvironmentObject private var app: AppState
+
     var body: some View {
-        Text("HelmDeck")
-            .font(.headline)
+        NavigationStack {
+            if app.device == nil {
+                PairingView()
+            } else {
+                ChatView()
+            }
+        }
     }
 }

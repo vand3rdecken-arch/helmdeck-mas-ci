@@ -28,6 +28,19 @@ settings:
       CODE_SIGN_STYLE: Manual
       CODE_SIGN_IDENTITY: "Apple Distribution"
 
+# swift-sodium vendors a prebuilt Clibsodium.xcframework (checked against the
+# package's own repo/Package.swift, tag 0.11.0, this session) - watchOS is one
+# of its explicitly declared binaryTarget platforms, so `xcodebuild` links a
+# prebuilt library rather than compiling libsodium's C sources on the runner.
+# That is the whole reason this dependency, not a hand-rolled NaCl port: this
+# worktree has no way to test crypto output against a real device, so the
+# fewer hand-written primitives between here and a byte-for-byte match with
+# spine/comms/e2ee.py, the smaller the blast radius of getting one wrong.
+packages:
+  Sodium:
+    url: https://github.com/jedisct1/swift-sodium.git
+    exactVersion: 0.11.0
+
 targets:
   # A minimal, near-empty iOS app. Its only job is to carry the watch app to
   # the App Store/TestFlight (Apple's embedding requirement) - the watch app
@@ -96,3 +109,6 @@ targets:
           # Same preset-override reasoning as the companion target above.
           CODE_SIGN_IDENTITY: Apple Distribution
           "CODE_SIGN_IDENTITY[sdk=watchos*]": Apple Distribution
+    dependencies:
+      - package: Sodium
+        product: Sodium
