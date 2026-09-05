@@ -1,0 +1,104 @@
+# Build (and, once signing secrets exist, archive) the HelmDeck watchOS
+# companion target on a real macOS runner - same reasoning as desktop-mac.yml:
+# the owner's box is Windows, xcodebuild is macOS-only, so there is no
+# cross-build. This is also the ONLY verification available for this target
+# (ops/docs/backlog/watchos-ui-ux-entwurf/README.md SS5/SS6): no Mac, no
+# simulator reachable from the card's Windows worktree.
+#
+# Designed to SUCCEED WITH NO SECRETS AT ALL: no ASC key -> an unsigned,
+# compile-only build, still proof the target is sound. Add the signing
+# secrets later (same ones surfaces/desktop/build-mac.sh already uses) and
+# the same workflow starts archiving without a line changing.
+#
+# Optional repository secrets (ALL required for the signed archive; any
+# missing -> unsigned compile-only build, still green):
+#   ASC_API_KEY_P8       contents of AuthKey_XXXXXXXXXX.p8
+#   ASC_KEY_ID           the key id (must be an Admin-role key - see DEPLOY.md)
+#   ASC_ISSUER_ID        the issuer uuid
+#   APPLE_TEAM_ID        developer.apple.com -> Membership details
+#   APPLE_CERT_P12       base64 of the Apple Distribution cert .p12
+#                        (download from EAS - surfaces/watch/README.md)
+#   APPLE_CERT_PASSWORD  the .p12 password
+name: watchos-app
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "surfaces/watch/**"
+      - ".github/workflows/watchos-app.yml"
+  pull_request:
+    paths:
+      - "surfaces/watch/**"
+      - ".github/workflows/watchos-app.yml"
+
+concurrency:
+  group: watchos-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # macos-14's DEFAULT Xcode (15.4) writes/reads an older pbxproj format
+      # than current XcodeGen bottles target (observed: "future Xcode project
+      # file format (77)"). The image ships several Xcode versions side by
+      # side - point at whichever is newest instead of pinning a number that
+      # will just go stale next image update.
+      - name: Select the newest available Xcode
+        run: |
+          latest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          echo "Using $latest"
+          sudo xcode-select -s "$latest/Contents/Developer"
+          xcodebuild -version
+
+      # Written to a file because xcodebuild wants a path, not a blob. Skipped
+      # entirely when the secret is absent - build-watch.sh then just builds
+      # unsigned. Never echoed.
+      - name: Stage the App Store Connect API key
+        if: env.ASC_KEY_ID != ''
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          mkdir -p ~/.private_keys
+          key=~/.private_keys/AuthKey_${ASC_KEY_ID}.p8
+          printf '%s' "$ASC_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      # Same file-not-blob reasoning as the API key. Absent secret -> no
+      # APPLE_CERT_P12_PATH -> build-watch.sh falls back to unsigned.
+      - name: Stage the Apple Distribution certificate
+        if: env.ASC_KEY_ID != ''
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+        run: |
+          if [ -n "$APPLE_CERT_P12" ]; then
+            p12="$RUNNER_TEMP/dist-cert.p12"
+            printf '%s' "$APPLE_CERT_P12" | base64 -d > "$p12"
+            echo "APPLE_CERT_P12_PATH=$p12" >> "$GITHUB_ENV"
+          else
+            echo "APPLE_CERT_P12 secret not set - the run will build unsigned."
+          fi
+
+      # build-watch.sh itself decides unsigned-build-vs-signed-archive from
+      # whether the signing env above is complete - see its header comment.
+      - name: Build
+        run: bash surfaces/watch/build-watch.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: helmdeck-watch
+          if-no-files-found: ignore
+          retention-days: 14
+          path: surfaces/watch/build/*.xcarchive
