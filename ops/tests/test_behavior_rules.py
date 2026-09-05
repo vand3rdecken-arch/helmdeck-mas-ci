@@ -108,8 +108,14 @@ SURFACE_FILES = {
 # TIMELINE / SCOPE boundary / BUDGET share (owner instruction "make sure to
 # always clarify timeline, scope and budget expected by owner"). `git diff`
 # read before the move: exactly that one 7-line bullet, nothing else.
+# `pm` moved 2026-09-05: the estimate bullet gained the ZWEI-UHREN law - agent
+# work is quoted in minutes/hours, pipeline waits (owner acceptance, Apple/Play,
+# budget gates) SEPARATELY, never one merged "Tage" number (owner report: "seine
+# AI-Entwicklung ist schneller, aber er schaut auf den Gesamtprozess" - Henry
+# quoted days for the watch app when the agent share is hours). `git diff` read
+# before the move: exactly that one 7-line passage, nothing else.
 EXPECTED = {
-    "pm": "e22b739805dfc5c413649fb056db26b90ba312eae6f5efcf63c21dcda37f25d5",
+    "pm": "1e199d3436da05863fcc7d8a24bea396afe11b6400b8e55529bb59ee711c8a81",
     "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
     "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
     "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",
