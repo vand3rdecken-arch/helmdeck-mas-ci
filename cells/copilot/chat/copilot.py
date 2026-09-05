@@ -52,6 +52,18 @@ def voice_style(project=""):
 _persist = {}            # user -> {"p": Popen, "key": (model, pmode)}
 _persist_lock = threading.Lock()
 
+# THE chat-log write lock. _append_log calls itself "the one writer" but ran
+# with no mutual exclusion, and it is reached from at least seven concurrent
+# threads (the HTTP submit, the turn's reply, the background-actions thread,
+# and copilot.say() from the Henry broker loop / card_mirror / pm_comm /
+# lanemachine / sessions). Two of them doing read-modify-write on the same
+# dict lost one message (last os.replace wins), and both writing the same
+# fixed CHATLOG+".tmp" made os.replace fail with WinError 5 on Windows (the
+# source handle was still open). One process-wide lock serialises the whole
+# read-modify-write; see _append_log for the unique-tmp + retry that also
+# rides out a READER (poll / Defender) holding the destination open.
+_log_lock = threading.Lock()
+
 
 _turn_locks = {}
 
@@ -727,13 +739,42 @@ def _append_log(user, entries):
             e["date"] = time.strftime("%Y-%m-%d")
         stamped.append(e)
     entries = stamped
-    d = _log()
-    d.setdefault(user, []).extend(entries)
-    d[user] = d[user][-80:]
-    tmp = CHATLOG + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f)
-    os.replace(tmp, CHATLOG)
+    # Serialise the WHOLE read-modify-write. Without this two threads read the
+    # same dict, each appends its own entry, and the last os.replace wins - the
+    # other message is simply gone (owner's "meine Nachricht verschwand"). The
+    # lock is process-wide because the writers live in different cells' threads
+    # (see _log_lock's note); it is held only across a small in-memory edit plus
+    # one rename, never across a model call.
+    with _log_lock:
+        d = _log()
+        d.setdefault(user, []).extend(entries)
+        d[user] = d[user][-80:]
+        # UNIQUE tmp per write (pid+ident), never the shared CHATLOG+".tmp":
+        # a fixed name let one thread's open handle collide with another's
+        # os.replace -> WinError 5. Even under the lock this stays unique so a
+        # crashed prior write can't leave a tmp another picks up half-written.
+        tmp = "%s.%d.%d.tmp" % (CHATLOG, os.getpid(), threading.get_ident())
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+        # os.replace still fails with a transient WinError 5 when a READER holds
+        # the destination open - the phone polls /chat/history every ~8s, the
+        # watch every ~15s, and Defender/the indexer scan the file too. Ride it
+        # out with a short bounded retry (the same compensation events.py used
+        # before it moved to the WAL db); give up loudly rather than lose the
+        # tmp silently. Durable state is the goal, so a total failure removes
+        # the orphan tmp and re-raises for the caller's best-effort guard.
+        for _attempt in range(10):
+            try:
+                os.replace(tmp, CHATLOG)
+                break
+            except PermissionError:
+                if _attempt == 9:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise
+                time.sleep(0.05)
     # THE EVENT, announced from the one place that can honestly announce it.
     #
     # Every surface reading this transcript used to discover a new line on a
