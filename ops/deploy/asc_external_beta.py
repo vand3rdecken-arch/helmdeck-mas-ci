@@ -72,8 +72,8 @@ def cmd_show(argv):
         a = b["attributes"]
         sub = _get("/v1/builds/%s/betaAppReviewSubmission" % b["id"]).get("data")
         state = sub["attributes"].get("betaReviewState") if sub else "NOT SUBMITTED"
-        print("  build %s state=%s uploaded=%s -> betaReview: %s"
-              % (a.get("version"), a.get("processingState"), a.get("uploadedDate"), state))
+        print("  build %s id=%s state=%s uploaded=%s -> betaReview: %s"
+              % (a.get("version"), b["id"], a.get("processingState"), a.get("uploadedDate"), state))
 
 
 def cmd_create_group(argv):
