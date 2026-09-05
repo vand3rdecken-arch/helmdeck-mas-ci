@@ -18,12 +18,7 @@
 name: watchos-app
 
 on:
-  workflow_dispatch:
-    inputs:
-      archive:
-        description: "Full signed archive (needs the ASC secrets) instead of compile-only"
-        type: boolean
-        default: false
+  workflow_dispatch: {}
   push:
     branches: [main]
     paths:
@@ -75,13 +70,10 @@ jobs:
           chmod 600 "$key"
           echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
 
+      # build-watch.sh itself decides build-vs-archive from whether the
+      # signing env above is complete - see its header comment.
       - name: Build
-        run: |
-          if [ "${{ inputs.archive }}" = "true" ]; then
-            bash surfaces/watch/build-watch.sh --archive
-          else
-            bash surfaces/watch/build-watch.sh
-          fi
+        run: bash surfaces/watch/build-watch.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
