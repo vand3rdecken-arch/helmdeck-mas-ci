@@ -55,9 +55,13 @@ einen Apple-Reviewer, das andere veröffentlicht eine URL für alle.
       (2026-09-02). Antwort kommt per Mail an `tienduyvo@googlemail.com`
 - [x] iOS-Karte auf helmdeck.de interim repariert (sichtbare + kopierbare
       Adresse statt wirkungslosem `mailto:`, App-Store-Link auf `/de/`)
-- [ ] **App-Privacy-Angaben** ← nur im Web-UI, siehe unten
-- [ ] **Altersfreigabe** ← nur im Web-UI, siehe unten
-- [ ] Öffentlichen Link einschalten und auf helmdeck.de setzen
+- [x] **App-Privacy-Angaben** ← nur im Web-UI, siehe unten — indirekt bestätigt:
+      `betaReview` für Build 7 stand am 2026-09-05 auf `APPROVED`, und Apple
+      lässt laut diesem Dokument (§ „Was nur der Owner machen kann") externe
+      Reviews ohne diese Angabe nicht durch
+- [x] **Altersfreigabe** ← s.o., gleiche Begründung
+- [x] Öffentlichen Link eingeschaltet (2026-09-05, s. Eintrag unten) — **auf
+      helmdeck.de setzen ist noch offen**, s. „Danach" unten
 
 ## Was nur der Owner machen kann
 
@@ -93,9 +97,33 @@ Gleiche Seite → **Altersfreigabe** → Fragebogen. Steht aktuell auf `null`
 
 **Ohne diese beiden Angaben lässt Apple den externen Test nicht durch.**
 
-## Stand 2026-09-05 — nächste Auslieferung vorbereitet, noch nicht ausgeführt
+## Stand 2026-09-05 — Public Beta ist LIVE
 
-Seit dem letzten Eintrag oben (Build `1.0.45 (7)`, 2026-09-02) ist
+Build `1.0.45 (7)` (`2173daef-c3fc-48be-8e48-2cb92109694f`) — der seit
+2026-09-02 auf `APPROVED` wartende Build — an die Gruppe **„Public Beta"**
+angehängt und der öffentliche Link eingeschaltet:
+
+```
+py -3.12 ops/deploy/asc_external_beta.py attach 2173daef-c3fc-48be-8e48-2cb92109694f
+py -3.12 ops/deploy/asc_external_beta.py enable-link --yes
+```
+
+**Öffentliche Beitritts-URL: `https://testflight.apple.com/join/tk6twUTh`**
+
+Noch offen: diese URL ersetzt auf helmdeck.de die interime `mailto:`/
+Kopier-Lösung — s. „Danach" unten (`push_site.sh`, dann im echten Browser
+nachklicken, nicht mit curl).
+
+`asc_external_beta.py`'s `show`-Kommando druckt seit dieser Karte (Commit
+`5884215` + Folgecommit) auch die Build-`id` mit aus, nicht nur die
+Versionsnummer — ohne den Zwischenschritt über `asc_metadata_draft.py`'s
+`_get()` direkt hätte die ID von Build 7 sonst gefehlt.
+
+## Stand 2026-09-05 (früher am selben Tag) — nächste Auslieferung vorbereitet
+
+Der Abschnitt unten bezieht sich auf den **nächsten** Build (`1.0.48`,
+noch nicht gebaut) — unabhängig vom obigen Public-Beta-Schritt, der nur
+den bereits genehmigten `1.0.45 (7)` betraf. Seit diesem Eintrag ist
 `surfaces/app` auf `1.0.48`/versionCode 91 gewachsen, mit einem native-relevanten
 Zwischenstand `1.0.46 (88)` (`fe8a204`). App-sichtbar seither u. a.: Mehr-Tab
 neu sortiert (mehrere `fix(settings)`/`fix(more)`-Commits), PM-Dashboard als
