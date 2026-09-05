@@ -320,6 +320,29 @@ def _brief_fp():
         return ""
 
 
+def _brief_file(text):
+    """The brief travels as a FILE (--append-system-prompt-file), never inline
+    argv. Windows' CreateProcess caps the whole command line at 32767 chars,
+    and board-copilot.md crossed it on 2026-09-04 (measured: rendered brief
+    32622 chars, assembled line 33674) - from that commit on EVERY Henry spawn
+    died instantly with WinError 206, invisible because stderr points at
+    DEVNULL, and the owner just saw a chat that never answered. A brief that
+    grows with every owner decree must not share a hard OS cap with the flag
+    soup around it. Content-addressed (sha1 of the text): the file for a given
+    brief is written once and reused; a changed brief gets a new file, so a
+    process reading it at spawn can never see a half-written mix."""
+    import hashlib
+    d = os.path.join(ROOT, "content", "copilot_briefs")
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:16] + ".md")
+    if not os.path.exists(p):
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, p)
+    return p
+
+
 def _persist_get(skey, cli_model, sid, system):
     """(proc, fresh) for ONE conversation (`skey` = _skey(user, card)). Reuse
     the warm process - switching its model/mode on the control plane when the
@@ -354,7 +377,7 @@ def _persist_get(skey, cli_model, sid, system):
         argv += ["--model", cli_model]
     if sid:
         argv += ["--resume", sid]
-    argv += ["--append-system-prompt", system]
+    argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
     from spine.agent.drivers import _cmd_line
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
@@ -1467,7 +1490,9 @@ def build_argv(cli_model, sid, system):
         argv += ["--resume", sid]
     role_in_turn = not drivers.argv_form_safe(CLAUDE)
     if not role_in_turn:
-        argv += ["--append-system-prompt", system]
+        # as a FILE, same as _persist_get: the rendered brief is bigger than
+        # Windows' whole 32767-char command-line budget (see _brief_file).
+        argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
     return argv, role_in_turn
 
