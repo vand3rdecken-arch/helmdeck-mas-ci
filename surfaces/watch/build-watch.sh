@@ -60,10 +60,19 @@ fi
 
 if [ "$ARCHIVE" = "1" ]; then
   echo "==> xcodebuild archive (HelmDeckWatchCompanion, embeds HelmDeckWatch)"
+  # -destination is NOT optional here: an Apple Silicon runner can run an
+  # unmodified iOS app directly ("Designed for iPad/iPhone"), so without an
+  # explicit destination xcodebuild's own destination-matching picked "My
+  # Mac" ahead of "Any iOS Device" (only visible as a WARNING line, easy to
+  # miss) and archived FOR THE MAC - which only ever offers local/
+  # Development-style signing, never Distribution. That, not the signing
+  # style, was the real cause of repeated "iOS App Development" profile
+  # errors during archive.
   xcodebuild archive \
     -project HelmDeckWatch.xcodeproj \
     -scheme HelmDeckWatchCompanion \
     -archivePath build/HelmDeckWatchCompanion.xcarchive \
+    -destination "generic/platform=iOS" \
     "${SIGN_ARGS[@]}" || { echo "!!! archive failed"; exit 1; }
   echo "DONE. Archive -> surfaces/watch/build/HelmDeckWatchCompanion.xcarchive"
 else
