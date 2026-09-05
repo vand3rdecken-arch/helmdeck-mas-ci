@@ -677,6 +677,43 @@ def start_chain_poller(interval=20):
             time.sleep(interval)
     threading.Thread(target=loop, daemon=True).start()
 
+
+# EVENT FAST PATH (owner decree 2026-09-05, "lieber Event plus polling
+# backup"): a card landing on done used to wait for the next poller tick -
+# 0-20s of waiting on NOTHING, the new state was already on disk - before the
+# chain advanced. The lane chokepoint (lanemachine._move_lane, the one writer
+# of t["lane"]) calls kick() the moment a move persists; the poller above
+# stays untouched as the level-triggered reconciler that heals a missed or
+# crashed event. Edge for speed, level for truth - never only one of the two.
+#
+# Single-flight WITH coalescing, not a bare thread per call: sync() reads and
+# writes the whole process store in two separate lock windows, so two
+# concurrent syncs can lose each other's updates. A kick that arrives while
+# one is running folds into ONE trailing re-run (it reads the tracks fresh,
+# so nothing the second event knew is lost), instead of racing the first.
+_KICK = {"lock": threading.Lock(), "running": False, "again": False}
+
+
+def kick():
+    with _KICK["lock"]:
+        if _KICK["running"]:
+            _KICK["again"] = True
+            return
+        _KICK["running"] = True
+
+    def go():
+        while True:
+            try:
+                sync()
+            except Exception as e:
+                print("chain kick sync error:", e)
+            with _KICK["lock"]:
+                if not _KICK["again"]:
+                    _KICK["running"] = False
+                    return
+                _KICK["again"] = False
+    threading.Thread(target=go, daemon=True).start()
+
 MODE_DRIVER = {"do": "claude", "prepare": "claude", "cowork": "claude", "teach": None, "human": None}
 
 def accept_step(pid, idx, repo, actor="owner"):
