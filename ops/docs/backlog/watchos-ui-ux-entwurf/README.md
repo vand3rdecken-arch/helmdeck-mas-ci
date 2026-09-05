@@ -193,12 +193,46 @@ daraus die UI-Konsequenz:
   Mirroring (`ios-watch-feasibility.md` §3.3) der Weg — die drei Bildschirme
   hier sind der Vordergrund-Fall "App ist offen, Handgelenk ist oben".
 
-## 5. Offene Punkte, die diese Karte nicht klärt
+## 5. Build-Weg: kein lokaler Mac nötig — dasselbe Muster wie Desktop/iOS
 
-1. Kein Mac/Simulator aus diesem Worktree erreichbar — diese Entwürfe sind
-   nicht gegen einen echten watchOS-Renderer geprüft, nur gegen SwiftUI-
-   Idiome (`List`, Digital-Crown-Scroll, `presentTextInputController`) aus
-   Apple-Dokumentation.
+Owner-Vorgabe (2026-09-05): dieselbe Vorgehensweise übernehmen, mit der das
+macOS-Desktop-Paket und die iOS-App bereits gebaut wurden. Beide bereits im
+Baum geprüft, keine Annahme:
+
+- **macOS-Desktop** (`.github/workflows/desktop-mac.yml`, EXECUTED
+  2026-08-15): `runs-on: macos-14` — ein GitHub-Actions-Runner baut,
+  signiert (`codesign`) und notarisiert (`notarytool` via App-Store-Connect-
+  API-Key) das `.dmg`/`.zip`, **ohne dass irgendwo ein physischer Mac im
+  Spiel ist.** Fehlen die Signing-Secrets, läuft der Build trotzdem durch
+  (unsigniert) — Secrets lassen sich später nachreichen, ohne den Workflow
+  zu ändern.
+- **iOS** (`surfaces/app/eas.json`): EAS Build in der Cloud
+  (`ios-watch-feasibility.md` §2.1: "EAS, ohne Diskussion"), Submit zu App
+  Store Connect über denselben API-Key-Mechanismus (`ascApiKeyId:
+  AZQRY4K34W`, bereits konfiguriert, `helmdeck-mac-developer-id-cert`-Memo).
+
+**Für watchOS heißt das:** derselbe `macos-14`-Runner, der heute
+`desktop-mac.yml` fährt, hat Xcode vorinstalliert und kann ein watchOS-Ziel
+genauso per `xcodebuild` bauen, signieren, notarisieren/zu TestFlight hochladen
+— mit demselben ASC-Key. Der Einwand aus `ios-watch-feasibility.md` §3.2
+("realistisch braucht die Entwicklung dann doch einen Mac") bezog sich auf
+**iteratives** Entwickeln (schneller Run-Debug-Zyklus in Xcode Live Preview);
+für den **Build-/Verify-Schritt selbst** trägt dasselbe Muster wie beim
+Desktop-Paket: ein neuer, kleiner Workflow (`watchos-app.yml`, Kopie von
+`desktop-mac.yml`s Aufbau) statt eines lokalen Macs. Iterieren am UI-Layout
+bliebe langsamer (Cloud-Build-Runden statt Live-Preview), aber **"kein Mac
+verfügbar" ist damit kein Blocker mehr für Bau + Verifikation** — nur für
+schnelles Live-Iterieren am Layout selbst.
+
+## 6. Offene Punkte, die diese Karte nicht klärt
+
+1. **Korrigiert durch §5:** "kein Mac/Simulator erreichbar" gilt nur für
+   DIESES Karten-Worktree (Windows, kein Xcode lokal) — nicht für das Projekt
+   insgesamt. Diese Entwürfe selbst sind weiterhin nicht gegen einen echten
+   watchOS-Renderer geprüft, nur gegen SwiftUI-Idiome (`List`,
+   Digital-Crown-Scroll, `presentTextInputController`) aus
+   Apple-Dokumentation — der GitHub-Actions-Pfad ändert daran nichts, er löst
+   nur die Bau-Frage, nicht die Entwurfsprüfung.
 2. Komplikation ("N Karten warten auf dich") ist in `ios-watch-feasibility.md`
    §3.3 als Teil von W2 vorgesehen, hier nicht entworfen — eigener,
    kleinerer Bildschirm-Typ (WidgetKit/ClockKit), separat zu skizzieren falls
@@ -208,6 +242,7 @@ daraus die UI-Konsequenz:
    nicht recherchiert — vor jeder Umsetzung nachzuholen.
 4. Nächster logischer Schritt (Dispatch-Entscheidung des Owners, nicht Teil
    dieser Karte): eine Baukarte für den watchOS-Modul-Rumpf, analog zu W2a
-   im Wear-OS-Modell (`wear-os-integration/README.md` §4.5) — Xcode-Projekt-
-   Skelett + leere SwiftUI-Views, die laut Plan starten und nichts sonst tun,
-   ohne bereits Netzwerk-/Krypto-Code zu schreiben.
+   im Wear-OS-Modell (`wear-os-integration/README.md` §4.5) UND zu
+   `desktop-mac.yml` — Xcode-Projekt-Skelett + leere SwiftUI-Views + der neue
+   `watchos-app.yml`-Workflow, die laut Plan starten/bauen und nichts sonst
+   tun, ohne bereits Netzwerk-/Krypto-Code zu schreiben.
