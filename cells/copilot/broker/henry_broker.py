@@ -526,6 +526,25 @@ def _execute(action, card, lane, text, esc, kind=""):
     t = _find(_load(), card) if card else None
     if action == "ignore":
         return True
+    # THE OPEN-QUESTION RAIL (owner report 2026-09-05, screenshot: a card that
+    # ASKED him "vc91 ready to upload - how do you want to proceed?" got
+    # move->done by a context-bloat judgement, discarding his three-option Play
+    # decision). A card carrying an unanswered owner question is NOT finished
+    # work - turnrunner.is_delivered says so, and the sync() auto-accept path
+    # already refuses it there; Henry's own move/did verbs bypassed that guard.
+    # A CLOSE over a pending decision is exactly what must never be automatic,
+    # so it is refused in CODE here (a hard invariant, like the GxP guard
+    # below), not left to judgement. The escalation stays open and the owner
+    # keeps his question; steer/notify_owner/ignore remain available.
+    if action in ("did", "move", "ship") and t and t.get("question"):
+        escalations.record_note(esc["id"],
+            "%s abgelehnt: Karte hat eine offene Frage an den Owner "
+            "('%s') - die wird nicht durch Schliessen verworfen. Bleibt offen "
+            "fuer seine Entscheidung." % (
+                action,
+                str((t.get("question") or {}).get("header")
+                    or (t.get("question") or {}).get("question") or "")[:80]))
+        return False
     if action == "ship":
         # The ship DECISION, executed (owner decree 2026-09-01: shipping is
         # Henry's judgement, not a post-done reflex - the emit half is

@@ -43,6 +43,19 @@
 //   - `expo prebuild` / EAS: normal config plugin (registered in app.json)
 //   - hand-managed surfaces/app/android: `node app/plugins/withGlassVoice.js surfaces/app/android`.
 //     Idempotent. That CLI is ANDROID-ONLY by nature - iOS has no such dir.
+//
+// ⚠ NOT REGISTERED IN app.json's `plugins` RIGHT NOW (2026-09-05), same shape
+// as withMetaDat.js's camera plugin. This file, GlassVoiceService.kt and
+// GlassesRadio.kt all still exist and still work (the mic itself needs no
+// Meta SDK/PAT - see above). It was pulled from app.json, and its build_aab.sh
+// re-apply was skipped, because RECORD_AUDIO + FOREGROUND_SERVICE_MICROPHONE
+// is an Advanced Permission on Play: Google requires a justification form AND
+// a demo video recorded on real paired hardware before it will accept the
+// bundle (PLAY_STORE_RELEASE.md §6.1) - release card 20260831-093513 is
+// blocked on exactly that. build_apk.sh still applies this plugin
+// unconditionally for the sideload APK, which Play never reviews. Re-add the
+// app.json plugins entry and the build_aab.sh call together, in the same
+// commit, once the video is recorded and the declaration form is filed.
 
 const PERMISSIONS = [
   // the microphone itself

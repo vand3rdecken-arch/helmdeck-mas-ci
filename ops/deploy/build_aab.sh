@@ -25,6 +25,21 @@
 #     right back in front of the same undeclarable permission. Re-add the call
 #     below once the camera feature has a real screen AND withMetaDat is back
 #     in app.json's plugins array - not before.
+#   - withGlassVoice.js is now ALSO DELIBERATELY SKIPPED (2026-09-05), same
+#     reasoning, same shape as withMetaDat above. It wires the glasses MIC
+#     (GlassVoiceService, RECORD_AUDIO + FOREGROUND_SERVICE_MICROPHONE). Google
+#     flags that pair as an Advanced Permission needing a justification form
+#     AND a demo video recorded on real paired hardware (PLAY_STORE_RELEASE.md
+#     §6.1) - release card 20260831-093513 is blocked on a build that does not
+#     declare it. The plugin was removed from app.json's `plugins` for the same
+#     reason withMetaDat was; this line is the AAB half of that. Re-applying it
+#     here would silently put the permission straight back in the bundle.
+#     GlassVoiceService.kt/GlassesRadio.kt/the JS toggle in chat.tsx are all
+#     left in place, unused in this artifact - nothing is deleted, only parked.
+#     Re-add the call below (and the app.json plugins entry) once the video
+#     proof is recorded and the Play declaration form is filed - not before.
+#     build_apk.sh correctly still applies it unconditionally for the sideload
+#     APK, which Play never reviews.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 
@@ -68,16 +83,18 @@ grep -q "MaxMetaspaceSize=1024m" surfaces/app/android/gradle.properties \
 printf 'sdk.dir=%s\n' "$(cygpath -m "$ANDROID_HOME" 2>/dev/null || echo "$ANDROID_HOME")" \
   > surfaces/app/android/local.properties
 
-# The seven re-applies. android/ is git-ignored and regenerated from nothing by
-# --clean, so each of these is the ONLY thing that puts its config back. Every
-# one of them fails SILENTLY (green build, wrong artifact) if skipped.
+# The five re-applies (withMetaDat.js and withGlassVoice.js are the two
+# DELIBERATE skips above). android/ is git-ignored and regenerated from
+# nothing by --clean, so each of these is the ONLY thing that puts its config
+# back. Every one of them fails SILENTLY (green build, wrong artifact) if
+# skipped.
 node surfaces/app/plugins/withLanCleartext.js surfaces/app/android \
   || { echo "[build_aab] network-security-config apply FAILED"; exit 1; }
 node surfaces/app/plugins/withReleaseSigning.js surfaces/app/android \
   || { echo "[build_aab] release-signing apply FAILED"; exit 1; }
-node surfaces/app/plugins/withGlassVoice.js surfaces/app/android \
-  || { echo "[build_aab] glass-voice manifest apply FAILED"; exit 1; }
-# withMetaDat.js intentionally NOT called here - see the header comment.
+# withGlassVoice.js and withMetaDat.js intentionally NOT called here - see the
+# header comment (both are Play-blocked Advanced Permissions with no video
+# proof yet).
 node surfaces/app/plugins/withSherpaOnnx.js surfaces/app/android \
   || { echo "[build_aab] sherpa-onnx wiring apply FAILED"; exit 1; }
 node surfaces/app/plugins/withUpdateUrl.js surfaces/app/android \

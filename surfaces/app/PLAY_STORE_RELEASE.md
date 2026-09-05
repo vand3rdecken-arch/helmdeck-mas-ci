@@ -126,15 +126,30 @@ since the glasses voice feature shipped. Expected merged permissions and why:
 | `CAMERA` | `expo-camera` plugin in app.json | QR pairing scan (`src/app/scan.tsx`) + attachment photos (`src/data/attachments.ts` `takePhoto`); runtime-prompted, never in background |
 | `POST_NOTIFICATIONS` | `expo-notifications` | push for agent replies/review-ready; runtime-prompted in `src/data/push.ts` (`requestPermissionsAsync`) — only after pairing, good |
 | `VIBRATE`, `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `SCHEDULE_EXACT_ALARM` (maybe, from expo-notifications) | `expo-notifications` | notification delivery/rescheduling |
-| `RECORD_AUDIO`, `BLUETOOTH_CONNECT`, `MODIFY_AUDIO_SETTINGS` | `./plugins/withGlassVoice` | glasses-mic conversation with Henry (`GlassVoiceService.kt`) + the phone's own mic for in-app voice mode (`modules/livemic`) |
-| ⚠ **`FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE`** | `./plugins/withGlassVoice`, `GlassVoiceService.kt` | **Needs a Play Console foreground-service declaration form (justification text + demo video) — see the ready-to-paste text and shot list below.** Real, wired feature: `chat.tsx`'s glasses-voice toggle starts it; it's a `START_STICKY` service with an ongoing notification, because the conversation must survive the phone screen going dark while the owner is looking at the glasses lens. |
+| `RECORD_AUDIO` | `expo-speech-recognition`'s AUTO-APPLIED config plugin (it is autolinked; it is NOT listed in `app.json`'s `plugins`) | the PHONE's own mic for the in-app voice mode (`modules/livemic`, `src/ui/voice_mode.tsx`) — runtime-prompted, foreground-only, no service. Needs NO declaration form and NO video (see the bullets below). |
+| `MODIFY_AUDIO_SETTINGS` | `expo-audio` plugin (adds it unconditionally, no way to opt out) | normal (non-dangerous) permission — no runtime prompt, no form |
+| ~~⚠ `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE`~~ | ~~`./plugins/withGlassVoice`, `GlassVoiceService.kt`~~ | **GONE from the build since versionCode 91 (2026-09-05).** This was the ONLY row that required a Play Console declaration form + demo video, and it is why the release was blocked. `withGlassVoice` is now unregistered in `app.json`'s `plugins` AND skipped in `ops/deploy/build_aab.sh`, so neither the permissions nor the typed `<service>` are declared. Nothing was deleted — see `withGlassVoice.js`'s header for the re-introduction checklist. §6.1 below is KEPT for that future re-introduction, not because anything in the current build needs it. |
 
 - ✅ CAMERA needs no Play declaration form (only location/SMS/etc. do); it
   must simply match the Data Safety answers — see `ops/docs/store/DATA_SAFETY.md`.
-- ✅ `RECORD_AUDIO` from expo-camera itself is still disabled via
-  `"recordAudioAndroid": false` (app.json) — but `RECORD_AUDIO` IS now in the
-  shipped build regardless, via `withGlassVoice`. Don't be surprised by it in
-  the manifest; it's real and justified above.
+- ✅ `RECORD_AUDIO` is still disabled at BOTH plugins that would otherwise add
+  it on our own say-so — `expo-camera` and `expo-audio` are each configured
+  `"recordAudioAndroid": false` (app.json) and both were re-read on 2026-09-05
+  to confirm they honour it. It is nevertheless in the build, from a THIRD
+  source that takes no configuration: `expo-speech-recognition` is autolinked
+  and its `app.plugin.js` applies itself, adding `RECORD_AUDIO`
+  unconditionally. Don't "fix" the two app.json flags when you see it — they
+  are already correct and are not the source.
+- ✅ **`RECORD_AUDIO` alone needs no declaration form and no video.** Google's
+  form + demo-video requirement applies to the *foreground-service types*
+  (and to location/SMS/call-log/all-files), not to holding the mic permission
+  for a foreground, user-initiated feature. That is the whole reason
+  versionCode 91 unblocks the release while the phone voice mode keeps
+  working: the FGS row above is gone, this row is ordinary. If you ever DO
+  need it gone as well, the mechanism is `android.blockedPermissions` in
+  app.json (same as SYSTEM_ALERT_WINDOW) — but that makes the permission
+  ungrantable and therefore KILLS the in-app voice mode, so it is a product
+  decision, not a compliance chore.
 - ✅ **`FOREGROUND_SERVICE_CONNECTED_DEVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK`
   are deliberately NOT in this build** (2026-09-01). MEDIA_PLAYBACK was a
   default-on trap in `expo-audio`'s plugin (`enableBackgroundPlayback`
@@ -144,21 +159,38 @@ since the glasses voice feature shipped. Expected merged permissions and why:
   `GlassCameraService`), but that capture path has no UI trigger anywhere in
   `surfaces/app/src` yet — the plugin is written but deliberately unregistered
   in `app.json`'s `plugins` until it does (see `withMetaDat.js`'s header).
-- ⚠ **`SYSTEM_ALERT_WINDOW` is in the currently shipped build** (verified via
-  `adb shell dumpsys package app.helmdeck`) and nothing in `surfaces/app/src` uses an
-  overlay. Confirm it is absent from the release AAB before submitting; if
-  present, block it via `android.blockedPermissions`. Full verified permission
-  table + the check: `ops/docs/store/DATA_SAFETY.md` §3.
+- ✅ **`SYSTEM_ALERT_WINDOW` is NOT in the versionCode 91 AAB** — measured
+  2026-09-05 on the bundle's own merged manifest (see the recipe below). The
+  `android.blockedPermissions` entry in app.json is doing its job. Full
+  permission table: `ops/docs/store/DATA_SAFETY.md` §3.
 - ✅ Verified absent from the shipped build: location, `READ_MEDIA_IMAGES`,
-  QUERY_ALL_PACKAGES.
-- ⚠ Verify the final merged manifest before submitting:
-  `cd surfaces/app && npx expo prebuild -p android --no-install` (throwaway; don't
-  commit `android/`) and read
-  `android/app/src/main/AndroidManifest.xml`. If `SCHEDULE_EXACT_ALARM` /
-  `USE_EXACT_ALARM` appears and nothing schedules exact alarms, strip it via
-  `expo-build-properties` — Google asks for justification on those.
+  QUERY_ALL_PACKAGES. Also measured absent in vc91: `SCHEDULE_EXACT_ALARM`,
+  `USE_EXACT_ALARM`, and every `FOREGROUND_SERVICE*` permission — the build
+  declares no foreground service of any type at all.
+- ✅ **How to verify the artifact you are actually uploading** (do this, not a
+  throwaway prebuild — a prebuild proves what the config *would* generate, not
+  what the .aab in your hand *contains*). Gradle leaves the bundle's own
+  merged manifest as plain XML:
+
+  ```
+  surfaces/app/android/app/build/intermediates/bundle_manifest/release/\
+    processApplicationManifestReleaseForBundle/AndroidManifest.xml
+  ```
+
+  Grep that for `uses-permission` / `foregroundServiceType`. Note the trap
+  that cost time on 2026-09-05: `aapt2 dump` REFUSES an `.aab`
+  ("could not identify format of APK") — it only reads APKs — and the
+  `base/manifest/AndroidManifest.xml` inside the .aab is protobuf, not XML,
+  so a plain grep of it is unreliable. Use the path above, or run the .aab
+  through `bundletool build-apks` first.
 
 ### 6.1 FOREGROUND_SERVICE_MICROPHONE — Play Console declaration form
+
+> **NOT NEEDED FOR THE CURRENT BUILD (versionCode 91+).** The permission and
+> the service are no longer declared, so Play will not ask for this and the
+> video does not have to be recorded. Everything below is kept verbatim for
+> the day `withGlassVoice` goes back into `app.json`'s `plugins` and
+> `ops/deploy/build_aab.sh` — do not fill this in before then.
 
 Play Console → App content → **Permissions** (or the in-review prompt asking
 "what is this foreground service used for" + a video) — paste/adapt:
