@@ -12,6 +12,18 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
+  # Plain Xcode-created projects get this identity split baked in by the
+  # project template (Debug -> Apple Development, Release -> Apple
+  # Distribution) the moment you tick "Automatically manage signing" in the
+  # UI. XcodeGen does not add it for you - without it, CODE_SIGN_STYLE:
+  # Automatic alone resolves to Development for EVERY configuration,
+  # including archive/Release (measured: "No profiles ... iOS App
+  # Development provisioning profiles" during `xcodebuild archive`).
+  configs:
+    Debug:
+      CODE_SIGN_IDENTITY: "Apple Development"
+    Release:
+      CODE_SIGN_IDENTITY: "Apple Distribution"
 
 targets:
   # A minimal, near-empty iOS app. Its only job is to carry the watch app to
