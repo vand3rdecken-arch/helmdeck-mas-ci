@@ -93,20 +93,24 @@ jq -n --arg kid "$ASC_KEY_ID" --arg iss "$ASC_ISSUER_ID" --rawfile key "$ASC_API
 
 # App IDs first (sigh cannot create them), then one App Store profile per
 # target, with FIXED names project.yml's PROVISIONING_PROFILE_SPECIFIER
-# expects. produce is idempotent - an existing App ID is a no-op, not an
-# error. --skip_itc: only the Developer-Portal App ID, no App Store Connect
+# expects. Registration is idempotent - an existing App ID is a no-op, not
+# an error. skip_itc: only the Developer-Portal App ID, no App Store Connect
 # app record yet (that is the TestFlight card's business, not this one's).
+# `fastlane run create_app_online` (produce's action name), NOT the `fastlane
+# produce` CLI: the CLI's flag parser rejects --api_key_path ("invalid
+# option", measured on 2.238) even though the underlying action supports it -
+# the run form passes key:value straight to the action's options.
 echo "==> registering App IDs + fetching App Store profiles (fastlane)"
-fastlane produce --api_key_path "$API_JSON" --team_id "$APPLE_TEAM_ID" \
-  -a app.helmdeck.watchcompanion --app_name "HelmDeck Watch Companion" --skip_itc || exit 1
-fastlane produce --api_key_path "$API_JSON" --team_id "$APPLE_TEAM_ID" \
-  -a app.helmdeck.watchcompanion.watchkitapp --app_name "HelmDeck Watch App" --skip_itc || exit 1
-fastlane sigh --api_key_path "$API_JSON" --team_id "$APPLE_TEAM_ID" \
-  -a app.helmdeck.watchcompanion --provisioning_name "HelmDeckWatchCompanion AppStore" \
-  --force --output_path "$TMP/profiles" || exit 1
-fastlane sigh --api_key_path "$API_JSON" --team_id "$APPLE_TEAM_ID" \
-  -a app.helmdeck.watchcompanion.watchkitapp --provisioning_name "HelmDeckWatch AppStore" \
-  --force --output_path "$TMP/profiles" || exit 1
+fastlane run create_app_online api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
+  app_identifier:app.helmdeck.watchcompanion app_name:"HelmDeck Watch Companion" skip_itc:true || exit 1
+fastlane run create_app_online api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
+  app_identifier:app.helmdeck.watchcompanion.watchkitapp app_name:"HelmDeck Watch App" skip_itc:true || exit 1
+fastlane run get_provisioning_profile api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
+  app_identifier:app.helmdeck.watchcompanion provisioning_name:"HelmDeckWatchCompanion AppStore" \
+  force:true output_path:"$TMP/profiles" || exit 1
+fastlane run get_provisioning_profile api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
+  app_identifier:app.helmdeck.watchcompanion.watchkitapp provisioning_name:"HelmDeckWatch AppStore" \
+  force:true output_path:"$TMP/profiles" || exit 1
 
 echo "==> xcodebuild archive (manual Release signing - identity + profiles pinned in project.yml)"
 xcodebuild archive \
