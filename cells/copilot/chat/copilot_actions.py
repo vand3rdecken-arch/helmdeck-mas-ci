@@ -580,13 +580,25 @@ def _run_action(a, actor, role="operator"):
         if not pm.get_goal():
             return "clarify_goal: kein Ziel gesetzt - nichts zum Klarstellen"
         pm.add_clarification(text, actor=actor)
-        try:
-            pm.brief()
-        except Exception as e:
-            return "Notiert: „%s“ - Re-Plan ist fehlgeschlagen (%s), läuft beim nächsten Mal mit." % (
-                text[:120], str(e)[:150])
-        pm.goal_check_async()   # best-effort, fire-and-forget - see routes_pm.py's pm_config_post
-        return "Notiert: „%s“ - Plan neu gerechnet." % text[:150]
+        # Re-Plan im HINTERGRUND (owner decree 2026-09-05): pm.brief() ist ein
+        # eigener Modell-Call (~2,5min gemessen 07:32->07:34:52) und lief hier
+        # SYNCHRON - Henrys Actions laufen sequenziell, also blockierte er
+        # jede spaetere Action im selben Block. Der Owner sah "Gebongt, startet
+        # gleich" und dann minutenlang nichts, weil sein new_process hinter
+        # einem Re-Plan wartete, der mit ihm nichts zu tun hat. bgthread (nicht
+        # ein nackter Thread) traegt das Crash-Reporting: ein gestorbener
+        # Re-Plan wird eskaliert statt zu verschwinden. goal_check_async haengt
+        # bewusst HINTER dem Re-Plan, damit der Check den frischen Plan liest.
+        from spine.ops import bgthread
+
+        def _replan():
+            try:
+                pm.brief()
+            except Exception as e:                           # noqa: BLE001
+                print("clarify_goal re-plan failed:", str(e)[:200])
+            pm.goal_check_async()
+        bgthread.spawn("pm:replan", _replan)
+        return "Notiert: „%s“ - Plan wird im Hintergrund neu gerechnet." % text[:150]
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
