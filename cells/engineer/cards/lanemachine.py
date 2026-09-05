@@ -1341,6 +1341,17 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
         # stay outside the mutation lock) - persist their outcome here.
         tt.update(_hooks)
     t = _mutate(tid, _land) or t
+    # EVENT FAST PATH (owner decree 2026-09-05): the chain advances the moment
+    # a lane lands instead of on the next 20s poller tick. Sits AFTER _mutate
+    # on purpose - processes.sync() derives step states from the persisted
+    # tracks, so kicking before the write would advance on yesterday's board.
+    # Best-effort like clear_step_stamps above: a board move must never fail
+    # on the chain store; the poller reconciles whatever a lost kick missed.
+    try:
+        from cells.engineer.chains import processes
+        processes.kick()
+    except Exception as e:
+        print("chain kick failed for %s: %s" % (tid, e))
     return t
 
 
