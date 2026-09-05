@@ -10,11 +10,15 @@
 # secrets later (same ones surfaces/desktop/build-mac.sh already uses) and
 # the same workflow starts archiving without a line changing.
 #
-# Optional repository secrets:
-#   ASC_API_KEY_P8   contents of AuthKey_XXXXXXXXXX.p8
-#   ASC_KEY_ID       the key id (must be an Admin-role key - see DEPLOY.md)
-#   ASC_ISSUER_ID    the issuer uuid
-#   APPLE_TEAM_ID    developer.apple.com -> Membership details
+# Optional repository secrets (ALL required for the signed archive; any
+# missing -> unsigned compile-only build, still green):
+#   ASC_API_KEY_P8       contents of AuthKey_XXXXXXXXXX.p8
+#   ASC_KEY_ID           the key id (must be an Admin-role key - see DEPLOY.md)
+#   ASC_ISSUER_ID        the issuer uuid
+#   APPLE_TEAM_ID        developer.apple.com -> Membership details
+#   APPLE_CERT_P12       base64 of the Apple Distribution cert .p12
+#                        (download from EAS - surfaces/watch/README.md)
+#   APPLE_CERT_PASSWORD  the .p12 password
 name: watchos-app
 
 on:
@@ -41,6 +45,7 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,8 +75,23 @@ jobs:
           chmod 600 "$key"
           echo "ASC_API_KEY_PATH=$key" >> "$GITHUB_ENV"
 
-      # build-watch.sh itself decides build-vs-archive from whether the
-      # signing env above is complete - see its header comment.
+      # Same file-not-blob reasoning as the API key. Absent secret -> no
+      # APPLE_CERT_P12_PATH -> build-watch.sh falls back to unsigned.
+      - name: Stage the Apple Distribution certificate
+        if: env.ASC_KEY_ID != ''
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+        run: |
+          if [ -n "$APPLE_CERT_P12" ]; then
+            p12="$RUNNER_TEMP/dist-cert.p12"
+            printf '%s' "$APPLE_CERT_P12" | base64 -d > "$p12"
+            echo "APPLE_CERT_P12_PATH=$p12" >> "$GITHUB_ENV"
+          else
+            echo "APPLE_CERT_P12 secret not set - the run will build unsigned."
+          fi
+
+      # build-watch.sh itself decides unsigned-build-vs-signed-archive from
+      # whether the signing env above is complete - see its header comment.
       - name: Build
         run: bash surfaces/watch/build-watch.sh
 
