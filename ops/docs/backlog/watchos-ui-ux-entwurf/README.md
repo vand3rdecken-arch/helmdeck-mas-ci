@@ -15,19 +15,22 @@ Vorbild (`ops/docs/backlog/wear-os-integration/README.md`,
 
 ---
 
-## 0. Scope-Hinweis, den ein Mensch entscheiden muss
+## 0. Scope — vom Owner entschieden: volle Parität zu Wear OS
 
 Die drei angefragten Bildschirme — Chat, Board/Karten, Sprachwiedergabe —
 sind **mehr** als `ios-watch-feasibility.md` §3.3 für eine Watch-Phase W2
-vorschlägt: dort steht wörtlich *"Explizit KEIN Board, kein Transcript, kein
-Chat — die Watch ist ein Quittungs- und Ein-Tipp-Gerät"*. Das Wear-OS-Modell
-hat diesen engen Scope am 2026-08-28 per Owner-Entscheidung ausdrücklich
-verlassen ("ich will W2", volles Board+Chat+Voice). Diese Entwürfe unterstellen
-denselben Kurswechsel für watchOS — **das ist eine Annahme, keine
-bestätigte Entscheidung.** Falls der ursprüngliche engere Scope (nur
-Notification-Mirroring + Action-Buttons, Phase W1) weiterhin gilt, sind Board-
-und Chat-Bildschirm hier zu viel Entwurf und die Karte sollte auf
-Sprachwiedergabe-in-Notification-Actions verengt werden.
+vorgeschlagen hatte: dort steht wörtlich *"Explizit KEIN Board, kein
+Transcript, kein Chat — die Watch ist ein Quittungs- und Ein-Tipp-Gerät"*.
+Das Wear-OS-Modell hat diesen engen Scope am 2026-08-28 per Owner-Entscheidung
+ausdrücklich verlassen ("ich will W2", volles Board+Chat+Voice).
+
+**Owner-Entscheidung (2026-09-05, diese Karte): derselbe Kurswechsel gilt
+für watchOS.** "Full parity" — die drei Bildschirme unten bleiben im vollen
+Umfang der Entwurf, `ios-watch-feasibility.md` §3.3s engerer W2-Vorschlag
+("kein Board, kein Chat") ist damit für watchOS **überholt**, genau wie er es
+für Wear OS bereits war. Der einzige Vorbehalt bleibt technischer, nicht
+Scope-Natur (s. unten): watchOS hat keinen Ambient-Modus, jeder Screen lädt
+deshalb frisch statt dauerzuverbinden.
 
 Zweiter Hinweis: **jede** hier gezeigte Live-Interaktion setzt voraus, dass
 die App im Vordergrund ist. Das watchOS-Technik-Dokument (§2.2) hat
@@ -192,16 +195,19 @@ daraus die UI-Konsequenz:
 
 ## 5. Offene Punkte, die diese Karte nicht klärt
 
-1. **Owner-Entscheidung §0** — engerer W1-Scope oder volle Board/Chat/Voice-
-   Parität zu Wear OS?
-2. Kein Mac/Simulator aus diesem Worktree erreichbar — diese Entwürfe sind
+1. Kein Mac/Simulator aus diesem Worktree erreichbar — diese Entwürfe sind
    nicht gegen einen echten watchOS-Renderer geprüft, nur gegen SwiftUI-
    Idiome (`List`, Digital-Crown-Scroll, `presentTextInputController`) aus
    Apple-Dokumentation.
-3. Komplikation ("N Karten warten auf dich") ist in `ios-watch-feasibility.md`
+2. Komplikation ("N Karten warten auf dich") ist in `ios-watch-feasibility.md`
    §3.3 als Teil von W2 vorgesehen, hier nicht entworfen — eigener,
    kleinerer Bildschirm-Typ (WidgetKit/ClockKit), separat zu skizzieren falls
    gewünscht.
-4. Sprachpfad für die Diktat-Eingabe selbst (`presentTextInputController`
+3. Sprachpfad für die Diktat-Eingabe selbst (`presentTextInputController`
    Diktier-Modus) ist in der Technikkarte als offener Punkt 1 vermerkt,
    nicht recherchiert — vor jeder Umsetzung nachzuholen.
+4. Nächster logischer Schritt (Dispatch-Entscheidung des Owners, nicht Teil
+   dieser Karte): eine Baukarte für den watchOS-Modul-Rumpf, analog zu W2a
+   im Wear-OS-Modell (`wear-os-integration/README.md` §4.5) — Xcode-Projekt-
+   Skelett + leere SwiftUI-Views, die laut Plan starten und nichts sonst tun,
+   ohne bereits Netzwerk-/Krypto-Code zu schreiben.
