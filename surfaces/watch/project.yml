@@ -33,6 +33,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.helmdeck.watchcompanion
         TARGETED_DEVICE_FAMILY: "1"
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: "Apple Distribution"
     dependencies:
       - target: HelmDeckWatch
         embed: true
@@ -56,3 +59,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.helmdeck.watchcompanion.watchkitapp
         TARGETED_DEVICE_FAMILY: "4"
         SKIP_INSTALL: false
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: "Apple Distribution"

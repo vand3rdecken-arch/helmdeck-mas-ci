@@ -73,6 +73,7 @@ if [ "$ARCHIVE" = "1" ]; then
     -scheme HelmDeckWatchCompanion \
     -archivePath build/HelmDeckWatchCompanion.xcarchive \
     -destination "generic/platform=iOS" \
+    -configuration Release \
     "${SIGN_ARGS[@]}" || { echo "!!! archive failed"; exit 1; }
   echo "DONE. Archive -> surfaces/watch/build/HelmDeckWatchCompanion.xcarchive"
 else
