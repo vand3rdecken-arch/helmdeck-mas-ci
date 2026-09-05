@@ -109,12 +109,51 @@ under `C:/hd/secrets` - none of that is reachable from (or belongs in) this
 worktree. The actual signed run happens in GitHub Actions, reading repository
 secrets.
 
-## Explicitly not done here
+## Board/chat/voice + relay client - DONE 2026-09-05 (this card)
 
-- No board/chat/voice screens (`watchos-ui-ux-entwurf/README.md`'s designs) -
-  next card, once this target is proven to build and sign.
-- No push-token registration wiring in `daemon/notify.py` - depends on the
-  Expo-Push-Service decision in `ios-watch-feasibility.md` SS1.3, unrelated to
-  getting the target itself to compile and sign.
-- No local verification - this card's worktree has no Mac. The first real
-  signal is the `watchos-app.yml` run.
+The scaffold's placeholder screens are replaced with the real thing, per
+`watchos-ui-ux-entwurf/README.md`'s designs and mirroring the already-shipped
+Wear OS module (`surfaces/app/plugins/wear/*.kt`) file-for-file where the
+platforms agree, and diverging deliberately where they don't:
+
+- **Crypto** (`Watch/Data/HelmDeckBox.swift`) - NaCl box via
+  [swift-sodium](https://github.com/jedisct1/swift-sodium) (pinned
+  `exactVersion: 0.11.0` in `project.yml`'s new `packages:` block), not a
+  hand-rolled port: its `Package.swift` vendors a prebuilt
+  `Clibsodium.xcframework` with watchOS as an explicit platform, so
+  `xcodebuild` links a binary instead of compiling C sources on the runner -
+  the same "verify via CI, not a local device" posture as the rest of this
+  target. Confirmed against the package's own `Box.swift` source this
+  session, not assumed.
+- **Transport** (`Watch/Data/RelayClient.swift`) - `URLSession` async/await,
+  the exact sealed-envelope protocol `RelayClient.kt`/`client.ts` use. **Not
+  a WebSocket and not a hanging GET**: `ops/docs/backlog/watchos-technik-machbarkeit/README.md`
+  §2.2 measured that watchOS has no ambient-mode equivalent to Wear OS's
+  throttled-but-alive background state - a third-party process suspends
+  within seconds of leaving the foreground, so there is no safe place to hold
+  a long-poll open. Every screen loads fresh on `.task`/foreground-return
+  instead (`ChatView`/`BoardView`'s own doc comments call this out) - no
+  `WearStream` equivalent exists here, by design, not by omission.
+- **Screens** (`Watch/Views/*.swift`) - `PairingView` (device-code entry,
+  dictation for free via watchOS's own `TextField` input controller, no
+  manual speech-recognizer intent needed the way Wear OS required one),
+  `ChatView` (Henry, the landing screen, day-separated bubbles, per-question
+  option buttons, a voice toggle riding on `AppState` so it is ONE switch for
+  every screen - the exact bug class `wear-os-paritaets-audit/README.md`
+  found and this build avoids from the start), `BoardView` (needs_you/yours/
+  working/backlog sections, reload button), `CardView` (the worker's own
+  question answered via `/tracks/<id>/answer`, "Henry fragen" navigating into
+  the SAME chat with the card as context rather than a second local dialog).
+- **Voice** (`Watch/Data/VoicePlayer.swift`) - `AVAudioPlayer` over a decoded
+  temp file, server-rendered MP3 only (`ops/docs/glasses-reference.md` §4) -
+  no on-device synthesis anywhere in this target.
+
+**Deliberately still out of scope, same reasoning as the scaffold:**
+- No push-token registration (`daemon/notify.py`) - still gated on the
+  Expo-Push-Service decision (`ios-watch-feasibility.md` §1.3) and the watch
+  target still declares no `aps-environment` entitlement.
+- No local verification - this card's worktree has no Mac/simulator. The
+  first real signal for BOTH compile correctness and runtime crypto/UI
+  behaviour is a `watchos-app.yml` CI run (compile-only) followed by a real
+  TestFlight install once signing is exercised - nothing in this diff has
+  been round-tripped against the daemon.
