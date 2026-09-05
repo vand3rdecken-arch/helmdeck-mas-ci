@@ -91,20 +91,42 @@ API_JSON="$TMP/asc-api-key.json"
 jq -n --arg kid "$ASC_KEY_ID" --arg iss "$ASC_ISSUER_ID" --rawfile key "$ASC_API_KEY_PATH" \
   '{key_id: $kid, issuer_id: $iss, key: $key, in_house: false}' > "$API_JSON" || exit 1
 
-# App IDs first (sigh cannot create them), then one App Store profile per
-# target, with FIXED names project.yml's PROVISIONING_PROFILE_SPECIFIER
-# expects. Registration is idempotent - an existing App ID is a no-op, not
-# an error. skip_itc: only the Developer-Portal App ID, no App Store Connect
-# app record yet (that is the TestFlight card's business, not this one's).
-# `fastlane run create_app_online` (produce's action name), NOT the `fastlane
-# produce` CLI: the CLI's flag parser rejects --api_key_path ("invalid
-# option", measured on 2.238) even though the underlying action supports it -
-# the run form passes key:value straight to the action's options.
-echo "==> registering App IDs + fetching App Store profiles (fastlane)"
-fastlane run create_app_online api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
-  app_identifier:app.helmdeck.watchcompanion app_name:"HelmDeck Watch Companion" skip_itc:true || exit 1
-fastlane run create_app_online api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
-  app_identifier:app.helmdeck.watchcompanion.watchkitapp app_name:"HelmDeck Watch App" skip_itc:true || exit 1
+# App IDs first (sigh cannot create them). NOT via fastlane produce/
+# create_app_online: that tool never migrated off Apple-ID auth - its option
+# list has no api_key_path at all (measured on 2.238). Bundle-ID
+# registration is a plain official ASC API endpoint though, so mint the
+# same JWT xcodebuild/sigh use (node is preinstalled; ieee-p1363 gives the
+# raw r||s signature JWTs need) and POST directly. 201 = created, 409 =
+# already registered - both fine; anything else is a real error.
+echo "==> registering App IDs (ASC API directly)"
+ASC_TOKEN="$(node -e '
+const crypto=require("crypto"),fs=require("fs");
+const key=fs.readFileSync(process.env.ASC_API_KEY_PATH,"utf8");
+const b64u=o=>Buffer.from(JSON.stringify(o)).toString("base64url");
+const now=Math.floor(Date.now()/1000);
+const si=b64u({alg:"ES256",kid:process.env.ASC_KEY_ID,typ:"JWT"})+"."+
+  b64u({iss:process.env.ASC_ISSUER_ID,iat:now,exp:now+1200,aud:"appstoreconnect-v1"});
+const sig=crypto.sign("sha256",Buffer.from(si),{key,dsaEncoding:"ieee-p1363"}).toString("base64url");
+process.stdout.write(si+"."+sig);
+')" || exit 1
+register_app_id() { # identifier, name
+  local code
+  code=$(curl -sS -o "$TMP/bundleid.json" -w '%{http_code}' \
+    -X POST https://api.appstoreconnect.apple.com/v1/bundleIds \
+    -H "Authorization: Bearer $ASC_TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"data\":{\"type\":\"bundleIds\",\"attributes\":{\"identifier\":\"$1\",\"name\":\"$2\",\"platform\":\"IOS\"}}}")
+  case "$code" in
+    201) echo "    $1: registered" ;;
+    409) echo "    $1: already registered (409)" ;;
+    *)   echo "!!! $1: HTTP $code"; cat "$TMP/bundleid.json"; return 1 ;;
+  esac
+}
+register_app_id app.helmdeck.watchcompanion "HelmDeck Watch Companion" || exit 1
+register_app_id app.helmdeck.watchcompanion.watchkitapp "HelmDeck Watch App" || exit 1
+
+# One App Store profile per target, with the FIXED names project.yml's
+# PROVISIONING_PROFILE_SPECIFIER expects. sigh DID migrate to API-key auth.
+echo "==> fetching App Store profiles (fastlane sigh)"
 fastlane run get_provisioning_profile api_key_path:"$API_JSON" team_id:"$APPLE_TEAM_ID" \
   app_identifier:app.helmdeck.watchcompanion provisioning_name:"HelmDeckWatchCompanion AppStore" \
   force:true output_path:"$TMP/profiles" || exit 1
