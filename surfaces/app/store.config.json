@@ -30,7 +30,7 @@
       "firstName": "Tien Duy",
       "lastName": "Vo",
       "email": "tienduyvo@googlemail.com",
-      "phone": "+00000000000",
+      "phone": "+4917676986404",
       "demoRequired": false,
       "notes": "HelmDeck is a companion app for the user's OWN HelmDeck installation (desktop/server). There is no central developer account and no demo login to hand out - pairing uses a QR code that the user's own installation displays. That is why 'demo account required' is No.\n\nFOR APP REVIEW - no pairing, no hardware, no account needed:\nOn the very first screen, below the pairing field, tap\n  \"Try it without your own computer\"\n  (German device language: \"Ohne eigenen Rechner ausprobieren\")\nThis opens the full app on a sample board. Boards, cards, the agent chat and settings are all browsable; a banner marks the session as demo data. This is the complete review path - please use it."
     },
