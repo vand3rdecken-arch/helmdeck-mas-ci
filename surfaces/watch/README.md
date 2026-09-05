@@ -70,37 +70,33 @@ names pinned in `project.yml`; App Store profiles created/fetched by the
 runner's preinstalled `fastlane sigh` via the same API key - App Store
 profiles need no device UDIDs).
 
-### Owner: the one-time credential step
+### The one-time credential step - DONE 2026-09-05
 
-From the **live repo** (`C:\Users\Tien Duy Vo\Downloads\swarmdeck`), in
-PowerShell/Windows Terminal:
+Executed via the desktop (eas-cli menu -> "Download credentials from EAS to
+credentials.json"): `APPLE_CERT_P12` (base64 of dist-cert.p12) and
+`APPLE_CERT_PASSWORD` are live GitHub secrets; local credential files were
+deleted after upload. TRAP for a future re-export: EAS encrypts every
+export with a FRESH password - both secrets must come from the SAME
+download (a p12 from one export + a password from another fails with "MAC
+verification failed during PKCS12 import").
 
-```powershell
-cd surfaces\app
-npx eas-cli@latest credentials -p ios
-#   -> select build profile "production"
-#   -> "credentials.json: Upload/Download credentials between EAS servers and your local json"
-#   -> "Download credentials from EAS to credentials.json"
-# writes credentials\ios\dist-cert.p12 + credentials.json (holds the p12 password)
+Proven end-to-end by run 33966012602: both App IDs registered, both App
+Store profiles embedded, both apps signed by "iPhone Distribution: Tien Duy
+Vo", .xcarchive uploaded as the `helmdeck-watch` artifact. A green run
+alone does NOT mean signing ran - check the Build step for "signing: ON"
+(secret-less forks fall back to the unsigned compile-only build).
 
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("credentials\ios\dist-cert.p12")) |
-  gh secret set APPLE_CERT_P12 --repo Tienduyvo/helmdeck
-gh secret set APPLE_CERT_PASSWORD --repo Tienduyvo/helmdeck
-#   (paste the password from credentials.json when prompted)
-
-Remove-Item -Recurse -Force credentials, credentials.json   # never commit these
-```
-
-Then re-run the `watchos-app` workflow (GitHub -> Actions -> newest run ->
-"Re-run all jobs"). Until those two secrets exist the workflow deliberately
-falls back to the unsigned compile-only build and stays green - a green run
-alone does NOT yet mean signing works; check the Build step's first lines
-for "signing: ON".
+Two fastlane/XcodeGen traps burned into build-watch.sh/project.yml on the
+way (see their comments): `fastlane produce`/`create_app_online` has NO
+API-key auth at all (App IDs are registered via the ASC REST API directly,
+node-minted JWT), and XcodeGen's application preset injects an
+sdk-conditional target-level CODE_SIGN_IDENTITY that must be overridden
+target-level, sdk-conditional included.
 
 **Cleanup worth doing once:** developer.apple.com -> Certificates - revoke
-the stale "Apple Development" certificates the failed runs minted (they
-belong to already-destroyed CI Macs; revoking breaks nothing and frees the
-2-per-account quota).
+the stale "Apple Development" certificates the early failed runs minted
+(they belong to already-destroyed CI Macs; revoking breaks nothing and
+frees the 2-per-account quota).
 
 **Deferred on purpose:** the watch target currently declares NO push
 entitlement, so plain App Store profiles suffice and the PUSH_NOTIFICATIONS
