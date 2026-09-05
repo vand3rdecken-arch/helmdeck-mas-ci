@@ -93,6 +93,44 @@ Gleiche Seite → **Altersfreigabe** → Fragebogen. Steht aktuell auf `null`
 
 **Ohne diese beiden Angaben lässt Apple den externen Test nicht durch.**
 
+## Stand 2026-09-05 — nächste Auslieferung vorbereitet, noch nicht ausgeführt
+
+Seit dem letzten Eintrag oben (Build `1.0.45 (7)`, 2026-09-02) ist
+`surfaces/app` auf `1.0.48`/versionCode 91 gewachsen, mit einem native-relevanten
+Zwischenstand `1.0.46 (88)` (`fe8a204`). App-sichtbar seither u. a.: Mehr-Tab
+neu sortiert (mehrere `fix(settings)`/`fix(more)`-Commits), PM-Dashboard als
+ein Übersichtsblatt statt Dreieck-Report, Prozess-Schritte bearbeiten, ein
+History-500er behoben, Brillen-Mikrofon jetzt von der Brille selbst gestartet.
+
+Diese Karte (worktree-Card, kein Zugriff auf `.env`/ASC-Secrets — by design,
+siehe `CLAUDE.md`) hat vorbereitet, was **ohne** Secrets geht:
+- `ops/deploy/asc_metadata_draft.py` — `BUILD_WHATS_NEW` auf die Änderungen
+  seit `1.0.45` umgeschrieben (DE/EN).
+- `ops/docs/store/ASC_METADATA.md` §4 — derselbe Entwurfstext, dokumentiert.
+
+**Noch offen — nur von der Hauptbox aus, mit `.env` (`DEPLOY.md` §2b/§2c):**
+
+```bash
+bash ops/deploy/ios_credentials.sh --check                                   # preflight
+bash ops/deploy/ios_credentials.sh --build                                   # neuer .ipa (EAS, unattended)
+cd surfaces/app && npx eas-cli submit --platform ios --latest --non-interactive --wait   # HOCHLADEN
+py -3.12 ops/deploy/asc_build_state.py --wait                                 # Apple-Verarbeitung: VALID?
+py -3.12 ops/deploy/asc_metadata_draft.py show                                # Kontrolle vor apply
+py -3.12 ops/deploy/asc_metadata_draft.py apply --yes                        # What-to-Test-Text auf den neuen Build schreiben
+py -3.12 ops/deploy/asc_external_beta.py show                                 # App-Privacy/Altersfreigabe/Link-Status jetzt prüfen —
+                                                                               # der Stand von 2026-09-02 unten könnte veraltet sein
+py -3.12 ops/deploy/asc_external_beta.py submit <build-id> --yes             # falls dieser Build erneut zur Beta App Review muss
+py -3.12 ops/deploy/asc_external_beta.py attach <build-id>                   # FREIGABE AN TESTER — Apple benachrichtigt die Gruppe
+```
+
+`submit` braucht nur, wenn Apple für diesen Build tatsächlich eine neue Beta
+App Review verlangt (nicht jeder Build einer laufenden Version braucht das,
+Apple entscheidet das serverseitig) — `show` danach macht sichtbar, ob
+`betaReview` schon `APPROVED` ist oder erst `WAITING_FOR_REVIEW`. Falls
+App-Privacy/Altersfreigabe (oben, „Was nur der Owner machen kann") seit
+2026-09-02 noch nicht nachgetragen wurden, blockiert das jede Freigabe
+unabhängig vom Build.
+
 ## Danach
 
 Sobald Apple die Review freigegeben hat (üblicherweise 24–48 h; die Freigabe

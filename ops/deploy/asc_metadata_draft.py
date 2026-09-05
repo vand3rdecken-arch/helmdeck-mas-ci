@@ -110,17 +110,24 @@ LOCALIZATIONS = {
 
 BUILD_WHATS_NEW = {
     "de-DE": (
-        "Bitte pruefen: Pairing per QR-Code vom Desktop, Board ansehen, eine "
-        "Karte mit Foto-Anhang anlegen, Push-Benachrichtigung bei einer "
-        "Agenten-Rueckfrage. Ohne eigene HelmDeck-Installation: auf dem "
-        "ersten Screen \"Ohne eigenen Rechner ausprobieren\" tippen."
+        "Seit dem letzten Testbuild ist einiges dazugekommen. Bitte pruefen: "
+        "der neu sortierte Mehr-Tab (Zurueck-Navigation, doppelte Eintraege "
+        "entfernt), das PM-Dashboard (Ziel, Timeline & Budget als ein "
+        "Uebersichtsblatt statt Dreieck-Report), in einem Prozess einen "
+        "Schritt hinzufuegen/umsortieren/loeschen, und der Verlauf (History) "
+        "sollte wieder laden. Fuer Brillen-Besitzer: das Mikrofon wird jetzt "
+        "von der Brille selbst gestartet, gesprochener Text wird vor dem "
+        "Senden angezeigt und bestaetigt."
     ),
     "en-US": (
-        "Please check: QR-code pairing from the desktop, viewing the board, "
-        "creating a card with a photo attachment, receiving a push "
-        "notification for an agent question. Without your own HelmDeck "
-        "installation: tap \"Try it without your own computer\" on the "
-        "first screen."
+        "Many app changes landed since the last test build. Please check: "
+        "the reorganized Mehr/Settings tab (back navigation, duplicate "
+        "entries removed), the PM dashboard (goal, timeline & budget as one "
+        "overview instead of the triangle report), adding/reordering/"
+        "removing a step in a process, and that History loads again. For "
+        "glasses owners: the microphone now starts from the glasses "
+        "themselves, and spoken text is shown and confirmed before it is "
+        "sent."
     ),
 }
 
