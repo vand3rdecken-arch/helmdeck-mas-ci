@@ -19,7 +19,7 @@ Begründung. Abweichungen vom Studienstand `b3f756e` sind markiert **[NEU]**.
 | Apple Developer Program | **Pflicht**, 99 €/Jahr. Deckt iOS-Provisioning **und** Mac-Notarization (Studie §5.3) mit ab. | ⬜ Konto anlegen |
 | EAS-Projekt | `eas.json` existiert bereits (Android-Profile; `production`-Profil ist plattformneutral nutzbar). **Fehlt:** `extra.eas.projectId` in `app.json` — kommt beim ersten `eas init`; wird auch für Expo-Push (§3) gebraucht. | ⬜ `eas init` |
 | Build-Weg | **EAS Build (Cloud), managed prebuild** — es gibt kein `ios/`-Verzeichnis und es wird **keines eingecheckt**. Entscheidung fixiert (Studie §2.1). | fixiert |
-| Distribution | ~~TestFlight, internes Testing~~ → **TestFlight, EXTERNES Testing** (mit Beta App Review, öffentlicher Join-Link). Kein App-Store-Release im Scope. | **geändert 2026-09-02 per Owner-Entscheidung** — siehe `ops/docs/store/EXTERNAL_TESTFLIGHT.md`. Grund: internes Testing hat prinzipbedingt **keinen** öffentlichen Link, weshalb die iOS-Karte auf helmdeck.de nichts verlinken konnte und ein wirkungsloses `mailto:` auslieferte (im echten Browser gemessen). |
+| Distribution | ~~TestFlight, internes Testing~~ → TestFlight, externes Testing → **App-Store-Release** (direkt einreichen, wie beim bereits veröffentlichten Play-Store-Listing). | **geändert 2026-09-05 per Owner-Entscheidung** — siehe `ops/docs/store/APP_STORE_RELEASE.md`. TestFlight External Beta (`ops/docs/store/EXTERNAL_TESTFLIGHT.md`) bleibt der Testkanal für zukünftige Builds; der Store-Release ist zusätzlich, kein Ersatz. |
 
 ## 2. Native Module — Inventar-Urteil (verifiziert)
 
