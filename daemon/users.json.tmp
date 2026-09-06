@@ -1,0 +1,899 @@
+[
+  {
+    "name": "owner",
+    "pw": "pbkdf2$200000$f071ad8dbe08a12784cb94dd0940d141$2c63fbdf24f091e004ba879e1c470de683051da9373866d2ae9a1db07bd3e6d6",
+    "role": "owner",
+    "tokens": [
+      {
+        "label": "migrated",
+        "created": "2026-07-21 12:59:30",
+        "th": "1c342bfbe7ee8763f0395f6b28fb274951263f679cd4dc24f6329d5dd2ce22c4",
+        "id": "1c342bfbe7ee",
+        "tail": "9-BQNr",
+        "last_used": "2026-09-02 12:39:31"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 21:03:24",
+        "th": "8abc8674e695a6084bf91844cc2588ae405a9668602e65927ea34d65b035d402",
+        "id": "8abc8674e695",
+        "tail": "yR6XEp"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 22:20:58",
+        "th": "a385a7c307b4fb4e408cb758a2d9a396e44ec96f85ffaeb49c0d8bec172a02b6",
+        "id": "a385a7c307b4",
+        "tail": "YnjVmi"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 22:53:00",
+        "th": "f05b5fb279320ef42b1f896cd3e6105498790f343bf95df4d27805a39461bdab",
+        "id": "f05b5fb27932",
+        "tail": "CgFyOm"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:03:59",
+        "th": "cd277b15c026b8b3b03a5b55107ba5cca0302e101c4605411aeea6d53c58d9d1",
+        "id": "cd277b15c026",
+        "tail": "A7iNOv"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:16:23",
+        "th": "712c6a5bb2e5aeffd0a26d9675d308ae12f378ce4e2b04dc1c362d2daf8ab480",
+        "id": "712c6a5bb2e5",
+        "tail": "xJCaed"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:22:23",
+        "th": "e30f4d7d5893ebcea2f2ffc13907d5e0a06edd815e13688dcd5dd70cee7b63d7",
+        "id": "e30f4d7d5893",
+        "tail": "0m9hpg"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:28:47",
+        "th": "afcb84f8699e03decf47ab9a9a90ae541af688f158b8f2ec813aa7ef0e2c0e2f",
+        "id": "afcb84f8699e",
+        "tail": "pUEmJY"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:43:09",
+        "th": "4429dd3a14fd938b73dfe9a8caa025aa547484ddd353c4016aebe94fe46a5d75",
+        "id": "4429dd3a14fd",
+        "tail": "w3tgV7"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:55:14",
+        "th": "967b6ec55364a1bb2e36cba8420f82fbd5430120d834361e6373b7b4adfd444b",
+        "id": "967b6ec55364",
+        "tail": "aNuB2R"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:56:00",
+        "th": "a7e4500769741b9267f689947a010cc56ec64865c02b5e7f3eed3bb987193d7f",
+        "id": "a7e450076974",
+        "tail": "vV6yFm"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-27 23:57:01",
+        "th": "91f906201e60c45a2fc91079015387763b593d78fb2e878b938d2f1814b0cffb",
+        "id": "91f906201e60",
+        "tail": "xyZMsU"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-07-28 20:30:26",
+        "th": "9a7e4a4462f1f165570529c328b1c31041f8d003bcc4674d8e7bd8e723963e2f",
+        "id": "9a7e4a4462f1",
+        "tail": "10u_Lq"
+      },
+      {
+        "label": "expo-test",
+        "created": "2026-07-30 23:48:24",
+        "th": "592a8f247b06738ec26cadcd5896f65b692e6f2ce7b77ffbc62dbbaa87e247d7",
+        "id": "592a8f247b06",
+        "tail": "oAnsFn"
+      },
+      {
+        "label": "desktop",
+        "created": "2026-07-31 00:09:41",
+        "th": "1da6f31e5008c7ed844d3d9c48542222aff03acf03cba03df988de285cf11dd8",
+        "id": "1da6f31e5008",
+        "tail": "8Y2qzA",
+        "last_used": "2026-09-06 00:00:19"
+      },
+      {
+        "label": "phone (relay) test",
+        "created": "2026-08-01 08:22:27",
+        "th": "47afdd19ed604a110243d46e3078a08557aa28a9fb327fa879ab238a2214f633",
+        "id": "47afdd19ed60",
+        "tail": "2wguN7"
+      },
+      {
+        "label": "emulator test",
+        "created": "2026-08-01 09:42:30",
+        "th": "6110df44f893b5cd7c30c8689be1b3f408453354764ebbf152036cdceab6f477",
+        "id": "6110df44f893",
+        "tail": "oWGQcm"
+      },
+      {
+        "label": "relaytest",
+        "created": "2026-08-01 09:59:01",
+        "th": "3df219485878685960cb3ead99c72b56932da57847c84e2ff865fad4988cf21f",
+        "id": "3df219485878",
+        "tail": "jFb9PZ"
+      },
+      {
+        "label": "phone (pair)",
+        "created": "2026-08-01 20:34:30",
+        "th": "c97ae131ecbe24855b2b201d1b042b68b7bbfca784a5e3bd16b058ffcd8ca117",
+        "id": "c97ae131ecbe",
+        "tail": "FZ66sL"
+      },
+      {
+        "label": "emu debug",
+        "created": "2026-08-01 20:55:12",
+        "th": "e2d109c007568f3f05c49f488b6999d795781236d0e26ea04c91ac48061906b8",
+        "id": "e2d109c00756",
+        "tail": "NMAM_h"
+      },
+      {
+        "label": "e2e",
+        "created": "2026-08-01 21:01:47",
+        "th": "d73004820b0ad5468c112c3fb2973d44b86ca7860ce5eb0338d4ec9aaeeec7eb",
+        "id": "d73004820b0a",
+        "tail": "lXd-yb"
+      },
+      {
+        "label": "phone",
+        "created": "2026-08-01 21:03:11",
+        "th": "945b18c206b4d24034c0db66489cb14030822227645f6981ced4563ea5c0ceaa",
+        "id": "945b18c206b4",
+        "tail": "-BqyBV"
+      },
+      {
+        "label": "emu autotest",
+        "created": "2026-08-01 21:45:30",
+        "th": "14a2dfcabcb9e8cb8fb0342849d4a8f083759ed7da313d84bac66edb5da27df0",
+        "id": "14a2dfcabcb9",
+        "tail": "YKmyZ8"
+      },
+      {
+        "label": "phone",
+        "created": "2026-08-01 22:00:20",
+        "th": "b5c419f695d82b5b5c19c73e078f2b0d85a07b747efc8354e9d82f3bdffa7fff",
+        "id": "b5c419f695d8",
+        "tail": "EELbnw"
+      },
+      {
+        "label": "phone",
+        "created": "2026-08-02 01:00:44",
+        "th": "ff5c904f2617d9818f757b29d6ebf0876e18e22d616ac436f6b2746644559eee",
+        "id": "ff5c904f2617",
+        "tail": "zOpr5w"
+      },
+      {
+        "label": "desktop web (mcp)",
+        "created": "2026-08-04 09:26:10",
+        "th": "35d3a078775665c1e22441970535a32c2b33d32a2d9984689522ace899ce3207",
+        "id": "35d3a0787756",
+        "tail": "M2fFi-"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-04 09:28:25",
+        "th": "4af5ba5b4a30cd466ef93ca8acd11e6e37c3649cf7e777e7b082f9e43155d1dd",
+        "id": "4af5ba5b4a30",
+        "tail": "o262Pb"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-04 09:46:27",
+        "th": "f2b913779d874684a3597b9a3a28ea814fe6289307e3ca8f14113a0d60dade9c",
+        "id": "f2b913779d87",
+        "tail": "HejICF"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-04 10:57:42",
+        "th": "872e6951c86b98e337bc00ee0210fee118226f8e5fcbb14bdcc657c12e2b341b",
+        "id": "872e6951c86b",
+        "tail": "kyEeFy"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-04 11:12:22",
+        "th": "5ea81b1e858f583d1b44d205f373de41b890d779fb47fc9d86c09706b74bf077",
+        "id": "5ea81b1e858f",
+        "tail": "18p5c1"
+      },
+      {
+        "label": "diag",
+        "created": "2026-08-04 11:14:33",
+        "th": "f73be89c804e581eed08e5b712650839373f6f8d3255965876f8c6889d4ad248",
+        "id": "f73be89c804e",
+        "tail": "IUqVCq"
+      },
+      {
+        "label": "diag-tunnel",
+        "created": "2026-08-04 11:15:17",
+        "th": "1310a2e36a6b6ed6c84caf7a58c751c98e3abc7e623dce11161b90e61fade110",
+        "id": "1310a2e36a6b",
+        "tail": "3w30iS"
+      },
+      {
+        "label": "emu diag",
+        "created": "2026-08-04 11:21:32",
+        "th": "88ca1344b67148f70224b1c5b346aa12c191f866c969b1d978dba894a4a3f35a",
+        "id": "88ca1344b671",
+        "tail": "UNjIwQ"
+      },
+      {
+        "label": "emu verify",
+        "created": "2026-08-04 11:37:12",
+        "th": "551bb9169ca44db9bc10395526cfa9eae418c88c882c7d43f10461a09e8619e3",
+        "id": "551bb9169ca4",
+        "tail": "wpr9fj"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-04 14:53:45",
+        "th": "43f0aea029d615ff0681b3e898631e3a3c858d9de4e302b54e9c9ace80558bb3",
+        "id": "43f0aea029d6",
+        "tail": "mQS7df"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-06 23:10:14",
+        "th": "71af10c449d315a645d2f9b485dafded1408db8351079ef3acdd774159e60940",
+        "id": "71af10c449d3",
+        "tail": "O1_z_m"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 07:54:44",
+        "th": "0ac766c19ecb0b107bdefa4667ca730d7aafc0ddf5e02215e1e26a4e773a494d",
+        "id": "0ac766c19ecb",
+        "tail": "14y8j5"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 08:26:24",
+        "th": "dfbb4073da287d28b2a430db91de144e6b5595c875aa8e5044f86324a94d57de",
+        "id": "dfbb4073da28",
+        "tail": "vEWaNJ"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 11:22:23",
+        "th": "544f879e07a3e7d505476c7088d468e5464a166765bf3a222ac5f13fd4c8d9ff",
+        "id": "544f879e07a3",
+        "tail": "3CIqjc"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 11:46:58",
+        "th": "47b0842626697d1e27fccaf8adb579345362f2684b38ecbfe1ff87c09aaa020a",
+        "id": "47b084262669",
+        "tail": "W--eqf"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 14:44:38",
+        "th": "99ecb454d0897df7a2b0e305451737570328f2a3bb468d57b1b5015e50ad9c51",
+        "id": "99ecb454d089",
+        "tail": "SLECeZ"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 16:43:18",
+        "th": "bdabc84a916aefdd1e4cca9352c78b1848a929361d92c0bf75e890375a9c8b64",
+        "id": "bdabc84a916a",
+        "tail": "qy8Cn6"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-14 22:18:10",
+        "th": "d0495531089dee6549ddb165f456c43571339e9cfade725ad9950a67d57cf6b5",
+        "id": "d0495531089d",
+        "tail": "B_VaYH"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-15 06:33:02",
+        "th": "23d84e3bdccadb7e1b69634a0dcc7840292cd182d5f73011924d5259313b5abb",
+        "id": "23d84e3bdcca",
+        "tail": "k3FWOc"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-15 08:16:40",
+        "th": "44e42a62349b53ec08a06f45bd5ed031bd5f5612fc7541c02354063622178ac3",
+        "id": "44e42a62349b",
+        "tail": "mxUZkz"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-15 09:54:37",
+        "th": "8bdeaa7276eab6f0048c0374bfa030454d6b33c6b44fa714e80ab4b7ab7b4caf",
+        "id": "8bdeaa7276ea",
+        "tail": "5SzVvW"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-15 14:19:37",
+        "th": "2d0ec4e0ab6484334c2b7ca2e4f4ab5bec693e5e07cac65158c0dcf254cb1ed2",
+        "id": "2d0ec4e0ab64",
+        "tail": "U8YGUh"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-15 14:36:38",
+        "th": "a5c15de863b3262894d910916afedaf27ca14d5d2ed087e73981d12c737c2278",
+        "id": "a5c15de863b3",
+        "tail": "PuQnRe"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-16 06:51:21",
+        "th": "5724bb1179ba7bb9a884339e4a07be871a4d5d2462093ac020bf32a11973cdc5",
+        "id": "5724bb1179ba",
+        "tail": "dGO6Q7"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-16 17:40:17",
+        "th": "87799dca80d6a7aa8979d86dae31fc7e64e0fa21ee183fe59ded9c52cfd2d31d",
+        "id": "87799dca80d6",
+        "tail": "C3XavQ"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-17 14:41:32",
+        "th": "9ad062dc7ad30fcd06725a4008230181265997642b9642753d7111aab5b8cfe2",
+        "id": "9ad062dc7ad3",
+        "tail": "jcCDx_"
+      },
+      {
+        "label": "cell-sweep-visual-test",
+        "created": "2026-08-18 17:41:05",
+        "th": "bbf4f3c30620c092e95c1644e27e1bc0334bc17bec3430a808cb149a0bd0b8b8",
+        "id": "bbf4f3c30620",
+        "tail": "VXjFBk"
+      },
+      {
+        "label": "cell-sweep-visual-test",
+        "created": "2026-08-18 17:41:55",
+        "th": "3889e46f0f86cc22c29c64aea8d129439844e1d13c6b6ea87e7e6faff5719433",
+        "id": "3889e46f0f86",
+        "tail": "hJgKwD"
+      },
+      {
+        "label": "owner-session-fix",
+        "created": "2026-08-18 19:40:05",
+        "th": "f61c17b17b5427dcc1076ed4e86a1b194e6ef255dbf48aed46b867c2134573fe",
+        "id": "f61c17b17b54",
+        "tail": "xSXZg7",
+        "last_used": "2026-09-05 19:57:48"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-18 20:34:05",
+        "th": "2b53ff130706e5dfe670c9f271ab4c07f1bb4edebda84e7c2ea95eef971a43a9",
+        "id": "2b53ff130706",
+        "tail": "XGmZ9h"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-18 20:37:05",
+        "th": "6596ea076abefb4c77e60e1a8562e6862ae02768f770af855f4096ab5cfd136c",
+        "id": "6596ea076abe",
+        "tail": "cLMMv8"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-18 21:06:05",
+        "th": "6746eb9a2faf1460c80cba81411097c1f34eb69dc6442c64d17f0720bac8c65a",
+        "id": "6746eb9a2faf",
+        "tail": "4Pyo78"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-18 21:06:11",
+        "th": "98c53ced7cdd1c93029829ad2336f37a161b5152b0cf645b98332b8a945a56b6",
+        "id": "98c53ced7cdd",
+        "tail": "v06_9a"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-18 21:19:12",
+        "th": "1555355ca3f298a36569e67795de781ff7cd7f84aaf2541df7c128b2c0c78d58",
+        "id": "1555355ca3f2",
+        "tail": "syDi0t"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-19 14:34:12",
+        "th": "29e670dd6140df32499686a9436922aa40837c8dbb4a283962c2a32722da5e2a",
+        "id": "29e670dd6140",
+        "tail": "wUllQ-"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-19 14:57:44",
+        "th": "c624113eb5807f5b8a05c33c4b325af453d4b78fe70aeb6468184bdd2134f6b2",
+        "id": "c624113eb580",
+        "tail": "DTewBN"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-19 15:28:09",
+        "th": "0c6a44c635e553e168df155ef632801a8539729d31ccd7708c396c6c88c6049d",
+        "id": "0c6a44c635e5",
+        "tail": "cQ2InR"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-19 15:55:11",
+        "th": "7d93d6cbd954be3ca3b2ab7f2906413c9a929448059f64551252ae81f2ee1257",
+        "id": "7d93d6cbd954",
+        "tail": "B5ckKi"
+      },
+      {
+        "label": "web-login",
+        "created": "2026-08-19 16:44:10",
+        "th": "4da348bab1547f2227340f1a2daec449ef7f7b8a4ccb8d41e2cb4e64d0c49a56",
+        "id": "4da348bab154",
+        "tail": "6Wa2nE"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 09:59:24",
+        "th": "2046a386154c189e5fc298aae6ba4958ab444348d0c6bbe3cf42af2528c5670a",
+        "id": "2046a386154c",
+        "tail": "vDEU_G"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 09:59:48",
+        "th": "fa1a84b9ce887d47e5cc7933bfc2a5fda23639939a720a65e27cea7b323b156f",
+        "id": "fa1a84b9ce88",
+        "tail": "0yD2MI"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 10:03:32",
+        "th": "fc654b28da7b1fa733707cd91e76847a54059f111554a8b3a581b091246a23f9",
+        "id": "fc654b28da7b",
+        "tail": "usavdX"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 19:06:24",
+        "th": "4cc6f6e88a3a7b54cae44881a3ce125b4868fd1c1b499c1a7b6e2d3b54cc304a",
+        "id": "4cc6f6e88a3a",
+        "tail": "OMdC1E"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 19:36:51",
+        "th": "3474bcfc699a41cc3c3266dabae8f29d91715eb0d48c8c363efe23fa9ec52c92",
+        "id": "3474bcfc699a",
+        "tail": "c-C-BU"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-21 19:46:35",
+        "th": "57cc4d9ef5a6e2494d0ee806b2356ba38903c8ae411c301f42d533a13e0379b7",
+        "id": "57cc4d9ef5a6",
+        "tail": "pR1JAC"
+      },
+      {
+        "label": "invite-owner",
+        "created": "2026-08-21 19:56:09",
+        "th": "7dfd363a84705b6573314490a9f052ee7d14ab9d073b25da3ac4591df4ddff30",
+        "id": "7dfd363a8470",
+        "tail": "_Rzx69"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-23 08:35:43",
+        "th": "6d6bba4402c1d728434953a6d11da27c6b7d2e9e4158aec734a184cad048aed8",
+        "id": "6d6bba4402c1",
+        "tail": "xnwW4_"
+      },
+      {
+        "label": "agent-cli",
+        "created": "2026-08-23 09:02:35",
+        "th": "0ec29f1833bc8199a04ed5b7e94fcdce0f8b9b179039337fca72e520ed1e966a",
+        "id": "0ec29f1833bc",
+        "tail": "wmFcSy"
+      },
+      {
+        "label": "phone (relay)",
+        "created": "2026-08-23 17:15:48",
+        "th": "7d8a49a1510013905af292861b6e69978b7abcb5d367ec26974b73b2f2dc9ef4",
+        "id": "7d8a49a15100",
+        "tail": "zA-mFT"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "11ad89cdf6c63d8734f4dd0ba3d6bba8c80f0fcb2b92eb248ef19e88b0ec9d37",
+        "id": "11ad89cdf6c6",
+        "tail": "EhHqe_",
+        "created": "2026-08-26 12:05:41"
+      },
+      {
+        "label": "web-login",
+        "th": "a5b08a85b52bc1f25ccc0cc88d0fe1fd3b7631f4da6c6e5e37984b78025141f5",
+        "id": "a5b08a85b52b",
+        "tail": "vNsCD0",
+        "created": "2026-08-26 12:05:54",
+        "last_used": "2026-09-05 20:00:17"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "15685157c4f7bdcbc9f150ed782de75038b9a94091f0e7d9778272ddb162ab3d",
+        "id": "15685157c4f7",
+        "tail": "WNtNTO",
+        "created": "2026-08-26 13:58:19"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "32802ca3b5f5782a409ac8ed072f482e1848167f52b01af68f58b2aae727748b",
+        "id": "32802ca3b5f5",
+        "tail": "PJYcRL",
+        "created": "2026-08-26 14:31:14"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "a59735d210d02c2472cd0dff37a1bc1f1eca911dd2ece6b66ee3f19ef1feca78",
+        "id": "a59735d210d0",
+        "tail": "R006lk",
+        "created": "2026-08-26 18:09:40"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "06f58c3ca2c360b751dc16c070c840df18b25e57f503b4b64b453675c458e974",
+        "id": "06f58c3ca2c3",
+        "tail": "566zlX",
+        "created": "2026-08-26 19:46:53"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "4aaba550277188bbe2e35c6fc33644a6a99aea4a1739a87f106eea9d0665ebf5",
+        "id": "4aaba5502771",
+        "tail": "3nydcz",
+        "created": "2026-08-26 21:17:24"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "f0028300327a35d0e511d268de04a66a08755f487ddcacce89b559786c1d1248",
+        "id": "f0028300327a",
+        "tail": "n8ieTo",
+        "created": "2026-08-26 21:17:31"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "96bfa957ced5b012979adbcf01ab32a7e7e081b0cb3092a5a5f9d9fb25f578d5",
+        "id": "96bfa957ced5",
+        "tail": "L58faO",
+        "created": "2026-08-26 21:17:38"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "bc5dc527d9b00811c0165bf1d736b46224184149698bfb45be990b94dc90cead",
+        "id": "bc5dc527d9b0",
+        "tail": "RQ4Twz",
+        "created": "2026-08-27 07:46:00",
+        "last_used": "2026-09-06 00:00:00"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "61bdbb50494c29b23c07621c7c334a558e667e7093b43f9667342d12d4024bab",
+        "id": "61bdbb50494c",
+        "tail": "UgMRqn",
+        "created": "2026-08-27 07:52:28"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "4cea1a455753c31deaff48d4e7c529f0198998a586a3da5eff8f20007b159fbf",
+        "id": "4cea1a455753",
+        "tail": "4Yw4UJ",
+        "created": "2026-08-27 21:01:24"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "b48694eedb82b90b6dc74772b8eff38c12cda84472711a22d4207ac34b302f9f",
+        "id": "b48694eedb82",
+        "tail": "GF6PW6",
+        "created": "2026-08-27 22:32:26"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "52d94f045dd66a955b43337ad21eb71e2da90ae5e238beada6955cde07e3ca47",
+        "id": "52d94f045dd6",
+        "tail": "IhNvq9",
+        "created": "2026-08-27 23:22:49"
+      },
+      {
+        "label": "Watch",
+        "th": "a25117c5cc9078231d6e93c84621d92cbba59e546270c7226db0f7b4e002bfa2",
+        "id": "a25117c5cc90",
+        "tail": "XQ003c",
+        "created": "2026-08-28 22:08:59",
+        "last_used": "2026-09-05 10:55:27"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "1e9dd74c6382cc681e84ab48d4e4c35a56f9956c721a29954181b0a1b64f9c32",
+        "id": "1e9dd74c6382",
+        "tail": "6lYSmj",
+        "created": "2026-08-28 22:16:08"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "5f1a9cdb6862a2b5a6f0d4cd8e53d8c776f04f1ed1bbc3a7d33918217da9ad1c",
+        "id": "5f1a9cdb6862",
+        "tail": "o8-9-r",
+        "created": "2026-08-28 22:26:25"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "1faac69320d4c994975961cea876087a630a7caa3b2c915d1ef6c5b83ec241da",
+        "id": "1faac69320d4",
+        "tail": "DimWAl",
+        "created": "2026-08-29 07:12:00"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "622d8ab308ea9c2a5820a94b03618a7dee4b97a4125a37892ab0acb7a55eb7f6",
+        "id": "622d8ab308ea",
+        "tail": "Ud9_KW",
+        "created": "2026-08-29 07:58:39"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "3ca574dee41a2e22660453f096f0a1a43b1b369d44a8e8006ab49ff345eb44e2",
+        "id": "3ca574dee41a",
+        "tail": "9hELnT",
+        "created": "2026-08-29 09:28:39"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "6e0892795ca7f700adb944c7204252560983e634f6cbd42caab02c21e5aa99f2",
+        "id": "6e0892795ca7",
+        "tail": "PMAO-F",
+        "created": "2026-08-29 13:43:23"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "6ab4df13dde1b468acac7123563873b04a85aad07c97c819b4224b0ac00941f3",
+        "id": "6ab4df13dde1",
+        "tail": "XvDdxr",
+        "created": "2026-08-29 20:18:49"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "d882088dc76e8fb410272cb8a1d8c307f11d91c1bec18cfcc0142315cb03b0d1",
+        "id": "d882088dc76e",
+        "tail": "NwU0rv",
+        "created": "2026-08-29 21:14:46"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "260ca8f0f318682ecc5665c5644224f74038a8cc6a274c5c913b755ba2810297",
+        "id": "260ca8f0f318",
+        "tail": "m87UOO",
+        "created": "2026-08-29 21:39:26"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "541fcb66b6aa6ac95a01fd70291ea24dde4017a83cba5ed581afbf44c4e4fd40",
+        "id": "541fcb66b6aa",
+        "tail": "7O36nZ",
+        "created": "2026-08-29 22:18:12"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "db329bdc23e2f0b5bcfd1bdf55ad0d848afca7dfcb8da1612c55b3d763af7a9b",
+        "id": "db329bdc23e2",
+        "tail": "mrwfG5",
+        "created": "2026-08-29 22:18:22"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "a57c5ccd798262447bd4f70a47d23be587b0b9cdc7410cf1295ca4b60207801c",
+        "id": "a57c5ccd7982",
+        "tail": "wyw9Ip",
+        "created": "2026-08-29 22:49:46"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "0eba106ed9128d044a37c4bf9fe11543e9788a1b592ac20cc4470058d3baaa6c",
+        "id": "0eba106ed912",
+        "tail": "5TMNVC",
+        "created": "2026-08-29 23:08:54"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "9f106a566ba7628d94427bc9a5e881a3fbf931c67f41df34502ca3a028661cee",
+        "id": "9f106a566ba7",
+        "tail": "HSuFE9",
+        "created": "2026-08-30 07:42:46"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "e66c86dda2f5683b3f452b5798987f95c7cc8d4fb2473ef7b17eccced8554baa",
+        "id": "e66c86dda2f5",
+        "tail": "eRhomk",
+        "created": "2026-08-30 08:34:25"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "41e7ee7cf90f3301f32201461209694345945839047012fef7d4ca864141e168",
+        "id": "41e7ee7cf90f",
+        "tail": "kZQ0mt",
+        "created": "2026-08-30 10:47:06"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "d415d2976ae7c063b8e038e0b63064ca2a861cccdc61cfa3dd72efb0711e10e3",
+        "id": "d415d2976ae7",
+        "tail": "StyxtN",
+        "created": "2026-08-30 12:57:11"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "64540f5491f7e8ad8d7936126bef4875f37441414cfbedd8f4618bda4cd62098",
+        "id": "64540f5491f7",
+        "tail": "N_3iOx",
+        "created": "2026-08-30 13:30:36"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "d70370effe730c3fa3b41f1cffd1ae091885ba31495665e018100477710a9c09",
+        "id": "d70370effe73",
+        "tail": "S7fBNi",
+        "created": "2026-08-30 15:28:38"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "731fbd795dfefb325b724d85666aea44c50574b23b3e5d0ddcedfc2b965671ce",
+        "id": "731fbd795dfe",
+        "tail": "gYhvVS",
+        "created": "2026-08-30 15:36:23"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "68eda796a142eb669264ca8c715f5d258fbb1724a2cab10cac6425d862b0c10d",
+        "id": "68eda796a142",
+        "tail": "H7F-4Q",
+        "created": "2026-08-30 17:31:54"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "57857c84cda431329658d62e30674b700eedaedc31795343900637963559c035",
+        "id": "57857c84cda4",
+        "tail": "8Z4EPN",
+        "created": "2026-08-31 13:51:33"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "48af802abf1cf535ae231b730448122305b4b700396b3b0667a80389feb14138",
+        "id": "48af802abf1c",
+        "tail": "J0CTZR",
+        "created": "2026-09-02 13:53:24"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "7b161ae63c43b3fdec246e1a31d60f48f891ed4abf8744315d84e000e4c9e174",
+        "id": "7b161ae63c43",
+        "tail": "4Enp2v",
+        "created": "2026-09-02 14:28:49"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "724a0b23b11b0ea914ffe6d196bb14157e96822575880f4adc702d66d1a5182d",
+        "id": "724a0b23b11b",
+        "tail": "heFnA6",
+        "created": "2026-09-02 14:44:14"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "848cf1ae351cbeddd51e86ac52cd7b2bf5f01d7be730d165fa2ded794ed3dea9",
+        "id": "848cf1ae351c",
+        "tail": "iqGupr",
+        "created": "2026-09-02 19:59:14"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "fcdcf9fbbd612d9f6fa2cca100ad250f1e54a388d7ae599f6fa8d09de4d1cd74",
+        "id": "fcdcf9fbbd61",
+        "tail": "UPa0Fx",
+        "created": "2026-09-02 20:40:59"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "ee5d616f90d3a76bc172f8626b0cb449d862c2030735d59bf050cf2ab573230f",
+        "id": "ee5d616f90d3",
+        "tail": "8SkXJJ",
+        "created": "2026-09-04 14:53:31"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "0f1ff1729e576ada09f1271a68745b94f3406a873063072a9272f3de3e5fa741",
+        "id": "0f1ff1729e57",
+        "tail": "yUtyix",
+        "created": "2026-09-04 16:53:50"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "2b57fd67e95b0549c55dda0f43bf7474c739466c3cb327f75f56e616bb1f1b68",
+        "id": "2b57fd67e95b",
+        "tail": "cbZ0G-",
+        "created": "2026-09-04 18:19:06"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "a36254487605558e272a620ecb9e26f7996479e14f6d98eec3617aa05f501ae3",
+        "id": "a36254487605",
+        "tail": "VTQzeP",
+        "created": "2026-09-04 18:37:31"
+      },
+      {
+        "label": "phone (relay)",
+        "th": "4b6ba127e01ade5c0044ab5d62e71bd67752391f83b8ee657daf92caa3ec8083",
+        "id": "4b6ba127e01a",
+        "tail": "jrmgCr",
+        "created": "2026-09-05 07:14:49"
+      }
+    ],
+    "created": "2026-07-21 12:59:30"
+  },
+  {
+    "name": "acme",
+    "pw": "pbkdf2$200000$d8b03e6b78f98433a213443ed7ab18bb$46640838496df80885bb879ab07754e9eebd5d3908aec1a9776d66538e2e2b4d",
+    "role": "client",
+    "tokens": [
+      {
+        "label": "migrated",
+        "created": "2026-07-21 12:59:31",
+        "th": "2add5b92210c49669fdd0d73cea822b53313d161280a69c5789c9b56f58bfa73",
+        "id": "2add5b92210c",
+        "tail": "-token"
+      }
+    ],
+    "created": "2026-07-21 12:59:31"
+  },
+  {
+    "name": "newbie",
+    "pw": "pbkdf2$200000$56dc4be07c1b5b039d09e30b19eb9e9d$fd4351e547e1e4bdec73cf386cd22e6085919a107a865b937b26f2c91324308f",
+    "role": "client",
+    "tokens": [],
+    "created": "2026-07-21 13:25:16"
+  },
+  {
+    "name": "Hans",
+    "pw": "pbkdf2$200000$16d54e77c9321fdbe06cecc4ff33666f$9bff9e75366e0997305fc1fb630f2ef6d31e1ec0cdcea1e274966784773573b4",
+    "role": "client",
+    "tokens": [],
+    "created": "2026-07-21 13:30:50"
+  },
+  {
+    "name": "op-test",
+    "pw": "pbkdf2$200000$11a5f30f54cc7f12cded5b1672650ac6$7d04d58691aef22b082fd6c65ef1cb48bcde07fe782ee6d70c3c9336586b9118",
+    "role": "operator",
+    "tokens": [],
+    "created": "2026-07-21 23:06:12"
+  }
+]
