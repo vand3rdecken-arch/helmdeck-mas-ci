@@ -229,6 +229,19 @@ const shellQuote = (a) => (win
   ? `"${String(a).replace(/"/g, '\\"')}"`
   : `'${String(a).replace(/'/g, "'\\''")}'`);
 
+/** The ONE place a claude argv is assembled. Both spawn call sites (runClaude,
+ *  claudeTask) must apply shellQuote on the fallback path, and having each of
+ *  them remember that separately is what broke: claudeTask did not, so the
+ *  diagnose prompt went through cmd.exe unquoted, split on its first space, and
+ *  reached Claude as just "The" - the exact loss realClaudeExe documents above,
+ *  reproduced live on a fresh install 2026-09-08. Quoting is now inseparable
+ *  from resolving the spawn form, so a third call site cannot reintroduce it. */
+function claudeSpawnArgs(claude, args) {
+  const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
+  const argv = [...prefixArgs, ...args];
+  return { cmd, argv: useShell ? argv.map(shellQuote) : argv, useShell };
+}
+
 /** spawnSync for `claude`, going through resolveClaudeSpawn like claudeTask
  *  already does. This is not cosmetic: `runQ(claude.cmd, ["-p", "reply with: ok"])`
  *  reaches cmd.exe as `claude.cmd -p reply with: ok`, so the prompt splits into
@@ -238,10 +251,9 @@ const shellQuote = (a) => (win
  *  poll. Exactly the loss realClaudeExe documents above (fixed for the daemon in
  *  ea09780), reached through the one call site that still used the shell. */
 function runClaude(claude, args, opts = {}) {
-  const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
-  const argv = [...prefixArgs, ...args];
+  const { cmd, argv, useShell } = claudeSpawnArgs(claude, args);
   try {
-    return spawnSync(cmd, useShell ? argv.map(shellQuote) : argv,
+    return spawnSync(cmd, argv,
       { shell: useShell, windowsHide: true, encoding: "utf8", timeout: 20000, env: hydratedEnv(), ...opts });
   } catch (e) {
     return { status: 1, stdout: "", stderr: String(e && e.message) };
@@ -449,9 +461,12 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
     // `plan` is READ-ONLY: onboarding may diagnose freely, but it must never
     // silently rewrite the user's HelmDeck installation. Only the step that
     // genuinely has to change the machine (installing a runtime) gets more.
-    const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
-    const p = spawn(cmd, [...prefixArgs, "-p", prompt, "--permission-mode", mode],
-      { cwd, shell: useShell, windowsHide: true, env: hydratedEnv() });
+    const { cmd, argv, useShell } = claudeSpawnArgs(claude, ["-p", prompt, "--permission-mode", mode]);
+    // stdin must be CLOSED, not left as an idle pipe: `claude -p` waits on it,
+    // then prints "no stdin data received in 3s, proceeding without it" into
+    // the setup log - 3s of stall and a scary line, on every hand-off.
+    const p = spawn(cmd, argv,
+      { cwd, shell: useShell, windowsHide: true, env: hydratedEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let tail = "";
     const onData = (d) => {
       tail += d.toString();
