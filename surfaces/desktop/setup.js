@@ -452,10 +452,57 @@ async function fetchPython(resourcesDir) {
   return findPython(resourcesDir);
 }
 
+/** Kill a spawned child AND everything it started.
+ *
+ *  MEASURED, NOT REASONED (2026-09-08): p.kill() on the shell fallback path
+ *  kills cmd.exe only. The claude process it launched keeps running and `close`
+ *  never fires until that grandchild exits on its own - a 1.5s timeout still
+ *  took 59.6s to resolve, so the bound did nothing on exactly the path that
+ *  needs it (the shell fallback is the one taken when the .cmd shim cannot be
+ *  resolved). taskkill /T ends the tree. */
+function killTree(p) {
+  try {
+    if (win && p && p.pid) {
+      spawn("taskkill", ["/pid", String(p.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    } else if (p) {
+      p.kill();
+    }
+  } catch { /* already gone */ }
+}
+
+/** Last `n` non-empty lines of the daemon's own stdout log.
+ *
+ *  main.js writes the traceback that explains a failed start into
+ *  daemon.out.log (or daemon.out.<pid>.log when the canonical file is pinned by
+ *  a stale handle) and - as the comment there admits in as many words - "the
+ *  onboarding screen never looks". So a failed start spent its one diagnostic
+ *  step asking an AGENT to go find what was already sitting in a known file on
+ *  the same disk, and the user watched a spinner meanwhile. Read the file. */
+function daemonLogTail(daemonDir, n = 12) {
+  let best = null;
+  try {
+    for (const f of fs.readdirSync(daemonDir)) {
+      if (!/^daemon\.out\.(\d+\.)?log$/.test(f)) continue;
+      const p = path.join(daemonDir, f);
+      const m = fs.statSync(p).mtimeMs;
+      if (!best || m > best.m) best = { p, m };
+    }
+  } catch { return []; }
+  if (!best) return [];
+  try {
+    return fs.readFileSync(best.p, "utf8").split(/\r?\n/).filter((l) => l.trim()).slice(-n);
+  } catch { return []; }
+}
+
 /** Hand a job to Claude Code. This is the "use Claude to install" step: rather
  *  than hand-rolling an installer per dependency we describe the goal and let
- *  the agent do it on the user's machine, streaming its output to the screen. */
-function claudeTask(claude, prompt, cwd, mode = "plan") {
+ *  the agent do it on the user's machine, streaming its output to the screen.
+ *
+ *  BOUNDED. `claude -p` prints nothing until it is finished, so an agent that
+ *  runs long - or parks, which plan mode can do headlessly since there is no
+ *  approval channel to answer it - leaves the setup screen on "Claude richtet
+ *  ein…" with no output and no end. Onboarding must always terminate. */
+function claudeTask(claude, prompt, cwd, mode = "plan", timeoutMs = 180000) {
   return new Promise((resolve) => {
     say("Claude richtet ein…");
     // `plan` is READ-ONLY: onboarding may diagnose freely, but it must never
@@ -476,8 +523,22 @@ function claudeTask(claude, prompt, cwd, mode = "plan") {
     };
     p.stdout.on("data", onData);
     p.stderr.on("data", onData);
-    p.on("close", (code) => { if (tail.trim()) say(tail.trim()); resolve(code === 0); });
-    p.on("error", (e) => { say("Claude ließ sich nicht starten: " + e.message, "err"); resolve(false); });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      say("Claude hat nach " + Math.round(timeoutMs / 1000) + "s nicht geantwortet — abgebrochen.", "err");
+      killTree(p);
+    }, timeoutMs);
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      if (tail.trim()) say(tail.trim());
+      resolve(!timedOut && code === 0);
+    });
+    p.on("error", (e) => {
+      clearTimeout(timer);
+      say("Claude ließ sich nicht starten: " + e.message, "err");
+      resolve(false);
+    });
   });
 }
 
@@ -701,7 +762,18 @@ function startSetupServer(ctx) {
         }
       }
       if (!(await daemonUp(ctx.daemonPort))) {
-        say("Die Instanz antwortet nicht — lasse Claude nachsehen…", "err");
+        say("Die Instanz antwortet nicht.", "err");
+        // The answer is usually already on disk. Show it BEFORE the agent runs:
+        // it is instant, it is the actual traceback rather than a description of
+        // one, and it survives the agent being slow, absent or wrong.
+        const tail = daemonLogTail(ctx.daemonDir);
+        if (tail.length) {
+          say("Letzte Zeilen aus daemon.out.log:");
+          for (const l of tail) say(l, "err");
+        } else {
+          say("daemon.out.log ist leer oder fehlt — der Start hat nichts geschrieben.", "err");
+        }
+        say("Lasse Claude nachsehen… (bis zu 3 Minuten, Ausgabe kommt am Stück)");
         await claudeTask(claude,
           "The HelmDeck python daemon in this directory does not come up on port " + ctx.daemonPort
           + ". Diagnose why (port already in use, missing runtime, traceback on start) and report the "
@@ -751,4 +823,4 @@ function startSetupServer(ctx) {
 
 // pinPthToDaemonRoot is exported alongside the probes so the _pth behaviour it
 // works around stays testable without a full provision run.
-module.exports = { startSetupServer, findPython, findClaude, pinPthToDaemonRoot, SETUP_PORT: PORT };
+module.exports = { startSetupServer, findPython, findClaude, pinPthToDaemonRoot, daemonLogTail, SETUP_PORT: PORT };
