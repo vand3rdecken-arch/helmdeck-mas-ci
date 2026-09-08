@@ -12,16 +12,35 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 [ -f .env ] && set -a && . ./.env && set +a
 
-: "${RELAY_HOST:?set RELAY_HOST (VM public IP) in .env}"
-RELAY_DOMAIN="${RELAY_DOMAIN:-${RELAY_HOST}.sslip.io}"
-SSH_USER="${RELAY_SSH_USER:-ubuntu}"
-# array keeps a key path containing spaces ("Tien Duy Vo") in one piece
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
-[ -n "${RELAY_SSH_KEY:-}" ] && SSH_OPTS+=(-i "$RELAY_SSH_KEY")
-TARGET="$SSH_USER@$RELAY_HOST"
+# LOCAL FALLBACK (2026-09-08: trooper, the VM RELAY_HOST used to point at, is
+# dead) - same probe push_update.sh uses. A live relay on this box already
+# runs surfaces/relay/relay.py straight from the repo (ops/deploy/relay_local.cmd),
+# so there is nothing to scp for the relay code itself - a relay.py edit needs
+# a restart of that process to take effect, which this script deliberately
+# does NOT do on every push (it would drop the live tunnel's in-flight
+# long-polls on every APK ship, not just on a real relay.py change). What
+# LOCAL mode still does: drop version.json + the signed APK straight into the
+# dir relay.py serves /apk/ from - no SSH, no VM.
+RELAY_PORT="${HELMDECK_RELAY_PORT:-6790}"
+RELAY_LOCAL=0
+if curl -s -m3 "http://127.0.0.1:$RELAY_PORT/health" 2>/dev/null | grep -q '"ok": *true'; then
+  RELAY_LOCAL=1
+  LOCAL_APK_DIR="${HELMDECK_APK_DIR:-/c/opt/helmdeck-apk}"
+  RELAY_DOMAIN="${RELAY_DOMAIN:-relay.helmdeck.de}"
+  echo "==> local relay answering on 127.0.0.1:$RELAY_PORT - publishing to $LOCAL_APK_DIR (no SSH)"
+  echo "==> relay.py itself already runs live from this repo - restart relay_local.cmd by hand if it changed"
+else
+  : "${RELAY_HOST:?set RELAY_HOST (VM public IP) in .env, or start the local relay (ops/deploy/relay_local.cmd)}"
+  RELAY_DOMAIN="${RELAY_DOMAIN:-${RELAY_HOST}.sslip.io}"
+  SSH_USER="${RELAY_SSH_USER:-ubuntu}"
+  # array keeps a key path containing spaces ("Tien Duy Vo") in one piece
+  SSH_OPTS=(-o StrictHostKeyChecking=accept-new)
+  [ -n "${RELAY_SSH_KEY:-}" ] && SSH_OPTS+=(-i "$RELAY_SSH_KEY")
+  TARGET="$SSH_USER@$RELAY_HOST"
 
-echo "==> shipping relay.py to $TARGET"
-scp "${SSH_OPTS[@]}" surfaces/relay/relay.py "$TARGET:/tmp/relay.py" || exit 1
+  echo "==> shipping relay.py to $TARGET"
+  scp "${SSH_OPTS[@]}" surfaces/relay/relay.py "$TARGET:/tmp/relay.py" || exit 1
+fi
 
 # Expo APK (post-cutover path). versionCode/Name come from surfaces/app/app.json.
 APK="surfaces/app/android/app/build/outputs/apk/release/app-release.apk"
@@ -57,11 +76,19 @@ if [ -f "$APK" ]; then
   printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk?v=%s-%s"}\n' \
          "$VCODE" "$VNAME" "$VCODE" "$APK_SHA" > /tmp/sd_version.json
   echo "==> shipping APK v$VNAME ($VCODE) + version.json"
-  scp "${SSH_OPTS[@]}" "$APK" "$TARGET:/tmp/helmdeck.apk" || exit 1
-  scp "${SSH_OPTS[@]}" /tmp/sd_version.json "$TARGET:/tmp/version.json" || exit 1
+  if [ "$RELAY_LOCAL" != "1" ]; then
+    scp "${SSH_OPTS[@]}" "$APK" "$TARGET:/tmp/helmdeck.apk" || exit 1
+    scp "${SSH_OPTS[@]}" /tmp/sd_version.json "$TARGET:/tmp/version.json" || exit 1
+  fi
 fi
 
-ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' <<'REMOTE'
+if [ "$RELAY_LOCAL" = "1" ]; then
+  echo "==> installing into $LOCAL_APK_DIR"
+  mkdir -p "$LOCAL_APK_DIR" || exit 1
+  [ -f "$APK" ] && { cp "$APK" "$LOCAL_APK_DIR/helmdeck.apk" || exit 1; }
+  [ -f /tmp/sd_version.json ] && { cp /tmp/sd_version.json "$LOCAL_APK_DIR/version.json" || exit 1; }
+else
+  ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' <<'REMOTE'
 set -e
 # the systemd unit on this VM runs /opt/helmdeck-relay.py (installed that
 # way originally); keep /opt/relay.py in sync for older docs.
@@ -92,9 +119,10 @@ else
 fi
 systemctl is-active helmdeck-relay
 REMOTE
-# The ssh block above had NO error check for its whole life, so a remote that
-# died on `install` still let this script exit 0 with a green-looking tail.
-[ $? -eq 0 ] || { echo "==> REMOTE INSTALL FAILED"; exit 1; }
+  # The ssh block above had NO error check for its whole life, so a remote that
+  # died on `install` still let this script exit 0 with a green-looking tail.
+  [ $? -eq 0 ] || { echo "==> REMOTE INSTALL FAILED"; exit 1; }
+fi
 
 echo
 echo "==> verifying https://$RELAY_DOMAIN"

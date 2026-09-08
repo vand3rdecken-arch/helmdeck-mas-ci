@@ -36,8 +36,24 @@ only. Harden it with Cloudflare Access (free) if you want a second door.
 
 ## LIVE DEPLOYMENT (what is actually running)
 
-The relay runs on **trooper** (an existing GPU/AI box, `trooperai@trooper` -
-see the `trooper` alias in `~/.ssh/config`) and is reachable at:
+**2026-09-08: trooper is down** (needs payment/access to reboot). `relay.helmdeck.de`
+is served from a **local fallback on the owner's PC** instead:
+`surfaces/relay/relay.py` runs directly from this repo
+(`ops/deploy/relay_local.cmd`, HKCU `Run` autostart) and a `cloudflared` tunnel
+named `helmdeck-relay` publishes it under the same DNS name - the phone/desktop
+see no difference. `push_update.sh` and `push_relay.sh` both probe
+`http://127.0.0.1:6790/health` first: if it answers, they publish straight into
+the local `/opt/helmdeck-updates*` / `/opt/helmdeck-apk` dirs (Windows resolves
+that to `C:\opt\...` - see the scripts' own comments) instead of SSH-ing to
+`RELAY_HOST`, so a dead trooper no longer blocks a ship. The moment trooper (or
+any VM at `RELAY_HOST`) is reachable again, this probe simply stops matching
+and the section below applies unchanged - nothing to revert by hand. One gap
+this fallback does NOT cover: a `relay.py` code change needs `relay_local.cmd`
+restarted by hand (the running process doesn't hot-reload); the VM path always
+restarted the service for you.
+
+Everything below describes the **VM path**, still the setup `push_relay.sh`
+drives whenever the local relay isn't answering:
 
     https://relay.helmdeck.de/health     -> {"ok": true, ...}
 
