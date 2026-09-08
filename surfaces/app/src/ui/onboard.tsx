@@ -61,12 +61,13 @@ export function Onboard() {
   const [qr, setQr] = useState("");
   const [pairLink, setPairLink] = useState("");
   const [pairErr, setPairErr] = useState("");
-  // Optimistic feedback for the gap between a click and the next poll tick
-  // (up to 1200ms - see the tick() effect below), and a hard error for when
-  // the click's own request never came back at all (the loopback control
-  // plane unreachable, a stale nonce after a relaunch, etc.) - previously
-  // that case failed into total silence: setupApi.provision() was fired
-  // without awaiting or checking its result.
+  // Optimistic feedback for the gap between a click and the first poll that
+  // reports the run (see the tick() effect below - it hands over on the control
+  // plane's own running/done, never merely because a tick happened), and a hard
+  // error for when the click's own request never came back at all (the loopback
+  // control plane unreachable, a rejected nonce, etc.) - previously that case
+  // failed into total silence: setupApi.provision() was fired without awaiting
+  // or checking its result.
   const [clicking, setClicking] = useState(false);
   const [startErr, setStartErr] = useState("");
   // Consecutive failed state-polls -> the control plane itself is unreachable,
@@ -98,13 +99,18 @@ export function Onboard() {
       const [s, l, e] = await Promise.all([setupApi.state(), setupApi.log(), setupApi.engines()]);
       if (!alive) return;
       if (s) { setSt(s); missRef.current = 0; setConnErr(false); }
-      else if (++missRef.current >= 3) setConnErr(true);
+      else if (++missRef.current >= 3) { setConnErr(true); setClicking(false); }
       if (l) setLines(l.log);
       if (e) setEngines(e.engines);
-      // Any real poll result (hit or miss) ends the click's optimistic spinner -
-      // by now the screen shows either genuine progress (st.running/lines) or
-      // connErr, so the placeholder has done its job.
-      setClicking(false);
+      // The optimistic spinner hands over on EVIDENCE, not on the next tick.
+      // Clearing it for ANY poll result meant a tick landing milliseconds after
+      // the click put the button straight back to its idle label while the
+      // provision request was still in flight - a click that visibly did
+      // nothing. `running`/`done` are the control plane's own signals about its
+      // own run (setup.js sets `running` synchronously, before it answers the
+      // provision call, so the very next poll already carries it); the
+      // unreachable case is handled above, where connErr takes over the message.
+      if (s?.running || s?.done) setClicking(false);
       timer = setTimeout(tick, 1200);
     };
     tick();

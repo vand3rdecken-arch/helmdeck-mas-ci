@@ -48,10 +48,20 @@ function readEndpoint(): Endpoint | null {
 const ep = readEndpoint();
 export const setupAvailable = () => !!ep;
 
+// The nonce is a QUERY parameter, so it has to be joined with the separator the
+// path actually needs. Hardcoding "?" was fine for the three param-less polls
+// and silently broke the one endpoint that carries its own query: /setup/provision
+// became ".../provision?engines=claude?n=<nonce>", where the second "?" is just a
+// literal, so the whole tail parses as ONE value (engines="claude?n=<nonce>") and
+// `n` is absent. setup.js gates every request on `searchParams.get("n") !== nonce`,
+// so provision answered 403 to every single click while state/log/engines kept
+// working - the "dead primary button" on a fresh machine. Fixed at the one place
+// the nonce is attached, so any future endpoint with parameters is covered too.
 async function call<T>(path: string): Promise<T | null> {
   if (!ep) return null;
   try {
-    const r = await fetch(`http://127.0.0.1:${ep.port}${path}?n=${ep.nonce}`);
+    const sep = path.includes("?") ? "&" : "?";
+    const r = await fetch(`http://127.0.0.1:${ep.port}${path}${sep}n=${ep.nonce}`);
     if (!r.ok) return null;
     return (await r.json()) as T;
   } catch { return null; }
