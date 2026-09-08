@@ -200,6 +200,54 @@ with sync_playwright() as p:
           and "Could not start setup" not in after, "no start-failed error")
     page.screenshot(path=os.path.join(SHOTS, "onboard_3_running.png"))
 
+    # ---- the black box (ui/diag_panel.tsx) --------------------------------
+    # The reason it exists: on a packaged build there is no console, so the
+    # 403 above was invisible to everyone including the owner. It has to be
+    # reachable from THIS screen - before daemon, account or navigation.
+    title = page.get_by_text("Set up HelmDeck", exact=True)
+    if not title.count():
+        title = page.get_by_text("HelmDeck einrichten", exact=True)
+    check(title.count() > 0, "the onboarding title is tappable for the reveal")
+    body_before = page.inner_text("body")
+    check("/setup/" not in body_before, "the panel is HIDDEN until asked for")
+
+    for _ in range(7):
+        title.first.click()
+        page.wait_for_timeout(90)      # well inside the 2s reset window
+    page.wait_for_timeout(700)
+    panel = page.inner_text("body")
+    page.screenshot(path=os.path.join(SHOTS, "onboard_4_diag_panel.png"))
+
+    check("Diagnose" in panel or "Diagnostics" in panel, "7 taps on the title reveal the panel")
+    check("/setup/provision" in panel, "it names the provision call the button made")
+    check("/setup/state" in panel, "it shows the background polls too")
+    # THE point of the whole tool: the outcome, not just the attempt.
+    check("200" in panel, "it shows the STATUS that came back")
+    # An unchanged outcome must COLLAPSE into a repeat count, or a healthy poll
+    # loop (3 endpoints, ~2.5 req/s) buries every real finding within seconds.
+    # One line per polled path is the whole point.
+    state_lines = panel.count("/setup/state")
+    check(state_lines <= 2, "repeat polls collapse instead of flooding (%d /setup/state lines)" % state_lines)
+    check("(x" in panel, "collapsed lines carry a repeat count")
+    # It must OPEN with the interesting line ON SCREEN. `is_visible()` is NOT
+    # enough - a line scrolled out of its own container still reports visible,
+    # and "in the DOM but buried under poll spam" is precisely the failure this
+    # check exists to catch (it caught it once already). So compare geometry:
+    # the provision line has to sit between the panel's title and its footer.
+    def box(loc):
+        return loc.bounding_box() or {"y": -1, "height": 0}
+
+    head_y = box(page.get_by_text("Diagnostics", exact=True).first)
+    foot = page.get_by_text("Local, never sent", exact=False).first
+    foot_y = box(foot)
+    prov_y = box(page.get_by_text("/setup/provision").last)
+    check(head_y["y"] < prov_y["y"] < foot_y["y"],
+          "the provision line is ON SCREEN inside the panel (y=%s, panel %s..%s)"
+          % (prov_y["y"], head_y["y"], foot_y["y"]))
+    # Redaction is a hard requirement - this text is built to be copied out.
+    check(NONCE not in panel, "the nonce is NOT in the log (redaction holds)")
+    check("<redacted>" in panel or "n=" not in panel, "secret params are masked")
+
     b.close()
 
 real = [e for e in errors if not any(i in e for i in IGNORE)]

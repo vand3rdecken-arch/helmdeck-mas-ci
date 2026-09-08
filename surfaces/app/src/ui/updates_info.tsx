@@ -9,6 +9,7 @@ import { Pressable, Text, View } from "react-native";
 import { otaPending } from "@/data/ota";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { DiagPanel, useSecretTap } from "@/ui/diag_panel";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
 
 // expoConfig is null in release/OTA builds - fall back to the updates
@@ -24,13 +25,26 @@ function bundleLabel(): string {
     : "Dev";
 }
 
-/** Version + the running JS bundle, so silent OTA updates are visible. */
+/** Version + the running JS bundle, so silent OTA updates are visible.
+ *
+ *  Also the app's way into the black box: 7 taps on the version line opens the
+ *  diagnostics panel (ui/diag_panel.tsx). The version line is the conventional
+ *  home for that gesture (Android's build-number tap), it is already rendered
+ *  on the More tab, and hanging it here means no new nav row, no new route and
+ *  nothing a normal user can wander into. */
 export function VersionFooter() {
   const t = useTheme();
+  const diagTap = useSecretTap();
   return (
     <View style={{ alignItems: "center", paddingVertical: 16, gap: 3 }}>
-      <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>HelmDeck v{version}{build ? ` · Build ${build}` : ""}</Text>
+      <Text onPress={diagTap.onPress} suppressHighlighting
+        style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>HelmDeck v{version}{build ? ` · Build ${build}` : ""}</Text>
       <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{bundleLabel()}</Text>
+      {diagTap.open ? (
+        <View style={{ width: "100%", maxWidth: 620, paddingTop: 12 }}>
+          <DiagPanel onClose={diagTap.close} />
+        </View>
+      ) : null}
     </View>
   );
 }

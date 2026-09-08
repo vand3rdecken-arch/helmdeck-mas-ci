@@ -1,6 +1,8 @@
 import { Platform } from "react-native";
 import { create } from "zustand";
 
+import { diag } from "./diag";
+
 // Client for the desktop onboarding control plane (surfaces/desktop/setup.js).
 //
 // It is deliberately SEPARATE from data/client.ts: that one talks to the daemon,
@@ -57,14 +59,34 @@ export const setupAvailable = () => !!ep;
 // so provision answered 403 to every single click while state/log/engines kept
 // working - the "dead primary button" on a fresh machine. Fixed at the one place
 // the nonce is attached, so any future endpoint with parameters is covered too.
+/** What diag() stores as the outcome of one call. The duration is deliberately
+ *  NOT part of it while the call is fast: diag() collapses repeats by comparing
+ *  the outcome text, so a millisecond count that drifts 4ms->6ms->5ms turns
+ *  every single poll into its own line and buries the one that failed (measured
+ *  on the real screen - see diag.ts). A SLOW call is a finding in its own right,
+ *  so that keeps a coarse, second-resolution note. */
+function outcome(what: string, ms: number): string {
+  return ms >= 1000 ? `${what} · ${Math.round(ms / 1000)}s` : what;
+}
+
 async function call<T>(path: string): Promise<T | null> {
   if (!ep) return null;
+  const started = Date.now();
+  const label = "GET " + path.split("?")[0];
   try {
     const sep = path.includes("?") ? "&" : "?";
     const r = await fetch(`http://127.0.0.1:${ep.port}${path}${sep}n=${ep.nonce}`);
+    // EVERY outcome is recorded, not just the thrown ones. `!r.ok` returning
+    // null is the shape that hid the 403: to the screen a rejected request and
+    // a slow one look identical, and this is the only place that can still
+    // tell them apart.
+    diag("net", label, outcome(String(r.status), Date.now() - started));
     if (!r.ok) return null;
     return (await r.json()) as T;
-  } catch { return null; }
+  } catch (e) {
+    diag("net", label, outcome((e as Error)?.message || "fetch failed", Date.now() - started));
+    return null;
+  }
 }
 
 export const setupApi = {

@@ -13,6 +13,7 @@ import {
   type EngineStatus, type SetupLine, type SetupState,
 } from "@/data/setup";
 import { useT } from "@/i18n";
+import { DiagPanel, useSecretTap } from "@/ui/diag_panel";
 import { LoginScreen } from "@/ui/login_screen";
 import { RepoTypePicker, useRepoTypeOutstanding } from "@/ui/repo_type_picker";
 import { useTheme } from "@/theme";
@@ -84,6 +85,11 @@ export function Onboard() {
   const [authRejected, setAuthRejected] = useState(false);
   const paired = useRef(false);
   const scroller = useRef<ScrollView>(null);
+  // The black box, revealed by tapping the title 7x. THIS screen needs it most:
+  // it runs before there is a daemon, an account or any navigation, on a
+  // packaged build with no console - the exact conditions under which the
+  // connect button spent a release silently answering 403.
+  const diagTap = useSecretTap();
 
   // Poll state + log. Cheap (loopback) and it keeps the screen honest about a
   // provisioning run that was started by an earlier window.
@@ -244,11 +250,14 @@ export function Onboard() {
     <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
       <View style={{ width: "100%", maxWidth: 560, gap: 18 }}>
         <View style={{ gap: 6 }}>
-          <Text style={{ color: t.txtPrimary, fontSize: 26, fontWeight: "700" }}>{tr("onboard.title")}</Text>
+          <Text onPress={diagTap.onPress} suppressHighlighting
+            style={{ color: t.txtPrimary, fontSize: 26, fontWeight: "700" }}>{tr("onboard.title")}</Text>
           <Text style={{ color: t.txtSecondary, fontSize: 14, lineHeight: 20 }}>
             {qr ? tr("onboard.subScan") : needsClaude ? tr("onboard.subClaude") : tr("onboard.sub")}
           </Text>
         </View>
+
+        {diagTap.open ? <DiagPanel onClose={diagTap.close} /> : null}
 
         {/* engine picker — claude is pinned (only it can finish setup, see
             setup.js ENGINES); the rest are optional CLIs to also fetch.
