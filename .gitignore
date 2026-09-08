@@ -59,6 +59,12 @@ daemon/asc_review_watch.json
 # and tracked (real repo data, see db.py's _RELOCATE_STATE comment).
 daemon/state/
 daemon/content/
+# Scratch space for a turn's throwaway artifacts (fixtures, downloaded release
+# assets staged for re-upload, generated notes). Added 2026-09-08 after a
+# baseline snapshot swept two throwaway test scripts into a commit: anything
+# under daemon/ is machine-local by the rule above, but tmp/ had no entry, so
+# `git add -A` picked it up. Nothing here is ever meant to be tracked.
+daemon/tmp/
 # GxP signing keys (spine/auth/signkeys.py): per-user GPG keyrings whose
 # passphrase is the user's password. Private keys are secrets like users.json
 # above; the PUBLIC keys an auditor needs are exported per signature, and even
