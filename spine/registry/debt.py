@@ -4539,6 +4539,48 @@ DEBT = [
                "for template list/save/start-from/delete.",
         "order": 62,
     },
+    {
+        "id": "relay-local-single-pc-fallback",
+        "title": "relay.helmdeck.de now runs on the owner's own PC, not a "
+                  "dedicated always-on VM",
+        "status": "open",
+        "what": "trooper (the GPU/AI box that hosted the relay) went down "
+                "2026-09-08 and needs payment/access to reboot. Until it's "
+                "back, surfaces/relay/relay.py runs directly from this repo "
+                "(ops/deploy/relay_local.cmd, HKCU Run autostart) behind a "
+                "cloudflared tunnel named helmdeck-relay - same DNS name, "
+                "same code, just a different box. ops/deploy/push_update.sh "
+                "and ops/deploy/push_relay.sh both probe "
+                "http://127.0.0.1:6790/health first and publish straight "
+                "into the local /opt/helmdeck-updates* / /opt/helmdeck-apk "
+                "dirs when it answers - no SSH, no dependency on trooper "
+                "being reachable to ship.",
+        "why_it_bites": "The phone/desktop bridge now goes down whenever "
+                        "the owner's PC is off, asleep, or the tunnel/relay "
+                        "process dies - none of which was true with a "
+                        "dedicated VM. relay_local.cmd has no crash-respawn "
+                        "(unlike desktop/tray.py's supervisor) - only "
+                        "login-time autostart - so a crashed relay.py or a "
+                        "dropped cloudflared tunnel stays down until the "
+                        "owner notices and logs back in or restarts it by "
+                        "hand. A relay.py code change also needs a manual "
+                        "restart of relay_local.cmd to take effect (the VM "
+                        "path always restarted the systemd service for "
+                        "you) - ship a relay.py fix and it silently keeps "
+                        "serving the old code until someone remembers.",
+        "trigger": "the owner's PC sleeps/reboots/loses the tunnel while a "
+                   "phone is relying on it, or a relay.py change ships "
+                   "without a manual restart",
+        "fix": "either bring trooper back (payment/reboot) or provision a "
+               "real always-on VM again (ops/deploy/setup_relay_vm.sh is "
+               "kept for exactly this); short of that, give relay_local.cmd "
+               "a crash-respawn supervisor like desktop/tray.py's and make "
+               "push_relay.sh's local branch restart it automatically when "
+               "relay.py's content changed (mirroring the VM branch's own "
+               "cmp-then-restart logic) instead of just printing a note.",
+        "since": "2026-09-08",
+        "order": 63,
+    },
 ]
 
 def list_debt():
