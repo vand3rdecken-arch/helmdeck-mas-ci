@@ -13,6 +13,7 @@ import { card } from "./dict/card";
 import { chrome } from "./dict/chrome";
 import { composer } from "./dict/composer";
 import { demo } from "./dict/demo";
+import { diag } from "./dict/diag";
 import { net } from "./dict/net";
 import { onboard } from "./dict/onboard";
 import { screens } from "./dict/screens";
@@ -30,7 +31,7 @@ export type Entry = { de: string; en: string };
 export type Dict = Record<string, Entry>;
 
 export const DICT: Dict = {
-  ...chrome, ...board, ...card, ...composer, ...demo, ...net, ...onboard, ...screens, ...settings,
+  ...chrome, ...board, ...card, ...composer, ...demo, ...diag, ...net, ...onboard, ...screens, ...settings,
   ...sign, ...audit, ...gxp, ...harnessRules,
 };
 

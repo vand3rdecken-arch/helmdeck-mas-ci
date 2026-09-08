@@ -2,6 +2,7 @@ import { track } from "./analytics";
 import { useAuthGate } from "./authgate";
 import { useConfig } from "./config";
 import { demoRespond, useDemo } from "./demo";
+import { diag } from "./diag";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
 import { t } from "@/i18n/core";
@@ -136,6 +137,11 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
     }
   } catch (e) {
     if (e instanceof TransportError) useHealth.getState().reportFail(e.message);
+    // Only FAILURES are recorded here, never the successes: this client carries
+    // the whole app (polls included), so logging every round-trip would push a
+    // real fault out of the buffer within seconds. The health store keeps the
+    // "still fine" signal; the black box keeps the faults.
+    diag("net", `${method} ${path.split("?")[0]}`, String((e as Error)?.message || e));
     throw e;
   }
   // The daemon answered: the CONNECTION is healthy even if this call failed.
@@ -153,6 +159,10 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   if (status >= 400) {
     let msg = "";
     try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
+    // The class of failure that until now was thrown and forgotten unless some
+    // call site happened to render it - a silent 4xx is the hardest kind to
+    // diagnose on a device precisely because nothing shows.
+    diag("net", `${method} ${path.split("?")[0]}`, `${status}${msg ? " " + msg : ""}`);
     throw new ApiError(status, msg || t("net.httpError", { status, method, path }));
   }
   return (txt ? JSON.parse(txt) : {}) as T;

@@ -21,6 +21,7 @@ import { useAuthGate } from "@/data/authgate";
 import { useStreamCaps } from "@/data/stream";
 import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
+import { armDiagCapture } from "@/data/diag";
 import { useSilentOta } from "@/data/ota";
 import { usePresenceHeartbeat } from "@/data/presence";
 import { warmProfileCache } from "@/data/profile";
@@ -39,6 +40,11 @@ import { PairingGate } from "@/ui/pairing_gate";
 import { CommandPalette, usePalette } from "@/ui/palette";
 import { PromptHost } from "@/ui/prompt_host";
 import { WebStyles } from "@/ui/webstyles";
+
+// Armed at module load, before any component mounts: an exception thrown during
+// boot is exactly the kind that leaves a packaged build showing nothing, and a
+// handler installed inside an effect would be too late to catch it.
+armDiagCapture();
 
 // Global live updates: a HANGING GET on the daemon's cursors (api.boardWait).
 // It blocks until something moves, then we invalidate and re-arm immediately —
