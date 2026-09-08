@@ -3,11 +3,30 @@
 One ffmpeg process, two outputs: screen.mp4 (the recording) and live.jpg (newest frame,
 overwritten ~1/s - the Herald-cast-style glance feed the APK/glasses viewer reads)."""
 import json, os, signal, subprocess, threading
-import imageio_ffmpeg
 
 from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 
-FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+# imageio_ffmpeg is a pip package, and requirements.txt states the law for
+# those in as many words (edge-tts: "OPTIONAL - a box that never installs
+# this still works"). Importing it at module level broke that law and took
+# the WHOLE DAEMON down at boot: serve() imports this module unconditionally
+# to reap orphan recorders, a fresh install has no pip packages at all (the
+# bundled embeddable runtime cannot even pip), and the ModuleNotFoundError
+# killed the process between db.init and the port bind - measured live on the
+# owner's fresh test PC 2026-09-08, the first machine without a dev Python.
+# Reaping needs taskkill, not ffmpeg, so the binary resolves lazily at the one
+# call that records; without the package start() raises and every caller
+# already degrades (turnrunner: "recorder failed to start").
+try:
+    import imageio_ffmpeg
+except Exception:                      # ImportError, or a broken wheel
+    imageio_ffmpeg = None
+
+
+def _ffmpeg():
+    if imageio_ffmpeg is None:
+        raise RuntimeError("screen capture unavailable: imageio_ffmpeg is not installed")
+    return imageio_ffmpeg.get_ffmpeg_exe()
 
 # Orphan-reaping (drivers.py's reap_orphans pattern, applied here - found live
 # 2026-08-14): _turn's `finally: wincap.stop(rec)` only runs if the PYTHON
@@ -47,7 +66,7 @@ def start(run_dir, fps=8):
     """Start capturing the whole desktop. Returns the Popen; stop with stop()."""
     mp4 = os.path.join(run_dir, "screen.mp4")
     live = os.path.join(run_dir, "live.jpg")
-    cmd = [FFMPEG, "-y", "-loglevel", "error",
+    cmd = [_ffmpeg(), "-y", "-loglevel", "error",
            "-f", "gdigrab", "-framerate", str(fps), "-i", "desktop",
            # recording: modest fps + fast preset keeps CPU low on long runs
            "-map", "0:v", "-vf", "scale=1280:-2", "-c:v", "libx264",
