@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Linking, Platform, Pressable, ScrollView, Tex
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { useDemo } from "@/data/demo";
 import { qrDataUrl } from "@/data/qrgen";
 import {
   setupApi, setupAvailable, useOnboard,
@@ -49,6 +50,7 @@ export function Onboard() {
   const tr = useT();
   const qc = useQueryClient();
   const dismiss = useOnboard((s) => s.dismiss);
+  const enableDemo = useDemo((s) => s.enable);
   const [st, setSt] = useState<SetupState | null>(null);
   const [lines, setLines] = useState<SetupLine[]>([]);
   const [engines, setEngines] = useState<EngineStatus[]>([]);
@@ -331,7 +333,20 @@ export function Onboard() {
           </ScrollView>
         ) : null}
 
-        <Pressable onPress={dismiss}>
+        <Pressable
+          onPress={() => {
+            // Dismissing alone used to hand a not-yet-provisioned user straight
+            // to index.tsx (the Dashboard tab), which has no offline/empty
+            // fallback (unlike board.tsx's DemoInvite) - just a spinner that
+            // never resolves against a daemon that was never started. Skipping
+            // BEFORE the daemon came up is exactly demo mode's use case (see
+            // data/demo.ts), so mirror PairingGate's own skip-to-demo choice
+            // instead of landing on that blank screen. A daemon already up
+            // (skip after a completed/partial provision) means there is a real
+            // board to show, so leave it alone.
+            if (!st?.daemon) { enableDemo(); qc.invalidateQueries(); }
+            dismiss();
+          }}>
           <Text style={{ color: t.txtTertiary, fontSize: 12.5, textAlign: "center" }}>{tr("onboard.skip")}</Text>
         </Pressable>
       </View>
