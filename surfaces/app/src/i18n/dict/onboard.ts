@@ -28,6 +28,19 @@ export const onboard: Dict = {
     de: "Kopplung fehlgeschlagen — ist eine Relay-URL in den Einstellungen hinterlegt?",
     en: "Pairing failed — is a relay URL configured in Settings?",
   },
+  // Both cover the same failure class: the desktop's local setup control plane
+  // (surfaces/desktop/setup.js, 127.0.0.1 loopback) did not answer - startFailed
+  // for the button click itself, connErr when the background poll starts
+  // missing too. Without these the button used to fail into silence: fetch()
+  // throws, setup.ts's call() swallows it, and nothing on screen ever changed.
+  "onboard.startFailed": {
+    de: "Konnte die Einrichtung nicht starten — HelmDeck neu starten und erneut versuchen.",
+    en: "Could not start setup — restart HelmDeck and try again.",
+  },
+  "onboard.connErr": {
+    de: "Keine Verbindung zum Einrichtungs-Dienst — HelmDeck neu starten.",
+    en: "Lost connection to the setup service — restart HelmDeck.",
+  },
   // No "sign in first" string here on purpose: pairing needing an account is a
   // STEP, not a message. onboard.tsx hands that step to ui/login_screen.tsx
   // (its "setup" mode below), which says it properly instead.
