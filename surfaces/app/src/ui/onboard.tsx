@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import * as util from "tweetnacl-util";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ActivityIndicator, Image, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
@@ -15,6 +15,27 @@ import { useT } from "@/i18n";
 import { LoginScreen } from "@/ui/login_screen";
 import { RepoTypePicker, useRepoTypeOutstanding } from "@/ui/repo_type_picker";
 import { useTheme } from "@/theme";
+
+// A dead end still needs a way out: the "no npm" hint from setup.js
+// ("Installiere Node.js von https://nodejs.org, dann hier erneut starten.")
+// is the terminal state for a machine with nothing on it at all, and until
+// now that URL was inert text the user had to retype into a browser by hand.
+// Trailing punctuation ("nodejs.org," - the hint reads as a sentence) is
+// excluded from the match so the link doesn't carry the comma into the URL.
+const URL_RE = /https?:\/\/[^\s,]+/g;
+function linkify(line: string, key: string): ReactNode {
+  const parts = line.split(URL_RE);
+  const urls = line.match(URL_RE) || [];
+  if (!urls.length) return line;
+  const out: ReactNode[] = [];
+  parts.forEach((part, i) => {
+    if (part) out.push(part);
+    if (urls[i]) out.push(
+      <Text key={key + "-u" + i} style={{ textDecorationLine: "underline" }}
+        onPress={() => Linking.openURL(urls[i]).catch(() => {})}>{urls[i]}</Text>);
+  });
+  return out;
+}
 
 // ONE screen. One button.
 //
@@ -38,6 +59,19 @@ export function Onboard() {
   const [qr, setQr] = useState("");
   const [pairLink, setPairLink] = useState("");
   const [pairErr, setPairErr] = useState("");
+  // Optimistic feedback for the gap between a click and the next poll tick
+  // (up to 1200ms - see the tick() effect below), and a hard error for when
+  // the click's own request never came back at all (the loopback control
+  // plane unreachable, a stale nonce after a relaunch, etc.) - previously
+  // that case failed into total silence: setupApi.provision() was fired
+  // without awaiting or checking its result.
+  const [clicking, setClicking] = useState(false);
+  const [startErr, setStartErr] = useState("");
+  // Consecutive failed state-polls -> the control plane itself is unreachable,
+  // not just one bad request. missRef persists across ticks without re-running
+  // the effect; connErr is what actually renders.
+  const missRef = useRef(0);
+  const [connErr, setConnErr] = useState(false);
   // A token means someone is signed in; the QR is owner-only (/relay/pair,
   // routes_relay.py), so on a fresh machine the last provisioning step is
   // creating that account. `authRejected` covers the other case - a persisted
@@ -61,9 +95,14 @@ export function Onboard() {
     const tick = async () => {
       const [s, l, e] = await Promise.all([setupApi.state(), setupApi.log(), setupApi.engines()]);
       if (!alive) return;
-      if (s) setSt(s);
+      if (s) { setSt(s); missRef.current = 0; setConnErr(false); }
+      else if (++missRef.current >= 3) setConnErr(true);
       if (l) setLines(l.log);
       if (e) setEngines(e.engines);
+      // Any real poll result (hit or miss) ends the click's optimistic spinner -
+      // by now the screen shows either genuine progress (st.running/lines) or
+      // connErr, so the placeholder has done its job.
+      setClicking(false);
       timer = setTimeout(tick, 1200);
     };
     tick();
@@ -137,7 +176,7 @@ export function Onboard() {
     }
   }, [st?.daemon, needsAuth, qr, pairErr, makePairing, qc]);
 
-  const busy = !!st?.running;
+  const busy = !!st?.running || clicking;
   const needsClaude = st && !st.claude;
 
   // Still onboarding, just its third step - NOT a different screen. LoginScreen
@@ -254,7 +293,14 @@ export function Onboard() {
           </View>
         ) : (
           <Pressable
-            onPress={() => { setLines([]); setupApi.provision(Array.from(selected)); }}
+            onPress={async () => {
+              setLines([]); setStartErr(""); setClicking(true);
+              // Awaited + checked, unlike the old fire-and-forget call: a
+              // failed request (endpoint unreachable, stale nonce) used to
+              // vanish into setup.ts's call() catch with no trace on screen.
+              const r = await setupApi.provision(Array.from(selected));
+              if (!r) { setClicking(false); setStartErr(tr("onboard.startFailed")); }
+            }}
             disabled={busy}
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
               backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 15 }}>
@@ -265,6 +311,8 @@ export function Onboard() {
           </Pressable>
         )}
 
+        {startErr ? <Text style={{ color: t.danger, fontSize: 13 }}>{startErr}</Text> : null}
+        {connErr ? <Text style={{ color: t.danger, fontSize: 13 }}>{tr("onboard.connErr")}</Text> : null}
         {pairErr ? <Text style={{ color: t.danger, fontSize: 13 }}>{pairErr}</Text> : null}
 
         {/* progress: the same one screen, just more of it */}
@@ -277,7 +325,7 @@ export function Onboard() {
                 style={{ fontSize: 12, lineHeight: 17,
                   color: l.kind === "err" ? t.danger : l.kind === "ok" ? t.ok : l.kind === "hint" ? t.accent : t.txtTertiary,
                   ...(Platform.OS === "web" ? { fontFamily: "ui-monospace, monospace" } as any : {}) }}>
-                {l.line}
+                {linkify(l.line, String(i))}
               </Text>
             ))}
           </ScrollView>
