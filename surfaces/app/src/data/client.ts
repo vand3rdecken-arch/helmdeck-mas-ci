@@ -631,12 +631,15 @@ export interface MyConfigResult {
 // command and where every piece of it came from.
 // ---------------------------------------------------------------------------
 export interface HarnessSurface {
-  /** Three SPAWNED surfaces and four OVERLAYS (harness-config-ui phase 2). An
+  /** FOUR SPAWNED surfaces and four OVERLAYS (harness-config-ui phase 2). An
    *  overlay rides on an existing turn instead of starting a process, so its
    *  `builder` is empty; it is in this list because the behaviour rules key on
    *  surface, and a rule naming a surface the app did not know would render
-   *  nowhere. voice/wear/glass/ship were Python string constants before. */
-  key: "card" | "machine" | "pm" | "voice" | "wear" | "glass" | "ship";
+   *  nowhere. voice/wear/glass/ship were Python string constants before.
+   *  "ship-worker" (owner decree 2026-09-09, 18:04 correction) is the SPAWNED
+   *  card that actually runs a ship - distinct from the "ship" OVERLAY above,
+   *  which is only Henry's ship/no-ship DECISION riding on his own turn. */
+  key: "card" | "machine" | "ship-worker" | "pm" | "voice" | "wear" | "glass" | "ship";
   agent: string; label: string;
   /** the ONE daemon function that assembles this surface's argv ("" = overlay) */
   builder: string; cwd: string;

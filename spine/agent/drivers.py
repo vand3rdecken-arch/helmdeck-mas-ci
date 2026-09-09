@@ -503,10 +503,19 @@ def run(cfg, t, prompt, by=None):
 # to ask.parse()'s regex, so prompt and parser must ship together.
 CARD_AGENT = "card-worker"
 MACHINE_AGENT = "machine-worker"
+SHIP_AGENT = "ship-worker"
 
 
 def _agent_for(t):
-    return MACHINE_AGENT if (t or {}).get("machine") else CARD_AGENT
+    t = t or {}
+    # Checked BEFORE "machine": a ship card is also machine=True/direct=True
+    # (dispatch.new_ship_task rides the direct-task shape - see its
+    # docstring), so without this it would silently speak machine-worker.md
+    # instead of its own ship-worker.md (owner decree 2026-09-09, 18:04
+    # correction: ship runs as its own card, with its own brief).
+    if t.get("ship_kind"):
+        return SHIP_AGENT
+    return MACHINE_AGENT if t.get("machine") else CARD_AGENT
 
 
 

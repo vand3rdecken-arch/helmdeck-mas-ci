@@ -14,6 +14,7 @@ failed machine-task attempt, and the 4 lanemachine needed) - concrete proof
 that extracting bottom-up collapses coupling instead of hiding it.
 """
 import os
+import re
 import shutil
 import time
 
@@ -547,6 +548,45 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     return cur
 
 
+def new_ship_task(repo, kind, actor="henry", origin_card=None):
+    """Owner decree 2026-09-09 (18:04 correction): a ship runs as its own
+    visible board card - lane, timeline, steerable, self-correcting like any
+    other card - instead of an invisible deploy-hook subprocess after an
+    accept. Henry's ship DECISION (kind=ota|native,
+    cells/copilot/broker/henry_broker.py's `ship` verb) spawns this; the
+    card's own agent turn (cells/engineer/harness/agents/ship-worker.md) does
+    DIAGNOSE -> EXECUTE -> VERIFY as its own reasoning and ends its reply
+    with a literal 'SHIP: OK'/'SHIP: FAILED' verdict line that
+    sessions._maybe_ship_card_close reads to self-close it on success.
+
+    Rides the SAME no-worktree direct-build shape new_direct_task uses (no
+    branch, no merge, live repo root as workplace, bypassPermissions) -
+    shipping needs the real git refs / build artifacts / relay distribution a
+    worktree copy would not have. `dispatch=False` here: `ship_kind` must be
+    set BEFORE the first turn is dispatched (we call move_lane ourselves,
+    after marking) so drivers._agent_for already sees it on that very first
+    turn and speaks ship-worker.md, not machine-worker.md - a race that would
+    otherwise strand the card's first (and often only) turn on the wrong brief."""
+    if kind not in ("ota", "native"):
+        raise ValueError("new_ship_task: kind must be 'ota' or 'native', got %r" % kind)
+    task = ("Ship (%s). Diagnose, execute, verify - see your brief. End your "
+           "final reply with exactly the line 'SHIP: OK' or 'SHIP: FAILED'." % kind)
+    desc = "Ausgeloest von Henrys Ship-Entscheid (%s)%s." % (
+        kind, (" fuer Karte %s" % origin_card) if origin_card else "")
+    t = new_direct_task(repo, task, actor=actor, priority="high",
+                        description=desc, dispatch=False, driver="claude")
+
+    def _mark(tt):
+        tt["ship_kind"] = kind
+        if origin_card:
+            tt["ship_origin"] = origin_card
+    cur = _mutate(t["id"], _mark) or t
+    from spine.ops.actionlog import ActionLog
+    ActionLog(cur["run_dir"]).log(
+        "note", "SHIP card filed (%s) - workplace is the live tree %s" % (kind, repo))
+    return move_lane(cur["id"], "working", actor=actor)
+
+
 def _start_machine(t):
     """Dispatch a machine card: no worktree, no branch - just open the session in
     its directory and run the first turn there."""
@@ -574,7 +614,60 @@ def _start_machine(t):
     t, reason = _finish_turn(tid, sid, result, meta, log)
     from spine.comms import notify
     notify.card_event(t, reason)
+    if t.get("ship_kind"):
+        # A Ship card's FIRST turn dispatches through here, not through
+        # sessions.py's steer-completion path - see _maybe_ship_card_close's
+        # own docstring for why both call sites share this one function.
+        # MUST reassign t: move_lane's write is on the STORED record, not
+        # this local variable - returning the stale copy would show the
+        # caller "working" on a card that just self-closed to "done".
+        t = _maybe_ship_card_close(t, log)
     return t
+
+
+def _maybe_ship_card_close(t, log):
+    """Turn-end hook for a Ship card (owner decree 2026-09-09, 18:04
+    correction: ship runs as its own visible board card, not an invisible
+    deploy-hook subprocess). cells/engineer/harness/agents/ship-worker.md
+    instructs the card's OWN agent turn to diagnose/execute/verify itself
+    and end its reply with a literal 'SHIP: OK'/'SHIP: FAILED' line - this
+    is the ONE place that verdict becomes a real board state. Lane
+    transitions stay code-owned everywhere else in this daemon (no verb
+    lets an agent call move_lane itself - the HANDS discipline,
+    cells/copilot/broker/henry_broker.py's docstring); this hook is the
+    equivalent for a ship card's own conclusion, triggered from code
+    immediately at turn-end rather than by an external actor noticing.
+
+    Called from TWO sites - _start_machine above (a ship card's first turn)
+    and sessions.py's steer-completion path (a retry after a FAILED verdict)
+    - because those are genuinely separate completion paths in this daemon
+    (test_fast_track_direct.py pins the same split for fast-track's own
+    ship-on-turn-end hooks: 'the dispatch turn itself never ships' there
+    either). One function, not two copies that could drift apart.
+
+    A FAILED verdict (or a crash mid-turn with no verdict line at all) does
+    NOTHING extra - the card is already exactly where an ordinary unfinished
+    turn parks it (needs_you, lane unchanged): visible on the board,
+    steerable by the owner or Henry, same as any other stuck card.
+
+    Returns the FRESH track dict when it moved the lane (move_lane's own
+    write is the ground truth, same reasoning henry_broker's `move` verb
+    already applies), else `t` unchanged - the caller must use this return
+    value, not its own now-stale `t`, or the lane flip is invisible to
+    whoever called this."""
+    reply = t.get("last_reply") or ""
+    if not re.search(r"^SHIP:\s*OK\s*$", reply, re.M):
+        return t
+    try:
+        r = move_lane(t["id"], "done", actor="ship-agent")
+    except Exception as e:
+        log.log("note", "Ship-Karte meldete OK, aber die Selbst-Abnahme stuerzte ab: %s" % str(e)[:200])
+        return t
+    if (r or {}).get("lane") != "done":
+        reason = (r or {}).get("merge_report") or (r or {}).get("gate_report") or "unbekannt"
+        log.log("note", "Ship-Karte meldete OK, aber die Selbst-Abnahme kam nicht an "
+                "(blieb auf %s) - Grund: %s" % ((r or {}).get("lane"), str(reason)[:300]))
+    return r or t
 
 
 # -- REMOTE DEVICE tasks: a team member's own PC executes, the gate stays here
@@ -1039,9 +1132,15 @@ def _accept_machine(t, lane, actor, log):
         _record_outcome(tt)
     t = _mutate(t["id"], _accept) or t
     events.emit("lane", t["id"], frm="review", to="done")
-    if t.get("direct"):
+    if t.get("direct") and not t.get("ship_kind"):
         # something DID land in a repo for a direct card - whether it ships is
         # Henry's judgement now (owner decree 2026-09-01), same as every path.
+        # EXCLUDES a ship card itself (t["ship_kind"] set, new_ship_task) -
+        # without this guard a ship card accepting itself would emit ANOTHER
+        # ship-decision escalation, which Henry would judge, which would spawn
+        # ANOTHER ship card, forever (owner decree 2026-09-09, 18:04
+        # correction introduced ship cards; this card's own existence IS
+        # already the answer to "should this ship").
         from cells.engineer.cards.lanemachine import request_ship_decision
         request_ship_decision(t, "direct-accept")
     _say_card(t, _i18n.t("say.machineAccepted"))
