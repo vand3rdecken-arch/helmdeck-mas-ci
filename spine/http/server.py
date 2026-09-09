@@ -688,6 +688,7 @@ def serve(port=8140):
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
+    events.sync_relay_feed()   # backfill for an install predating this mirror - see events.RELAY_FEED
     from spine.comms import relay_client
     from spine.registry import cells
     # Cell lifecycle: launch each ENABLED agentic system's poller through the

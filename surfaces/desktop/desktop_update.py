@@ -59,14 +59,16 @@ def norm_rel(rel):
     return s
 
 
-def read_relay_url(settings_path):
-    """The feed base is the paired relay from the daemon's settings.json.
-    No relay configured -> no feed -> the updater stays dormant (Paseo's
-    'auto-update not available' dev case)."""
+def read_relay_url(feed_path):
+    """The feed base is the paired relay, mirrored by the daemon to
+    relay_feed.json (spine/storage/events.sync_relay_feed) - NOT settings.json,
+    which stopped being written when settings moved into helmdeck.db
+    (config-consolidation phase 2, 2026-09-03). No relay configured -> no
+    feed -> the updater stays dormant (Paseo's 'auto-update not available'
+    dev case)."""
     try:
-        with open(settings_path, encoding="utf-8") as f:
-            rel = (json.load(f).get("relay") or {})
-        url = (rel.get("url") or "").strip().rstrip("/")
+        with open(feed_path, encoding="utf-8") as f:
+            url = (json.load(f).get("url") or "").strip().rstrip("/")
         return url or None
     except Exception:
         return None

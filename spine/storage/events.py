@@ -14,6 +14,16 @@ import json, os, re, secrets, time
 from daemon.paths import DAEMON_ROOT as ROOT
 EV = os.path.join(ROOT, "events.jsonl")
 SET = os.path.join(ROOT, "settings.json")
+# Mirror of settings.relay.url ONLY (not a secret - the same public relay
+# domain the pairing QR/links already embed) for surfaces/desktop/updater.js,
+# which is deliberately dependency-free Node and cannot query helmdeck.db the
+# way settings() now does. It used to read SET directly, which config-
+# consolidation phase 2 (2026-09-03) stopped writing - silently orphaning the
+# desktop OTA updater ("no relay configured - desktop OTA dormant" forever,
+# even on an install with a live relay pairing). Surfaced 2026-09-09 chasing
+# the reconnect-banner fix: a shipped OTA update was never reaching the
+# desktop shell because of this.
+RELAY_FEED = os.path.join(ROOT, "relay_feed.json")
 
 DEFAULTS = {
     # capacity: what a sustainable day looks like, self-declared. Touches consume it.
@@ -164,6 +174,20 @@ def settings():
     return s
 
 
+def sync_relay_feed(s=None):
+    """Write RELAY_FEED from the current settings - see the comment on
+    RELAY_FEED for why this file exists. Cheap and rare (only ever called
+    after a `relay` write, or once at daemon boot to backfill an install that
+    predates this mirror), so no caching/diffing is needed."""
+    s = s if s is not None else settings()
+    url = ((s.get("relay") or {}).get("url") or "").strip()
+    try:
+        with open(RELAY_FEED, "w", encoding="utf-8") as f:
+            json.dump({"url": url}, f)
+    except OSError:
+        pass
+
+
 def wip_limit_of(s=None):
     """THE single WIP-limit resolution (config-consolidation phase 4: this
     used to be duplicated - pm.py and processes.py each read
@@ -233,6 +257,8 @@ def save_settings(patch, actor="system", reason=""):
     # code defaults. workspace_config_put bumps the SSE version itself.
     from spine.storage import db
     db.workspace_config_put({k: s[k] for k in (patch or {})})
+    if patch and "relay" in patch:
+        sync_relay_feed(s)
     # Audit trail (card 5): one event per write, old->new per CHANGED top-level
     # key only (unmodified keys stay silent - the diff is the point, not the
     # whole blob), secrets masked by name. Best-effort, same contract as every
