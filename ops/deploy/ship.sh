@@ -1,58 +1,30 @@
 #!/usr/bin/env bash
-# Fast-track deploy step (the repo 'deploy' hook points here). Decides HOW to ship
-# the just-accepted change:
-#   - JS / assets only        -> OTA (ops/deploy/push_update.sh), seconds
-#   - native change (a native module, permission, app.json plugin, manifest)
-#     -> build a fresh APK, emulator-smoke it, distribute it (ops/deploy/build_apk.sh),
-#        THEN also push a matching OTA so the relay bundle can't revert the APK's JS.
-# Native-vs-JS is decided by a fingerprint of the files that change the APK,
-# stored as a shared git ref (refs/helmdeck/last-native-fp) so every worktree
-# checkout sees the same value - see the LAST= comment below for why a plain
-# file broke this.
+# HARD-INVARIANT TOOL for ship EXECUTION (owner decree 2026-09-09: ship must
+# stop being a monolithic script/wrapper and become a visible, staged agent
+# process - "ship.sh darf hoechstens als von Schritten aufgerufenes Werkzeug
+# uebrig bleiben, nicht als der Pfad selbst"). The PATH is now
+# ops/deploy/ship_run.py: it runs DIAGNOSE -> EXECUTE -> VERIFY as three
+# separate, visible stages, holds the ship-lock for the whole run, and calls
+# THIS file's subcommands below for the few things that must stay
+# deterministic and code-owned - never agent judgement:
 #
-# EXECUTION is agent-led, not a raw script call (owner decree 2026-09-09:
-# "weil ship sich nicht korrigieren kann"). This script still decides the
-# branch and owns the version bump + native-fp ref exactly-once - both hard
-# invariants, unchanged. What actually RUNS push_update.sh/build_apk.sh is
-# ops/deploy/ship_agent.py: same streamed output (the HOOK-NOTE lines below
-# still narrate it), but on a failure it diagnoses the tail instead of going
-# straight to exit 1, retries once if that diagnosis says the failure is
-# transient, and never calls a run green without re-checking the runtime's
-# own signal afterward (the live manifest for OTA, the three version numbers
-# for native). See ops/harness/agents/ship-runner.md for the policy.
+#   ops/deploy/ship.sh bump                    - bump expo.version + versionCode once
+#   ops/deploy/ship.sh finalize-native <KT_START> - commit the bump, record the native-fp ref
+#   ops/deploy/ship.sh revert-bump             - undo an aborted native attempt's bump
+#   ops/deploy/ship.sh kt-start                 - print the source fingerprint (captured
+#                                                  BEFORE a native build starts - see kt_fp)
+#
+# None of the four above take the ship-lock themselves - the caller
+# (ship_run.py) already holds it for the run's whole duration; a subcommand
+# taking it too would deadlock against its own caller.
+#
+# A BARE `bash ops/deploy/ship.sh` (no argument) still runs the full legacy
+# pipeline below standalone: decide OTA-vs-native (SHIP_KIND, or the stored
+# fingerprint as a last-resort fallback for a bare manual run), bump, build/
+# push directly, commit, record the fingerprint. ops/deploy/ship_run.py NEVER
+# calls it this way - this is the manual/dry-run fallback only.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
-
-# SHIP SINGLETON (2026-08-21): one ship per repo, join-or-wait, never stack.
-# Measured incident: two accepts minutes apart each fired this hook - two
-# `npm ci` + two Gradle builds in the SAME app/ tree shredded each other
-# (EPERM/EBUSY on node_modules), and a daemon restart earlier orphaned a
-# Gradle tree that then held locks against the next build. The lock is a
-# LIVE-PID observation, not a stored flag: a lock whose pid is dead is stale
-# and taken over (the Paseo rule - derive state from the runtime's own
-# signals). A waiting ship simply proceeds when the holder exits; the
-# fingerprint check right below then makes it a no-op if the holder already
-# shipped this exact tree.
-LOCK="$ROOT/.loop/ship.lock"
-mkdir -p "$ROOT/.loop"
-while ! mkdir "$LOCK" 2>/dev/null; do
-  HOLDER="$(head -n1 "$LOCK/pid" 2>/dev/null)"
-  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
-    echo "[ship] another ship is running (pid $HOLDER) - waiting to join"
-    sleep 15
-  else
-    echo "[ship] stale ship lock (pid ${HOLDER:-?} dead) - taking over"
-    rm -rf "$LOCK"
-  fi
-done
-# Line 1 = $$ (MSYS pid - what THIS script's own kill -0 check above needs).
-# Line 2 = the real Windows PID (what the daemon's Python-side os.kill(pid, 0)
-# health check needs - measured 2026-08-23: a live 40min gradle build was
-# reported "dead" because only the MSYS pid was ever recorded, and Windows'
-# process table has no such pid).
-echo $$ > "$LOCK/pid"
-cat /proc/$$/winpid 2>/dev/null >> "$LOCK/pid" || echo $$ >> "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT
 
 cfg_fp() {
   # Fingerprint the ANDROID-relevant native config only. EXCLUDE the version
@@ -186,6 +158,75 @@ print(e["version"], e["android"]["versionCode"])
 PY
 }
 
+# ---------------------------------------------------------------- TOOL SUBCOMMANDS
+# Called BY ops/deploy/ship_run.py's stages - see the file header. No lock
+# here on purpose (the caller holds it for the whole run).
+case "${1:-}" in
+  bump)
+    bump_version
+    exit $?
+    ;;
+  kt-start)
+    kt_fp
+    exit 0
+    ;;
+  finalize-native)
+    # $2 = KT_START, the source-tree fingerprint captured BEFORE the build
+    # ran (see kt_fp's header for why start-of-run sources + end-of-run
+    # config is the correct combination - a module created mid-build is not
+    # in the APK, and recomputing kt_fp now would wrongly claim it is).
+    [ -n "${2:-}" ] || { echo "[ship] finalize-native needs KT_START as \$2"; exit 2; }
+    BUMP="$(py -3.12 -c "import json;e=json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo'];print(e['version'], e['android']['versionCode'])")"
+    git add surfaces/app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
+    NEWFP="$(combine_fp "$(cfg_fp)" "$2")"
+    BLOB="$(printf '%s' "$NEWFP" | git hash-object -w --stdin)" \
+      && git update-ref refs/helmdeck/last-native-fp "$BLOB" \
+      || { echo "[ship] WARN: could not record the native fingerprint ref - the next accept may re-detect this as a native change"; exit 1; }
+    exit 0
+    ;;
+  revert-bump)
+    git checkout -- surfaces/app/app.json 2>/dev/null || true
+    exit 0
+    ;;
+esac
+
+# ------------------------------------------------------- LEGACY STANDALONE PIPELINE
+# Everything below runs ONLY for a bare `bash ops/deploy/ship.sh` (no
+# argument) - a human running it by hand, or a SHIP_DRY_RUN probe.
+# ops/deploy/ship_run.py (the automated path since 2026-09-09) never invokes
+# this file without a subcommand.
+
+# SHIP SINGLETON (2026-08-21): one ship per repo, join-or-wait, never stack.
+# Measured incident: two accepts minutes apart each fired this hook - two
+# `npm ci` + two Gradle builds in the SAME app/ tree shredded each other
+# (EPERM/EBUSY on node_modules), and a daemon restart earlier orphaned a
+# Gradle tree that then held locks against the next build. The lock is a
+# LIVE-PID observation, not a stored flag: a lock whose pid is dead is stale
+# and taken over (the Paseo rule - derive state from the runtime's own
+# signals). A waiting ship simply proceeds when the holder exits; the
+# fingerprint check right below then makes it a no-op if the holder already
+# shipped this exact tree.
+LOCK="$ROOT/.loop/ship.lock"
+mkdir -p "$ROOT/.loop"
+while ! mkdir "$LOCK" 2>/dev/null; do
+  HOLDER="$(head -n1 "$LOCK/pid" 2>/dev/null)"
+  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
+    echo "[ship] another ship is running (pid $HOLDER) - waiting to join"
+    sleep 15
+  else
+    echo "[ship] stale ship lock (pid ${HOLDER:-?} dead) - taking over"
+    rm -rf "$LOCK"
+  fi
+done
+# Line 1 = $$ (MSYS pid - what THIS script's own kill -0 check above needs).
+# Line 2 = the real Windows PID (what the daemon's Python-side os.kill(pid, 0)
+# health check needs - measured 2026-08-23: a live 40min gradle build was
+# reported "dead" because only the MSYS pid was ever recorded, and Windows'
+# process table has no such pid).
+echo $$ > "$LOCK/pid"
+cat /proc/$$/winpid 2>/dev/null >> "$LOCK/pid" || echo $$ >> "$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
+
 KT_START="$(kt_fp)"
 CUR="$(combine_fp "$(cfg_fp)" "$KT_START")"
 # Stored as a git ref (refs/helmdeck/last-native-fp -> a blob holding the
@@ -263,17 +304,17 @@ fi
 
 if [ "$SHIP_OTA_ONLY" = "1" ]; then
   echo "HOOK-NOTE: JS-only change - OTA export + publish (seconds)"
-  echo "[ship] JS-only change -> OTA (agent-run: diagnoses + retries a failure, verifies the live manifest before calling it green)"
+  echo "[ship] JS-only change -> OTA"
   # PROPAGATE a failed OTA: swallowing it printed '[ship] done' over a dead
   # push (expo export died on empty node_modules) - the phone silently never
   # got the update while every caller believed it shipped.
-  py -3.12 ops/deploy/ship_agent.py ota || { echo "[ship] OTA FAILED"; exit 1; }
+  bash ops/deploy/push_update.sh || { echo "[ship] OTA FAILED"; exit 1; }
 else
   echo "HOOK-NOTE: native change detected - APK build starting (npm ci + gradle + emulator smoke, ~15-20 min)"
-  echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute (agent-run: diagnoses + retries a failure, verifies app.json/APK/relay agree before calling it green)"
+  echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute"
   BUMP="$(bump_version)" || { echo "[ship] version bump failed"; exit 1; }
   echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
-  if ! py -3.12 ops/deploy/ship_agent.py native; then
+  if ! bash ops/deploy/build_apk.sh; then
     echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint"
     git checkout -- surfaces/app/app.json 2>/dev/null || true
     exit 1
@@ -282,7 +323,7 @@ else
   # keep the OTA bundle matched to the new APK (else the old relay bundle reverts
   # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md). The OTA
   # manifest inherits the new runtimeVersion from the bumped app.json.
-  py -3.12 ops/deploy/ship_agent.py ota || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
+  bash ops/deploy/push_update.sh || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
   git add surfaces/app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
   # Record end-of-run CONFIG (build_apk stamped the manifest mid-run - that
   # mutation is this build's own deterministic output) + START-time SOURCES

@@ -915,23 +915,29 @@ The gate is fixed (always runs — your safety net), but the human steps are pol
 With all three: file a card → agent works → gate green → auto-merge → auto-deploy,
 same as a hand deploy, gate still guarding.
 
-## Fast-track deploy (ops/deploy/ship.sh)
-The repo `deploy` hook runs `ops/deploy/ship.sh`: it fingerprints the native-affecting
-files and ships JS-only changes via OTA, or on a native change **bumps the
-version/runtimeVersion** (so old APKs can't pull incompatible JS), builds the APK
-(ops/deploy/build_apk.sh: JDK17 + gradle + emulator smoke + relay distribute) AND
-pushes a matching OTA, then commits the version bump. So a fast-track card just
-works whether the change is JS or native, and a native change never crash-loops
-an un-updated phone.
+## Fast-track deploy (ops/deploy/ship_run.py)
+The repo `deploy` hook runs `ops/deploy/ship_run.py` - a staged, visible
+process (owner decree 2026-09-09, precision 17:17: "mehr als ein Prozess",
+not a monolithic script or a thin wrapper around one):
 
-**Execution is agent-led (owner decree 2026-09-09).** `ship.sh` still decides
-the branch and owns the version bump / native-fingerprint ref, both
-exactly-once - but it no longer calls `push_update.sh`/`build_apk.sh`
-directly and goes hard-red on the first non-zero exit. `ops/deploy/
-ship_agent.py` runs them instead: same streamed output, but a failure gets
-diagnosed (transient/resource-missing/collision/code-error/contradiction,
-policy in `ops/harness/agents/ship-runner.md`) and retried once if the
-diagnosis says so, and a run is never called green on exit 0 alone - it
-re-checks the runtime's own signal first (the live manifest for OTA, the
-three version numbers for native). Henry's ship DECISION and `_repo_hook`'s
-SILENCE watchdog are unchanged by any of this.
+1. **DIAGNOSE** - reads Henry's decision (`SHIP_KIND=none|ota|native`), runs
+   `ops/tools/ship_facts.py` fresh, and preflight-gates the resources the
+   chosen kind needs (JDK17/keystore/relay) - a missing one stops HERE,
+   before any build time is spent.
+2. **EXECUTE** - runs `push_update.sh` (OTA) or `build_apk.sh` (native),
+   streamed live. A failure is diagnosed (transient/resource-missing/
+   collision/code-error/contradiction - policy in `ops/harness/agents/
+   ship-runner.md`) and retried at most once if the diagnosis says so. The
+   version bump / native-fingerprint ref (so old APKs reject incompatible JS
+   instead of crashing) run through `ops/deploy/ship.sh`'s `bump`/
+   `finalize-native`/`revert-bump` subcommands - hard invariants, exactly-
+   once, never agent judgement.
+3. **VERIFY** - re-checks the runtime's OWN signal before calling anything
+   green: the live relay manifest for OTA, the three version numbers
+   (app.json / APK / relay) for native. Exit 0 from a script is not proof.
+
+`ops/deploy/ship.sh` is now a TOOL these stages call, not the path itself -
+a bare `bash ops/deploy/ship.sh` with no argument still runs the original
+monolithic pipeline standalone (manual fallback / `SHIP_DRY_RUN` probe
+only; the automated path never invokes it that way). Henry's ship DECISION
+and `_repo_hook`'s SILENCE watchdog are unchanged by any of this.
