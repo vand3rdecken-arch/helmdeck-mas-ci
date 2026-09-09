@@ -42,7 +42,8 @@ import desktop_update   # Paseo auto-update engine (see its docstring)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DAEMON_DIR = os.path.join(ROOT, "daemon")
-SETTINGS = os.path.join(DAEMON_DIR, "settings.json")
+SETTINGS = os.path.join(DAEMON_DIR, "settings.json")        # legacy fallback, see _relay_status
+RELAY_FEED = os.path.join(DAEMON_DIR, "relay_feed.json")    # spine/storage/events.RELAY_FEED
 PORT = 8140
 HEALTH_URL = "http://127.0.0.1:%d/" % PORT
 # Probe a path that answers DIRECTLY (401, no redirect). "/" 302-redirects to
@@ -227,7 +228,7 @@ def _packaged_appdist():
 
 def _update_once():
     """One silent cycle. Returns (status-text, retry-soon)."""
-    base = desktop_update.read_relay_url(SETTINGS)
+    base = desktop_update.read_relay_url(RELAY_FEED)
     if not base:
         return "aus (kein Relay gekoppelt)", False
     target = _packaged_appdist()

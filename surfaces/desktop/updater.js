@@ -34,12 +34,17 @@ function normRel(rel) {
   return s;
 }
 
-// The feed base is the paired relay from the daemon's settings.json; without
-// one the updater stays dormant (Paseo's "not available in dev" case).
-function readRelayUrl(settingsPath) {
+// The feed base is the paired relay, mirrored by the daemon to relay_feed.json
+// (spine/storage/events.sync_relay_feed) every time settings.relay changes,
+// plus once at every boot. NOT settings.json: that stopped being written when
+// settings moved into helmdeck.db (config-consolidation phase 2, 2026-09-03),
+// which silently orphaned this reader for months - "no relay configured"
+// forever, even on an install with a live pairing, because this dependency-
+// free Node code has no way to query the db the way settings() now does.
+// Without a feed the updater stays dormant (Paseo's "not available in dev" case).
+function readRelayUrl(feedPath) {
   try {
-    const rel = (JSON.parse(fs.readFileSync(settingsPath, "utf8")).relay || {});
-    const url = String(rel.url || "").trim().replace(/\/+$/, "");
+    const url = String(JSON.parse(fs.readFileSync(feedPath, "utf8")).url || "").trim().replace(/\/+$/, "");
     return url || null;
   } catch { return null; }
 }

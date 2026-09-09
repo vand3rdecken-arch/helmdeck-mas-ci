@@ -41,6 +41,7 @@ push.env
 surfaces/app/modules/*/android/build/
 daemon/tracks.json
 daemon/settings.json
+daemon/relay_feed.json
 daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl

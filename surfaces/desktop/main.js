@@ -108,7 +108,7 @@ const sendToWindow = (channel, payload) => { if (win && !win.isDestroyed()) win.
 let updater = null;
 if (app.isPackaged) {
   const { createUpdater, readRelayUrl } = require("./updater");
-  const feedBase = readRelayUrl(path.join(daemonDir, "settings.json"));
+  const feedBase = readRelayUrl(path.join(daemonDir, "relay_feed.json"));
   if (feedBase) {
     updater = createUpdater({
       log, feedBase, appDistDir,
