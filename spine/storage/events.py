@@ -86,10 +86,18 @@ DEFAULTS = {
                 "claude-desktop": {"type": "claude",
                                    "allowed_tools": ["mcp__windows-mcp__*"],
                                    "record": True}},
-    # self-registration on the sign-in screen: closed by default; users join
-    # with the invite code (owner shares it) and get default_role. open=True
-    # drops the code requirement (LAN-trusted setups only).
-    "registration": {"open": False, "invite_code": "", "default_role": "client"},
+    # Self-registration on the sign-in screen. `open` is the ONLY live knob
+    # left here: True lets anyone reach the sign-up form without a code, and
+    # they always land as `client` - routes_auth.auth_register hard-wires that,
+    # because the workspace-wide role this dict used to carry is gone.
+    #
+    # `invite_code`/`default_role` are RETIRED (2026-09-09, Team & Geraete
+    # rebuild). An invitation is an object now, with its own code, role and
+    # expiry - spine/auth/invites.py. The two keys stay declared only so
+    # invites.migrate_legacy() can read a pre-rebuild store once, fold the old
+    # global code into a real invitation, and blank them; nothing reads them
+    # for an authorisation decision any more. Do not reintroduce a reader.
+    "registration": {"open": False, "invite_code": "", "default_role": ""},
     # APPEARANCE - ambient backdrop behind the glass (never carries data;
     # card/status colors stay semantic). Chat-configurable.
     "appearance": {"backdrop": "mesh"},   # mesh|aurora|ember|forest|mono

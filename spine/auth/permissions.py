@@ -207,6 +207,7 @@ _CAP_MODULES = (
     "routes_gxp",
     "routes_projects",
     "routes_pm",
+    "routes_invites",
 )
 
 
@@ -229,6 +230,10 @@ PATTERNS = (
     ("GET", "exact", "/users", "users.manage"),
     ("POST", "exact", "/users", "users.manage"),
     ("POST", "prefix", "/users/", "users.manage"),
+    # Inviting a person IS user management - same capability as /users, not a
+    # weaker one, because an invitation with role=operator is an operator
+    # account that has not signed up yet.
+    ("POST", "exact", "/invites/*/revoke", "users.manage"),
     ("POST", "exact", "/devices/*/revoke", "devices.manage"),
     ("GET", "exact", "/devices/*/queue", "devices.use"),
     ("GET", "exact", "/devices/*/card/*", "devices.use"),
