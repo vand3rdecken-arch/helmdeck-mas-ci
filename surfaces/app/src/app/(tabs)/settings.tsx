@@ -98,6 +98,11 @@ const DOORS: readonly Door[] = DOOR_IDS.filter((id) => !HIDDEN_DOORS.includes(id
 const LANG_LABELS = LANGS.map((l) => l.label);
 const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
 
+// Excludes O/0 and I/1 - dictated over voice/phone without ambiguity.
+const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const genInviteCode = (): string =>
+  Array.from({ length: 8 }, () => INVITE_CODE_ALPHABET[Math.floor(Math.random() * INVITE_CODE_ALPHABET.length)]).join("");
+
 /**
  * THE CHROME EVERY DOOR SHARES - including Henry.
  *
@@ -831,7 +836,18 @@ export default function Settings() {
           <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={setRegOpen} />
           <View style={{ height: 8 }} />
           <Caption text={tr("settings.reg.code")} />
-          <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={field} />
+          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+            <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={[field, { flex: 1 }]} />
+            <Btn label={tr("settings.reg.generate")} kind="ghost" onPress={() => setRegCode(genInviteCode())} />
+          </View>
+          {regCode.trim() ? (
+            <View style={{ marginTop: 8 }}>
+              <Btn label={tr("settings.reg.copyCode")} kind="ghost" onPress={async () => {
+                await Clipboard.setStringAsync(regCode.trim());
+                Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.reg.codeCopied"));
+              }} />
+            </View>
+          ) : null}
           <View style={{ height: 10 }} />
           <Caption text={tr("settings.reg.role")} />
           <ChipPick options={["client", "operator"]} selected={[regRole]} single onToggle={setRegRole} />

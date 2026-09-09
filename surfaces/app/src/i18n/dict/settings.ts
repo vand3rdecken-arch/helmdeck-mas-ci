@@ -316,6 +316,9 @@ export const settings: Dict = {
                          en: "Invite code (empty = registration off)" },
   "settings.reg.role": { de: "Default-Rolle", en: "Default role" },
   "settings.reg.save": { de: "Registrierung speichern", en: "Save registration" },
+  "settings.reg.generate": { de: "Code erzeugen", en: "Generate code" },
+  "settings.reg.copyCode": { de: "Code kopieren", en: "Copy code" },
+  "settings.reg.codeCopied": { de: "Invite-Code in der Zwischenablage.", en: "Invite code in the clipboard." },
 
   // ---- native pairing gate (fresh install / reinstall, no daemon known yet) ----
   "gate.title": { de: "Mit deinem Desktop koppeln", en: "Pair with your desktop" },
