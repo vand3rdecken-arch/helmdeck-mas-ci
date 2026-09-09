@@ -399,12 +399,18 @@ class H(BaseHTTPRequestHandler):
     def _send(self, code, body=b""):
         if isinstance(body, str):
             body = body.encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if body:
-            self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if body:
+                self.wfile.write(body)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            # client hung up mid-response (phones abort long-polls freely);
+            # nothing to deliver and nothing wrong on our side - stay quiet
+            # instead of letting socketserver print a full traceback per hit
+            pass
 
     def do_GET(self):
         p = urlparse(self.path).path
