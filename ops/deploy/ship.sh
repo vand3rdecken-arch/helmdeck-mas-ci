@@ -9,6 +9,17 @@
 # stored as a shared git ref (refs/helmdeck/last-native-fp) so every worktree
 # checkout sees the same value - see the LAST= comment below for why a plain
 # file broke this.
+#
+# EXECUTION is agent-led, not a raw script call (owner decree 2026-09-09:
+# "weil ship sich nicht korrigieren kann"). This script still decides the
+# branch and owns the version bump + native-fp ref exactly-once - both hard
+# invariants, unchanged. What actually RUNS push_update.sh/build_apk.sh is
+# ops/deploy/ship_agent.py: same streamed output (the HOOK-NOTE lines below
+# still narrate it), but on a failure it diagnoses the tail instead of going
+# straight to exit 1, retries once if that diagnosis says the failure is
+# transient, and never calls a run green without re-checking the runtime's
+# own signal afterward (the live manifest for OTA, the three version numbers
+# for native). See ops/harness/agents/ship-runner.md for the policy.
 set -o pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$ROOT"
 
@@ -252,17 +263,17 @@ fi
 
 if [ "$SHIP_OTA_ONLY" = "1" ]; then
   echo "HOOK-NOTE: JS-only change - OTA export + publish (seconds)"
-  echo "[ship] JS-only change -> OTA"
+  echo "[ship] JS-only change -> OTA (agent-run: diagnoses + retries a failure, verifies the live manifest before calling it green)"
   # PROPAGATE a failed OTA: swallowing it printed '[ship] done' over a dead
   # push (expo export died on empty node_modules) - the phone silently never
   # got the update while every caller believed it shipped.
-  bash ops/deploy/push_update.sh || { echo "[ship] OTA FAILED"; exit 1; }
+  py -3.12 ops/deploy/ship_agent.py ota || { echo "[ship] OTA FAILED"; exit 1; }
 else
   echo "HOOK-NOTE: native change detected - APK build starting (npm ci + gradle + emulator smoke, ~15-20 min)"
-  echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute"
+  echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute (agent-run: diagnoses + retries a failure, verifies app.json/APK/relay agree before calling it green)"
   BUMP="$(bump_version)" || { echo "[ship] version bump failed"; exit 1; }
   echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
-  if ! bash ops/deploy/build_apk.sh; then
+  if ! py -3.12 ops/deploy/ship_agent.py native; then
     echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint"
     git checkout -- surfaces/app/app.json 2>/dev/null || true
     exit 1
@@ -271,7 +282,7 @@ else
   # keep the OTA bundle matched to the new APK (else the old relay bundle reverts
   # the APK's JS on next launch - the source-of-truth trap in DEPLOY.md). The OTA
   # manifest inherits the new runtimeVersion from the bumped app.json.
-  bash ops/deploy/push_update.sh || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
+  py -3.12 ops/deploy/ship_agent.py ota || { echo "[ship] matching OTA FAILED - the old relay bundle would revert this APK's JS (DEPLOY.md trap)"; exit 1; }
   git add surfaces/app/app.json && git commit -q -m "deploy: bump version+runtimeVersion for native change ($BUMP)" 2>/dev/null || true
   # Record end-of-run CONFIG (build_apk stamped the manifest mid-run - that
   # mutation is this build's own deterministic output) + START-time SOURCES
