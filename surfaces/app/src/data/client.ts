@@ -1,6 +1,6 @@
 import { track } from "./analytics";
 import { useAuthGate } from "./authgate";
-import { useConfig } from "./config";
+import { deviceLabel, useConfig } from "./config";
 import { demoRespond, useDemo } from "./demo";
 import { diag } from "./diag";
 import { open, seal } from "./e2ee";
@@ -728,6 +728,12 @@ export interface CellInfo {
   tools: string[];
 }
 
+/** Which installation is asking. Read fresh per call rather than captured at
+ *  module load: config hydrates asynchronously, and a login that happened to
+ *  race that would otherwise send an empty id and silently fall back to the
+ *  old one-token-per-sign-in behaviour. */
+const whoAmI = () => ({ device: useConfig.getState().deviceId, device_label: deviceLabel() });
+
 export const api = {
   get: <T,>(path: string) => req<T>("GET", path),
   post: <T,>(path: string, body?: unknown, signal?: AbortSignal) => req<T>("POST", path, body, signal),
@@ -736,8 +742,12 @@ export const api = {
   // password login, lost when that component was never ported. skipAuthGate
   // (the 5th req() arg) so a wrong password surfaces as a normal ApiError
   // with the daemon's real message, not a message-less AuthRequired.
+  //
+  // Every credential-minting call carries THIS installation's id and label, so
+  // the daemon replaces this device's previous token instead of stacking a new
+  // permanent one beside it on every sign-in (routes_auth.py's _device_id).
   login: (name: string, password: string) =>
-    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/login", { name, password }, undefined, true),
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/login", { name, password, ...whoAmI() }, undefined, true),
   // Drives the login screen's mode (first-run setup vs. sign-in vs. optional
   // self-registration) - mirrors the shape routes_auth.py's auth_state
   // actually returns. skipAuthGate: an expired/garbage token must not block
@@ -745,9 +755,18 @@ export const api = {
   authState: () => req<{ setup_needed: boolean; user: unknown; registration: boolean; registration_open: boolean }>(
     "GET", "/auth/state", undefined, undefined, true),
   authSetup: (name: string, password: string) =>
-    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/setup", { name, password }, undefined, true),
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/setup", { name, password, ...whoAmI() }, undefined, true),
   authRegister: (name: string, password: string, invite: string) =>
-    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/register", { name, password, invite }, undefined, true),
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/register", { name, password, invite, ...whoAmI() }, undefined, true),
+
+  // Invitations (spine/auth/invites.py) - the ONE way a person joins this
+  // workspace. The role is chosen HERE, when the invitation is created, and
+  // travels inside the code; there is no workspace-wide default role to
+  // inherit any more.
+  invites: () => req<import("./types").InviteRow[]>("GET", "/invites"),
+  createInvite: (role: "client" | "operator", ttlDays: number) =>
+    req<import("./types").InviteRow>("POST", "/invites", { role, ttl_days: ttlDays }),
+  revokeInvite: (code: string) => req<import("./types").InviteRow>("POST", `/invites/${code}/revoke`),
   // Board PUSH long-poll: blocks until the data version passes `v` (or ~22s),
   // returns the new version. Works over the sealed relay AND direct; the app
   // loops it and invalidates queries on change (replaces the direct-only SSE).

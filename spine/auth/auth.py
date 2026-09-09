@@ -216,14 +216,53 @@ def _token_hash(token):
     return hashlib.sha256((token or "").encode()).hexdigest()
 
 
-def _token_record(token, label, expires_days=None):
+def _token_record(token, label, expires_days=None, device=None,
+                  unused_days=None):
     th = _token_hash(token)
     rec = {"label": label or "device", "th": th, "id": th[:12],
            "tail": token[-6:], "created": time.strftime("%Y-%m-%d %H:%M:%S")}
+    if device:
+        rec["device"] = device
     if expires_days:
         rec["expires"] = time.strftime("%Y-%m-%d",
             time.localtime(time.time() + expires_days * 86400))
+    if unused_days:
+        rec["unused_days"] = int(unused_days)
     return rec
+
+
+# How long a token that has NEVER been used stays redeemable (debt
+# pair-token-no-ttl). A credential nobody ever presented is either a leak or
+# litter; either way it should not still be a key a month later. Real devices
+# claim within seconds - resolve() writes `last_used` on the very first
+# authenticated call - so this window is only ever spent by tokens that were
+# minted and abandoned.
+UNUSED_TTL_DAYS = 30
+# Pairing is the tight case the debt names: the QR/link window is 15 minutes,
+# and the token inside that payload used to outlive it forever. One day is the
+# slack for "the owner generated the code and the phone gets set up this
+# evening", not for "someone finds the screenshot next month".
+PAIR_UNUSED_TTL_DAYS = 1
+
+
+def _token_expired(t):
+    """DERIVED on every resolve, never a stored flag: a hard expiry date, or a
+    token that was issued with a claim window and never presented inside it.
+
+    Records written before this existed carry neither field and are therefore
+    unaffected - nothing already in a user's hands expires retroactively."""
+    exp = t.get("expires")
+    if exp and exp < time.strftime("%Y-%m-%d"):
+        return True
+    unused = t.get("unused_days")
+    if unused and not t.get("last_used"):
+        try:
+            born = time.mktime(time.strptime(
+                (t.get("created") or "")[:19], "%Y-%m-%d %H:%M:%S"))
+        except ValueError:
+            return False        # unparseable stamp: do not lock a device out
+        return time.time() - born > int(unused) * 86400
+    return False
 
 
 STALE_DAYS = 90  # card 5 debt (rbac-audit-hardening-partial): access-review
@@ -375,23 +414,71 @@ def set_role(name, role, actor=None):
 
 # -- device/API tokens ---------------------------------------------------
 
-def issue_token(name, label, actor=None, expires_days=None):
+def issue_token(name, label, actor=None, expires_days=None, device=None,
+                unused_days=UNUSED_TTL_DAYS):
     """Mint a device token. The plaintext is returned HERE AND NOWHERE ELSE -
     only its hash is kept, so a lost token is re-issued, never recovered.
     `expires_days` is optional (card 5 debt) - None keeps today's behaviour
-    (never expires); resolve() refuses a token past its `expires` date."""
+    (never expires); resolve() refuses a token past its `expires` date.
+    `unused_days` is the claim window for a token that is never presented
+    (see _token_expired) - pass None for a credential that must stay valid
+    even if it sits unused.
+
+    `device` is a stable per-installation id the CALLER supplies, and it makes
+    the token list a DEVICE list: one live credential per device, replacing
+    that device's previous one instead of stacking beside it. This is the fix
+    for the panel's 123-line raw token list - /auth/login minted a fresh
+    "web-login" token on EVERY sign-in, so a phone that reconnects weekly grew
+    a row a week, all of them live, none of them distinguishable. Grouping is
+    recorded AT ISSUE TIME by the only party that knows which device this is
+    (NO-MONKEY-PATCH law) - never reconstructed later by pattern-matching
+    labels, which is what "web-login #7" would have forced."""
     users = list_users()
     for u in users:
         if u["name"] == name:
             tok = "sdk_" + secrets.token_urlsafe(24)
-            rec = _token_record(tok, label, expires_days=expires_days)
-            u.setdefault("tokens", []).append(rec)
+            rec = _token_record(tok, label, expires_days=expires_days,
+                                device=device, unused_days=unused_days)
+            held = u.setdefault("tokens", [])
+            replaced = 0
+            if device:
+                replaced = len([t for t in held if t.get("device") == device])
+                held[:] = [t for t in held if t.get("device") != device]
+            held.append(rec)
             _save(USERS, users)
             _audit("token.issue", actor, name,
                    label=rec["label"], tail=_tail(tok), token_id=rec["id"],
-                   expires=rec.get("expires"))
+                   expires=rec.get("expires"), device=device,
+                   replaced=replaced)
             return tok
     raise ValueError("no such user")
+
+
+def sweep_tokens(actor="system"):
+    """Garbage-collect tokens _token_expired() already refuses. Housekeeping
+    ONLY: an expired token stops authenticating the moment it expires, whether
+    or not this ever runs - this just stops the panel filling with corpses.
+    Returns how many were dropped."""
+    users = list_users()
+    dropped = 0
+    for u in users:
+        held = u.get("tokens") or []
+        keep = [t for t in held if not _token_expired(t)]
+        if len(keep) != len(held):
+            dropped += len(held) - len(keep)
+            u["tokens"] = keep
+    if dropped:
+        _save(USERS, users)
+        _audit("token.sweep", actor, "-", removed=dropped)
+    return dropped
+
+
+def last_active(u):
+    """When this account was last seen, derived from its devices' own
+    `last_used` stamps - the panel's "last activity" column. None for an
+    account that has never presented a token (web session only)."""
+    stamps = [t.get("last_used") for t in (u.get("tokens") or []) if t.get("last_used")]
+    return max(stamps) if stamps else None
 
 
 def _touch_token(name, token_id):
@@ -522,8 +609,7 @@ def resolve(sid=None, token=None):
         for u in list_users():
             for t in u.get("tokens", []):
                 if hmac.compare_digest(t.get("th", ""), th):
-                    exp = t.get("expires")
-                    if exp and exp < time.strftime("%Y-%m-%d"):
+                    if _token_expired(t):
                         continue  # expired: same as not matching at all
                     name = u["name"]
                     _touch_token(u["name"], t["id"])

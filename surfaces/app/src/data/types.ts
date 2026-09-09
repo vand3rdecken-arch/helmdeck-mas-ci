@@ -180,7 +180,11 @@ export interface Metrics {
     capacity: { wip_limit: number; touch_budget_day: number;
       tariff: { steer: number; review: number; bounce: number } };
     drivers?: Record<string, { type: string; record?: boolean }>;
-    registration?: { open: boolean; invite_code: string; default_role: string };
+    // Only `open` is live (anyone may sign up, always as a client). The other
+    // two are retired keys the daemon keeps declared purely so
+    // invites.migrate_legacy() can blank them once - see spine/storage/
+    // events.py. Optional here so nothing in the app reads them by accident.
+    registration?: { open: boolean; invite_code?: string; default_role?: string };
     policy?: { lane_labels?: Record<string, string>; auto_dispatch_modes?: string[];
       auto_accept_green?: boolean; auto_dispatch_priority?: string; chat_configure_roles?: string[] };
     jira?: { base: string; email: string; api_token: string; default_jql: string };
@@ -289,8 +293,19 @@ export interface Me {
 }
 export interface HistoryRow { kind: string; detail: string; ts?: string; t?: number }
 export interface Run { id: string; title: string; kind: string; status: string; steps?: number }
+// One token = one DEVICE in the Team panel. `device` is the installation id
+// the client sent at sign-in (routes_auth.py's _device_id) - present only for
+// tokens minted since that existed, absent for a script/curl token, which is
+// then simply its own row.
+export interface TokenRow {
+  label: string; id: string; tail: string; created?: string; device?: string | null;
+  last_used?: string | null; expires?: string | null; stale?: boolean;
+}
 export interface UserRow {
   name: string; role: string; created?: string;
+  // Newest device activity on this account, computed server-side from the
+  // tokens' own last_used stamps (auth.last_active) - never re-derived here.
+  last_active?: string | null;
   // No `token`: the daemon hashes device tokens at rest and never hands the
   // plaintext back. `id` is the revoke handle, `tail` the last six characters
   // so a human can tell two devices apart. The full value exists exactly once,
@@ -298,8 +313,18 @@ export interface UserRow {
   // last_used/expires/stale: card 5 debt (rbac-audit-hardening-partial) -
   // access-review signal. `stale` is computed server-side (auth._token_stale,
   // >90d unused), never recomputed client-side from a cached timestamp.
-  tokens: { label: string; id: string; tail: string; created?: string;
-    last_used?: string | null; expires?: string | null; stale?: boolean }[];
+  tokens: TokenRow[];
+}
+
+// An invitation (spine/auth/invites.py). The CODE is present because it is
+// only useful until someone signs up with it - unlike a device token there is
+// nothing to hide, and the owner has to be able to re-copy a link he sent.
+// `state` is derived server-side on every read, never a stored flag.
+export interface InviteRow {
+  code: string; role: "client" | "operator";
+  state: "open" | "used" | "revoked" | "expired";
+  created?: string; created_by?: string; expires?: string;
+  used_by?: string | null; used_at?: string | null; note?: string;
 }
 
 // A registered remote-execution device (ops/docs/backlog/remote-device-

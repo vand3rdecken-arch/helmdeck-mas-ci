@@ -18,6 +18,13 @@ const KEY = "helmdeck.config";
 interface Persisted {
   baseUrl: string; token: string;
   relayUrl: string; room: string; daemonPub: string; mySec: string; myPub: string;
+  // A stable id for THIS installation, minted once on first hydrate and sent
+  // with every sign-in. The daemon uses it to keep ONE live device token per
+  // device (auth.issue_token(device=...)) instead of minting a fresh permanent
+  // credential on every login - which is what grew the owner's Team panel into
+  // a wall of indistinguishable "web-login" rows. Not a secret and not an
+  // identity: it decides only which of the account's OWN tokens gets replaced.
+  deviceId: string;
 }
 interface ConfigState extends Persisted {
   hydrated: boolean;
@@ -33,10 +40,25 @@ export type PairResult = { ok: true; mode: "relay" | "direct" } | { ok: false; r
 
 const DEFAULTS: Persisted = {
   baseUrl: `http://${DEV_HOST}:8140`, token: "",   // the daemon serves on 8140
-  relayUrl: "", room: "", daemonPub: "", mySec: "", myPub: "",
+  relayUrl: "", room: "", daemonPub: "", mySec: "", myPub: "", deviceId: "",
 };
 
 const isWeb = Platform.OS === "web";
+
+const newDeviceId = () =>
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** What this device calls itself in the owner's Team panel. Deliberately
+ *  coarse (platform, not a fingerprint): it exists so a human can tell "my
+ *  phone" from "the laptop", and anything sharper would be tracking. */
+export function deviceLabel(): string {
+  if (Platform.OS === "web") {
+    const ua = (globalThis.navigator?.userAgent ?? "").toLowerCase();
+    if (ua.includes("electron")) return "Desktop";
+    return ua.includes("mobile") ? "Browser (mobil)" : "Browser";
+  }
+  return Platform.OS === "ios" ? "iPhone/iPad" : "Android";
+}
 
 async function persist(s: Persisted) {
   const json = JSON.stringify(s);
@@ -50,7 +72,7 @@ export const useConfig = create<ConfigState>((set, get) => ({
   ...DEFAULTS,
   hydrated: false,
   relayMode: () => !!(get().relayUrl && get().room && get().daemonPub),
-  set: (patch) => { set(patch); const { baseUrl, token, relayUrl, room, daemonPub, mySec, myPub } = get(); persist({ baseUrl, token, relayUrl, room, daemonPub, mySec, myPub }); },
+  set: (patch) => { set(patch); const { baseUrl, token, relayUrl, room, daemonPub, mySec, myPub, deviceId } = get(); persist({ baseUrl, token, relayUrl, room, daemonPub, mySec, myPub, deviceId }); },
 
   // Pairing code (base64 JSON {u:relayUrl, r:room, k:daemonPub, t:deviceToken}),
   // matching daemon relay_client.pairing_payload() / the Kotlin HubStore parser.
@@ -115,6 +137,11 @@ export const useConfig = create<ConfigState>((set, get) => ({
         if (raw) set({ ...JSON.parse(raw) });
       }
     } catch { /* ignore */ }
+    // Mint the installation id once, here, so it survives every later set()
+    // (which persists the whole Persisted shape). An existing install keeps
+    // the id it already has; a reinstall gets a new one and shows up as a new
+    // device in the panel, which is exactly what it is.
+    if (!get().deviceId) get().set({ deviceId: newDeviceId() });
     set({ hydrated: true });
   },
 }));

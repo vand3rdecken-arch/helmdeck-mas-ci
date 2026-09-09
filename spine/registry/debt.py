@@ -1113,7 +1113,7 @@ DEBT = [
     {
         "id": "pair-token-no-ttl",
         "title": "Pairing device-token outlives the 15-min pairing window",
-        "status": "open",
+        "status": "paid",
         "what": "Each /relay/pair click mints a device bearer token with no "
                 "expiry. The single-use PAIR_TTL window (relay_client._admit) "
                 "gates the E2EE pin - the relay path of an unused code dies "
@@ -1125,9 +1125,22 @@ DEBT = [
                         "and revocable per user in Settings -> users.",
         "trigger": "owner generates codes and abandons them; a code lands in "
                    "chat history/screenshots and someone on the LAN finds it",
-        "fix": "Give pairing-issued tokens a TTL and auto-revoke unused ones "
-               "when the window closes, or bind the token to the pinned "
-               "device pub at admission time.",
+        "fix": "PAID (2026-09-09, with the Team & Geraete rebuild): a token "
+               "now carries an optional CLAIM WINDOW (`unused_days`), and "
+               "auth._token_expired() refuses one that was never presented "
+               "inside it - derived on every resolve(), not a stored flag, so "
+               "an abandoned pairing code stops being a credential whether or "
+               "not any sweep ever runs. Both pairing routes (QR/link and the "
+               "spoken code) mint with auth.PAIR_UNUSED_TTL_DAYS=1; everything "
+               "else defaults to 30. A token the device actually used is a "
+               "normal device token from that moment on, so a paired phone is "
+               "never logged out. auth.sweep_tokens() at daemon boot is "
+               "garbage collection only. Records written before this carry "
+               "neither field and are untouched - nothing already in someone's "
+               "hands expires retroactively. Pinned by ops/tests/"
+               "test_token_ttl.py. Binding the token to the pinned device pub "
+               "stays unbuilt (it would also close the SAME hole; the TTL was "
+               "the smaller change).",
         "order": 11,
     },
     {

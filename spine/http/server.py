@@ -64,6 +64,7 @@ from spine.http.apimeta import (_loop_state_mod, _lane_flow, _loop_machine, _con
                                 _profile_schema, CONTROLS, DOORS, SCOPES)
 from spine.ops.glances import glance_payload, _glance_question
 from spine.http.routes import routes_auth
+from spine.http.routes import routes_invites
 from spine.http.routes import routes_policy
 from spine.http.routes import routes_settings
 from spine.http.routes import routes_glance
@@ -230,10 +231,17 @@ class H(BaseHTTPRequestHandler):
                 # device token in full to the panel on every load, while the UI
                 # only ever displayed the last six characters - the other 186
                 # bits were on the wire for nothing. Revoke goes by id now.
+                #
+                # `device` + `last_active` are what turn this into a MEMBER list
+                # with devices under it (the Jira-shaped panel) instead of a raw
+                # token dump: both are read straight off records written at
+                # issue/use time, never reconstructed here.
                 return self._send(200, json.dumps([
                     {"name": u["name"], "role": u["role"], "created": u.get("created"),
+                     "last_active": auth.last_active(u),
                      "tokens": [{"label": t.get("label"), "id": t.get("id"),
                                  "tail": t.get("tail", ""), "created": t.get("created"),
+                                 "device": t.get("device"),
                                  # card 5 debt (rbac-audit-hardening-partial):
                                  # access-review signal, computed live, never
                                  # a stored flag - see auth._token_stale.
@@ -242,6 +250,8 @@ class H(BaseHTTPRequestHandler):
                                  "stale": auth._token_stale(t)}
                                 for t in u.get("tokens", [])]}
                     for u in auth.list_users()]))
+            if p in routes_invites.GET_ROUTES:
+                return routes_invites.GET_ROUTES[p](self, user)
             if p in routes_runs.GET_ROUTES:
                 return routes_runs.GET_ROUTES[p](self, user)
             parts = p.strip("/").split("/")
@@ -487,6 +497,11 @@ class H(BaseHTTPRequestHandler):
                 _denial = permissions.require(user, _cap)
                 if _denial:
                     return self._send(*_denial)
+            # ---- invitations (cap users.manage, declared in routes_invites) --
+            if p in routes_invites.POST_ROUTES:
+                return routes_invites.POST_ROUTES[p](self, user, body)
+            if len(parts) == 3 and parts[0] == "invites" and parts[2] == "revoke":
+                return routes_invites.invite_revoke_post(self, user, parts[1])
             # ---- user management (owner only, cap users.manage) ----
             if parts[0] == "users":
                 try:
@@ -688,6 +703,23 @@ def serve(port=8140):
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")
+    # Identity housekeeping, same one-shot boot slot and the same best-effort
+    # contract as the board seed above. Both are GARBAGE COLLECTION ONLY: an
+    # expired token is already refused by auth.resolve() and a spent invitation
+    # is already refused by invites.claim(), whether or not these ever run.
+    from spine.auth import invites
+    try:
+        if invites.migrate_legacy():
+            print("AUTH: the global registration invite code is now an invitation "
+                  "object (single-use, 7 days) - the old code still works once.")
+        swept = auth.sweep_tokens()          # pays debt [pair-token-no-ttl]
+        if swept:
+            print("AUTH: swept %d expired/unclaimed device token(s)." % swept)
+        gone = invites.sweep()
+        if gone:
+            print("AUTH: dropped %d long-spent invitation(s)." % gone)
+    except Exception as e:                                         # noqa: BLE001
+        print("AUTH: identity housekeeping skipped (%s)" % e)
     events.sync_relay_feed()   # backfill for an install predating this mirror - see events.RELAY_FEED
     from spine.comms import relay_client
     from spine.registry import cells
