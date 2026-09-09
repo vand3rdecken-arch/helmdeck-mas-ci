@@ -112,8 +112,20 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
       // answers by REPLAYING the POST (see cells/copilot/chat_dedupe.py for the
       // duplicate-message evidence). The composer's Stop button, not a
       // stopwatch, is what bounds a turn.
+      // Same mismatch hit the hanging-GET long-polls: /stream/wait and
+      // /tracks/:id/transcript/live are held server-side for ~22-25s by design
+      // (spine/http/server.py, routes_tracks.py - "22s < relay REPLY_TIMEOUT")
+      // and the app re-arms them in a tight loop (_layout.tsx's useLiveWait).
+      // The blanket 8s probe bound aborted EVERY idle cycle before the server
+      // could ever answer, so direct-mode clients (the desktop shell always is
+      // one - surfaces/desktop/main.js has no relay config) racked up transport
+      // failures continuously and the reconnect banner never cleared - owner
+      // report 2026-09-09 ("banner die ganze Zeit" on desktop). 30s clears the
+      // server's own bound with margin and is still a real bound if the LAN
+      // host is actually gone.
+      const isLongPoll = path.startsWith("/stream/wait") || path.includes("/transcript/live");
       const timer = setTimeout(() => timeoutCtl.abort(),
-        path === "/chat" ? 900_000 : 8000);
+        path === "/chat" ? 900_000 : isLongPoll ? 30_000 : 8000);
       if (signal) {
         if (signal.aborted) timeoutCtl.abort();
         else signal.addEventListener("abort", () => timeoutCtl.abort(), { once: true });
