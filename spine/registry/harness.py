@@ -44,7 +44,7 @@ SETTINGS = os.path.join(HARNESS, "settings")
 # cell home; schema/ and templates/ are infrastructure and stay under
 # ops/harness/ - they are not any one cell's policy.
 AGENT_CELL = {
-    "card-worker": "engineer", "machine-worker": "engineer",
+    "card-worker": "engineer", "machine-worker": "engineer", "ship-worker": "engineer",
     "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot",
     "glass-brief": "copilot", "voice-style": "copilot", "wear-brief": "copilot",
 }
@@ -205,6 +205,24 @@ _DEFAULTS = {
     "machine-worker": (_DEFAULT_MACHINE,
                        {"name": "machine-worker", "settings": "card",
                         "setting_sources": "project", "ask_protocol": True}),
+    # SHORT degraded stub, same reasoning as the copilot's floor below: the
+    # real ~4KB policy (failure classification, ship.sh subcommand contract)
+    # lives only in cells/engineer/harness/agents/ship-worker.md and would rot
+    # if duplicated here. What MUST survive even a missing file is the wire
+    # contract _maybe_ship_card_close (cells/engineer/cards/sessions.py)
+    # parses - without the verdict line this card would hang forever, never
+    # self-closing, worse than the old hook it replaced.
+    "ship-worker": (
+        "Your full role file (cells/engineer/harness/agents/ship-worker.md) is "
+        "MISSING - you are running in degraded mode. Ship the kind (ota|native) "
+        "named in your task via ops/deploy/push_update.sh / build_apk.sh, then "
+        "verify with `py -3.12 ops/deploy/ship_verify.py <kind>` before calling "
+        "it green. Tell the owner in your first sentence that the installation "
+        "is broken and needs repair. End your final reply with exactly the "
+        "line 'SHIP: OK' or 'SHIP: FAILED' - the daemon reads it to close this "
+        "card.",
+        {"name": "ship-worker", "settings": "card",
+         "setting_sources": "project", "ask_protocol": True}),
     # The copilot's floor is a SHORT degraded-mode stub, not a copy of the real
     # 17 KB role: a full copy rots out of sync with the file (measured - the
     # copy that lived in copilot.py drifted ~1.9k chars behind), and the real
@@ -586,6 +604,8 @@ SURFACES = [
      "builder": "drivers.build_argv", "cwd": "<worktree der Karte>"},
     {"key": "machine", "agent": "machine-worker", "label": "Maschine (Task auf dem PC)",
      "builder": "drivers.build_argv", "cwd": "<Arbeitsordner des Tasks>"},
+    {"key": "ship-worker", "agent": "ship-worker", "label": "Ship-Karte (fuehrt einen Ship aus)",
+     "builder": "drivers.build_argv", "cwd": "<Repo-Wurzel>"},
     # `agent` is the FILE key (cells/copilot/harness/agents/board-copilot.md) and deliberately
     # keeps its old name: renaming the file would break every brief lookup and
     # the settings mapping for a cosmetic win. The LABEL is what the owner reads.

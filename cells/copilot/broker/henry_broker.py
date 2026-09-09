@@ -546,46 +546,50 @@ def _execute(action, card, lane, text, esc, kind=""):
                     or (t.get("question") or {}).get("question") or "")[:80]))
         return False
     if action == "ship":
-        # The ship DECISION, executed (owner decree 2026-09-01: shipping is
-        # Henry's judgement, not a post-done reflex - the emit half is
-        # lanemachine.request_ship_decision, this is the execute half; pays
-        # debt ship-decision-not-wired). `kind` is the advisor contract:
-        # none = a deliberate non-ship (docs-only, daemon-only - the answer
-        # the old hash could never give), ota|native ride into ship.sh as
-        # SHIP_KIND at event time, never via a file. Execution mirrors
-        # rerun_deploy exactly: same _repo_hook (silence-bounded, load-
-        # admitted, HOOK-NOTE narration), same loud no-hook failure, same
-        # synchronous-and-verified close.
+        # The ship DECISION, executed as its own visible board card (owner
+        # decree 2026-09-01: shipping is Henry's judgement, not a post-done
+        # reflex - the emit half is lanemachine.request_ship_decision, this
+        # is the execute half; pays debt ship-decision-not-wired). Owner
+        # decree 2026-09-09, 18:04 correction: EXECUTION is no longer an
+        # invisible deploy-hook subprocess - `kind` none|ota|native is the
+        # advisor contract, and ota/native now spawn a SHIP CARD
+        # (dispatch.new_ship_task) instead of calling _repo_hook directly.
+        # That card's own agent turn (cells/engineer/harness/agents/
+        # ship-worker.md) does DIAGNOSE -> EXECUTE -> VERIFY as its own
+        # reasoning and self-closes on a 'SHIP: OK' verdict
+        # (sessions._maybe_ship_card_close) - none = a deliberate non-ship
+        # (docs-only, daemon-only - the answer the old hash could never give).
+        #
+        # This escalation closes the MOMENT the card exists, not when the
+        # ship finishes: the CARD is now the durable, visible record of "is
+        # this ship done, in progress, or stuck" (lane/status/timeline, same
+        # as any other card), so there is nothing left for the escalation to
+        # wait on. A failed ship card simply parks needs_you like any other
+        # stuck card - Henry's own board snapshot already shows it to him on
+        # his next pass; no retry ladder needed here (unlike the old
+        # rerun_deploy path, which still exists for a bare _repo_hook retry
+        # but no longer applies to ship-decision escalations specifically).
         if kind == "none":
             return True                # deliberate non-ship; why lands in the audit note
         if kind not in ("ota", "native"):
             escalations.record_note(esc["id"],
                 "ship: kind %r ist nicht none|ota|native - bleibt offen" % kind)
             return False
-        from cells.engineer.cards.lanemachine import _repo_hook
+        from cells.engineer.cards import dispatch
         from spine.storage import events
-        if t is None:
-            repo = events.settings().get("default_repo") or ""
-            if not repo:
-                return False
-            t = {"id": "-", "repo": repo, "run_dir": os.path.join(ROOT, "recordings", "_henry"),
-                 "worktree": repo}
-            os.makedirs(t["run_dir"], exist_ok=True)
-        cmd = ((events.settings().get("repo_hooks") or {}).get(t["repo"]) or {}).get("deploy", "").strip()
-        if not cmd:
-            escalations.record_note(esc["id"],
-                "ship: kein settings.repo_hooks['%s']['deploy'] konfiguriert - "
-                "kein Deploy ausgeloest." % t["repo"])
+        repo = (t or {}).get("repo") or events.settings().get("default_repo") or ""
+        if not repo:
+            escalations.record_note(esc["id"], "ship: kein Repo bekannt - keine Ship-Karte angelegt")
             return False
+        origin = t.get("id") if t and t.get("id") != "-" else None
         try:
-            hk = _repo_hook(dict(t), "deploy", extra_env={"SHIP_KIND": kind})
+            card = dispatch.new_ship_task(repo, kind, actor="henry", origin_card=origin)
         except Exception as e:
-            escalations.record_note(esc["id"], "ship crashed: %s" % str(e)[:250])
+            escalations.record_note(esc["id"], "ship: Karte konnte nicht angelegt werden: %s" % str(e)[:250])
             return False
-        if hk is False:
-            escalations.record_note(esc["id"],
-                "ship (%s): Deploy-Hook rot - bleibt offen fuer den naechsten Versuch." % kind)
-            return False               # stays open (attempt cap) - the agentic retry
+        escalations.record_note(esc["id"],
+            "ship (%s): Karte %s angelegt - laeuft ab jetzt als eigene Karte auf dem Board."
+            % (kind, card.get("id", "?")))
         return True
     # GxP: Henry's two HANDS verbs are off for a card in the regulated scope.
     # `move` would also be stopped by the lane machine's chokepoint (he is not
@@ -648,6 +652,12 @@ def _execute(action, card, lane, text, esc, kind=""):
             t["id"], text, actor="henry", source="henry-escalation"))
         return True
     if action == "rerun_deploy":
+        # NO LONGER the ship-decision retry path (owner decree 2026-09-09,
+        # 18:04 correction: a ship is its own card now - a failed one parks
+        # needs_you and is steered/re-run like any other stuck card, not via
+        # this verb). Kept for whatever OTHER repo_hooks['deploy'] use a
+        # future escalation kind might name directly - a bare _repo_hook
+        # retry, unrelated to Henry's `ship` verb above.
         from cells.engineer.cards.lanemachine import _repo_hook
         from spine.storage import events
         if t is None:

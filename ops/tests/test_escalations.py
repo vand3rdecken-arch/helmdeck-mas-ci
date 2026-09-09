@@ -121,32 +121,46 @@ def main():
         print("PASS broker: rerun_deploy with no matching repo_hooks entry -> False + noted, not a silent no-op success")
 
         # -- the ship verb (owner decree 2026-09-01: shipping is Henry's ------
-        # -- judgement; emit half = lanemachine.request_ship_decision, --------
-        # -- execute half = this verb; pays debt ship-decision-not-wired) -----
+        # -- judgement; emit half = lanemachine.request_ship_decision). -------
+        # -- Owner decree 2026-09-09, 18:04 correction: EXECUTE spawns a -------
+        # -- SHIP CARD (dispatch.new_ship_task), not a hook subprocess - -------
+        # -- stubbed here so this stays a unit test (no real card, no real -----
+        # -- spawned turn). ------------------------------------------------
         eid5 = esc.emit("ship-decision", card=None, detail="entscheide")
         e5 = [e for e in esc.list_open() if e["id"] == eid5][0]
-        # kind none = a deliberate non-ship, closes with no hook involved
+        # kind none = a deliberate non-ship, closes with nothing spawned
         assert hb._execute("ship", "", "", "", e5, kind="none") is True
         # an invalid kind is a malformed verb: stays open, reason noted
         assert hb._execute("ship", "", "", "", e5, kind="banana") is False
-        # ota with no configured hook fails LOUD (same law as rerun_deploy)
-        assert hb._execute("ship", "", "", "", e5, kind="ota") is False
-        print("PASS broker: ship verb -> none closes, bad kind + missing hook stay open loud")
 
-        # -- SHIP_KIND must actually REACH the hook subprocess (the whole -----
-        # -- point: ship.sh runs the DECISION, not the legacy hash fallback) --
-        import cells.engineer.cards.lanemachine as lm
-        marker = os.path.join(tmp, "shipkind.txt")
-        events.settings = lambda: {"default_repo": tmp, "repo_hooks": {
-            tmp: {"deploy": 'sh -c "echo $SHIP_KIND > \\"%s\\""' % marker.replace("\\", "/")}}}
-        eid6 = esc.emit("ship-decision", card=None, detail="entscheide")
-        e6 = [e for e in esc.list_open() if e["id"] == eid6][0]
-        assert hb._execute("ship", "", "", "", e6, kind="ota") is True
-        with open(marker, encoding="utf-8") as f:
-            assert f.read().strip() == "ota", "SHIP_KIND must reach the hook's env"
-        print("PASS broker: ship ota -> hook ran with SHIP_KIND=ota in its env")
+        import cells.engineer.cards.dispatch as _dispatch
+        calls = []
+        def _fake_new_ship_task(repo, kind, actor="owner", origin_card=None):
+            calls.append({"repo": repo, "kind": kind, "actor": actor, "origin_card": origin_card})
+            return {"id": "ship-fake-1"}
+        real_new_ship_task = _dispatch.new_ship_task
+        _dispatch.new_ship_task = _fake_new_ship_task
+        try:
+            events.settings = lambda: {"default_repo": tmp}
+            assert hb._execute("ship", "", "", "", e5, kind="ota") is True
+            assert calls and calls[-1]["kind"] == "ota" and calls[-1]["repo"] == tmp, \
+                "ship verb must spawn a Ship card carrying the decided kind"
+            # no repo resolvable at all -> refuses loudly, nothing spawned
+            calls.clear()
+            events.settings = lambda: {}
+            assert hb._execute("ship", "", "", "", e5, kind="native") is False
+            assert not calls, "no repo known -> must not spawn a card"
+        finally:
+            _dispatch.new_ship_task = real_new_ship_task
+        print("PASS broker: ship verb -> none closes, bad kind stays open, "
+              "ota/native spawn a Ship card with the decided kind, no repo refuses loudly")
 
         # -- emit half: one open decision per card, deduped; no hook = no-op --
+        # (unrelated to the ship VERB stubbed above - request_ship_decision
+        # only checks a deploy hook is CONFIGURED as evidence something can
+        # ship at all; it still needs one here regardless of what runs it)
+        import cells.engineer.cards.lanemachine as lm
+        events.settings = lambda: {"repo_hooks": {tmp: {"deploy": "bash ops/deploy/ship.sh"}}}
         t9 = {"id": "c9", "repo": tmp, "run_dir": os.path.join(tmp, "run9"), "worktree": tmp}
         os.makedirs(t9["run_dir"], exist_ok=True)
         assert lm.request_ship_decision(t9, "test") is not None

@@ -915,29 +915,41 @@ The gate is fixed (always runs — your safety net), but the human steps are pol
 With all three: file a card → agent works → gate green → auto-merge → auto-deploy,
 same as a hand deploy, gate still guarding.
 
-## Fast-track deploy (ops/deploy/ship_run.py)
-The repo `deploy` hook runs `ops/deploy/ship_run.py` - a staged, visible
-process (owner decree 2026-09-09, precision 17:17: "mehr als ein Prozess",
-not a monolithic script or a thin wrapper around one):
+## Fast-track deploy - a Ship card, not a deploy hook
+Owner decree 2026-09-09 (18:04 correction): a ship is not an invisible
+deploy-hook subprocess after an accept - it runs as its OWN board card, with
+a lane, a timeline, steerability, and self-correction like any other card.
 
-1. **DIAGNOSE** - reads Henry's decision (`SHIP_KIND=none|ota|native`), runs
-   `ops/tools/ship_facts.py` fresh, and preflight-gates the resources the
-   chosen kind needs (JDK17/keystore/relay) - a missing one stops HERE,
-   before any build time is spent.
-2. **EXECUTE** - runs `push_update.sh` (OTA) or `build_apk.sh` (native),
-   streamed live. A failure is diagnosed (transient/resource-missing/
-   collision/code-error/contradiction - policy in `ops/harness/agents/
-   ship-runner.md`) and retried at most once if the diagnosis says so. The
-   version bump / native-fingerprint ref (so old APKs reject incompatible JS
-   instead of crashing) run through `ops/deploy/ship.sh`'s `bump`/
-   `finalize-native`/`revert-bump` subcommands - hard invariants, exactly-
-   once, never agent judgement.
-3. **VERIFY** - re-checks the runtime's OWN signal before calling anything
-   green: the live relay manifest for OTA, the three version numbers
-   (app.json / APK / relay) for native. Exit 0 from a script is not proof.
+When a landed change needs shipping, `lanemachine.request_ship_decision`
+emits a `ship-decision` escalation; Henry judges it (`ship-advisor`,
+none|ota|native - unchanged by any of this) and answers with the `ship`
+verb. For `ota`/`native`, that verb now calls
+`cells/engineer/cards/dispatch.new_ship_task(repo, kind, actor="henry")`
+instead of firing a hook - a real direct-build card (no worktree, no
+branch, live repo root, `bypassPermissions`, exactly like any other
+direct-build card the owner already trusts) whose own agent turn
+(`cells/engineer/harness/agents/ship-worker.md`) does, as its own reasoning:
 
-`ops/deploy/ship.sh` is now a TOOL these stages call, not the path itself -
-a bare `bash ops/deploy/ship.sh` with no argument still runs the original
-monolithic pipeline standalone (manual fallback / `SHIP_DRY_RUN` probe
-only; the automated path never invokes it that way). Henry's ship DECISION
-and `_repo_hook`'s SILENCE watchdog are unchanged by any of this.
+1. **Diagnose** - runs `ops/tools/ship_facts.py` fresh and checks the
+   resources the kind needs (JDK17/keystore/relay) BEFORE starting, so a
+   missing one stops in seconds, not 15 minutes in.
+2. **Execute** - runs `push_update.sh` (ota) or `build_apk.sh` (native,
+   using `ops/deploy/ship.sh`'s `bump`/`finalize-native`/`revert-bump`
+   subcommands for the version bump / native-fingerprint ref - hard
+   invariants, exactly-once, never the agent's own judgement). A failure is
+   diagnosed and retried at most once by the card's OWN reasoning - the
+   thing a script could never do, and the whole reason this is a card.
+3. **Verify** - runs `py -3.12 ops/deploy/ship_verify.py <kind>`, which
+   re-checks the runtime's own signal (the live relay manifest for OTA, the
+   three version numbers for native) before the card calls anything green.
+
+The card's final reply must end with `SHIP: OK` or `SHIP: FAILED` - the
+daemon reads that line (`sessions._maybe_ship_card_close`) and moves the
+card to Done itself on OK. A FAILED (or a crash) leaves it exactly where
+any unfinished card sits: visible, `needs_you`, steerable by the owner or
+Henry to redirect or retry - no separate retry ladder needed.
+
+`ops/deploy/ship.sh` is a TOOL the card's Bash calls invoke for the hard
+invariants - it is not the path. A bare `bash ops/deploy/ship.sh` with no
+argument still runs the original monolithic pipeline standalone (manual
+fallback / `SHIP_DRY_RUN` probe only).

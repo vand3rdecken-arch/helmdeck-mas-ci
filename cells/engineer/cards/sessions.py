@@ -27,7 +27,7 @@ from spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _u
 from spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
 from cells.engineer.cards.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE)
 from cells.engineer.cards.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, request_ship_decision, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
-from cells.engineer.cards.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED, new_remote_task, claim_remote_task, submit_remote_result, reassign_remote_task, sweep_stale_device_claims, start_device_claim_sweeper)
+from cells.engineer.cards.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED, new_remote_task, claim_remote_task, submit_remote_result, reassign_remote_task, sweep_stale_device_claims, start_device_claim_sweeper, new_ship_task, _maybe_ship_card_close)
 from cells.engineer.cards.cardadmin import (archive_track, delete_track, update_track, apply_board_directives, add_attachments, remove_attachment, list_checkpoints, rewind_files, fork_conversation, fork_track, history, EDITABLE, CLEARABLE, BOOLFIELDS, DIRECTIVES)
 from cells.engineer.cards.lifecycle import (_interrupt_note_report, _promote_live_session, _track_idle_s, present, sweep_zombies, start_zombie_reconciler, PRESENT_IDLE_S, _BOUNCE_ESCALATE_AT)
 
@@ -1016,7 +1016,23 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # dispatched onto the no-worktree Paseo path (dispatch._start_inner,
     # owner-decreed 2026-08-20) has no branch to gate or merge - autocommit +
     # deploy only.
-    if t.get("direct"):
+    if t.get("ship_kind"):
+        # a Ship card (owner decree 2026-09-09, 18:04 correction) - its own
+        # brief did DIAGNOSE->EXECUTE->VERIFY as ITS reasoning; this only
+        # reads the verdict line and closes it on success. Checked BEFORE
+        # "direct" below: a ship card is also direct=True (dispatch.
+        # new_ship_task rides that shape) but must never ALSO run
+        # _maybe_fast_track_ship_direct (it has no fast_track flag, so that
+        # hook would no-op anyway, but this keeps the two paths structurally
+        # exclusive rather than relying on a flag that happens to be unset).
+        # Lives in dispatch.py, not here: a ship card's FIRST (often only)
+        # turn dispatches through _start_machine, a completely separate
+        # completion path from this steer-only one - one function shared by
+        # both call sites, not two copies that could drift. MUST reassign
+        # t: move_lane's write is on the STORED record, not this local
+        # variable.
+        t = _maybe_ship_card_close(t, log)
+    elif t.get("direct"):
         _maybe_fast_track_ship_direct(t, log)
     else:
         # worktree fast-track card: CONVERT to the live-tree rails at turn end
