@@ -923,3 +923,15 @@ version/runtimeVersion** (so old APKs can't pull incompatible JS), builds the AP
 pushes a matching OTA, then commits the version bump. So a fast-track card just
 works whether the change is JS or native, and a native change never crash-loops
 an un-updated phone.
+
+**Execution is agent-led (owner decree 2026-09-09).** `ship.sh` still decides
+the branch and owns the version bump / native-fingerprint ref, both
+exactly-once - but it no longer calls `push_update.sh`/`build_apk.sh`
+directly and goes hard-red on the first non-zero exit. `ops/deploy/
+ship_agent.py` runs them instead: same streamed output, but a failure gets
+diagnosed (transient/resource-missing/collision/code-error/contradiction,
+policy in `ops/harness/agents/ship-runner.md`) and retried once if the
+diagnosis says so, and a run is never called green on exit 0 alone - it
+re-checks the runtime's own signal first (the live manifest for OTA, the
+three version numbers for native). Henry's ship DECISION and `_repo_hook`'s
+SILENCE watchdog are unchanged by any of this.
