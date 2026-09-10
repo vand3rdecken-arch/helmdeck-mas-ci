@@ -39,7 +39,14 @@ const TTLS = [1, 7, 30];
 function inviteBase(): string {
   if (Platform.OS === "web") {
     const o = globalThis.location?.origin ?? "";
-    if (o && !o.startsWith("file:")) return o.replace(/\/+$/, "");
+    // The desktop shell (surfaces/desktop/main.js) always loads the SPA from
+    // its own http://localhost:3300 - honest for the owner looking at their
+    // own screen, but unreachable for anyone else. Same exclusion as the
+    // native branch below: no honest link exists, so fall through to "".
+    if (o && !o.startsWith("file:") && !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(o)) {
+      return o.replace(/\/+$/, "");
+    }
+    if (o && !o.startsWith("file:")) return "";
   }
   const base = useConfig.getState().baseUrl ?? "";
   return base.includes("10.0.2.2") || base.includes("localhost") ? "" : base.replace(/\/+$/, "");

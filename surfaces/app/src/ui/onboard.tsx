@@ -319,8 +319,15 @@ export function Onboard() {
               if (!r) { setClicking(false); setStartErr(tr("onboard.startFailed")); }
             }}
             disabled={busy}
+            // Windows contrast themes make Chromium repaint filled buttons to
+            // OS colors, which can swallow the hardcoded white label below
+            // (ops/docs/new-user-flow-ux-review-20260910.md P1.1) - opt this
+            // one out (webstyles.tsx) and keep a visible border as a backstop
+            // so it never collapses into a flat, textless area.
+            {...(Platform.OS === "web" ? { dataSet: { hcGuard: "" } } : {})}
             style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-              backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 15 }}>
+              backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 15,
+              borderWidth: 1, borderColor: busy ? t.borderSubtle : t.accent }}>
             {busy ? <ActivityIndicator color={t.accent} /> : <Ionicons name="sparkles-outline" size={18} color="#fff" />}
             <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
               {busy ? tr("onboard.working") : tr("onboard.start")}

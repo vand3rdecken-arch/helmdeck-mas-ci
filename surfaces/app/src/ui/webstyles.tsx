@@ -5,6 +5,16 @@
 // (select/date popups, scrollbar chrome) follow the dark shell - the archived
 // web app carried the same rule at :root. Injected once; renders nothing.
 // No-op on native.
+//
+// Also: `forced-color-adjust: none` on elements opting in via
+// `dataSet={{ hcGuard: "" }}` (-> data-hc-guard). Chromium (= Electron too)
+// repaints filled buttons to OS colors once a Windows contrast theme is on,
+// overriding our own background AND the hardcoded white button text - a
+// colored button can collapse into a plain white bar with invisible text
+// (Windows Settings > Accessibility > Contrast themes; distinct from
+// light/dark mode). `none` keeps our colors; `forced-colors` still gets a
+// visible outline so the element never becomes a borderless flat area even
+// if `none` itself gets ignored.
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { tokens } from "@/theme/tokens";
@@ -19,6 +29,8 @@ html, body, #root { height: 100%; margin: 0; background: ${t.canvas}; overflow: 
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
 ::-webkit-scrollbar-corner { background: transparent; }
+[data-hc-guard] { forced-color-adjust: none; }
+@media (forced-colors: active) { [data-hc-guard] { outline: 1px solid ButtonText; outline-offset: -1px; } }
 `;
 
 export function WebStyles() {
