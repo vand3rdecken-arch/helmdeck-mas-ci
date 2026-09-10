@@ -466,7 +466,14 @@ def _run_action(a, actor, role="operator"):
         ct = _find_card(card) if card else None
         card_id = ct["id"] if ct and not isinstance(ct, list) else None
         escalations.emit("henry-followup", card=card_id, detail=text)
-        return "notiert - ich pruef das in der naechsten Runde (bis zu 90s) und meld mich"
+        # NOT a fixed-time promise (owner report 2026-09-10: a follow-up sat
+        # queued behind a ~5min ship-decision judgement, so "within 90s" was
+        # already false the moment something slow was ahead of it in the
+        # broker's queue - henry_broker._dispatch_pass now dispatches
+        # follow-ups on their own thread precisely so this stays close to
+        # true in the common case, but the chat confirmation must not assert
+        # a number the broker never actually guaranteed).
+        return "notiert - ich melde mich, sobald ich das geprueft habe"
     if kind == "resolve_blocker":
         # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
         # the shared repo checkout - a cross-cutting fix the sandboxed worker

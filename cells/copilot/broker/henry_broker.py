@@ -23,7 +23,6 @@ spine/storage/legacypolicy.py and stays readable one release as the floor.
 """
 import json
 import os
-import re
 import subprocess
 import threading
 import time
@@ -128,6 +127,30 @@ def _dispatcher_privileged(t):
     return u.get("role") in auth.chat_admin_roles()
 
 
+def _extract_json(txt):
+    """Henry's prompt demands the closing JSON come LAST ("Antworte am ENDE
+    NUR mit diesem JSON"), but the old DOTALL brace-to-brace regex matched
+    greedily from the FIRST '{' anywhere in the reply to the LAST '}' - a
+    "text" field that happened to quote or describe anything brace-shaped
+    earlier in the reply turned that match into "everything between that
+    stray brace and the real close", which is not valid JSON (measured
+    2026-09-10: a ship-decision judgement failed with 'ask failed: Expecting
+    property name enclosed in double quotes'). Try each '{' from the END of
+    the reply backwards and let json.JSONDecoder stop at ITS OWN matching
+    '}' - the first candidate that parses to a dict is the real, trailing
+    answer; earlier braces in prose essentially never parse as valid JSON on
+    their own."""
+    dec = json.JSONDecoder()
+    for i in reversed([i for i, c in enumerate(txt) if c == "{"]):
+        try:
+            obj, _ = dec.raw_decode(txt, i)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
 def _ask(prompt, model="", perm=None):
     """Headless one-shot judgement call - same spawn shape as the board
     copilot/PM (drivers._cmd_line, never a bare .cmd with quoted args).
@@ -161,10 +184,10 @@ def _ask(prompt, model="", perm=None):
     if not (stdout or "").strip():
         raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
     txt = json.loads(stdout).get("result", "")
-    m = re.search(r"\{.*\}", txt, re.S)
-    if not m:
+    d = _extract_json(txt)
+    if d is None:
         raise RuntimeError("henry: no JSON in reply: " + txt.strip()[:150])
-    return json.loads(m.group(0))
+    return d
 
 
 def _baseline_commit():
@@ -772,14 +795,83 @@ def _notify_owner(text, t):
         _audit(t["id"], text)
 
 
+# kind emitted by copilot_actions.py's follow_up chat verb - the owner's
+# "I'll check and report back" promise, which the loop below must keep on a
+# bounded clock of its own, not whatever clock the rest of the queue happens
+# to run on.
+_FOLLOWUP_KIND = "henry-followup"
+
+# Follow-ups already dispatched on a prior tick (still running - _ask can
+# outlast one _interval_s() sleep) must not be re-dispatched: two threads
+# deciding the SAME escalation concurrently would double-attempt it and
+# could double-execute its action (a second "did", a second "move").
+_followups_inflight = set()
+_followups_lock = threading.Lock()
+
+
+def _decide_or_give_up(esc):
+    if esc["attempts"] >= _max_attempts():
+        _give_up(esc)
+        return
+    _decide(esc)
+
+
+def _run_followup(esc):
+    try:
+        _decide_or_give_up(esc)
+    except Exception:
+        print("henry: followup loop error (%s):\n" % esc["id"] + traceback.format_exc())
+    finally:
+        with _followups_lock:
+            _followups_inflight.discard(esc["id"])
+
+
+def _dispatch_pass(open_escs):
+    """One while-loop tick's worth of work, split by kind (owner complaint
+    2026-09-10: a henry-followup escalation opened at 12:38:47 got its first
+    attempt only at 12:43:19 because the strictly serial `for` loop this
+    replaced was still blocked inside a single slow ship-decision _decide()
+    call - _ask can run up to 900s, plus up to 60s waiting on the direct-
+    tree lock, and NOTHING else in that pass could even be looked at until
+    it returned).
+
+    HENRY-FOLLOWUP escalations get their own thread each, dispatched FIRST,
+    before anything else in this pass has a chance to block the thread this
+    function runs on. Every other kind keeps the original serial behaviour -
+    one escalation's _decide() at a time, in list order, on this thread -
+    unchanged: turning every escalation kind into a worker pool was not what
+    was asked for and would need its own concurrency review of the
+    invariants _execute enforces (GxP scope, the open-question rail, the
+    2-attempt cap) under real parallelism. Follow-ups are the narrow, safe
+    case - _hands_on_ask's own _direct_lock_for already serializes any
+    tree-touching turn against every other one (Henry or a direct-build
+    card), so running several _decide() calls at once does not reintroduce
+    the race that lock exists to prevent.
+
+    Returns the list of Threads started (empty if none) - callers that need
+    to wait for a pass to finish (tests) can join() them; the live loop does
+    not."""
+    followups = [e for e in open_escs if e["kind"] == _FOLLOWUP_KIND]
+    others = [e for e in open_escs if e["kind"] != _FOLLOWUP_KIND]
+    started = []
+    for esc in followups:
+        eid = esc["id"]
+        with _followups_lock:
+            if eid in _followups_inflight:
+                continue
+            _followups_inflight.add(eid)
+        th = threading.Thread(target=_run_followup, args=(esc,), daemon=True)
+        started.append(th)
+        th.start()
+    for esc in others:
+        _decide_or_give_up(esc)
+    return started
+
+
 def _loop():
     while True:
         try:
-            for esc in escalations.list_open():
-                if esc["attempts"] >= _max_attempts():
-                    _give_up(esc)
-                    continue
-                _decide(esc)
+            _dispatch_pass(escalations.list_open())
         except Exception:
             # never die, but never be SILENT either - an invisible broken broker
             # is exactly the class of failure Henry exists to end. Full
