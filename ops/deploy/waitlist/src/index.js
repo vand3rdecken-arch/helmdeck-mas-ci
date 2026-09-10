@@ -180,9 +180,9 @@ function page({ rel, joined, already, err, email }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HelmDeck – Downloads für Windows, macOS, iOS & Android</title>
-<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Jetzt verfügbar für Windows, macOS (signiert &amp; notarisiert), iPhone (TestFlight) und Android – plus die Warteliste für HelmDeck Watch &amp; Glasses.">
+<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Jetzt verfügbar für Windows, macOS (signiert &amp; notarisiert), iPhone (TestFlight, inkl. Apple Watch) und Android (inkl. Wear OS) – plus die Warteliste für HelmDeck Glasses.">
 <meta property="og:title" content="HelmDeck – jetzt verfügbar">
-<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS, iPhone (TestFlight) und Android.">
+<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS, iPhone (TestFlight), Apple Watch, Android und Wear OS.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -338,7 +338,7 @@ footer a:hover{color:var(--ink-2)}
     <div class="lockup">${ICON_SVG}<b>HelmDeck</b></div>
     <div class="topnav">
       <a href="#downloads" data-i="navDownloads">Downloads</a>
-      <a href="#waitlist" data-i="navWaitlist">Watch &amp; Glasses</a>
+      <a href="#waitlist" data-i="navWaitlist">Glasses</a>
     </div>
     <button class="lang" id="lang" type="button" aria-label="Switch language">EN</button>
   </div>
@@ -382,8 +382,8 @@ footer a:hover{color:var(--ink-2)}
       </div>
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
-        <p class="dl-meta" data-i="dlIosMeta">TestFlight-Beta · öffentlicher Link in Vorbereitung</p>
-        <p class="dl-note" data-i-html="dlIosNote">Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href="${TESTFLIGHT_REQUEST_URL}">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail.</p>
+        <p class="dl-meta" data-i="dlIosMeta">TestFlight-Beta · inkl. Apple Watch · App-Store-Review läuft</p>
+        <p class="dl-note" data-i-html="dlIosNote">Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung, die App-Store-Einreichung läuft parallel. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href="${TESTFLIGHT_REQUEST_URL}">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail. Die Apple-Watch-App ist im selben Paket enthalten, kein separater Download nötig.</p>
         <div class="dl-actions">
           <button type="button" class="btn btn-primary btn-sm btn-block" id="ios-copy" data-copy="${OWNER_EMAIL}" data-i="dlIosCopyBtn">E-Mail-Adresse kopieren</button>
           <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn">TestFlight-App laden</a>
@@ -392,7 +392,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst.</p>
+        <p class="dl-note" data-i="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Für die Wear-OS-Uhr gibt es HelmDeck ebenfalls, auch über den Play Store.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Bei Google Play laden</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn">APK herunterladen</a>
@@ -403,8 +403,8 @@ footer a:hover{color:var(--ink-2)}
   </section>
 
   <section class="waitlist" id="waitlist">
-    <h2 data-i="waitlistTitle">HelmDeck Watch &amp; Glasses</h2>
-    <p class="section-sub" data-i="waitlistSub">Das Steuer aufs Handgelenk und auf die Nase: HelmDeck für Wearables ist als Nächstes dran.</p>
+    <h2 data-i="waitlistTitle">HelmDeck Glasses</h2>
+    <p class="section-sub" data-i="waitlistSub">Das Steuer auf der Nase: HelmDeck für Glasses ist als Nächstes dran – Watch (Wear OS &amp; Apple Watch) läuft bereits, siehe oben.</p>
     <div class="wl-inner">
       <div id="joinbox" ${showSuccess ? "hidden" : ""}>
         <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein – wir melden uns, sobald es losgeht.</p>
@@ -449,7 +449,7 @@ footer a:hover{color:var(--ink-2)}
   var I18N = {
     de:{
       title:"HelmDeck – Downloads für Windows, macOS, iOS & Android",
-      navDownloads:"Downloads", navWaitlist:"Watch & Glasses",
+      navDownloads:"Downloads", navWaitlist:"Glasses",
       h1:"Übernimm das Steuer deiner Agenten.",
       sub:"HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner – Karten aufs Board, Arbeit in isolierten Worktrees, Freigabe vom Handy.",
       heroCtaPrimary:"Jetzt herunterladen", heroCtaSecondary:"Quellcode auf GitHub",
@@ -461,27 +461,27 @@ footer a:hover{color:var(--ink-2)}
       dlWinNote:"Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
-      dlIosMeta:"TestFlight-Beta · öffentlicher Link in Vorbereitung",
-      dlIosNote:"Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail.",
+      dlIosMeta:"TestFlight-Beta · inkl. Apple Watch · App-Store-Review läuft",
+      dlIosNote:"Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung, die App-Store-Einreichung läuft parallel. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail. Die Apple-Watch-App ist im selben Paket enthalten, kein separater Download nötig.",
       dlIosCopyBtn:"E-Mail-Adresse kopieren", dlIosCopied:"Adresse kopiert ✓", dlIosAppBtn:"TestFlight-App laden",
-      dlAndroidNote:"Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst.",
+      dlAndroidNote:"Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Für die Wear-OS-Uhr gibt es HelmDeck ebenfalls, auch über den Play Store.",
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
-      waitlistTitle:"HelmDeck Watch & Glasses",
-      waitlistSub:"Das Steuer aufs Handgelenk und auf die Nase: HelmDeck für Wearables ist als Nächstes dran.",
+      waitlistTitle:"HelmDeck Glasses",
+      waitlistSub:"Das Steuer auf der Nase: HelmDeck für Glasses ist als Nächstes dran – Watch (Wear OS & Apple Watch) läuft bereits, siehe oben.",
       lead:"Trag dich ein – wir melden uns, sobald es losgeht.",
       label:"E-Mail-Adresse", ph:"du@example.com", cta:"Auf die Liste",
-      consent:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe.",
+      consent:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Glasses startet. Kein Newsletter, keine Weitergabe.",
       doneH:"Du stehst auf der Liste.", doneP:"Wir melden uns einmalig, sobald es losgeht:",
       doneAlreadyH:"Schon eingetragen.", doneAlreadyP:"Diese Adresse steht bereits auf der Liste – alles gut.",
       errInvalid:"Das sieht nicht nach einer gültigen E-Mail-Adresse aus.",
       errNet:"Gerade nicht erreichbar – bitte versuch es gleich nochmal.",
       privacyQ:"Was passiert mit deiner E-Mail?",
-      privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Watch/Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
+      privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       contact:"Kontakt", sending:"…", toggle:"EN" },
     en:{
       title:"HelmDeck – Downloads for Windows, macOS, iOS & Android",
-      navDownloads:"Downloads", navWaitlist:"Watch & Glasses",
+      navDownloads:"Downloads", navWaitlist:"Glasses",
       h1:"Take the helm of your agents.",
       sub:"HelmDeck orchestrates coding agents on your own machine – cards onto the board, work in isolated worktrees, approve from your phone.",
       heroCtaPrimary:"Download now", heroCtaSecondary:"Source on GitHub",
@@ -493,23 +493,23 @@ footer a:hover{color:var(--ink-2)}
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple – opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
-      dlIosMeta:"TestFlight beta · public link in review",
-      dlIosNote:"The public TestFlight link is currently under review at Apple. Until then it's invite-based: send your device's Apple ID to <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> and you'll get the invite by mail.",
+      dlIosMeta:"TestFlight beta · incl. Apple Watch · App Store review in progress",
+      dlIosNote:"The public TestFlight link is currently under review at Apple, and the App Store submission is in progress in parallel. Until then it's invite-based: send your device's Apple ID to <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> and you'll get the invite by mail. The Apple Watch app ships in the same package, no separate download needed.",
       dlIosCopyBtn:"Copy email address", dlIosCopied:"Address copied ✓", dlIosAppBtn:"Get the TestFlight app",
-      dlAndroidNote:"Straight from the Google Play Store – publicly available. The APK here is for sideloading if you'd rather install directly.",
+      dlAndroidNote:"Straight from the Google Play Store – publicly available. The APK here is for sideloading if you'd rather install directly. HelmDeck for the Wear OS watch is available too, also through the Play Store.",
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
-      waitlistTitle:"HelmDeck Watch & Glasses",
-      waitlistSub:"The helm on your wrist and on your face: HelmDeck for wearables is next.",
+      waitlistTitle:"HelmDeck Glasses",
+      waitlistSub:"The helm on your face: HelmDeck for Glasses is next – Watch (Wear OS & Apple Watch) already ships, see above.",
       lead:"Join the list – we'll reach out once it ships.",
       label:"Email address", ph:"you@example.com", cta:"Join the list",
-      consent:"One entry, one email: we store your address only to notify you once when HelmDeck for Watch/Glasses launches. No newsletter, no sharing.",
+      consent:"One entry, one email: we store your address only to notify you once when HelmDeck for Glasses launches. No newsletter, no sharing.",
       doneH:"You're on the list.", doneP:"We'll reach out once when it ships:",
       doneAlreadyH:"Already signed up.", doneAlreadyP:"This address is already on the list – you're all set.",
       errInvalid:"That doesn't look like a valid email address.",
       errNet:"Can't reach the server right now – please try again shortly.",
       privacyQ:"What happens to your email?",
-      privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Watch/Glasses launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
+      privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
       contact:"Contact", sending:"…", toggle:"DE" }
   };
   var lang = "de";
