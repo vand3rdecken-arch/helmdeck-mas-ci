@@ -15,6 +15,28 @@ apply plugin: "com.android.application"
 apply plugin: "kotlin-android"
 apply plugin: "org.jetbrains.kotlin.plugin.compose"
 
+// Release signing (W2, 2026-09-10). Own keystore, deliberately NOT the
+// phone module's (daemon/certs/apk-signing/swarmdeck-release.jks) - see
+// README.md §6.2 point 4: applicationId is already "app.helmdeck.wear",
+// separate from the phone's "app.helmdeck", and Play's same-signing-key
+// rule (WO-G7) only binds a BUNDLED Wear track inside the phone's own
+// listing. For sideload (the distribution this module actually ships
+// through today) a shared key buys nothing and only couples two release
+// lifecycles that have no reason to move together yet.
+//
+// Unlike android/app/build.gradle (Expo-generated, patched post-hoc by
+// withReleaseSigning.js because prebuild --clean wipes hand edits), this
+// file IS the source of truth - installWearModule() in withWearApp.js
+// copies it byte-for-byte into android/wear/build.gradle on every build,
+// so the loader below can live here directly. withWearReleaseSigning.js
+// copies keystore.properties + release.keystore into android/wear/ before
+// gradlew runs (secrets never live in this git-tracked file).
+def wearReleaseSigningProps = new Properties()
+def wearReleaseSigningPropsFile = file('keystore.properties')
+if (wearReleaseSigningPropsFile.exists()) {
+    wearReleaseSigningProps.load(new FileInputStream(wearReleaseSigningPropsFile))
+}
+
 android {
     namespace "app.helmdeck.wear"
     // targetSdk 34 is the number with a citation (developer.android.com/
@@ -49,6 +71,21 @@ android {
         // A dev placeholder until this ships anywhere real.
         versionCode 1
         versionName "0.1.0-dev"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(wearReleaseSigningProps.getProperty('storeFile', 'release.keystore'))
+            storePassword wearReleaseSigningProps.getProperty('storePassword')
+            keyAlias wearReleaseSigningProps.getProperty('keyAlias')
+            keyPassword wearReleaseSigningProps.getProperty('keyPassword')
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
     }
 
     buildFeatures {

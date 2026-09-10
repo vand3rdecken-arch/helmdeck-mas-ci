@@ -37,7 +37,7 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 # 2026-08-30. Taken after the JDK + :wear-exists checks above so both keep
 # failing fast instead of queueing behind a long build to then fail anyway.
 . "$(dirname "$0")/build_lock.sh"
-android_build_lock "build_wear_apk.sh :wear:assembleDebug (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
+android_build_lock "build_wear_apk.sh :wear:assembleRelease (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
 
 # RE-COPY THE SOURCES FIRST (2026-09-02). This script used to go straight to
 # gradlew, on the assumption that build_apk.sh had just regenerated android/.
@@ -53,19 +53,31 @@ echo "[build_wear_apk] syncing plugins/wear -> android/wear before the build"
 node surfaces/app/plugins/withWearApp.js surfaces/app/android \
   || { echo "[build_wear_apk] withWearApp sync FAILED - refusing to build a stale :wear"; exit 1; }
 
-echo "[build_wear_apk] gradle :wear:assembleDebug (debug-signed - adb install needs no release key)"
-( cd surfaces/app/android && ./gradlew :wear:assembleDebug -x lint --console=plain ) \
+# Release-signed since 2026-09-10 (own keystore, daemon/certs/apk-signing/
+# helmdeck-wear-release.jks - see wear/build.gradle's own comment for why it
+# is NOT the phone's key). Re-copied every run for the same reason every
+# other re-apply step above exists: android/ is git-ignored and regenerated
+# from nothing, so the secret files placed here do not survive a fresh
+# prebuild.
+node surfaces/app/plugins/withWearReleaseSigning.js surfaces/app/android \
+  || { echo "[build_wear_apk] wear release-signing apply FAILED"; exit 1; }
+
+echo "[build_wear_apk] gradle :wear:assembleRelease (release-signed, own keystore - see withWearReleaseSigning.js)"
+( cd surfaces/app/android && ./gradlew :wear:assembleRelease -x lint --console=plain ) \
   || { echo "[build_wear_apk] WEAR APK BUILD FAILED"; exit 1; }
 
-APK="surfaces/app/android/wear/build/outputs/apk/debug/wear-debug.apk"
+APK="surfaces/app/android/wear/build/outputs/apk/release/wear-release.apk"
 [ -f "$APK" ] || { echo "[build_wear_apk] no APK produced at $APK"; exit 1; }
 echo "[build_wear_apk] APK: $(du -h "$APK" | cut -f1)"
 
 # Installs onto whatever device/emulator adb currently targets - a paired
 # Wear emulator, or a real watch over adb-over-Wi-Fi (developer.android.com/
 # training/wearables/get-started/connect-devices). -r allows reinstall over a
-# previous debug build; there is no release keystore for :wear yet (see
-# README.md §9.1), so this path is dev-only by construction.
+# previously-installed copy signed with the SAME key (release since
+# 2026-09-10, see withWearReleaseSigning.js) - a copy signed with the old
+# debug key must be uninstalled first, Android will refuse the reinstall
+# otherwise (INSTALL_FAILED_UPDATE_INCOMPATIBLE, same class the phone module
+# already hit once, see withReleaseSigning.js's header).
 if command -v adb >/dev/null 2>&1 && adb get-state >/dev/null 2>&1; then
   echo "[build_wear_apk] adb install -r"
   adb install -r "$APK" || { echo "[build_wear_apk] adb install FAILED"; exit 1; }
