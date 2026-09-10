@@ -94,7 +94,11 @@ android {
         // 1000001 burned by the 2026-09-10 targetSdk-34 upload attempt -
         // Play rejects re-uploading a versionCode even when the earlier
         // attempt itself was never published ("wurde bereits verwendet").
-        versionCode 1000002
+        // 1000002 burned the same way: its Interner-Test release got
+        // superseded by an abandoned Produktion draft mid-promotion, and
+        // Play's "Add from library" picker then permanently excludes a
+        // versionCode tied to any existing release record, live or not.
+        versionCode 1000003
         versionName "1.0.0"
     }
 
