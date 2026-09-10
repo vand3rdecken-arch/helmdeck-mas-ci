@@ -74,16 +74,19 @@ jobs:
       - name: Build (.pkg, arm64 + x64)
         run: bash surfaces/desktop/build-mas.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
 
-      - name: Debug - release tree (always, diagnoses a missing .pkg)
-        if: always()
+      - name: Debug - release tree (only on failure, diagnoses a missing .pkg)
+        if: failure()
         run: find surfaces/desktop/release -maxdepth 4 2>&1 || echo "(no release dir)"
 
+      # the mas target nests its .pkg under a per-arch appOutDir
+      # (release/mas/, release/mas-arm64/), unlike dmg/zip which electron-
+      # builder flattens into release/ - measured 2026-09-10, glob accordingly.
       - name: Verify the artifact set
         run: |
           cd surfaces/desktop/release
-          ls -la
+          find . -maxdepth 2 -name '*.pkg'
           missing=0
-          for pat in "*-arm64.pkg" "*-x64.pkg"; do
+          for pat in "mas*/*-arm64.pkg" "mas*/*-x64.pkg"; do
             # shellcheck disable=SC2086
             if ! compgen -G "$pat" > /dev/null; then echo "!!! missing: $pat"; missing=1; fi
           done
@@ -98,4 +101,4 @@ jobs:
           name: helmdeck-macos-mas
           if-no-files-found: error
           retention-days: 7
-          path: surfaces/desktop/release/*.pkg
+          path: surfaces/desktop/release/mas*/*.pkg
