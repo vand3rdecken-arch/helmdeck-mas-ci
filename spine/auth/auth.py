@@ -146,11 +146,21 @@ def _clear_failures(name):
 def _load(path):
     if not os.path.exists(path):
         return []
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except ValueError:
-        return []
+    # os.replace in _save briefly exclusive-locks the target on Windows; a
+    # concurrent reader then gets PermissionError (winerror 5/32), which used
+    # to 500 every request in that instant (measured 2026-09-10 00:00: five
+    # hits, each one a dropped phone message). Retry through the window - it
+    # is a few ms long - instead of treating it as a real ACL problem.
+    for attempt in range(5):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except ValueError:
+            return []
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02 * (attempt + 1))
 
 def _save(path, data):
     tmp = path + ".tmp"
