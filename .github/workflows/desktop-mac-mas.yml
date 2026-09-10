@@ -1,0 +1,97 @@
+# Build the HelmDeck Mac App Store .pkg on a real macOS runner.
+#
+# workflow_dispatch ONLY - unlike desktop-mac.yml this never runs on a push.
+# A mas build is not meaningful unsigned (Apple's installer refuses an
+# unsigned .pkg outright), so a run with the signing secrets missing would
+# just fail every time surfaces/desktop/** changes - noise, not signal, until the
+# owner has actually minted the Mac App Distribution / Mac Installer
+# Distribution certs and a MAC_APP_STORE provisioning profile (DEPLOY.md 1f).
+#
+# Required repository secrets (none of these overlap with desktop-mac.yml's -
+# a mas build needs its OWN cert pair, not the Developer ID one):
+#   MAC_MAS_CSC_LINK / MAC_MAS_CSC_KEY_PASSWORD                    Mac App Distribution .p12
+#   MAC_MAS_INSTALLER_CSC_LINK / MAC_MAS_INSTALLER_CSC_KEY_PASSWORD Mac Installer Distribution .p12
+#   MAC_MAS_PROVISIONING_PROFILE_B64                                base64 of the .provisionprofile
+name: desktop-mac-mas
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (blank = surfaces/desktop/package.json)"
+        required: false
+        default: ""
+
+concurrency:
+  group: desktop-mac-mas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      CSC_LINK: ${{ secrets.MAC_MAS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_MAS_CSC_KEY_PASSWORD }}
+      CSC_INSTALLER_LINK: ${{ secrets.MAC_MAS_INSTALLER_CSC_LINK }}
+      CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MAC_MAS_INSTALLER_CSC_KEY_PASSWORD }}
+      EXPO_NO_TELEMETRY: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/app/package-lock.json
+            surfaces/desktop/package-lock.json
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('surfaces/desktop/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: Install app + desktop dependencies
+        run: |
+          (cd surfaces/app && npm ci)
+          (cd surfaces/desktop && npm ci)
+
+      - name: Stage the provisioning profile
+        if: env.MAC_MAS_PROVISIONING_PROFILE_B64 != ''
+        env:
+          MAC_MAS_PROVISIONING_PROFILE_B64: ${{ secrets.MAC_MAS_PROVISIONING_PROFILE_B64 }}
+        run: |
+          mkdir -p surfaces/desktop/build
+          printf '%s' "$MAC_MAS_PROVISIONING_PROFILE_B64" | base64 --decode \
+            > surfaces/desktop/build/embedded.provisionprofile
+
+      - name: Build (.pkg, arm64 + x64)
+        run: bash surfaces/desktop/build-mas.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
+
+      - name: Verify the artifact set
+        run: |
+          cd surfaces/desktop/release
+          ls -la
+          missing=0
+          for pat in "*-arm64.pkg" "*-x64.pkg"; do
+            # shellcheck disable=SC2086
+            if ! compgen -G "$pat" > /dev/null; then echo "!!! missing: $pat"; missing=1; fi
+          done
+          [ "$missing" = "0" ] || exit 1
+
+      # Kept as an artifact only - uploading to App Store Connect is a
+      # separate, deliberate step (xcrun altool / Transporter), never
+      # automatic from this workflow. Same discipline as the owner-gated
+      # "Attach to a release" step in desktop-mac.yml.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helmdeck-macos-mas
+          if-no-files-found: error
+          retention-days: 7
+          path: surfaces/desktop/release/*.pkg

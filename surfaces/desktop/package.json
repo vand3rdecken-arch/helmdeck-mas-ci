@@ -10,6 +10,7 @@
     "dist": "npm run build:web && electron-builder --config electron-builder.yml",
     "dist:win": "npm run build:web && electron-builder --win --config electron-builder.yml",
     "dist:mac": "bash build-mac.sh",
+    "dist:mas": "bash build-mas.sh",
     "release": "bash ../ops/deploy/release_desktop.sh"
   },
   "dependencies": {
