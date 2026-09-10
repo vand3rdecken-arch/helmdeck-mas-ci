@@ -74,6 +74,10 @@ jobs:
       - name: Build (.pkg, arm64 + x64)
         run: bash surfaces/desktop/build-mas.sh ${{ inputs.version && format('--version {0}', inputs.version) || '' }}
 
+      - name: Debug - release tree (always, diagnoses a missing .pkg)
+        if: always()
+        run: find surfaces/desktop/release -maxdepth 4 2>&1 || echo "(no release dir)"
+
       - name: Verify the artifact set
         run: |
           cd surfaces/desktop/release
