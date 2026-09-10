@@ -21,6 +21,10 @@ on:
         description: "Version to stamp (blank = surfaces/desktop/package.json)"
         required: false
         default: ""
+      release_tag:
+        description: "Attach the .pkg set to this (pre-existing) release tag instead of Actions artifact storage - see desktop-mac.yml's 2026-09-10 note: the artifact-quota counter can read full while real usage is ~0, and that must not block delivery"
+        required: false
+        default: ""
 
 concurrency:
   group: desktop-mac-mas-${{ github.ref }}
@@ -30,6 +34,8 @@ jobs:
   build:
     runs-on: macos-14
     timeout-minutes: 60
+    permissions:
+      contents: write        # only used by the optional release-upload step
     env:
       CSC_LINK: ${{ secrets.MAC_MAS_CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_MAS_CSC_KEY_PASSWORD }}
@@ -92,13 +98,27 @@ jobs:
           done
           [ "$missing" = "0" ] || exit 1
 
-      # Kept as an artifact only - uploading to App Store Connect is a
-      # separate, deliberate step (xcrun altool / Transporter), never
-      # automatic from this workflow. Same discipline as the owner-gated
-      # "Attach to a release" step in desktop-mac.yml.
+      # Two alternative transports, never both (same discipline as
+      # desktop-mac.yml): a dispatch that attaches to a release has no use
+      # for a second copy in Actions artifact storage, and the release path
+      # must not depend on that store being writable - its quota counter can
+      # read full while real usage is ~0 (measured 2026-09-10).
+      #
+      # Neither transport touches App Store Connect. Uploading there is a
+      # separate, deliberate step (xcrun altool / Transporter) the owner
+      # runs by hand once he has a Mac for sandbox testing.
       - uses: actions/upload-artifact@v4
+        if: inputs.release_tag == ''
         with:
           name: helmdeck-macos-mas
           if-no-files-found: error
           retention-days: 7
           path: surfaces/desktop/release/mas*/*.pkg
+
+      - name: Attach to a release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" --clobber \
+            surfaces/desktop/release/mas/*.pkg surfaces/desktop/release/mas-arm64/*.pkg
