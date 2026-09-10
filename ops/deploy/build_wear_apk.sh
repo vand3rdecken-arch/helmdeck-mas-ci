@@ -53,16 +53,17 @@ echo "[build_wear_apk] syncing plugins/wear -> android/wear before the build"
 node surfaces/app/plugins/withWearApp.js surfaces/app/android \
   || { echo "[build_wear_apk] withWearApp sync FAILED - refusing to build a stale :wear"; exit 1; }
 
-# Release-signed since 2026-09-10 (own keystore, daemon/certs/apk-signing/
-# helmdeck-wear-release.jks - see wear/build.gradle's own comment for why it
-# is NOT the phone's key). Re-copied every run for the same reason every
-# other re-apply step above exists: android/ is git-ignored and regenerated
-# from nothing, so the secret files placed here do not survive a fresh
-# prebuild.
+# Release-signed since 2026-09-10 with the PHONE module's OWN keystore
+# (daemon/certs/apk-signing/swarmdeck-release.jks) - :wear now shares the
+# phone's applicationId "app.helmdeck" to extend the existing Play listing,
+# so it must also share its signing key (see wear/build.gradle's header).
+# Re-copied every run for the same reason every other re-apply step above
+# exists: android/ is git-ignored and regenerated from nothing, so the
+# secret files placed here do not survive a fresh prebuild.
 node surfaces/app/plugins/withWearReleaseSigning.js surfaces/app/android \
   || { echo "[build_wear_apk] wear release-signing apply FAILED"; exit 1; }
 
-echo "[build_wear_apk] gradle :wear:assembleRelease (release-signed, own keystore - see withWearReleaseSigning.js)"
+echo "[build_wear_apk] gradle :wear:assembleRelease (release-signed with the phone module's key - see withWearReleaseSigning.js)"
 ( cd surfaces/app/android && ./gradlew :wear:assembleRelease -x lint --console=plain ) \
   || { echo "[build_wear_apk] WEAR APK BUILD FAILED"; exit 1; }
 
@@ -72,12 +73,12 @@ echo "[build_wear_apk] APK: $(du -h "$APK" | cut -f1)"
 
 # Installs onto whatever device/emulator adb currently targets - a paired
 # Wear emulator, or a real watch over adb-over-Wi-Fi (developer.android.com/
-# training/wearables/get-started/connect-devices). -r allows reinstall over a
-# previously-installed copy signed with the SAME key (release since
-# 2026-09-10, see withWearReleaseSigning.js) - a copy signed with the old
-# debug key must be uninstalled first, Android will refuse the reinstall
-# otherwise (INSTALL_FAILED_UPDATE_INCOMPATIBLE, same class the phone module
-# already hit once, see withReleaseSigning.js's header).
+# training/wearables/get-started/connect-devices). applicationId changed to
+# "app.helmdeck" on 2026-09-10 (was "app.helmdeck.wear") - this installs as a
+# BRAND NEW app alongside any old app.helmdeck.wear debug build already on
+# the watch, not an update of it. Uninstall the old app.helmdeck.wear by
+# hand once you're done comparing them; -r here only covers reinstalls of
+# this new app.helmdeck package itself.
 if command -v adb >/dev/null 2>&1 && adb get-state >/dev/null 2>&1; then
   echo "[build_wear_apk] adb install -r"
   adb install -r "$APK" || { echo "[build_wear_apk] adb install FAILED"; exit 1; }

@@ -15,32 +15,34 @@ apply plugin: "com.android.application"
 apply plugin: "kotlin-android"
 apply plugin: "org.jetbrains.kotlin.plugin.compose"
 
-// Release signing (W2, 2026-09-10). Own keystore, deliberately NOT the
-// phone module's (daemon/certs/apk-signing/swarmdeck-release.jks) - see
-// README.md §6.2 point 4: applicationId is already "app.helmdeck.wear",
-// separate from the phone's "app.helmdeck", and Play's same-signing-key
-// rule (WO-G7) only binds a BUNDLED Wear track inside the phone's own
-// listing. For sideload (the distribution this module actually ships
-// through today) a shared key buys nothing and only couples two release
-// lifecycles that have no reason to move together yet.
+// Release signing + package identity (W2, 2026-09-10, revised same day).
+// OWNER DECISION: extend the EXISTING app.helmdeck Play listing with a Wear
+// OS form factor rather than publish a second, separate listing. Confirmed
+// against developer.android.com/training/wearables/packaging (fetched
+// 2026-09-10): "If you have an existing mobile app, verify that you have
+// used THE SAME PACKAGE NAME for your Wear OS app" - so applicationId below
+// is "app.helmdeck", matching the phone module, NOT "app.helmdeck.wear"
+// anymore. Android's package manager also requires every APK sharing one
+// installed package to carry the SAME signing certificate, and Play's own
+// upload flow verifies the upload signature against the certificate already
+// registered for that app record - so this is signed with the PHONE
+// module's own keystore (daemon/certs/apk-signing/swarmdeck-release.jks),
+// not a dedicated Wear key. A same-signed-with-a-different-key upload to
+// the same app.helmdeck listing would be rejected at upload time, not at
+// review time.
 //
-// TWO DIFFERENT PLAY FUTURES, not one - which key applies depends on which
-// one the owner picks later:
-//   (a) STANDALONE Play listing (own app entry, found by its own search
-//       result, current architecture) - this keystore
-//       (daemon/certs/apk-signing/helmdeck-wear-release.jks) IS the Play
-//       signing key, no further change needed beyond a real device-verified
-//       build + Play Console submission under its own listing.
-//   (b) BUNDLED Wear track inside the app.helmdeck phone listing (watch
-//       installs automatically alongside the phone app, no separate search)
-//       - this requires MORE than swapping the keystore: applicationId must
-//       become "app.helmdeck" (matching the phone module, WO-G7's "gleicher
-//       Package-Name"), which means re-registering the Firebase/FCM client
-//       (wear/google-services.json currently carries an app.helmdeck.wear
-//       entry) and re-signing with daemon/certs/apk-signing/
-//       swarmdeck-release.jks instead of this one. Not done here - it is a
-//       structural migration, not a signing-config edit, and nobody has
-//       asked for the bundled experience over the standalone one yet.
+// SUPERSEDES an earlier same-day decision (still in git history) to keep
+// :wear as a fully separate app (own id app.helmdeck.wear, own keystore
+// daemon/certs/apk-signing/helmdeck-wear-release.jks) for a standalone Play
+// listing. That keystore still exists on disk (git-ignored, harmless) but
+// nothing in the active build path reads it anymore - this file is the
+// only source of truth for which identity :wear ships under.
+//
+// versionCode is INDEPENDENT of the phone's own sequence (currently ~91),
+// per the same doc: "a watch APK's version code must be unique across all
+// form factors... we recommend its version code scheme is independent of
+// any other form factor" - starts at 1000001, a range that can never
+// collide with the phone's low counter.
 //
 // Unlike android/app/build.gradle (Expo-generated, patched post-hoc by
 // withReleaseSigning.js because prebuild --clean wipes hand edits), this
@@ -76,19 +78,24 @@ android {
     compileSdkVersion 36
 
     defaultConfig {
-        applicationId "app.helmdeck.wear"
+        // Matches the phone module's applicationId - see the header comment
+        // above (2026-09-10 owner decision: bundled into the existing Play
+        // listing, package name must match). namespace above stays
+        // "app.helmdeck.wear" - that only names the generated R/BuildConfig
+        // Kotlin package, Play/PackageManager never see it.
+        applicationId "app.helmdeck"
         // Wear OS 3.0 (API 30) is the platform floor Google documents for a
         // Compose-based standalone app. NOT tied to the phone module's own
         // minSdk 24 - this is a different installable unit for different
         // hardware.
         minSdkVersion 30
         targetSdkVersion 34
-        // Independent of app.json's `version`/`versionCode` on purpose: the
-        // watch is not part of the phone's OTA/runtimeVersion contract
-        // (README.md §4.4 chose this same independence for the push payload).
-        // A dev placeholder until this ships anywhere real.
-        versionCode 1
-        versionName "0.1.0-dev"
+        // Independent range from the phone's own versionCode (currently
+        // ~91) - see header comment, cited from developer.android.com/
+        // training/wearables/packaging. Bump this, never the phone's
+        // counter, for a new Wear-only release.
+        versionCode 1000001
+        versionName "1.0.0"
     }
 
     signingConfigs {
