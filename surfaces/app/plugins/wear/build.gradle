@@ -24,6 +24,24 @@ apply plugin: "org.jetbrains.kotlin.plugin.compose"
 // through today) a shared key buys nothing and only couples two release
 // lifecycles that have no reason to move together yet.
 //
+// TWO DIFFERENT PLAY FUTURES, not one - which key applies depends on which
+// one the owner picks later:
+//   (a) STANDALONE Play listing (own app entry, found by its own search
+//       result, current architecture) - this keystore
+//       (daemon/certs/apk-signing/helmdeck-wear-release.jks) IS the Play
+//       signing key, no further change needed beyond a real device-verified
+//       build + Play Console submission under its own listing.
+//   (b) BUNDLED Wear track inside the app.helmdeck phone listing (watch
+//       installs automatically alongside the phone app, no separate search)
+//       - this requires MORE than swapping the keystore: applicationId must
+//       become "app.helmdeck" (matching the phone module, WO-G7's "gleicher
+//       Package-Name"), which means re-registering the Firebase/FCM client
+//       (wear/google-services.json currently carries an app.helmdeck.wear
+//       entry) and re-signing with daemon/certs/apk-signing/
+//       swarmdeck-release.jks instead of this one. Not done here - it is a
+//       structural migration, not a signing-config edit, and nobody has
+//       asked for the bundled experience over the standalone one yet.
+//
 // Unlike android/app/build.gradle (Expo-generated, patched post-hoc by
 // withReleaseSigning.js because prebuild --clean wipes hand edits), this
 // file IS the source of truth - installWearModule() in withWearApp.js
