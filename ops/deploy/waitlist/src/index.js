@@ -91,6 +91,26 @@ const TESTFLIGHT_APP_URL = "https://apps.apple.com/de/app/testflight/id899247664
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 
+// --- hero platform row ------------------------------------------------
+// The owner wants platform coverage visible in the hero, not buried in the
+// downloads cards further down - a visitor should see "runs on your desktop,
+// your phone and your wrist" before scrolling. Icons are inline (no extra
+// request) and stroke-style to match the existing success checkmark.
+const PLAT_ICON_DESKTOP =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const PLAT_ICON_PHONE =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.2" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 18.3h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const PLAT_ICON_WATCH =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M9.5 7.5V4.2h5V7.5M9.5 16.5v3.3h5v-3.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+function platformsHtml(desktop, phone, wrist) {
+  return (
+    `<span class="platform-item">${PLAT_ICON_DESKTOP}${desktop} <i>Windows, macOS</i></span>` +
+    `<span class="platform-item">${PLAT_ICON_PHONE}${phone} <i>iPhone, Android</i></span>` +
+    `<span class="platform-item">${PLAT_ICON_WATCH}${wrist} <i>Apple Watch, Wear OS</i></span>`
+  );
+}
+
 // The brand mark is NOT written here. It is generated from the same mask every
 // other surface's icon comes from (ops/tools/assets/logo_h_mask.png) by
 // `py -3.12 ops/tools/make_icon.py`. The previous hand-written copy of the mark
@@ -242,6 +262,10 @@ h1{
 h2{margin:0; font-size:1.55rem; font-weight:800; letter-spacing:-.01em}
 h3{margin:0; font-size:1.08rem; font-weight:700}
 .hero{padding:2.6rem 0 2.4rem}
+.platforms{display:flex; flex-wrap:wrap; gap:.5rem 1.3rem; margin:0 0 1.1rem}
+.platform-item{display:inline-flex; align-items:center; gap:.45rem; font-size:.86rem; font-weight:700; color:var(--ink-2)}
+.platform-item svg{width:1.05rem; height:1.05rem; flex:none; color:var(--accent-hi)}
+.platform-item i{font-style:normal; font-weight:500; color:var(--ink-3)}
 .hero .sub{margin:0 0 1.8rem; font-size:1.04rem; color:var(--ink-2); max-width:40rem; text-wrap:pretty}
 .hero-actions{display:flex; gap:.8rem; flex-wrap:wrap}
 .btn{
@@ -325,9 +349,10 @@ footer{
 footer a{color:var(--ink-3); text-decoration:none}
 footer a:hover{color:var(--ink-2)}
 @keyframes rise{from{opacity:0; transform:translateY(10px)}}
-.hero h1,.hero .sub,.hero-actions{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+.hero h1,.hero .platforms,.hero .sub,.hero-actions{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
+.hero .platforms{animation-delay:.03s}
 .hero .sub{animation-delay:.06s}.hero-actions{animation-delay:.12s}
-@media (prefers-reduced-motion:reduce){.hero h1,.hero .sub,.hero-actions{animation:none}}
+@media (prefers-reduced-motion:reduce){.hero h1,.hero .platforms,.hero .sub,.hero-actions{animation:none}}
 @media (max-width:640px){.topbar{flex-wrap:wrap}.topnav{order:3; width:100%; justify-content:center}}
 @media (max-width:480px){form button,form .btn{flex:1 1 100%}}
 </style>
@@ -346,6 +371,7 @@ footer a:hover{color:var(--ink-2)}
 <main>
   <section class="hero" style="border-top:0; padding-top:1rem">
     <h1 data-i="h1">Übernimm das Steuer deiner Agenten.</h1>
+    <div class="platforms" data-i-html="platforms">${platformsHtml("Desktop", "Handy", "Handgelenk")}</div>
     <p class="sub" data-i="sub">HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner – Karten aufs Board, Arbeit in isolierten Worktrees, Freigabe vom Handy.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="#downloads" data-i="heroCtaPrimary">Jetzt herunterladen</a>
@@ -451,6 +477,7 @@ footer a:hover{color:var(--ink-2)}
       title:"HelmDeck – Downloads für Windows, macOS, iOS & Android",
       navDownloads:"Downloads", navWaitlist:"Glasses",
       h1:"Übernimm das Steuer deiner Agenten.",
+      platforms:'${platformsHtml("Desktop", "Handy", "Handgelenk")}',
       sub:"HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner – Karten aufs Board, Arbeit in isolierten Worktrees, Freigabe vom Handy.",
       heroCtaPrimary:"Jetzt herunterladen", heroCtaSecondary:"Quellcode auf GitHub",
       feat1:"Karten aufs Board, Agenten übernehmen sie – ohne dass du daneben sitzt.",
@@ -483,6 +510,7 @@ footer a:hover{color:var(--ink-2)}
       title:"HelmDeck – Downloads for Windows, macOS, iOS & Android",
       navDownloads:"Downloads", navWaitlist:"Glasses",
       h1:"Take the helm of your agents.",
+      platforms:'${platformsHtml("Desktop", "Phone", "Wrist")}',
       sub:"HelmDeck orchestrates coding agents on your own machine – cards onto the board, work in isolated worktrees, approve from your phone.",
       heroCtaPrimary:"Download now", heroCtaSecondary:"Source on GitHub",
       feat1:"Cards go on the board, agents pick them up – no need to sit and watch.",
