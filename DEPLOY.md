@@ -501,17 +501,24 @@ session (creating an app record does) — it did **not** here, because adding
 a *platform* to an app that already exists is a plain `POST
 /v1/appStoreVersions`, unlike `ensureAscAppAsync` creating the app itself.
 
-**Certificates — CSR-by-script works, cert-by-human still required**, same
-shape as the Developer ID cert in §1c but a DIFFERENT failure mode:
-`py -3.12 ops/deploy/mac_credentials.py --create --type mas-app` (and
+**Certificates — DONE 2026-09-10.** CSR-by-script works, cert-by-human was
+required, same shape as the Developer ID cert in §1c but a DIFFERENT failure
+mode: `py -3.12 ops/deploy/mac_credentials.py --create --type mas-app` (and
 `--type mas-installer`) both come back **HTTP 409 "Invalid Certificate"**
 from the same Admin-role key that mints iOS distribution certs fine — not
 the 403 "Account Holder" wall Developer ID hits. Apple gives no more detail
-than that; the private key + CSR are written to `C:/hd/secrets/` either way
+than that; the private key + CSR were written to `C:/hd/secrets/` either way
 (`mac_app_distribution.*`, `mac_installer_distribution.*`), so the manual
-fallback is identical: create both certs by hand at
+fallback was used: both certs created by hand at
 https://developer.apple.com/account/resources/certificates/add ("Mac App
-Distribution" / "Mac Installer Distribution"), then
+Distribution" / "Mac Installer Distribution", **G2** sub-CA — the
+pre-selected "Previous Sub-CA" expires 2027-02-01, same trap as §1c),
+downloaded, then `--finish` + `--secrets` run for both types. Both certs
+verified live via `--check`: `mas-app` id `ZMKUDJ3ZLC`, `mas-installer` id
+`J683LT28YM`, both expiring `2027-09-10`. `MAC_MAS_CSC_LINK` /
+`MAC_MAS_CSC_KEY_PASSWORD` / `MAC_MAS_INSTALLER_CSC_LINK` /
+`MAC_MAS_INSTALLER_CSC_KEY_PASSWORD` are live in `Tienduyvo/helmdeck` repo
+secrets. For reference, the commands used:
 
 ```bash
 py -3.12 ops/deploy/mac_credentials.py --finish DOWNLOADED.cer --type mas-app
