@@ -25,8 +25,16 @@ def relay_pair_post(self, user, body):
     # encrypted tunnel (carried as Bearer inside the sealed request).
     # Invites bring the teammate's OWN token - minting an owner
     # token there would leave a dangling owner credential per invite.
+    #
+    # unused_days pays debt [pair-token-no-ttl]: the pairing WINDOW was 15
+    # minutes but the token inside the code never expired, so an abandoned or
+    # leaked pairing code stayed a live credential over direct-LAN mode
+    # forever. It now dies unclaimed. A token the phone actually presented is
+    # a normal device token from that moment on (auth._token_expired).
     if not body.get("invite"):
-        pay["device_token"] = auth.issue_token(user["name"], "phone (relay)")
+        pay["device_token"] = auth.issue_token(
+            user["name"], "phone (relay)",
+            unused_days=auth.PAIR_UNUSED_TTL_DAYS)
     return self._send(200, json.dumps(pay))
 
 
@@ -54,7 +62,8 @@ def relay_pair_code_post(self, user, body):
     # (auth.py: "purely so a human can tell two devices apart") - defaults to
     # something generic rather than failing the request over a missing field.
     label = (body.get("label") or "device (code)").strip()[:40]
-    pay["device_token"] = auth.issue_token(user["name"], label)
+    pay["device_token"] = auth.issue_token(user["name"], label,
+                                           unused_days=auth.PAIR_UNUSED_TTL_DAYS)
     code, ttl = relay_client.mint_claim_code(pay)
     return self._send(200, json.dumps({"code": code, "expires_in": ttl}))
 

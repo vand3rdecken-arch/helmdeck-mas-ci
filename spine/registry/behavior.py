@@ -856,7 +856,7 @@ ALLOWLIST_PROSE = """  policy.lane_labels {backlog,working,review,done: "label"}
   policy.auto_accept_green true|false - green gate auto-accepts (autonomy) vs human accepts (control)
   policy.auto_dispatch_priority ""|"urgent"|"high" - backlog at/above this priority self-dispatches within WIP headroom
   capacity {wip_limit, touch_budget_day, tariff{steer,review,bounce}}
-  value_per_card, default_repo, registration {open, invite_code, default_role}
+  value_per_card, default_repo, registration {open} - `open` lets anyone sign up WITHOUT an invitation, always as a client. To invite ONE person with a chosen role, do not touch this: create an invitation (Einstellungen > Team & Geraete > Mitglied einladen, or POST /invites {role}).
   currency "EUR"|"USD"
   prices {<model-substring>: {in: $/Mtok, out: $/Mtok}, default: {...}} - AI cost table
   jira {base, email, api_token, default_jql} - the Jira connection import_jira reads. It holds a TOKEN: set it only from credentials the owner gives you in that message, never invent or guess one, and never repeat it back in chat.
