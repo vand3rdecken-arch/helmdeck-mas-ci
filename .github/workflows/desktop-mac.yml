@@ -141,8 +141,17 @@ jobs:
       # 2026-09-09: the mac build signed and notarized fine, then died on
       # "Artifact storage quota has been hit" at the upload step. The proof is
       # the green "Verify the artifact set" above; it needs no stored copy.
+      #
+      # release_tag == '' because the two transports are alternatives, never
+      # both: a dispatch that already attaches the set to a release has no use
+      # for a second copy in artifact storage. Keeping both coupled is what
+      # blocked the 0.2.17 mac release on 2026-09-10 - the quota was actually
+      # free (~6 MB in use) but GitHub's usage counter still read full, the
+      # upload step went red, and a red step SKIPS every step after it,
+      # including "Attach to a release". The release path must not depend on
+      # the artifact store being writable.
       - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag == ''
         with:
           name: helmdeck-macos
           if-no-files-found: error
