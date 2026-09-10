@@ -1,0 +1,46 @@
+# Mac App Store target - a SEPARATE config file on purpose, not a flag on
+# electron-builder.yml. The two builds disagree on things that must not
+# leak into each other: appId (Apple's Bundle ID for this listing is
+# app.helmdeck - registered UNIVERSAL, i.e. already valid for macOS, and
+# shared with the iOS app so this can be "the same app, macOS platform"
+# rather than a second App Store listing - vs. work.21stgen.helmdeck for
+# the direct-download build, which has its own users/updater identity and
+# must not change), sandbox (mandatory here, absent there), signing
+# identity (Mac App Distribution / Mac Installer Distribution certs, not
+# Developer ID), and publish (MAS forbids self-updating outright - see the
+# process.mas guard in main.js - so this config carries no publish/feed at
+# all, unlike the base config's GitHub release feed).
+#
+# `extends` pulls in files/extraResources/dmg/nsis/win from the base config
+# unchanged; everything below OVERRIDES the base for this build only.
+extends: ./electron-builder.yml
+appId: app.helmdeck
+mac:
+  target:
+    - target: mas
+      arch:
+        - arm64
+        - x64
+  artifactName: "HelmDeck-${version}-${arch}.${ext}"
+  category: public.app-category.developer-tools
+  icon: assets/icon-mac-1024.png
+# electron-builder merges `mas` OVER `mac` when the target is mas - this is
+# where the sandbox-specific entitlements replace the direct-distribution
+# ones. hardenedRuntime is left off: the sandbox is the operative security
+# boundary for a Store build, hardened runtime is a Gatekeeper/notarization
+# concern for BUILDS APPLE NEVER REVIEWS, which a MAS submission is not.
+mas:
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  # written by `py -3.12 ops/deploy/mac_credentials.py --profile-create` once
+  # a MAC_APP_STORE profile exists (needs the mas-app cert first - see
+  # DEPLOY.md 1f). electron-builder embeds this at Contents/embedded.provisionprofile
+  # and refuses to build without it for a real mas target.
+  provisioningProfile: build/embedded.provisionprofile
+# MAS forbids an app from downloading/installing/replacing its own code
+# (Guideline 2.5.2) and the sandbox separately makes it IMPOSSIBLE anyway -
+# a sandboxed app cannot write into its own installed bundle. Both updaters
+# are already no-ops in a mas build via the process.mas guard in main.js;
+# this removes the update feed/metadata electron-builder would otherwise
+# generate (latest-mac.yml has no meaning for a Store-distributed app).
+publish: null

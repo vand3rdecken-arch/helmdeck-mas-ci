@@ -468,6 +468,118 @@ origin still serves the old build**, so a silent no-op deploy can't pass again.
   `settings.json` (`repo_hooks.<repo>.deploy`) so the site can never again be
   left behind by an accept. Registered as debt `site-deploy-outside-hook`.
 
+## 1f) Mac App Store build — PREPARED, not submitted (2026-09-10)
+
+A second macOS target, alongside the direct-download build in §1c, which it
+does not touch or replace. Config lives in a SEPARATE file
+(`surfaces/desktop/electron-builder.mas.yml`, `extends:` the base config) because
+the two builds disagree on things that must not leak into each other:
+
+| | direct download (§1c) | Mac App Store |
+|---|---|---|
+| config | `electron-builder.yml` | `electron-builder.mas.yml` |
+| appId | `work.21stgen.helmdeck` | `app.helmdeck` (same as iOS — see below) |
+| App Sandbox | off (`entitlements.mac.plist`) | **on**, mandatory (`entitlements.mas.plist`) |
+| signing cert | Developer ID Application | Mac App Distribution + Mac Installer Distribution |
+| updates | relay OTA + electron-updater | **none** — Store handles all updates |
+| output | `.dmg` + `.zip` | `.pkg` |
+| build script | `build-mac.sh` | `build-mas.sh` |
+| CI | `desktop-mac.yml` (push + dispatch) | `desktop-mac-mas.yml` (**dispatch only**) |
+
+**App Store Connect app record — DONE 2026-09-10.** `app.helmdeck`'s Bundle
+ID is registered **UNIVERSAL** (`py -3.12 ops/deploy/mac_credentials.py --bundleids`
+confirms it, resource id `T7739357DU`) — i.e. it already covers macOS, not
+just iOS, so the Mac build can be **the same App Store listing as iOS**
+(what the owner floated as an option) rather than a second product. Added a
+`MAC_OS` `appStoreVersion` (id `ee5d61ae-…`, version `0.2.17`,
+`PREPARE_FOR_SUBMISSION`) to the existing app id `6801637667` via the API —
+verified read-back afterward that the iOS version (`REJECTED`, its
+Guideline 2.1 response is a separate in-flight track) is a completely
+independent resource and was not touched. This was the one step
+`ops/deploy/asc_guide.py`'s own docs say usually needs a human browser
+session (creating an app record does) — it did **not** here, because adding
+a *platform* to an app that already exists is a plain `POST
+/v1/appStoreVersions`, unlike `ensureAscAppAsync` creating the app itself.
+
+**Certificates — CSR-by-script works, cert-by-human still required**, same
+shape as the Developer ID cert in §1c but a DIFFERENT failure mode:
+`py -3.12 ops/deploy/mac_credentials.py --create --type mas-app` (and
+`--type mas-installer`) both come back **HTTP 409 "Invalid Certificate"**
+from the same Admin-role key that mints iOS distribution certs fine — not
+the 403 "Account Holder" wall Developer ID hits. Apple gives no more detail
+than that; the private key + CSR are written to `C:/hd/secrets/` either way
+(`mac_app_distribution.*`, `mac_installer_distribution.*`), so the manual
+fallback is identical: create both certs by hand at
+https://developer.apple.com/account/resources/certificates/add ("Mac App
+Distribution" / "Mac Installer Distribution"), then
+
+```bash
+py -3.12 ops/deploy/mac_credentials.py --finish DOWNLOADED.cer --type mas-app
+py -3.12 ops/deploy/mac_credentials.py --finish DOWNLOADED.cer --type mas-installer
+py -3.12 ops/deploy/mac_credentials.py --secrets FILE.p12 --password PW --type mas-app        # -> MAC_MAS_CSC_LINK / MAC_MAS_CSC_KEY_PASSWORD
+py -3.12 ops/deploy/mac_credentials.py --secrets FILE.p12 --password PW --type mas-installer  # -> MAC_MAS_INSTALLER_CSC_LINK / MAC_MAS_INSTALLER_CSC_KEY_PASSWORD
+```
+
+Then the **provisioning profile** (needs the mas-app cert id from
+`--check --type mas-app` and the bundle id resource id from `--bundleids`):
+
+```bash
+py -3.12 ops/deploy/mac_credentials.py --profile-create --name "HelmDeck Mac App Store" \
+    --bundle-id-resource T7739357DU --cert-id <mas-app cert id>
+```
+
+writes `mac_app_store.provisionprofile` to `C:/hd/secrets/` — copy it to
+`surfaces/desktop/build/embedded.provisionprofile` (git-ignored) for a local
+build, or base64 it into the `MAC_MAS_PROVISIONING_PROFILE_B64` repo secret
+for `desktop-mac-mas.yml`.
+
+**Auto-update is OFF by construction, not by omission.** MAS forbids an app
+from downloading/replacing its own code (Guideline 2.5.2), and App Sandbox
+separately makes `updater.js`'s app-dist swap *impossible* regardless — a
+sandboxed app cannot write into its own installed bundle. `main.js` reads
+Electron's own `process.mas` (true only in a mas-target build) and skips
+starting both `updater.js` and `native-updater.js` entirely; `mas:
+publish: null` in the config drops the update-feed metadata electron-builder
+would otherwise generate.
+
+**⚠ NOT VERIFIED: whether the sandboxed app can still do its actual job.**
+Read `spine/registry/debt.py` id `mac-app-store-sandbox-scope` before
+building a submission candidate. Short version: `main.js` spawns a SYSTEM
+Python which spawns the `claude` CLI which spawns git/npm/arbitrary shells
+across whatever repo path the owner names — `entitlements.mac.plist`'s own
+comment says this is *why* the direct build was never sandboxed in the
+first place. Under App Sandbox, every one of those child processes
+**inherits the parent's sandbox** (documented Apple behavior) — confined to
+HelmDeck's own container unless the interpreter/CLI sits in a standard
+system path *and* every touched file is under a folder the user explicitly
+granted via an Open panel, which HelmDeck has no UI for yet. The entitlements
+in `entitlements.mas.plist` (JIT, network client+server, user-selected
+files) are the best-effort set electron-builder/Apple actually require to
+launch at all — they are **not** a claim that agent cards work normally
+inside a Mac App Store build. There is no Mac on this box to test that
+claim; it needs a real macOS session before anyone clicks "Submit for
+Review".
+
+**Metadata — description/promotional text DONE, screenshots NOT started.**
+`ops/deploy/asc_mac_metadata.py` (same show/apply, draft-only discipline as
+`asc_metadata_draft.py`) wrote DE/EN descriptions + promotional text to the
+`MAC_OS` version's `appStoreVersionLocalizations` — keywords/marketingUrl/
+supportUrl were already populated (Apple copies them from the app's
+existing defaults when a platform is added). Screenshots are the real gap:
+Mac App Store needs macOS-native sizes (1280×800 / 1440×900 / 2560×1600 /
+2880×1800, no device frame) and none exist — the phone screenshots in
+`ops/docs/store/screenshots/` don't apply, and producing real ones needs a
+Mac actually running the built app (which also means the sandbox question
+above should be answered first, so the screenshots show a build that isn't
+about to be reworked).
+
+**Stop point, per the card that did this work**: config is wired, the app
+record exists, the CSR/cert/profile tooling is ready and one 409 is
+unexplained pending a human cert-creation attempt — nothing has been built,
+signed, uploaded, or submitted. `build-mas.sh`/`desktop-mac-mas.yml` refuse
+to run without real signing secrets, so there is no accidental unsigned
+"submission" path the way the direct build has.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):

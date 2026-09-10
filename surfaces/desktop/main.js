@@ -105,8 +105,16 @@ const appDistDir = app.isPackaged ? path.join(root, "app-dist") : path.join(__di
 // still gets the current state on mount via each get-status IPC handler.
 const sendToWindow = (channel, payload) => { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); };
 
+// Mac App Store builds may NEVER self-update (Guideline 2.5.2 forbids an app
+// downloading/replacing its own code, and App Sandbox separately makes the
+// app-dist swap below IMPOSSIBLE - a sandboxed app cannot write into its own
+// installed bundle). Electron sets process.mas=true only in a mas-target
+// build (surfaces/desktop/electron-builder.mas.yml), never in the
+// direct-distribution build this same main.js also produces.
+const isMas = process.mas === true;
+
 let updater = null;
-if (app.isPackaged) {
+if (app.isPackaged && !isMas) {
   const { createUpdater, readRelayUrl } = require("./updater");
   const feedBase = readRelayUrl(path.join(daemonDir, "relay_feed.json"));
   if (feedBase) {
@@ -129,7 +137,7 @@ ipcMain.on("js-update:apply-now", () => {
 
 const { createNativeUpdater } = require("./native-updater");
 const nativeUpdater = createNativeUpdater({
-  log, isPackaged: app.isPackaged,
+  log, isPackaged: app.isPackaged && !isMas,
   notify: (status) => sendToWindow("native-update:changed", status),
 });
 ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());

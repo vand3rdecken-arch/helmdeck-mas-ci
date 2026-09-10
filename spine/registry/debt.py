@@ -4594,6 +4594,53 @@ DEBT = [
         "since": "2026-09-08",
         "order": 63,
     },
+    {
+        "id": "mac-app-store-sandbox-scope",
+        "title": "the Mac App Store build config is prepared but App Sandbox "
+                  "was never proven against HelmDeck's actual job",
+        "status": "open",
+        "what": "surfaces/desktop/electron-builder.mas.yml + "
+                "build/entitlements.mas.plist turn on App Sandbox (Apple "
+                "requires it for every MAS submission, no exceptions for an "
+                "indie account) with a best-effort entitlement set: JIT, "
+                "network.client/server, files.user-selected.read-write. "
+                "None of it has run on real hardware - there is no Mac on "
+                "this box, only a Windows PC + the macOS CI runner that "
+                "builds but does not interactively exercise the app.",
+        "why_it_bites": "main.js's whole job is spawning a SYSTEM Python "
+                        "(resolvePython(), not a bundled interpreter) which "
+                        "then spawns the `claude` CLI, which spawns git/npm/"
+                        "arbitrary shells across whatever repo path the "
+                        "owner names - see build/entitlements.mac.plist's "
+                        "own comment, written when this app deliberately "
+                        "chose direct distribution BECAUSE of this "
+                        "conflict. Under App Sandbox, child processes "
+                        "INHERIT the parent's sandbox (documented Apple "
+                        "behavior, not a bug) - so every one of those "
+                        "child processes would be confined to HelmDeck's "
+                        "own container unless the interpreter/CLI happens "
+                        "to sit in a standard system path AND every file "
+                        "the agent touches is under a folder the user "
+                        "explicitly granted via an Open panel. HelmDeck "
+                        "ships no such folder-grant UX today. A MAS build "
+                        "may therefore install, launch, pass App Review's "
+                        "surface checks, and still fail at its core job the "
+                        "first time an agent tries to touch a repo outside "
+                        "the sandbox container - which would not be visible "
+                        "until a real person runs it on a real Mac.",
+        "trigger": "an owner or reviewer actually drives a signed mas build "
+                   "on macOS and asks an agent to operate on a project "
+                   "folder the app was never granted",
+        "fix": "either (a) build a folder-access-grant flow (NSOpenPanel + "
+               "security-scoped bookmarks, store the grant, only ever "
+               "operate within granted folders under a mas build - real "
+               "product work, not a build-config change), or (b) accept "
+               "that the Mac App Store build is scoped-down relative to the "
+               "direct-download build and say so in the listing, or (c) "
+               "get a Mac and hands-on test before ever clicking submit.",
+        "since": "2026-09-10",
+        "order": 64,
+    },
 ]
 
 def list_debt():

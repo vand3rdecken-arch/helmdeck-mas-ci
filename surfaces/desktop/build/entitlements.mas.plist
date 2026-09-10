@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for the MAIN HelmDeck.app binary under the Mac App Store's
+  MANDATORY App Sandbox (unlike build/entitlements.mac.plist, which is
+  direct-distribution and deliberately carries NO sandbox at all).
+
+  The JIT/memory trio is the same one Electron needs everywhere. Added for
+  the sandbox specifically:
+    network.client / network.server - the daemon listens on 127.0.0.1:8140
+      and the UI server on 127.0.0.1:3300; under sandbox BOTH directions
+      need an entitlement even though neither ever leaves loopback, and the
+      daemon also dials OUT to the paired relay over the internet.
+    files.user-selected.read-write - lets the app read/write folders the
+      user explicitly picks via an Open/Save panel (security-scoped
+      bookmarks). This is necessary but NOT sufficient: HelmDeck's actual
+      job is letting an agent operate on ANY repo path the owner names, and
+      no folder-picker UX exists yet to turn that into a sandbox grant - see
+      the mac-app-store-sandbox-scope entry in spine/registry/debt.py before
+      assuming a signed, notarized-shaped mas build is functionally
+      complete.
+
+  Deliberately DROPPED vs. the direct-distribution file: disable-library-
+  validation and allow-dyld-environment-variables. The Mac App Store does
+  not accept apps that disable library validation (Apple's own guidance
+  flags it as a rejection risk, and it is specifically the escape hatch
+  that makes loading unsigned code possible again - the opposite of what
+  the sandbox is for), and Electron's Chromium build does not need dyld
+  env vars once JIT + unsigned-executable-memory are already granted.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+</dict>
+</plist>
