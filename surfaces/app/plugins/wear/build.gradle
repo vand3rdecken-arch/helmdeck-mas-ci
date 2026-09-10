@@ -59,22 +59,19 @@ if (wearReleaseSigningPropsFile.exists()) {
 
 android {
     namespace "app.helmdeck.wear"
-    // targetSdk 34 is the number with a citation (developer.android.com/
-    // training/wearables/apps/standalone-apps, checked 2026-08-28: "For new
-    // apps, the target API level must be 34 or higher") and stays at 34.
-    // compileSdk USED to match it; the first real Gradle run of this module
-    // (2026-08-28) demanded higher, exactly as the old comment anticipated:
-    // `:wear:checkDebugAarMetadata` failed with 19 issues, all of the form
-    // "requires ... compile against version 35 or later" - from
-    // androidx.wear.compose:compose-material3/compose-material-core 1.6.2,
-    // androidx.core:core(-ktx) 1.15.0 and lifecycle-runtime-compose 2.9.0.
-    // Raised to 36 to match the phone module rather than to the bare minimum
-    // 35, so both surfaces compile against one platform.
-    // Deliberately NOT raising targetSdk with it: compileSdk only widens the
-    // APIs available at compile time, while targetSdk opts into new RUNTIME
-    // behaviour that nothing has ever exercised on a real watch. Gradle's own
-    // message says the two can move separately, and 34 still satisfies the
-    // cited Wear requirement.
+    // targetSdk history: 34 had a citation (developer.android.com/training/
+    // wearables/apps/standalone-apps, checked 2026-08-28: "For new apps, the
+    // target API level must be 34 or higher") and compileSdk was raised to
+    // 36 independently of it (2026-08-28 first real Gradle run needed 35+
+    // for androidx.wear.compose et al, see git history for the exact errors).
+    // SUPERSEDED 2026-09-10: Play's own release validator, on the actual
+    // upload for the bundled-listing submission, rejected targetSdk 34 with
+    // "Deine App ist ... auf API-Ebene 34 ausgerichtet, sollte jedoch eine
+    // API-Mindestebene von 35 haben" - a live, current Play policy floor the
+    // 2026-08-28 doc citation didn't capture (Google tightens this over
+    // time). Raised to match compileSdk (36) rather than the bare 35, same
+    // reasoning as the phone module: one platform, no second near-future
+    // bump for a one-point gap.
     compileSdkVersion 36
 
     defaultConfig {
@@ -89,12 +86,15 @@ android {
         // minSdk 24 - this is a different installable unit for different
         // hardware.
         minSdkVersion 30
-        targetSdkVersion 34
+        targetSdkVersion 36
         // Independent range from the phone's own versionCode (currently
         // ~91) - see header comment, cited from developer.android.com/
         // training/wearables/packaging. Bump this, never the phone's
         // counter, for a new Wear-only release.
-        versionCode 1000001
+        // 1000001 burned by the 2026-09-10 targetSdk-34 upload attempt -
+        // Play rejects re-uploading a versionCode even when the earlier
+        // attempt itself was never published ("wurde bereits verwendet").
+        versionCode 1000002
         versionName "1.0.0"
     }
 
