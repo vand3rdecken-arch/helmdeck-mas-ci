@@ -31,6 +31,7 @@ import { UsagePanel } from "@/ui/dash_panels";
 // import { GxpActivate } from "@/ui/gxp_activate";  // commented out with the door render below
 import { PMControls } from "@/ui/pm_panel";
 import { SchemaDoor, ScopeBadge, useSchema } from "@/ui/settings_schema_page";
+import { TeamInvite } from "@/ui/team_invite";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { UpdatesPanel } from "@/ui/updates_info";
@@ -98,10 +99,15 @@ const DOORS: readonly Door[] = DOOR_IDS.filter((id) => !HIDDEN_DOORS.includes(id
 const LANG_LABELS = LANGS.map((l) => l.label);
 const langId = (label: string): Lang => (LANGS.find((l) => l.label === label)?.id ?? "de");
 
-// Excludes O/0 and I/1 - dictated over voice/phone without ambiguity.
-const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const genInviteCode = (): string =>
-  Array.from({ length: 8 }, () => INVITE_CODE_ALPHABET[Math.floor(Math.random() * INVITE_CODE_ALPHABET.length)]).join("");
+// The invite-code generator used to live here, in the UI, feeding a settings
+// FIELD. It moved into the daemon (spine/auth/invites.py's gen_code, same
+// no-O/0/I/1 alphabet) the moment a code stopped being a string the owner
+// pastes somewhere and became an object the daemon has to recognise later.
+
+/** A daemon timestamp ("2026-09-09 22:15:00") as something a human reads at a
+ *  glance. Trimmed, not localised: these rows are dense, and the year is
+ *  noise next to "when did this device last check in". */
+const when = (ts: string): string => String(ts).replace("T", " ").slice(0, 16);
 
 /**
  * THE CHROME EVERY DOOR SHARES - including Henry.
@@ -161,6 +167,11 @@ export default function Settings() {
   const { data: s, isLoading, error } = useQuery({ queryKey: ["settings"], queryFn: api.settings, enabled: owner });
   const { data: auto } = useQuery({ queryKey: ["automation"], queryFn: api.automation, staleTime: 30000, retry: false, enabled: owner });
   const { data: users, refetch: refetchUsers } = useQuery({ queryKey: ["users"], queryFn: api.users, enabled: owner });
+  const { data: invites, refetch: refetchInvites } = useQuery({ queryKey: ["invites"], queryFn: api.invites, enabled: owner });
+  // Filtered HERE rather than server-side: the daemon ships open invitations
+  // and recent history in one list (spine/auth/invites.py's derived `state`),
+  // and the panel shows only what is still actionable.
+  const openInvites = (invites ?? []).filter((i) => i.state === "open");
   const { data: devices, refetch: refetchDevices } = useQuery({ queryKey: ["devices"], queryFn: api.devices, enabled: owner });
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, enabled: owner });
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000, enabled: owner });
@@ -242,13 +253,16 @@ export default function Settings() {
   const [wearTtlMin, setWearTtlMin] = useState(15);
   const [wearBusy, setWearBusy] = useState(false);
 
-  // ---- add user (door: team) ----
-  const [uName, setUName] = useState(""); const [uPw, setUPw] = useState(""); const [uRole, setURole] = useState("operator");
+  // ---- members + invitations (door: team) ----
+  const [inviteOpen, setInviteOpen] = useState(false);
+  // Which member's devices are unfolded. ONE at a time (an accordion, not a
+  // set of independent toggles): the whole point of the rebuild is that this
+  // panel fits on a screen, and letting every row expand at once rebuilds the
+  // wall of tokens it replaced.
+  const [expandedMember, setExpandedMember] = useState<string | null>(null);
 
-  // ---- registration (door: team) ----
+  // ---- self sign-up (door: team) ----
   const [regOpen, setRegOpen] = useState(false);
-  const [regCode, setRegCode] = useState("");
-  const [regRole, setRegRole] = useState("client");
 
   useEffect(() => {
     if (!s) return;
@@ -258,8 +272,7 @@ export default function Settings() {
     setJBase(s.jira?.base ?? ""); setJEmail(s.jira?.email ?? "");
     setJToken(s.jira?.api_token ?? ""); setJJql(s.jira?.default_jql ?? "");
     setRelayUrl(s.relay?.url ?? "");
-    setRegOpen(!!s.registration?.open); setRegCode(s.registration?.invite_code ?? "");
-    setRegRole(s.registration?.default_role ?? "client");
+    setRegOpen(!!s.registration?.open);
   }, [s]);
 
   const ok = (msg: string) => Alert.alert(tr("settings.savedTitle"), msg);
@@ -338,18 +351,11 @@ export default function Settings() {
     catch (e) { fail(e); }
   }
 
-  async function addUser() {
-    if (!uName.trim() || !uPw) { Alert.alert(tr("settings.users.missingTitle"), tr("settings.users.missingMsg")); return; }
-    try {
-      const r = await api.post<{ error?: string }>("/users", { name: uName.trim(), password: uPw, role: uRole });
-      if (r.error) { Alert.alert(tr("ui.error"), r.error); return; }
-      setUName(""); setUPw(""); await refetchUsers();
-    } catch (e) { fail(e); }
-  }
   function changeRole(u: UserRow) {
     Alert.alert(u.name, tr("settings.users.setRole"), [
       ...["owner", "operator", "client"].filter((r) => r !== u.role).map((r) => ({
-        text: r, onPress: async () => { try { await api.setRole(u.name, r); await refetchUsers(); } catch (e) { fail(e); } },
+        text: tr(`team.role.${r}`),
+        onPress: async () => { try { await api.setRole(u.name, r); await refetchUsers(); } catch (e) { fail(e); } },
       })),
       { text: tr("ui.cancel"), style: "cancel" as const },
     ]);
@@ -370,30 +376,21 @@ export default function Settings() {
     try { const r = await api.issueToken(u.name, label); await Clipboard.setStringAsync(r.token); Alert.alert(tr("settings.users.tokenCopiedTitle"), tr("settings.users.tokenCopiedMsg")); await refetchUsers(); }
     catch (e) { fail(e); }
   }
-  async function invite(u: UserRow) {
-    try {
-      const r = await api.issueToken(u.name, "invite-" + u.name);
-      let payload: Record<string, string>;
-      if (relayUrl.trim()) {
-        const p = await api.post<{ url?: string; room?: string; daemon_pub?: string; error?: string }>("/relay/pair", { invite: true });
-        if (p.error || !p.url) { Alert.alert(tr("ui.error"), p.error ?? tr("settings.pair.relayFailed")); return; }
-        payload = { u: p.url, r: p.room ?? "", k: p.daemon_pub ?? "", t: r.token };
-      } else {
-        payload = { b: useConfig.getState().baseUrl, t: r.token };
-      }
-      const code = util.encodeBase64(util.decodeUTF8(JSON.stringify(payload)));
-      await Clipboard.setStringAsync(code);
-      Alert.alert(tr("settings.users.inviteCopiedTitle"), tr("settings.users.inviteCopiedMsg", { name: u.name, role: u.role }));
-      await refetchUsers();
-    } catch (e) { fail(e); }
-  }
   async function revokeToken(u: UserRow, tokenId: string) {
     if (!(await confirmAsync(tr("settings.users.revokeTitle"), tr("settings.users.revokeMsg")))) return;
     try { await api.post(`/users/${u.name}/revoke`, { token: tokenId }); await refetchUsers(); } catch (e) { fail(e); }
   }
-  async function saveReg() {
-    try { await api.saveSettings({ registration: { open: regOpen, invite_code: regCode.trim(), default_role: regRole } }); ok(tr("settings.saved.registration")); }
-    catch (e) { fail(e); }
+  async function revokeInviteH(inv: import("@/data/types").InviteRow) {
+    if (!(await confirmAsync(tr("team.revokeInviteTitle"), tr("team.revokeInviteMsg")))) return;
+    try { await api.revokeInvite(inv.code); await refetchInvites(); } catch (e) { fail(e); }
+  }
+  // Optimistic, then reconciled from the server's own answer: a switch that
+  // waits for a round trip reads as broken, and one that never reconciles
+  // lies when the write fails.
+  async function saveRegOpen(v: boolean) {
+    setRegOpen(v);
+    try { await api.saveSettings({ registration: { open: v } }); await invalidate(); }
+    catch (e) { setRegOpen(!v); fail(e); }
   }
   async function addDevice() {
     const label = (await promptText(tr("settings.devices.labelPrompt"), "my-pc")) ?? "my-pc";
@@ -681,6 +678,109 @@ export default function Settings() {
   if (door === "team") {
     return (
       <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
+        {/* MEMBERS - the door's headline act. One list of people, each with a
+            role, when they were last seen, and their devices folded away
+            underneath. What used to be here: the same list with every device
+            token expanded inline (123 lines on the owner's own workspace,
+            because /auth/login minted one per sign-in), plus a "create a user"
+            form where the owner typed a stranger's password. Both are gone -
+            one button, one flow. */}
+        <Panel>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <SectionLabel text={tr("settings.sec.members", { n: users?.length ?? 0 })} />
+            <Pressable onPress={() => setInviteOpen(true)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: t.accent,
+                borderRadius: 9, paddingHorizontal: 12, paddingVertical: 8 }}>
+              <Ionicons name="person-add" size={14} color="#fff" />
+              <Text style={{ color: "#fff", fontSize: 13, fontWeight: "600" }}>{tr("team.inviteMember")}</Text>
+            </Pressable>
+          </View>
+          <Hint text={tr("team.hint")} />
+          {(users ?? []).map((u) => {
+            const open = expandedMember === u.name;
+            const devices = u.tokens ?? [];
+            return (
+              <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
+                <Pressable onPress={() => setExpandedMember(open ? null : u.name)}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{u.name}</Text>
+                      {u.name === me?.name ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>({tr("team.you")})</Text> : null}
+                      {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{tr("settings.users.touchesToday", { n: actors[u.name] })}</Text> : null}
+                    </View>
+                    <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>
+                      {u.last_active ? tr("team.lastActive", { when: when(u.last_active) }) : tr("team.neverActive")}
+                      {"  ·  "}
+                      {devices.length === 0 ? tr("team.noDevices")
+                        : devices.length === 1 ? tr("team.oneDevice") : tr("team.devices", { n: devices.length })}
+                    </Text>
+                  </View>
+                  {/* The role chip is the role EDITOR - stopPropagation so
+                      tapping it changes the role instead of also folding the
+                      row open underneath the dialog. */}
+                  <Pressable onPress={() => changeRole(u)}>
+                    <Chip text={tr(`team.role.${u.role}`)} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
+                  </Pressable>
+                  <Ionicons name={open ? "chevron-up" : "chevron-down"} size={15} color={t.txtTertiary} />
+                </Pressable>
+                {open ? (
+                  <View style={{ gap: 6, paddingLeft: 2 }}>
+                    {devices.map((tk) => (
+                      <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Ionicons name="hardware-chip-outline" size={13} color={t.txtTertiary} />
+                        <View style={{ flex: 1, gap: 1 }}>
+                          <Text style={{ color: t.txtSecondary, fontSize: 12 }} numberOfLines={1}>{tk.label}</Text>
+                          <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>
+                            {tk.last_used ? tr("team.deviceLastUsed", { when: when(tk.last_used) }) : tr("team.deviceNever")} · …{tk.tail}
+                          </Text>
+                        </View>
+                        {/* card 5 debt: >90d unused, computed server-side */}
+                        {tk.stale ? (
+                          <View style={{ borderWidth: 1, borderColor: t.warn + "66", borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
+                            <Text style={{ color: t.warn, fontSize: 9.5, fontWeight: "600" }}>{tr("settings.users.stale")}</Text>
+                          </View>
+                        ) : null}
+                        <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingTop: 2 }}>
+                      <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
+                      <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
+                      <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </Panel>
+
+        {/* OPEN INVITATIONS - people who were invited but have not signed up
+            yet. Visible and revocable, which the one global invite code never
+            was: it had no list, so "who can still get in" was unanswerable. */}
+        <Panel>
+          <SectionLabel text={tr("settings.sec.invites", { n: openInvites.length })} />
+          {openInvites.length === 0 ? <Hint text={tr("team.noInvites")} /> : null}
+          {openInvites.map((inv) => (
+            <View key={inv.code} style={{ flexDirection: "row", alignItems: "center", gap: 8,
+              paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder }}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text selectable style={{ color: t.accent, fontSize: 14, letterSpacing: 2, fontWeight: "600",
+                  fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>{inv.code}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
+                  {inv.expires ? tr("team.inviteExpires", { when: when(inv.expires) }) : ""}
+                </Text>
+              </View>
+              <Chip text={tr(`team.role.${inv.role}`)} dot={inv.role === "operator" ? t.human : t.txtTertiary} />
+              <Pressable onPress={async () => { await Clipboard.setStringAsync(inv.code); Alert.alert(tr("settings.pair.copiedTitle"), tr("team.copied")); }}>
+                <Ionicons name="copy-outline" size={15} color={t.txtSecondary} />
+              </Pressable>
+              <Pressable onPress={() => revokeInviteH(inv)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.revoke")}</Text></Pressable>
+            </View>
+          ))}
+        </Panel>
+
         <Panel>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
             <SectionLabel text={tr("settings.sec.mobile")} />
@@ -750,61 +850,6 @@ export default function Settings() {
         </Panel>
 
         <Panel>
-          <SectionLabel text={tr("settings.sec.users", { n: users?.length ?? 0 })} />
-          {(users ?? []).map((u) => (
-            <View key={u.name} style={{ paddingVertical: 8, borderTopWidth: 1, borderTopColor: t.glassBorder, gap: 6 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ color: t.txtPrimary, fontSize: 13.5, flex: 1 }}>{u.name}</Text>
-                {actors[u.name] ? <Text style={{ color: t.human, fontSize: 11 }}>{tr("settings.users.touchesToday", { n: actors[u.name] })}</Text> : null}
-                <Pressable onPress={() => changeRole(u)}>
-                  <Chip text={u.role} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
-                </Pressable>
-              </View>
-              {u.tokens?.length ? (
-                <View style={{ gap: 3 }}>
-                  {u.tokens.map((tk) => (
-                    <View key={tk.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={{ color: t.txtTertiary, fontSize: 11, flex: 1 }} numberOfLines={1}>
-                        {tk.label} · …{tk.tail}
-                        {tk.stale ? "  " : ""}
-                      </Text>
-                      {/* card 5 debt: >90d unused, computed server-side */}
-                      {tk.stale ? (
-                        <View style={{ borderWidth: 1, borderColor: t.warn + "66", borderRadius: 5, paddingHorizontal: 5, paddingVertical: 1 }}>
-                          <Text style={{ color: t.warn, fontSize: 9.5, fontWeight: "600" }}>{tr("settings.users.stale")}</Text>
-                        </View>
-                      ) : null}
-                      <Pressable onPress={() => revokeToken(u, tk.id)}><Text style={{ color: t.danger, fontSize: 11 }}>{tr("settings.users.revoke")}</Text></Pressable>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-                <Pressable onPress={() => invite(u)}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: t.accent + "1F",
-                    borderColor: t.accent + "66", borderWidth: 1, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 3 }}>
-                  <Ionicons name="person-add-outline" size={12} color={t.accent} />
-                  <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("settings.users.invite")}</Text>
-                </Pressable>
-                <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
-                <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
-                <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
-              </View>
-            </View>
-          ))}
-          <View style={{ height: 12, borderTopWidth: 1, borderTopColor: t.glassBorder, marginTop: 4 }} />
-          <Caption text={tr("settings.users.newUser")} />
-          <FormGrid wide={wide}>
-            <TextInput value={uName} onChangeText={setUName} autoCapitalize="none" placeholder={tr("settings.users.namePh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-            <TextInput value={uPw} onChangeText={setUPw} autoCapitalize="none" secureTextEntry placeholder={tr("settings.users.pwPh")} placeholderTextColor={t.txtPlaceholder} style={field} />
-          </FormGrid>
-          <View style={{ height: 8 }} />
-          <ChipPick options={["operator", "client", "owner"]} selected={[uRole]} single onToggle={setURole} />
-          <View style={{ height: 10 }} />
-          <Btn label={tr("settings.users.create")} onPress={addUser} />
-        </Panel>
-
-        <Panel>
           <SectionLabel text={tr("settings.sec.devices", { n: devices?.length ?? 0 })} />
           <Hint text={tr("settings.devices.hint")} />
           {(devices ?? []).map((d) => (
@@ -830,31 +875,22 @@ export default function Settings() {
           <Btn label={tr("settings.devices.register")} kind="ghost" onPress={addDevice} />
         </Panel>
 
+        {/* SELF SIGN-UP - all that survives of the old registration panel. The
+            invite-code field and the default-role picker are gone with their
+            cause: a code is an invitation object now (one per person, with its
+            own role and expiry), and there is no workspace-wide role left for
+            a signup to inherit. Open sign-up is hard-wired to `client` in
+            routes_auth.py, which is why this is a switch and not a form. */}
         <Panel>
           <SectionLabel text={tr("settings.sec.registration")} />
           <Hint text={tr("settings.reg.hint")} />
-          <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={setRegOpen} />
-          <View style={{ height: 8 }} />
-          <Caption text={tr("settings.reg.code")} />
-          <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
-            <TextInput value={regCode} onChangeText={setRegCode} autoCapitalize="none" style={[field, { flex: 1 }]} />
-            <Btn label={tr("settings.reg.generate")} kind="ghost" onPress={() => setRegCode(genInviteCode())} />
-          </View>
-          {regCode.trim() ? (
-            <View style={{ marginTop: 8 }}>
-              <Btn label={tr("settings.reg.copyCode")} kind="ghost" onPress={async () => {
-                await Clipboard.setStringAsync(regCode.trim());
-                Alert.alert(tr("settings.pair.copiedTitle"), tr("settings.reg.codeCopied"));
-              }} />
-            </View>
-          ) : null}
-          <View style={{ height: 10 }} />
-          <Caption text={tr("settings.reg.role")} />
-          <ChipPick options={["client", "operator"]} selected={[regRole]} single onToggle={setRegRole} />
-          <View style={{ height: 12 }} />
-          <Btn label={tr("settings.reg.save")} onPress={saveReg} />
+          <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={saveRegOpen} />
         </Panel>
         <SchemaDoor door="team" schema={schema} />
+        {inviteOpen ? (
+          <TeamInvite onClose={() => setInviteOpen(false)}
+            onCreated={() => { void refetchInvites(); void refetchUsers(); }} />
+        ) : null}
       </DoorFrame>
     );
   }

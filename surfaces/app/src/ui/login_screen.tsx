@@ -29,7 +29,14 @@ export function LoginScreen() {
   const qc = useQueryClient();
   const field = fieldStyle(t);
   const [mode, setMode] = useState<Mode>("in");
-  const [registrationOpen, setRegistrationOpen] = useState(false);
+  // TWO different questions, and conflating them was a real dead end: `canSignUp`
+  // = is there any way in at all (open registration OR a live invitation), which
+  // decides whether the "Konto anlegen" tab exists; `noCodeNeeded` = the
+  // workspace lets anyone in without one. The code field used to be hidden
+  // whenever the FIRST was true, so a workspace that had only ever issued an
+  // invite code showed the sign-up tab with nowhere to type the code.
+  const [canSignUp, setCanSignUp] = useState(false);
+  const [noCodeNeeded, setNoCodeNeeded] = useState(false);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [invite, setInvite] = useState("");
@@ -40,9 +47,20 @@ export function LoginScreen() {
     api.authState()
       .then((s) => {
         if (s.setup_needed) setMode("setup");
-        setRegistrationOpen(!!s.registration);
+        setCanSignUp(!!s.registration);
+        setNoCodeNeeded(!!s.registration_open);
       })
       .catch(() => { /* daemon unreachable - stay on sign-in, the form itself will show a real error on submit */ });
+  }, []);
+
+  // An invitation link (…/?invite=CODE) lands here: prefill the code and open
+  // the sign-up tab, so the person who was invited never has to work out which
+  // of three modes this screen is in. Web only - a deep link on native carries
+  // the code through the pairing gate instead.
+  useEffect(() => {
+    const url = globalThis.location?.search ?? "";
+    const code = new URLSearchParams(url).get("invite");
+    if (code) { setInvite(code.trim().toUpperCase()); setMode("up"); setCanSignUp(true); }
   }, []);
 
   const applyToken = (token: string | undefined) => {
@@ -84,7 +102,7 @@ export function LoginScreen() {
             <Pressable onPress={() => setMode("in")}>
               <Text style={{ color: mode === "in" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.signIn")}</Text>
             </Pressable>
-            {registrationOpen ? (
+            {canSignUp ? (
               <Pressable onPress={() => setMode("up")}>
                 <Text style={{ color: mode === "up" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.createAccount")}</Text>
               </Pressable>
@@ -97,9 +115,10 @@ export function LoginScreen() {
         <TextInput placeholder={tr(mode === "in" ? "login.password" : "login.passwordNew")} placeholderTextColor={t.txtTertiary}
           secureTextEntry value={password} onChangeText={setPassword} style={field}
           onSubmitEditing={submit} />
-        {mode === "up" && !registrationOpen ? (
+        {mode === "up" && !noCodeNeeded ? (
           <TextInput placeholder={tr("login.invite")} placeholderTextColor={t.txtTertiary}
-            value={invite} onChangeText={setInvite} style={field} />
+            autoCapitalize="characters" autoCorrect={false}
+            value={invite} onChangeText={(v) => setInvite(v.toUpperCase())} style={field} />
         ) : null}
 
         {err ? <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text> : null}

@@ -14,12 +14,18 @@ import json
 
 
 def auth_state(self, user):
-    from spine.auth import auth
+    from spine.auth import auth, invites
     from spine.storage import events
     reg = events.settings().get("registration") or {}
+    # `registration` = "is there a way to sign up at all", DERIVED from whether
+    # any invitation is actually open rather than from a settings flag that
+    # could say yes with no live invitation behind it. It used to read
+    # `reg.invite_code`, one workspace-wide string; the count leaks nothing (no
+    # code, no role, no number) beyond "someone was invited".
+    open_invites = invites.count_open()
     return self._send(200, json.dumps(
         {"setup_needed": not auth.list_users(), "user": user,
-         "registration": bool(reg.get("open") or reg.get("invite_code")),
+         "registration": bool(reg.get("open")) or open_invites > 0,
          "registration_open": bool(reg.get("open"))}))
 
 
@@ -49,24 +55,45 @@ def auth_setup(self, user, body):
     # Same reasoning as auth_login below: the app's request layer needs a real
     # Bearer token, not just the cookie, to actually use the account it just
     # created.
-    tok = auth.issue_token(body["name"], "web-login")
+    tok = auth.issue_token(body["name"], _device_label(body), device=_device_id(body))
     return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
 def auth_register(self, user, body):
-    import secrets as _s
-    from spine.auth import auth
+    """Sign up. The role comes from the INVITATION, not from a workspace-wide
+    default (owner decree 2026-09-09, 22:15) - so "who is this person allowed
+    to be" is decided by the owner who invited them, at the moment they were
+    invited, and is carried by the code itself.
+
+    Open registration (no code) is the one remaining exception and it is hard-
+    wired to `client`, the weakest role: the knob that used to let self-signup
+    mint operators is gone with `default_role`, and a public door that can only
+    produce the least-privileged account is the only public door worth having.
+    """
+    from spine.auth import auth, invites
     from spine.storage import events
     reg = events.settings().get("registration") or {}
     code = (body.get("invite") or "").strip()
-    if not reg.get("open"):
-        want = reg.get("invite_code") or ""
-        if not want or not code or not _s.compare_digest(code, want):
-            return self._send(403, json.dumps({"error": "valid invite code required"}))
+    name = (body.get("name") or "").strip()
+    claimed = None
+    if code:
+        try:
+            role = invites.claim(code, name)
+        except ValueError as e:
+            return self._send(403, json.dumps({"error": str(e)}))
+        claimed = code
+    elif reg.get("open"):
+        role = "client"
+    else:
+        return self._send(403, json.dumps({"error": "valid invite code required"}))
     try:
-        auth.create_user(body.get("name", ""), body.get("password", ""),
-                         reg.get("default_role", "client"))
+        auth.create_user(name, body.get("password", ""), role)
     except ValueError as e:
+        # The claim is atomic and happens FIRST (invites.claim's docstring), so
+        # a rejected password must hand the invitation back - otherwise a typo
+        # burns the link and the owner has to mint another one.
+        if claimed:
+            invites.release(claimed, name)
         return self._send(400, json.dumps({"error": str(e)}))
     # optional enrichment only - never touches the user record
     # above, never blocks/fails the signup if Loops is down.
@@ -75,13 +102,27 @@ def auth_register(self, user, body):
         import threading
         from spine.comms import loops_client
         threading.Thread(target=loops_client.signup_contact,
-                         args=(email, body.get("name", "")),
-                         daemon=True).start()
-    sid = auth.login(body["name"], body["password"])
+                         args=(email, name), daemon=True).start()
+    sid = auth.login(name, body["password"])
     # Same reasoning as auth_login below: the app's request layer needs a real
     # Bearer token, not just the cookie.
-    tok = auth.issue_token(body["name"], "web-login")
+    tok = auth.issue_token(name, _device_label(body), device=_device_id(body))
     return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
+
+
+# The app sends a stable per-installation id (data/config.ts's `deviceId`) and
+# a human label with every sign-in. Both are advisory - an old client, a
+# script or curl sends neither, and then this behaves exactly as before: an
+# ungrouped token labelled "web-login". Sanitised here rather than trusted:
+# the id is a grouping KEY that decides which existing token gets replaced, so
+# an over-long or exotic value must not travel into users.json unbounded.
+def _device_id(body):
+    did = (body.get("device") or "").strip()[:64]
+    return "".join(c for c in did if c.isalnum() or c in "-_") or None
+
+
+def _device_label(body):
+    return ((body.get("device_label") or "").strip()[:40]) or "web-login"
 
 
 def auth_login(self, user, body):
@@ -98,7 +139,13 @@ def auth_login(self, user, body):
     # the owner-only /users/<name>/tokens route and /relay/pair's QR flow
     # already use - no new auth primitive. Backward compatible: the cookie is
     # still set for anything that reads it, `token` is just an added field.
-    tok = auth.issue_token(name, "web-login")
+    #
+    # `device=` is what stops this route from being a token FACTORY: it used to
+    # mint one more permanent credential on EVERY sign-in, so the owner panel
+    # accumulated a row per login (the 123-line list this card replaces). One
+    # live token per device now - signing in again on the same phone replaces
+    # that phone's token instead of stacking beside it.
+    tok = auth.issue_token(name, _device_label(body), device=_device_id(body))
     return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
