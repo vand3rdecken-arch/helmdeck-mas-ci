@@ -134,11 +134,21 @@ jobs:
             echo "unsigned build (no MAC_CSC_LINK) - skipping signature checks"
           fi
 
+      # Only a dispatch is worth keeping. A push/PR run gets no --version, so
+      # build-mac.sh stamps the bare package.json number (0.2.0) - a build
+      # PROOF, never a shippable set. Uploading those anyway cost 419 MB a
+      # piece for 14 days and is what filled the account's artifact quota on
+      # 2026-09-09: the mac build signed and notarized fine, then died on
+      # "Artifact storage quota has been hit" at the upload step. The proof is
+      # the green "Verify the artifact set" above; it needs no stored copy.
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: helmdeck-macos
           if-no-files-found: error
-          retention-days: 14
+          # Short on purpose: release_desktop_mac.sh downloads this right after
+          # the dispatch. A long window only rebuilds the pile it replaced.
+          retention-days: 3
           path: |
             surfaces/desktop/release/*.dmg
             surfaces/desktop/release/*.zip
