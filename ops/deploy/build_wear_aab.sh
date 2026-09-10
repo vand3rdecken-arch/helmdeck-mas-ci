@@ -63,7 +63,7 @@ AAB="surfaces/app/android/wear/build/outputs/bundle/release/wear-release.aab"
 # wipes android/ wholesale on its next run, same measured-loss trap build_aab.sh
 # already guards for the phone AAB (2026-09-01).
 mkdir -p .loop/artifacts
-WVCODE="$(grep -o 'versionCode [0-9]*' surfaces/app/plugins/wear/build.gradle | head -1 | grep -o '[0-9]*')"
+WVCODE="$(grep -oE 'versionCode [0-9]+' surfaces/app/plugins/wear/build.gradle | tail -1 | grep -o '[0-9]*')"
 SAFE=".loop/artifacts/helmdeck-wear-vc${WVCODE:-unknown}.aab"
 cp "$AAB" "$SAFE" || { echo "[build_wear_aab] WARN: artifact copy-out failed - upload from $AAB before any other build runs"; }
 echo "[build_wear_aab] AAB: $(du -h "$AAB" | cut -f1) -> $SAFE"
