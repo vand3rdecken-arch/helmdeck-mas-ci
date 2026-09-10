@@ -67,7 +67,13 @@ if [ "$NO_WEB" != "1" ]; then
 fi
 [ -d ../app/dist ] || { echo "!!! surfaces/app/dist missing - drop --no-web"; exit 1; }
 
-EB_ARGS=(--mac --config electron-builder.mas.yml --publish never)
+# `--mac mas` (not bare `--mac`) - config-level mac.target:[mas] in
+# electron-builder.mas.yml does NOT replace the base config's [dmg, zip]
+# via `extends` as the comment there intends: electron-builder concatenates
+# extended arrays instead of overriding them (measured 2026-09-10 - a mas
+# run without this flag also builds unsigned direct-distribution dmg/zip/app
+# it has no Developer ID cert for). CLI target selection bypasses that merge.
+EB_ARGS=(--mac mas --config electron-builder.mas.yml --publish never)
 case "$ARCH" in
   arm64) EB_ARGS+=(--arm64) ;;
   x64)   EB_ARGS+=(--x64) ;;
@@ -89,6 +95,9 @@ npx electron-builder "${EB_ARGS[@]}"; rc=$?
 [ "$rc" = "0" ] || { echo "!!! electron-builder failed"; exit 1; }
 
 echo ""
-echo "DONE. Artifacts -> surfaces/desktop/release/ (upload with Transporter or"
+echo "DONE. Artifacts -> surfaces/desktop/release/mas*/ (upload with Transporter or"
 echo "'xcrun altool --upload-app', never with a git push - a .pkg is a binary, not source)."
-ls -1 release/*.pkg 2>/dev/null | sed 's/^/  /'
+# the mas target nests its .pkg under a per-arch appOutDir (release/mas/,
+# release/mas-arm64/), unlike dmg/zip which land flat in release/ - measured
+# 2026-09-10, do not "fix" this back to release/*.pkg.
+ls -1 release/mas*/*.pkg 2>/dev/null | sed 's/^/  /'
