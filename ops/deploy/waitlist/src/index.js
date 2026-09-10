@@ -88,6 +88,19 @@ const TESTFLIGHT_REQUEST_URL =
 // 401 chars, no app content). The error itself is intermittent Apple-side, but
 // the extra hop is not - naming the storefront removes it.
 const TESTFLIGHT_APP_URL = "https://apps.apple.com/de/app/testflight/id899247664";
+// Wear OS has NO Play Store listing (measured 2026-09-10: the live app.helmdeck
+// listing only mentions "Wear OS" inside a changelog bullet describing a phone
+// feature, not an actual bundled/compatible form factor; :wear has never had a
+// release keystore or a real Gradle run outside a sandboxed card worktree, see
+// ops/deploy/build_wear_apk.sh). Same on-request pattern as iOS until that
+// changes - do not claim a Play Store listing for it again.
+const WEAR_REQUEST_URL =
+  "mailto:" + OWNER_EMAIL +
+  "?subject=" + encodeURIComponent("HelmDeck Wear OS – APK-Anfrage") +
+  "&body=" + encodeURIComponent(
+    "Hi, ich möchte HelmDeck auf meiner Wear-OS-Uhr testen.\n\n" +
+    "Uhren-Modell: \n"
+  );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 
@@ -200,9 +213,9 @@ function page({ rel, joined, already, err, email }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HelmDeck – Downloads für Windows, macOS, iOS & Android</title>
-<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Jetzt verfügbar für Windows, macOS (signiert &amp; notarisiert), iPhone (TestFlight, inkl. Apple Watch) und Android (inkl. Wear OS) – plus die Warteliste für HelmDeck Glasses.">
+<meta name="description" content="HelmDeck orchestriert Coding-Agenten auf deinem eigenen Rechner. Jetzt verfügbar für Windows, macOS (signiert &amp; notarisiert), iPhone (TestFlight, inkl. Apple Watch), Android und Wear OS (auf Anfrage) – plus die Warteliste für HelmDeck Glasses.">
 <meta property="og:title" content="HelmDeck – jetzt verfügbar">
-<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS, iPhone (TestFlight), Apple Watch, Android und Wear OS.">
+<meta property="og:description" content="Übernimm das Steuer deiner Agenten. Downloads für Windows, macOS, iPhone (TestFlight, inkl. Apple Watch), Android und Wear OS (auf Anfrage).">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -418,7 +431,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Für die Wear-OS-Uhr gibt es HelmDeck ebenfalls, auch über den Play Store.</p>
+        <p class="dl-note" data-i-html="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Bei Google Play laden</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn">APK herunterladen</a>
@@ -491,7 +504,7 @@ footer a:hover{color:var(--ink-2)}
       dlIosMeta:"TestFlight-Beta · inkl. Apple Watch · App-Store-Review läuft",
       dlIosNote:"Der öffentliche TestFlight-Link liegt gerade bei Apple in Prüfung, die App-Store-Einreichung läuft parallel. Bis dahin geht es per Einladung: schick uns die Apple-ID deines Geräts an <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> – du bekommst die Einladung per Mail. Die Apple-Watch-App ist im selben Paket enthalten, kein separater Download nötig.",
       dlIosCopyBtn:"E-Mail-Adresse kopieren", dlIosCopied:"Adresse kopiert ✓", dlIosAppBtn:"TestFlight-App laden",
-      dlAndroidNote:"Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Für die Wear-OS-Uhr gibt es HelmDeck ebenfalls, auch über den Play Store.",
+      dlAndroidNote:'Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       waitlistTitle:"HelmDeck Glasses",
@@ -524,7 +537,7 @@ footer a:hover{color:var(--ink-2)}
       dlIosMeta:"TestFlight beta · incl. Apple Watch · App Store review in progress",
       dlIosNote:"The public TestFlight link is currently under review at Apple, and the App Store submission is in progress in parallel. Until then it's invite-based: send your device's Apple ID to <a href=\\"${TESTFLIGHT_REQUEST_URL}\\">${OWNER_EMAIL}</a> and you'll get the invite by mail. The Apple Watch app ships in the same package, no separate download needed.",
       dlIosCopyBtn:"Copy email address", dlIosCopied:"Address copied ✓", dlIosAppBtn:"Get the TestFlight app",
-      dlAndroidNote:"Straight from the Google Play Store – publicly available. The APK here is for sideloading if you'd rather install directly. HelmDeck for the Wear OS watch is available too, also through the Play Store.",
+      dlAndroidNote:'Straight from the Google Play Store – publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       waitlistTitle:"HelmDeck Glasses",
