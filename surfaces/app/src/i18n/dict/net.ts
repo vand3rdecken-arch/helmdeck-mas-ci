@@ -38,6 +38,13 @@ export const net: Dict = {
     de: "Direktverbindung antwortet nicht (Timeout) – läuft HelmDeck am Desktop?",
     en: "Direct connection is not answering (timeout) – is HelmDeck running on the desktop?",
   },
+  // OUR client-side abort before the relay itself answered - distinct from
+  // desktopTimeout (a 504 the relay sent us after ITS OWN wait) so the owner
+  // can tell "relay is stuck" from "relay says the desktop is stuck".
+  "net.relayTimeout": {
+    de: "Relay antwortet nicht (Timeout)",
+    en: "Relay is not answering (timeout)",
+  },
 
   // ---- outbox (ui/outbox_strip.tsx): messages that never reached the daemon.
   // They are kept on disk instead of vanishing with the screen, so "offline"
