@@ -58,12 +58,11 @@ ok(copilot._compact_mark({})[0] == copilot._compact_mark(
    "an absent ctx_window floors to the SAME shared default as an explicit one "
    "(no separate, driftable default in the copilot lane)")
 
-# the memory surface (henry-memory-db-authority: DB-authoritative, the dir is
-# a disposable read cache - see cells/copilot/chat/copilot_memory.py)
-ok(copilot_memory.MEMORY_DIR.endswith("henry_memory"),
-   "the read cache lives under the daemon's runtime dir, not the CLI's shared auto-memory")
-ok("projects" not in copilot_memory.MEMORY_DIR,
-   "we never write into ~/.claude/projects/** (card-shares-the-operators-auto-memory)")
+# the memory surface (henry-memory-db-authority, DB-authoritative, no
+# filesystem surface at all - see cells/copilot/chat/copilot_memory.py and
+# ops/tools/henry_memory_get.py)
+ok(not hasattr(copilot_memory, "MEMORY_DIR"),
+   "memory has no directory constant left to point at - the db is the only store")
 ok(isinstance(copilot_memory.digest(), str),
    "the digest is always a string, even with no memory yet")
 ok("<memory-save" in copilot_memory.SAVE_PROMPT,

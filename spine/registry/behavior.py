@@ -450,14 +450,10 @@ BEHAVIOR_RULES = [
              True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - haeng SOFORT\neinen <memory-save>-Block an deine Antwort und zieh den Index nach.",
              False: "Lege KEINE neuen Notizen an (kein <memory-save>-Block); lies nur, was schon dort steht."}}},
      "source": "cells/copilot/harness/agents/board-copilot.md:304"},
-
-    {"key": "memory.index_path", "block": "memory", "wire": "readonly", "kind": "fixed",
-     "control": "prose", "scope": "workspace", "binds": [],
-     "labelKey": "rule.memory.path", "descKey": "rule.memory.path.desc",
-     "why": "Der Pfad ist maschinenlokal und wird vom Prozess bestimmt, nicht "
-            "von Policy.",
-     "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "cells/copilot/chat/copilot_memory.py::MEMORY_DIR"},
+    # memory.index_path (a "here's the machine-local cache path" fixed rule)
+    # removed 2026-09-11: memory has no filesystem path anymore - db-only,
+    # a full note is read via ops/tools/henry_memory_get.py - so there is
+    # nothing left to display.
 
     # ------------------------------------------------------------- routing --
     # WHICH MODEL, WHEN - owner decree 2026-09-04 ("das ist doch Logik von

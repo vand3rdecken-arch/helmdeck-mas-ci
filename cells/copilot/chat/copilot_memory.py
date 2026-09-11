@@ -4,15 +4,20 @@
 Owner review 2026-09-11: memory is GOVERNANCE CONFIG, not runtime litter - a
 saved note rides in every board turn via digest() and shapes Henry's behaviour
 like the brief does. The db table (spine.storage.db memory_all/put/delete) is
-therefore the store of record, exactly like policy_doc. MEMORY_DIR is a
-DISPOSABLE READ CACHE only: Henry's own Read tool opens a note there on demand
-(progressive disclosure - the index rides in every turn, a note is read only
-when it turns out to matter), regenerate_cache() clobbers it from the db at
-session establishment, and NOTHING ever folds it back. A planted file on disk
-survives at most until the next regen and never reaches the db - the old
-_fold_memory_to_db() direction (dir -> db, deleting db rows with no matching
-file) is gone precisely because it let an unauthenticated write to that
-directory become a standing instruction in Henry's own turns.
+therefore the store of record, exactly like policy_doc.
+
+Owner follow-up 2026-09-11: the first cut of this kept a disposable READ
+CACHE directory (daemon/content/henry_memory/) so Henry's own Read tool
+could open a full note on demand. Owner decree: no folder at all, even a
+disposable one - a directory that looks identical before and after a
+"the db is now authoritative" refactor is a skeleton in the closet, not a
+fix someone can SEE landed. ops/tools/henry_memory_get.py replaces it: a
+read-only script Henry calls through the same Bash-allowlist pattern as his
+existing board_state.py/loop_state.py tools, querying the db directly. No
+filesystem surface for memory exists at all now, so nothing can plant a file
+that becomes a standing instruction - the old _fold_memory_to_db() defect
+this card started from (dir -> db, deleting db rows with no matching file)
+is structurally impossible, not just guarded against.
 
 WRITE PATH: a sentinel protocol, not a file write. Henry ends a turn (any
 board turn, not just the pre-compaction save turn) with
@@ -27,11 +32,7 @@ is modelled on): a block whose name or content fails validation is REJECTED
 and stripped from the visible reply, NEVER guessed at or best-effort-repaired.
 Provenance is structural - a note exists in the db only because Henry's own
 authenticated turn said so, and every accepted mutation gets its own event."""
-import os, re
-
-from daemon.paths import DAEMON_ROOT as ROOT
-
-MEMORY_DIR = os.path.join(ROOT, "content", "henry_memory")
+import re
 
 MAX_NAME_LEN = 60
 MAX_CONTENT_LEN = 8000
@@ -133,9 +134,10 @@ def digest_due(sid, marker_now, last_marker):
 
 
 def digest():
-    """The memory INDEX for the turn - never the notes themselves (see the
-    module docstring's progressive-disclosure note). Reads the db - the store
-    of record - not the cache directory."""
+    """The memory INDEX for the turn - never the notes themselves (progressive
+    disclosure: a full note is fetched only when it turns out to matter).
+    Reads the db - the store of record - and points Henry at the read-only
+    tool, not a filesystem path."""
     try:
         from spine.storage import db
         body = (db.memory_all().get("MEMORY") or {}).get("content", "").strip()
@@ -143,36 +145,9 @@ def digest():
         return ""
     if not body:
         return ""
-    return ("\n\nDEIN GEDAECHTNIS (Index; die Dateien liegen in %s - lies eine, "
-            "wenn sie zur Frage passt):\n%s" % (MEMORY_DIR, body[:4000]))
-
-
-def regenerate_cache():
-    """Clobber MEMORY_DIR from the db (Phase 3: db is authority, the dir is a
-    disposable read cache). Called lazily at session establishment, only when
-    a digest is actually about to be injected - a resumed turn that carries no
-    fresh digest has no reason to touch disk. A file the db does not know
-    about is removed; nothing on disk is ever read back into the db."""
-    try:
-        from spine.storage import db
-        notes = db.memory_all()
-        os.makedirs(MEMORY_DIR, exist_ok=True)
-        keep = set()
-        for name, row in notes.items():
-            if not _NAME_RE.match(name):
-                continue                 # a hand-corrupted row is not a safe filename
-            fname = name + ".md"
-            keep.add(fname)
-            with open(os.path.join(MEMORY_DIR, fname), "w", encoding="utf-8") as f:
-                f.write(row.get("content") or "")
-        for fname in os.listdir(MEMORY_DIR):
-            if fname.endswith(".md") and fname not in keep:
-                try:
-                    os.remove(os.path.join(MEMORY_DIR, fname))
-                except OSError:
-                    pass
-    except Exception as e:                                        # noqa: BLE001
-        print("copilot: memory cache regen failed -", str(e)[:200])
+    return ("\n\nDEIN GEDAECHTNIS (Index; volle Notiz mit "
+            "`py -3.12 ops/tools/henry_memory_get.py get <name>` lesen, wenn "
+            "sie zur Frage passt):\n%s" % body[:4000])
 
 
 # The dedicated pre-compaction save turn (copilot._save_memory): ONE turn to

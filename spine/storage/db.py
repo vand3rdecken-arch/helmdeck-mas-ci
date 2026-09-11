@@ -229,10 +229,11 @@ def init(role="tool"):
         json TEXT NOT NULL, version INTEGER NOT NULL, updated_at TEXT NOT NULL)""")
     # HENRY'S MEMORY, store of record (same decree: harness config must be
     # exportable - "wenn es hier bleibt erreicht es niemanden"). One row per
-    # note file; daemon/henry_memory/ stays the WRITE SURFACE the spawned
-    # agent turn edits with its own hands, and copilot.py folds dir -> here
-    # at event time after each save turn (the one owner). The brief digest
-    # and /harness/export read THIS, never the dir.
+    # note. No filesystem surface exists for it at all: Henry writes via a
+    # <memory-save>/<memory-delete> sentinel in his own turn output, parsed
+    # by cells/copilot/chat/copilot_memory.py and applied here directly (one
+    # event per mutation, the one owner). The brief digest, /harness/export,
+    # and a full-note read (ops/tools/henry_memory_get.py) all read THIS.
     c.execute("""CREATE TABLE IF NOT EXISTS memory(
         name TEXT PRIMARY KEY, content TEXT NOT NULL,
         updated_at TEXT NOT NULL, actor TEXT NOT NULL)""")
@@ -458,17 +459,15 @@ def _migrate():
             print("db: connector state import failed:", e)
     # daemon/henry_memory/*.md -> memory table, store of record (config-
     # consolidation phase 5, owner decree: "das muss ins db... wenn es hier
-    # bleibt erreicht es niemanden"; flipped fully DB-authoritative by the
-    # henry-memory-db-authority card). FIRST-START ONLY, same rule as every
-    # migration above: an empty table + files on disk means this install
-    # predates the db store. The DIRECTORY IS NOT ARCHIVED, but it is no
-    # longer a write surface either - Henry writes memory through his own
-    # turn output now (a <memory-save>/<memory-delete> sentinel, parsed by
-    # cells/copilot/chat/copilot_memory.py), and the directory is a
-    # DISPOSABLE READ CACHE that copilot_memory.regenerate_cache() clobbers
-    # from this table at session establishment. Nothing ever folds the
-    # directory back - a planted file is never trusted. This import is the
-    # one-time bridge for notes that predate the db becoming authoritative.
+    # bleibt erreicht es niemanden"; flipped fully DB-authoritative, then
+    # (2026-09-11) the directory itself removed - no filesystem surface for
+    # memory exists at all anymore, full notes are read via
+    # ops/tools/henry_memory_get.py, straight from this table). FIRST-START
+    # ONLY, same rule as every migration above: an empty table + files on
+    # disk means this install predates the db store. This import is the
+    # one-time bridge for notes written before either the db or the sentinel
+    # write path (cells/copilot/chat/copilot_memory.py) existed; the
+    # directory is never archived or written to again afterward.
     mdir = os.path.join(ROOT, "henry_memory")
     if (os.path.isdir(mdir)
             and c.execute("SELECT 1 FROM memory LIMIT 1").fetchone() is None):
@@ -831,9 +830,9 @@ def policy_doc_put(doc):
 # -- memory (Henry's notes, store of record) --------------------------------
 
 def memory_all():
-    """{name: {content, updated_at, actor}} for every note. The brief digest
-    and /harness/export read this - never the disposable henry_memory/ read
-    cache (see the boot-import comment above)."""
+    """{name: {content, updated_at, actor}} for every note. The only store -
+    the brief digest, /harness/export, and ops/tools/henry_memory_get.py all
+    read this directly; there is no filesystem cache in front of it."""
     try:
         rows = conn().execute(
             "SELECT name,content,updated_at,actor FROM memory").fetchall()

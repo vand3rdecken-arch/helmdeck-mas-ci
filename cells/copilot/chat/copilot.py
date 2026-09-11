@@ -347,25 +347,39 @@ def _brief_fp():
 
 
 def _brief_file(text):
-    """The brief travels as a FILE (--append-system-prompt-file), never inline
-    argv. Windows' CreateProcess caps the whole command line at 32767 chars,
-    and board-copilot.md crossed it on 2026-09-04 (measured: rendered brief
-    32622 chars, assembled line 33674) - from that commit on EVERY Henry spawn
-    died instantly with WinError 206, invisible because stderr points at
-    DEVNULL, and the owner just saw a chat that never answered. A brief that
-    grows with every owner decree must not share a hard OS cap with the flag
-    soup around it. Content-addressed (sha1 of the text): the file for a given
-    brief is written once and reused; a changed brief gets a new file, so a
-    process reading it at spawn can never see a half-written mix."""
-    import hashlib
-    d = os.path.join(ROOT, "content", "copilot_briefs")
+    """The brief's SOURCE is already the db: the character template renders
+    from the repo, but every owner-tunable value in it (memory.enabled, model
+    routing, ...) is a policy_doc row written through the authed
+    harness_config_post -> policy.swap() path, spliced in by harness.brief()
+    before this function ever runs. This function has exactly one job left -
+    getting the resulting text into a subprocess - and it exists only because
+    the Claude CLI's --append-system-prompt-file flag hard-requires a real
+    filesystem path (no inline/stdin system-prompt option), and Windows'
+    32767-char CreateProcess cap already ruled out the command line directly
+    (board-copilot.md crossed it on 2026-09-04: rendered brief 32622 chars,
+    assembled line 33674 - every spawn died instantly with WinError 206,
+    invisible because stderr points at DEVNULL).
+
+    So: no project-rooted 'content' directory, no persistent name a reader
+    could mistake for config-at-rest - a real OS temp file (system temp dir,
+    unique per call, immediately unrelated to the repo tree or the daemon's
+    own state). Never reused, never read back by us: each spawn gets its own,
+    and stale ones from crashed/killed spawns are swept by age on every call
+    (a live spawn always finishes reading within seconds of Popen, so
+    anything older than the sweep floor is provably orphaned, not a race)."""
+    import tempfile, glob, time
+    d = os.path.join(tempfile.gettempdir(), "helmdeck-briefs")
     os.makedirs(d, exist_ok=True)
-    p = os.path.join(d, hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:16] + ".md")
-    if not os.path.exists(p):
-        tmp = p + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, p)
+    cutoff = time.time() - 300
+    for stale in glob.glob(os.path.join(d, "*.md")):
+        try:
+            if os.path.getmtime(stale) < cutoff:
+                os.remove(stale)
+        except OSError:
+            pass
+    fd, p = tempfile.mkstemp(suffix=".md", prefix="board-copilot-", dir=d)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
     return p
 
 
@@ -1584,10 +1598,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # README calls "session establishment".
         _mem_marker = copilot_memory.marker(sid, _st.get("compacted_at_turn"))
         _mem_due = copilot_memory.digest_due(sid, _mem_marker, _digest_sent.get(skey))
-        _mem = ""
-        if _mem_due:
-            copilot_memory.regenerate_cache()   # lazy - only when a digest rides
-            _mem = copilot_memory.digest()
+        _mem = copilot_memory.digest() if _mem_due else ""
         snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
             + _snapshot() + (("\n\n" + _plan) if _plan else "") + _mem
         _snap_body = snapshot_block

@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """henry-memory-db-authority: the sentinel write path (phase 1), the
-session-scoped digest gate (phase 2) and the db->dir cache regen (phase 3).
+session-scoped digest gate (phase 2), and (2026-09-11 follow-up) the fact
+that memory has NO filesystem surface at all anymore - db.memory_all/put/
+delete is the only store, and ops/tools/henry_memory_get.py is the only
+read path a full note travels, a plain db query with no cache in between.
 
-Self-sandboxing: db.ROOT/db.DBPATH point at a temp dir (db.init() run against
-it) and copilot_memory.MEMORY_DIR is redirected to a temp dir too - the
-README's own trap #4 ("tests that patch events.SET alone write the LIVE db")
-means BOTH must move, and the memory cache-regen test would otherwise clobber
-the real daemon/content/henry_memory/ on whichever machine runs this.
+Self-sandboxing: db.ROOT/db.DBPATH point at a temp dir (db.init() run
+against it) - the README's own trap #4 ("tests that patch events.SET alone
+write the LIVE db") means this must move or the test would touch the real
+daemon.
 
 Run: py -3.12 ops/tests/test_copilot_memory.py   (from the repo root)
 """
@@ -30,7 +32,11 @@ db.init()
 events.EV = os.path.join(_tmp, "events.jsonl")
 
 from cells.copilot.chat import copilot_memory as m                    # noqa: E402
-m.MEMORY_DIR = os.path.join(_tmp, "henry_memory")
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location(
+    "henry_memory_get", os.path.join(ROOT, "ops", "tools", "henry_memory_get.py"))
+_hmg = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_hmg)
 
 _fails = []
 
@@ -121,22 +127,32 @@ d = m.digest()
 check("fact a" in d, "digest carries the index body - got %r" % d)
 check("note-a.md" not in d or "fact a" in d, "digest is the index, not a note dump")
 
-# -- regenerate_cache(): clobber dir <- db, never db <- dir ------------------
-print("\n[regenerate_cache]")
+# -- henry_memory_get.py: the only read path for a full note, no cache -------
+print("\n[henry_memory_get - read-only, no filesystem surface]")
 _reset_memory()
-os.makedirs(m.MEMORY_DIR, exist_ok=True)
-stray = os.path.join(m.MEMORY_DIR, "planted-by-someone-else.md")
-with open(stray, "w", encoding="utf-8") as f:
-    f.write("an unauthenticated write - must never reach the db")
 db.memory_put("real-note", "the actual fact", actor="henry")
-m.regenerate_cache()
-check(not os.path.exists(stray), "a file with no matching db row is removed on regen")
-got = os.path.join(m.MEMORY_DIR, "real-note.md")
-check(os.path.exists(got), "a db row IS written to disk as a cache file")
-with open(got, encoding="utf-8") as f:
-    check(f.read() == "the actual fact", "cache file content matches the db row")
-check("planted-by-someone-else" not in db.memory_all(),
-      "the planted file never made it INTO the db - regen is one-directional")
+db.memory_put("MEMORY", "- [real-note](real-note.md) - the actual fact", actor="henry")
+
+import io, contextlib
+
+def _run(*argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = _hmg.main(["henry_memory_get.py"] + list(argv))
+    return rc, out.getvalue()
+
+rc, out = _run("list")
+check(rc == 0 and "real-note" in out, "list surfaces the note name - got %r" % out)
+check("MEMORY" not in out.splitlines(), "list hides the index note itself")
+
+rc, out = _run("get", "real-note")
+check(rc == 0 and out.strip() == "the actual fact", "get returns the exact db content - got %r" % out)
+
+rc, out = _run("get", "no-such-note")
+check(rc == 1, "get on a missing note exits non-zero, not a guess")
+
+check(not any("henry_memory" in p for p in os.listdir(_tmp) if os.path.isdir(os.path.join(_tmp, p))),
+      "no henry_memory directory exists anywhere - the read path never touches disk")
 
 # -- marker()/digest_due(): the session-establishment gate -------------------
 print("\n[marker / digest_due - session-establishment gate]")
