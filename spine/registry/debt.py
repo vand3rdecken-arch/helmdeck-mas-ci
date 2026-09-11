@@ -4641,6 +4641,81 @@ DEBT = [
         "since": "2026-09-10",
         "order": 64,
     },
+    {
+        "id": "browser-find-not-viewport-scoped",
+        "title": "browsercap.find() searches the whole rendered page, not just the viewport",
+        "status": "open",
+        "what": "spine/media/browsercap.py's read() is strictly viewport-"
+                "scoped (token-burn-hardening Karte C's own rule - the "
+                "viewport IS the cap on a page of any size), but find() "
+                "deliberately is NOT: it matches a selector anywhere in the "
+                "rendered DOM (excluding only zero-size/display:none/"
+                "visibility:hidden elements), capped to the first 20 in DOM "
+                "order. Reasoning: these five verbs have no separate scroll "
+                "primitive, and click()/type() already scroll a target into "
+                "view before acting (Playwright's own actionability wait) - "
+                "restricting find() to the current scroll position would "
+                "make anything below the fold permanently unreachable "
+                "through this MCP server. Per this card's own rule (README.md "
+                "Karte C: 'jedes nicht-viewport-gescopte Output ist ein "
+                "Shortcut') that trade is registered here rather than shipped "
+                "silently.",
+        "why_it_bites": "a selector that matches many elements on a long "
+                        "page (e.g. 'a' on a link-heavy page) can silently "
+                        "return the first 20 in DOM order while the element "
+                        "the agent actually wants sits further down and off "
+                        "the returned list - a narrower selector or repeated "
+                        "find() calls are the only workaround today, and "
+                        "nothing in find()'s own output tells the caller how "
+                        "many matches were DROPPED past the cap.",
+        "trigger": "a page whose target element is selector-ambiguous "
+                   "(matches 20+ elements) and sits after the 20th DOM-order "
+                   "match - most likely long listing/table pages.",
+        "fix": "report the total match count alongside the capped 20 (so a "
+               "caller KNOWS to narrow the selector instead of silently "
+               "missing the target), and/or add viewport-relative ordering "
+               "(elements nearest the current scroll position first) so the "
+               "most likely-relevant 20 win the cap instead of the first 20 "
+               "in raw DOM order.",
+        "since": "2026-09-11",
+        "order": 65,
+    },
+    {
+        "id": "browser-verbs-netdance-hardening-unread",
+        "title": "browsercap's CDP layer was never compared against netdance's hardened one",
+        "status": "open",
+        "what": "token-burn-hardening Karte C named netdance "
+                "(Documents/Private Project/netdance, the owner's OTHER "
+                "project - see memory netdance-browser-harness) as the CDP-"
+                "hardening reference, with an explicit first-commit read-note "
+                "step because the effort was 'unsicher' (uncertain) until "
+                "that comparison happened. It never happened: this card ran "
+                "as a WORKTREE card, and worktree isolation (a fixed-harness "
+                "law, not a bug) blocks any read outside the card's own "
+                "worktree - netdance sits under the user's home folder, "
+                "structurally unreachable from here. The five verbs shipped "
+                "using general Playwright/CDP knowledge instead (bounded "
+                "action timeout, a dedicated debug port + user-data-dir "
+                "already in browsercap.py), not netdance's specific WS-"
+                "discovery/port-token/anti-automation techniques.",
+        "why_it_bites": "browser-attach-real-chrome (order 14) already "
+                        "tracks the unresolved half of this - no origin "
+                        "allowlist, no per-run debug-port token, no anti-"
+                        "automation hardening on the attached Chrome. "
+                        "Whatever netdance's CDP layer would have added "
+                        "toward closing that gap is simply not in this code.",
+        "trigger": "the debug port (9222 by default) being reachable by "
+                   "another local process, or an agent navigating an "
+                   "attached-Chrome tab to an origin the owner did not "
+                   "intend it to reach.",
+        "fix": "dispatch a MACHINE card (unrestricted filesystem access) to "
+               "read Documents/Private Project/netdance's CDP layer and file "
+               "a follow-up card porting whatever applies - this is exactly "
+               "the read-note step the original spec asked for, just run "
+               "from a surface that can actually reach the reference.",
+        "since": "2026-09-11",
+        "order": 66,
+    },
 ]
 
 def list_debt():

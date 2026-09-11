@@ -194,6 +194,15 @@ _DEFAULT_MACHINE = (
     "write something new, and the shortest working change wins - once you "
     "understand the problem, never before. A bug is the ROOT CAUSE, not "
     "the symptom named; fix the shared cause, not one call site."
+    "\n\n"
+    "A web page is driven through the five bounded browser verbs "
+    "(mcp__helmdeck-browser__navigate/read/find/click/type) or `Scrape` - "
+    "NEVER windows-mcp's full `Snapshot` on a browser tab. A single "
+    "Snapshot call on a real page returns hundreds of KB of UIA tree "
+    "straight into your context (measured: the 190M-token Wear-OS turn "
+    "that burned a 94-minute session), and read()/find() give you the "
+    "same information already shaped under 5000 characters. Reserve "
+    "Snapshot for non-browser desktop UI you cannot reach any other way."
 )
 
 # name -> (body, frontmatter). ask_protocol is on for the two worker surfaces,

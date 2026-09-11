@@ -1,6 +1,9 @@
 playwright>=1.40
 imageio-ffmpeg>=0.4.9
 pynput>=1.7
+# ops/tools/browser_mcp.py: the stdio MCP server exposing the five bounded
+# browser verbs (token-burn-hardening Karte C) to machine cards.
+mcp>=1.28
 # voice.py: the agent's answer SPOKEN on the glasses (the lens has no
 # speechSynthesis but plays audio). OPTIONAL - voice.render() returns None
 # without it and every surface degrades to text, so a box that never installs

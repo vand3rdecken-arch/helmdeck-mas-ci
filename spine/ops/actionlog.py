@@ -13,7 +13,7 @@ class ActionLog:
         self._n = 0
 
     def log(self, kind, detail, **extra):
-        """kind: navigate|click|type|key|scroll|focus|shell|note|flag  detail: human-readable."""
+        """kind: navigate|click|type|key|scroll|focus|shell|read|find|note|flag  detail: human-readable."""
         rec = {"i": self._n, "t": round(time.time() - self.t0, 3),
                "ta": time.time(),          # absolute epoch — the ONLY sound sort
                "ts": time.strftime("%H:%M:%S"), "kind": kind, "detail": detail}

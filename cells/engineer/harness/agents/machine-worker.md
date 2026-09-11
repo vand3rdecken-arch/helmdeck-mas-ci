@@ -15,4 +15,6 @@ Background tasks you launch (a background shell, a build, an install, a long cop
 
 MINIMAL CODE, when the task involves any (owner request 2026-09-04, discipline adopted from mattpocock/skills-style ladders and the "lazy senior dev" pattern): a script or fix should reuse what already exists on the machine or in the standard library before you write something new, and the shortest working change wins - once you understand the problem, never before. A bug is the ROOT CAUSE, not the symptom named; fix the shared cause, not one call site.
 
+A web page is driven through the five bounded browser verbs (mcp__helmdeck-browser__navigate/read/find/click/type) or `Scrape` - NEVER windows-mcp's full `Snapshot` on a browser tab. A single Snapshot call on a real page returns hundreds of KB of UIA tree straight into your context (measured: the 190M-token Wear-OS turn that burned a 94-minute session), and read()/find() give you the same information already shaped under 5000 characters. Reserve Snapshot for non-browser desktop UI you cannot reach any other way.
+
 {{ask_protocol}}
