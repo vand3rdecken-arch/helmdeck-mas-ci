@@ -1295,32 +1295,38 @@ DEBT = [
         "id": "henry-memory-parallel-to-cli-automemory",
         "title": "Henry's memory is a SECOND surface beside the CLI's own auto-memory",
         "status": "open",
-        "what": "Henry writes durable facts to daemon/henry_memory/ - a plain .md "
-                "directory plus an index, injected each turn by copilot._memory_digest "
-                "and instructed in cells/copilot/harness/agents/board-copilot.md. The claude CLI "
-                "ALSO carries its own auto-memory directory under ~/.claude/projects/**. "
-                "We deliberately did not build on that one: harness._memory_isolation "
-                "records that the CLI derives its path from a project identity which "
-                "measurably is NOT 'this cwd' (every card worktree measured shared ONE "
-                "directory keyed off something else), and guessing that derivation is "
-                "the unverified reconstruction CLAUDE.md forbids.",
-        "why_it_bites": "Henry is a Claude Code process WITH HANDS (acceptEdits). "
-                        "Nothing stops him from also using the CLI's native memory if "
-                        "it is active for his project - and then two stores exist while "
-                        "only ours rides in his turn, because the digest reads our index "
-                        "alone. A fact written to the other one is invisible to him "
-                        "afterwards, and nothing reconciles them. The failure is silent: "
-                        "no error, just an assistant that forgot something it did write.",
+        "what": "HALF CLOSED by henry-memory-db-authority: the file surface itself "
+                "carries nothing anymore. Henry's durable facts live in the db "
+                "(memory table), written via a <memory-save>/<memory-delete> sentinel "
+                "in his own turn output (cells/copilot/chat/copilot_memory.py), "
+                "digested from the db into every board turn, and daemon/henry_memory/ "
+                "is now a disposable READ cache regenerate_cache() clobbers from the "
+                "db - Henry's Write tool is no longer part of the write path at all. "
+                "The claude CLI ALSO carries its own auto-memory directory under "
+                "~/.claude/projects/**, entirely unrelated to ours. We deliberately did "
+                "not build on that one: harness._memory_isolation records that the CLI "
+                "derives its path from a project identity which measurably is NOT "
+                "'this cwd' (every card worktree measured shared ONE directory keyed "
+                "off something else), and guessing that derivation is the unverified "
+                "reconstruction CLAUDE.md forbids.",
+        "why_it_bites": "Henry is still a Claude Code process WITH HANDS (acceptEdits) "
+                        "on every other surface. Nothing stops him from reaching for "
+                        "the CLI's native memory tool of his own accord if it is active "
+                        "for his project - a fact written there is invisible to our "
+                        "digest, and nothing reconciles them. The failure is silent: no "
+                        "error, just an assistant that forgot something it did write. "
+                        "Diminished but not closed by the sentinel flip: there is no "
+                        "longer a SECOND FILE SURFACE for him to confuse with the CLI's "
+                        "own, but the CLI's own mechanism itself is untouched.",
         "trigger": "A `memory/` directory appearing under "
                    "~/.claude/projects/C--Users-*-swarmdeck-daemon/, any report of Henry "
                    "remembering inconsistently, or the CLI documenting/exposing how it "
                    "derives the auto-memory path.",
-        "fix": "Consolidate onto ONE surface once the CLI's derivation can be MEASURED "
-               "rather than guessed - either point the digest at the CLI's directory, or "
-               "tell Henry in the brief never to use the native one. The second is cheap "
-               "and could land today; it was left out on purpose, because writing a "
-               "prohibition against a mechanism we have not yet observed him using would "
-               "be the same guessing this entry exists to avoid.",
+        "fix": "Tell Henry in the brief never to use the native one - now cheaper to "
+               "state truthfully than before, since our own surface is no longer a "
+               "directory he could mistake it for. Left out on purpose until the CLI's "
+               "derivation can be MEASURED rather than guessed, or a report shows him "
+               "actually reaching for it.",
         "order": 51,
     },
     {
@@ -4750,6 +4756,59 @@ DEBT = [
                "from a surface that can actually reach the reference.",
         "since": "2026-09-11",
         "order": 67,
+    },
+    {
+        "id": "henry-memory-file-authority",
+        "title": "Henry's memory flipped from file-authoritative to DB-authoritative",
+        "status": "paid",
+        "what": "PAID - kept for why the write path looks the way it does. "
+                "_fold_memory_to_db() used to mirror daemon/content/henry_memory/ INTO "
+                "the db and DELETE any db row with no matching file - files were the "
+                "authority, the db a mirror. henry-memory-db-authority flips that: the "
+                "db (memory table) is the store of record, cells/copilot/chat/"
+                "copilot_memory.py owns a <memory-save name=\"...\">...</memory-save> / "
+                "<memory-delete name=\"...\"/> sentinel Henry ends a turn with (any "
+                "board turn, not just the pre-compaction save turn), parsed STRICTLY "
+                "(bounded name/content, malformed -> rejected + one 'memory' reject "
+                "event, never guessed at) and applied straight to the db with ONE "
+                "'memory' save/delete event per mutation. daemon/henry_memory/ is now "
+                "a disposable READ cache: regenerate_cache() clobbers it from the db, "
+                "lazily, only at session establishment (a fresh spawn, a rotated/"
+                "detached resume, or an in-place compaction - tracked via a "
+                "(sid, compacted_at_turn) marker since a real /compact keeps the same "
+                "sid). The digest itself is now injected ONLY at session establishment "
+                "too (same marker) instead of every turn - it used to ride every board "
+                "turn regardless of whether the conversation was a fresh session or a "
+                "warm resume whose transcript already contained it. _fold_memory_to_db "
+                "is deleted entirely (net-negative diff, not kept as a fallback): a "
+                "planted file on disk now survives at most until the next cache regen "
+                "and never reaches the db.",
+        "why_it_bites": "PAID - kept for why the old shape was a real defect, not just "
+                        "a style preference. (1) NO BACKUP STORY: a restore of "
+                        "helmdeck.db onto a machine with an empty (git-ignored) "
+                        "henry_memory/ dir made the FIRST save turn wipe the entire "
+                        "memory table (the delete-half of the fold), because the empty "
+                        "dir looked like 'every note was removed'. (2) NO AUTH, NO "
+                        "AUDIT: the fold ingested whatever sat on disk and stamped "
+                        "actor='henry' unconditionally - any process with disk access "
+                        "(a card worker, a prompt-injected turn) could drop a file that "
+                        "then rode as a standing instruction in every future Henry turn, "
+                        "with zero events recording that a behaviour-changing write ever "
+                        "happened. (3) TOKEN WASTE: the digest rode every single board "
+                        "turn, including resumed sessions whose transcript already held "
+                        "it - the digest itself is small, but this was the SAME shape as "
+                        "the paid chat-snapshot-skip-heuristic waste one order up, just "
+                        "for memory instead of the board snapshot.",
+        "trigger": "n/a - shipped.",
+        "fix": "PAID: sentinel write path + strict parser + per-mutation events "
+               "(phase 1), session-scoped digest injection keyed on "
+               "(session_chain id, compacted_at_turn) instead of every turn (phase 2), "
+               "db->dir clobber cache regen replacing the dir->db fold (phase 3). "
+               "Phase 4 (an authenticated owner-write endpoint + settings-UI door) is "
+               "explicitly OUT of this card - still open, no separate entry filed until "
+               "it is actually planned.",
+        "since": "2026-09-11",
+        "order": 68,
     },
 ]
 

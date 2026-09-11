@@ -43,6 +43,15 @@ check(c._strip_actions_live("Ich lege an\n```actions") == "Ich lege an", "strip 
 check(c._strip_actions_live('{"reply":"hi') == "", "strip hides a leading raw-JSON blob")
 check(c._strip_actions_live("Ich denke nach") == "Ich denke nach", "strip leaves plain prose")
 
+# 6) live-strip also hides a memory sentinel tail (henry-memory-db-authority) -
+# and the EARLIEST marker wins even when a later ```actions fence exists too.
+check(c._strip_actions_live('Notiert.\n<memory-save name="x">fact') == "Notiert.",
+      "strip hides a <memory-save block while it is still streaming")
+check(c._strip_actions_live('Ok.\n<memory-delete name="x"/>') == "Ok.",
+      "strip hides a <memory-delete tag")
+check(c._strip_actions_live('Mach ich.\n<memory-save name="x">f</memory-save>\n```actions\n[]')
+      == "Mach ich.", "the earlier memory tag wins over a later ```actions fence")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails)); sys.exit(1)

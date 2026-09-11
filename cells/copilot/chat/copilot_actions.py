@@ -16,17 +16,23 @@ _ACTIONS_FENCE = re.compile(r"```actions\s*(.*?)```", re.S)
 
 def _strip_actions_live(partial):
     """The live view of a streaming reply: drop everything from the ```actions
-    fence (or a lone ``` / a leading raw-JSON blob) onward, so the user watches
-    PROSE stream in, not the raw action tail."""
+    fence (or a lone ``` / a leading raw-JSON blob / a memory sentinel tag)
+    onward, so the user watches PROSE stream in, never a raw action tail or a
+    half-typed <memory-save> block (henry-memory-db-authority phase 1 - same
+    flicker copilot_memory.parse cleans up in the FINISHED reply; this is the
+    streaming counterpart, spine/ops/ask.strip_stream's own reason for being)."""
     if not partial:
         return partial
     s = partial.lstrip()
     if s.startswith("{"):          # legacy JSON-blob reply - nothing prose to show yet
         return ""
-    for marker in ("```actions", "```"):
-        i = partial.find(marker)
-        if i != -1:
-            return partial[:i].rstrip()
+    # the EARLIEST marker wins, not the first one checked: a memory block can
+    # precede the ```actions fence in a reply, and a first-match-wins scan
+    # would let it leak into the live view whole before the later fence cut it.
+    cuts = [partial.find(m) for m in ("```actions", "```", "<memory-save", "<memory-delete")]
+    cuts = [i for i in cuts if i != -1]
+    if cuts:
+        return partial[:min(cuts)].rstrip()
     return partial
 
 

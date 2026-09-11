@@ -12,6 +12,7 @@ MODELS_F = os.path.join(ROOT, "state", "copilot_models.json")
 CHATLOG = os.path.join(ROOT, "state", "copilot_log.json")
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
+from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip)
 
@@ -105,6 +106,19 @@ _pending_lock = threading.Lock()
 # carries the state. Stamped only on turn SUCCESS (a failed turn never showed
 # the model the snapshot), cleared when a resume turns out detached.
 _snap_seen = {}
+
+# skey -> (session id, compacted_at_turn) the MEMORY digest was last delivered
+# on (henry-memory-db-authority phase 2). Deliberately a DIFFERENT key than
+# _snap_seen above: that one dedupes on board-content hash and legitimately
+# re-fires every time a card moves, which has nothing to do with memory. The
+# digest only needs to ride the FIRST turn of a session - a resumed turn's
+# own transcript already contains it (README: "resumede Turns bekommen
+# NICHTS"). (sid, compacted_at_turn) changes on every session-establishing
+# event this codebase already tracks: a fresh spawn (sid falsy), a rotated/
+# detached resume (sid changes, see the rotation-safety-net below), and an
+# IN-PLACE compaction that keeps the same sid but bumps compacted_at_turn
+# (_maybe_compact) - the one case a sid-only key would silently miss.
+_digest_sent = {}
 
 
 def _turn_lock(user):
@@ -809,45 +823,6 @@ _FILLER_REPLIES = {"no response requested"}
 
 _compacting = set()              # users with a background compaction in flight
 
-# Henry's durable memory. NOT the CLI's shared auto-memory directory: that one
-# is derived by the CLI from a project identity which measurably is NOT "this
-# cwd" (harness._memory_isolation says so, and every card worktree we measured
-# shared ONE directory keyed off something else). Guessing that derivation is
-# the unverified reconstruction CLAUDE.md forbids - and cards are DENIED writes
-# there on purpose (debt: card-shares-the-operators-auto-memory).
-#
-# So Henry gets the shape Anthropic documents for exactly this and nothing more
-# clever: a plain directory of .md files plus an index that rides in the brief
-# (progressive disclosure - the index is always in context, a file is read only
-# when it's relevant). Machine-local runtime data, so it lives under daemon/
-# like every other runtime store.
-MEMORY_DIR = os.path.join(ROOT, "content", "henry_memory")
-MEMORY_INDEX = os.path.join(MEMORY_DIR, "MEMORY.md")
-
-
-def _memory_digest():
-    """The memory INDEX for the turn - never the notes themselves.
-
-    That split is the whole mechanism: the index is small and always present, a
-    note is opened only when it turns out to matter. Putting the notes inline
-    would re-grow exactly the context the compaction just freed.
-
-    Reads the DB (config-consolidation phase 5), not the file: the db is the
-    store of record - exportable, the thing GET /harness/export ships -
-    while MEMORY_DIR stays only the write surface a spawned turn edits with
-    its own hands. _fold_memory_to_db() is what keeps the two in step."""
-    try:
-        from spine.storage import db
-        body = (db.memory_all().get("MEMORY") or {}).get("content", "").strip()
-    except Exception:                                            # noqa: BLE001
-        return ""
-    if not body:
-        return ""
-    return ("\n\nDEIN GEDAECHTNIS (Index; die Dateien liegen in %s - lies eine, "
-            "wenn sie zur Frage passt, und schreib dazu, wenn du etwas "
-            "Dauerhaftes lernst):\n%s" % (MEMORY_DIR, body[:4000]))
-
-
 def _compact_mark(st):
     """The context level at which Henry must compact - the LOWER of two
     INDEPENDENT reasons, because they protect different things:
@@ -946,106 +921,44 @@ def _schedule_compact(user):
     threading.Thread(target=_go, daemon=True).start()
 
 
-_MEMORY_SEED = """# Henrys Gedaechtnis
-
-Index. Eine Zeile pro Notiz - `- [Titel](datei.md) - Aufhaenger`.
-Der Index faehrt bei jedem Turn im Brief mit; die Datei selbst liest Henry nur,
-wenn sie zur Frage passt.
-"""
-
-_SAVE_PROMPT = (
-    "SYSTEM-WARTUNG, keine Owner-Nachricht - antworte NICHT im Chat-Ton und "
-    "stelle keine Rueckfrage.\n\n"
-    "Dein Verlauf wird gleich verdichtet. Was jetzt nicht auf der Platte steht, "
-    "steht dir danach nur noch als Zusammenfassung zur Verfuegung.\n\n"
-    "Schreib die dauerhaften Fakten aus diesem Gespraech nach %s:\n"
-    "- eine Datei pro Sache, `<kurz-kebab-titel>.md`, Einzeiler-Zusammenfassung "
-    "ganz oben, dann der Fakt und WARUM er zaehlt.\n"
-    "- danach eine Zeile pro Datei in MEMORY.md nachtragen.\n"
-    "- dauerhaft = Owner-Entscheidungen, Vorlieben, laufende Vorhaben, "
-    "Zusagen, offene Fragen, harte Fakten ueber Repos und Geraete.\n"
-    "- NICHT speichern, was Code, Karten oder Git-Historie ohnehin festhalten, "
-    "und nichts, was nur fuer den letzten Turn galt.\n"
-    "- gibt es die Notiz schon, aktualisiere sie statt eine zweite anzulegen.\n"
-    "- Geheimnisse (Token, Passwoerter) gehoeren NICHT hinein.\n\n"
-    "Antworte am Ende mit genau einer Zeile: was du gespeichert hast."
-)
-
-
-def _fold_memory_to_db():
-    """Mirror MEMORY_DIR into db.memory (config-consolidation phase 5) -
-    fold-at-event-time at the ONE owner who just observed the write, the
-    same shape as db.bump_chat/drivers.turn_active: never re-derived by a
-    background scan, never a stored flag. Called immediately after a save
-    turn returns, because that subprocess is the one and only writer of the
-    directory - nothing else in this process touches it.
-
-    A file with no matching db row is a new/changed note (INSERT OR
-    REPLACE); a db row with no matching file is a note Henry deleted or
-    renamed, folded out the same way. Best-effort: the directory is already
-    the durable state if this fails, same contract as every other
-    fold/emit call site here."""
-    try:
-        from spine.storage import db
-        on_disk = set()
-        for fname in os.listdir(MEMORY_DIR):
-            if not fname.endswith(".md"):
-                continue
-            name = fname[:-3]
-            on_disk.add(name)
-            try:
-                with open(os.path.join(MEMORY_DIR, fname), encoding="utf-8") as f:
-                    content = f.read()
-            except OSError:
-                continue
-            db.memory_put(name, content, actor="henry")
-        for name in list(db.memory_all()):
-            if name not in on_disk:
-                db.memory_delete(name)
-    except Exception as e:                                        # noqa: BLE001
-        print("copilot: memory fold failed -", str(e)[:200])
-
-
 def _save_memory(user, sid):
     """Give Henry ONE turn to persist what matters BEFORE the verdichtung.
 
-    This is the owner's decree of 2026-08-30 ("kompaktieren und ins Speicher"),
-    and it is the documented shape rather than an invention: a plain directory
-    of .md files plus an index, exactly what Anthropic's own guidance prescribes
-    when an agent needs to carry knowledge across a context boundary. Henry
-    writes it himself with the hands he already has (henry_pmode is acceptEdits)
-    - nothing here parses his conversation or decides for him what mattered.
+    Owner's decree of 2026-08-30 ("kompaktieren und ins Speicher"), DB-
+    authoritative since the henry-memory-db-authority card: Henry no longer
+    writes a file, he ends this turn with <memory-save>/<memory-delete>
+    sentinel blocks (copilot_memory.SAVE_PROMPT), parsed and applied straight
+    to the db - the same protocol every board turn already knows from
+    board-copilot.md, just invoked comprehensively before the compaction.
 
     Runs on the SAME session id, so what he writes is informed by the full,
     not-yet-compacted history. Best-effort by the same contract as the
     compaction it precedes: a failed save must never block the compaction, and a
     failed compaction must never break the chat."""
     from spine.agent import drivers
-    try:
-        os.makedirs(MEMORY_DIR, exist_ok=True)
-        if not os.path.exists(MEMORY_INDEX):
-            with open(MEMORY_INDEX, "w", encoding="utf-8") as f:
-                f.write(_MEMORY_SEED)
-            _fold_memory_to_db()      # so the digest sees the seed immediately,
-                                      # not only after the first real save turn
-    except OSError:
-        return False
-    # acceptEdits, NOT the plan mode the /compact spawn uses: a turn told to
-    # write files must be allowed to write files.
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", henry_pmode(), "--resume", sid]
+    result = {}
     try:
         p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              text=True, encoding="utf-8", errors="replace")
-        p.stdin.write(_SAVE_PROMPT % MEMORY_DIR); p.stdin.close()
-        for _line in p.stdout:                    # drain: an undrained pipe deadlocks
-            pass
+        p.stdin.write(copilot_memory.SAVE_PROMPT); p.stdin.close()
+        for _line in p.stdout:
+            _line = _line.strip()
+            if not _line:
+                continue
+            try:
+                ev = json.loads(_line)
+            except ValueError:
+                continue
+            if ev.get("type") == "result":
+                result = ev
         p.wait(timeout=20)
     except Exception:                                            # noqa: BLE001
         return False
-    _fold_memory_to_db()          # the write surface just changed - mirror it
-    return True
+    _, muts = copilot_memory.parse(result.get("result") or "")
+    return bool(copilot_memory.apply(muts, actor="henry"))
 
 
 def _maybe_compact(user):
@@ -1652,6 +1565,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # sending them was most of what made the board session grow. A BOARD chat
     # gets the live board; its history stays on demand (see _snapshot's
     # docstring and ops/tools/board_state.py).
+    _mem_due, _mem_marker = False, None      # card chats never carry the memory digest
     if card:
         _cc = _card_context(card)
         snapshot_block = (("CARD CONTEXT (%s):\n" % time.strftime("%Y-%m-%d %H:%M"))
@@ -1659,9 +1573,23 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _snap_body = _cc or ""
     else:
         _plan = _pm_plan_digest()
+        # MEMORY DIGEST - session-scoped, NOT every turn (henry-memory-db-
+        # authority phase 2). A resumed turn's own transcript already carries
+        # whatever digest rode an earlier turn of this same session; re-
+        # sending it on every board-content change (the _snap_seen hash below
+        # dedupes THAT, not this) was the measured token waste the design
+        # card's finding #3 names. _mem_marker changes on a fresh spawn (sid
+        # falsy), a rotated/detached session (sid changes) and an in-place
+        # compaction (sid same, compacted_at_turn bumps) - the three events
+        # README calls "session establishment".
+        _mem_marker = copilot_memory.marker(sid, _st.get("compacted_at_turn"))
+        _mem_due = copilot_memory.digest_due(sid, _mem_marker, _digest_sent.get(skey))
+        _mem = ""
+        if _mem_due:
+            copilot_memory.regenerate_cache()   # lazy - only when a digest rides
+            _mem = copilot_memory.digest()
         snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-            + _snapshot() + (("\n\n" + _plan) if _plan else "") \
-            + _memory_digest()
+            + _snapshot() + (("\n\n" + _plan) if _plan else "") + _mem
         _snap_body = snapshot_block
     # DELTA, not repetition (Paseo-shape, owner decree 2026-09-03 "direkt hier
     # fixen"): the conversation is CONTINUOUS - the model still carries the
@@ -1930,6 +1858,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     txt = result.get("result") or "".join(parts)
     if not (txt or "").strip():
         raise RuntimeError("copilot produced no output (turn ended without a result)")
+    # SENTINEL MEMORY WRITES (henry-memory-db-authority phase 1) - ANY board
+    # turn may end with <memory-save>/<memory-delete> blocks, not just the
+    # dedicated pre-compaction save turn (copilot._save_memory runs the same
+    # parser on its own reply). Strip + apply BEFORE _parse_reply_actions, so
+    # a sentinel block never gets mistaken for prose or for the legacy
+    # {"reply","actions"} blob.
+    txt, _mem_muts = copilot_memory.parse(txt)
+    if _mem_muts:
+        copilot_memory.apply(_mem_muts, actor="henry")
     sid_final = result.get("session_id") or session_id
     rotate_note = None
     if sid_final:
@@ -2154,5 +2091,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # the model has now really SEEN this state - only from here on may an
         # unchanged board collapse to the one-line reference
         _snap_seen[skey] = (_snap_hash, time.time())
+    if _mem_due:
+        # stamped with sid_final, not the `sid` the marker was built from: a
+        # silent mid-turn detach still delivered the digest text (it rode the
+        # prompt regardless of which session absorbed it), just under a new
+        # id - stamping the OLD id would reinject next turn for no reason.
+        _digest_sent[skey] = copilot_memory.marker(sid_final or sid or "", _mem_marker[1])
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}

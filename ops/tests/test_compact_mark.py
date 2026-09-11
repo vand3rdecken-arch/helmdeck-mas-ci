@@ -17,6 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 from cells.copilot.chat import copilot                                 # noqa: E402
+from cells.copilot.chat import copilot_memory                     # noqa: E402
 from spine.agent import turnopts                                  # noqa: E402
 
 HENRY_CTX = 615_889
@@ -57,17 +58,18 @@ ok(copilot._compact_mark({})[0] == copilot._compact_mark(
    "an absent ctx_window floors to the SAME shared default as an explicit one "
    "(no separate, driftable default in the copilot lane)")
 
-# the memory surface
-ok(copilot.MEMORY_DIR.endswith("henry_memory"),
-   "memory lives under the daemon's runtime dir, not the CLI's shared auto-memory")
-ok("projects" not in copilot.MEMORY_DIR,
+# the memory surface (henry-memory-db-authority: DB-authoritative, the dir is
+# a disposable read cache - see cells/copilot/chat/copilot_memory.py)
+ok(copilot_memory.MEMORY_DIR.endswith("henry_memory"),
+   "the read cache lives under the daemon's runtime dir, not the CLI's shared auto-memory")
+ok("projects" not in copilot_memory.MEMORY_DIR,
    "we never write into ~/.claude/projects/** (card-shares-the-operators-auto-memory)")
-ok(isinstance(copilot._memory_digest(), str),
+ok(isinstance(copilot_memory.digest(), str),
    "the digest is always a string, even with no memory yet")
-ok("%s" in copilot._SAVE_PROMPT,
-   "the save prompt names the directory it writes to")
-ok("MEMORY.md" in copilot._SAVE_PROMPT,
-   "the save prompt maintains the index, not just the notes")
+ok("<memory-save" in copilot_memory.SAVE_PROMPT,
+   "the save prompt teaches the sentinel format, not a file-write instruction")
+ok("MEMORY" in copilot_memory.SAVE_PROMPT,
+   "the save prompt maintains the index note, not just individual facts")
 
 # ordering is the whole point: save runs BEFORE /compact
 src = open(os.path.join(os.path.dirname(copilot.__file__), "copilot.py"),
