@@ -18,8 +18,26 @@ Pinned here:
   - single flight: a second compaction on the same card never spawns a second
     /compact turn against the same session
   - await_compaction waits for the in-flight one instead of cancelling it
+
+Also regression for card 20260910-134430 (token-burn-hardening Karte D,
+2026-09-11): compact_pending re-queued for the 92%-interrupt reason above then
+EVAPORATED on its own, with no compaction ever attempted - a later turn's
+ctx_window re-derivation (the "[1m]"/proof-beyond-200k evidence in
+spine/turn/econ.py, which can only grow the window) pushed ctx under the
+freshly-recomputed 0.8x mark, and _maybe_compact's routine per-turn early
+return cleared the flag right there - no idle gate, no re-read of the live
+figure, same turn that caused the reclassification. That decision now belongs
+to ONE owner, lifecycle.sweep_pending_compaction (idle-gated, re-reads the
+live figure before dropping the flag) - _maybe_compact's early return leaves
+compact_pending untouched.
+
+And for the 2026-09-05 CI-watch livelock (steer()'s owner-vs-background-task
+compaction wait): the owner-specific short 25s cut is gone. Paseo's
+steerActiveTurn is simply unavailable while compacting - every steerer now
+waits out the compaction's own idle patience (await_compaction's default),
+and only a genuinely wedged compaction yields and re-queues.
 """
-import os, sys, threading, time
+import inspect, os, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
@@ -194,8 +212,6 @@ check(spawned and spawned[0] == S._COMPACT_IDLE_S,
       % S._COMPACT_IDLE_S)
 check(S._COMPACT_IDLE_S > 180,
       "the bound that killed the 183k compaction mid-work is gone")
-check(S._COMPACT_WAIT_S < S._COMPACT_IDLE_S,
-      "a steering owner waits far less than the compaction's own patience")
 
 # 6b) THE STALL THAT ALREADY SUCCEEDED ---------------------------------------
 # Measured 2026-08-30 on the same 183k session: `/compact` wrote its summary
@@ -257,6 +273,64 @@ S._turn = _turn_raises            # records the idle_timeout it was handed
 t = _track()
 S._maybe_compact(t, _Log(), force=True, idle_timeout=900)
 check(spawned and spawned[0] == 900, "--idle override is threaded down to the turn")
+
+# 8) compact_pending SURVIVES a ctx_window re-derivation -----------------------
+# Regression for card 20260910-134430: a retry queued by an earlier interrupt
+# must not evaporate just because a LATER turn's ctx_window re-derivation (the
+# "[1m]"/proof-beyond-200k evidence, spine/turn/econ.py - a window can only
+# grow) makes the ctx/window ratio look fine again. "Is this retry still
+# needed" belongs to ONE owner, lifecycle.sweep_pending_compaction (idle-gated,
+# re-reads the live figure) - _maybe_compact's routine per-turn early return
+# must leave the flag alone.
+S._autocompact_supported = None
+del spawned[:]
+t = _track(ctx=604_000, sid="sess-old")
+t["ctx_window"] = 1_000_000                 # just reclassified to the 1M tier
+CARD["compact_pending"] = True              # owed retry from an earlier interrupt
+lg = _Log()
+out = S._maybe_compact(t, lg)
+check(out is None, "well below the (new, bigger) 80% mark: no /compact spawned")
+check(not spawned, "no /compact turn ran")
+check(CARD.get("compact_pending") is True,
+      "the owed retry SURVIVES the reclassification - not this call's decision")
+
+# a plain 'nothing owed' turn still costs nothing in the same branch
+CARD.pop("compact_pending", None)
+t = _track(ctx=604_000, sid="sess-old")
+t["ctx_window"] = 1_000_000
+out = S._maybe_compact(t, _Log())
+check(out is None and not CARD.get("compact_pending"),
+      "no pending flag to begin with - the early return is still a no-op")
+
+# 9) STEER NO LONGER GETS A SHORT-CUT: every waiter gets the full idle bound --
+# Regression for the 2026-09-05 CI-watch livelock fix's inverse: a background
+# continuation got the full _COMPACT_IDLE_S patience, but genuine owner input
+# still only got 25s (_COMPACT_WAIT_S) - so a real /compact (which routinely
+# takes minutes) was cut and re-queued on ordinary owner traffic too. Paseo's
+# steerActiveTurn is simply unavailable while compacting, no owner-specific
+# short-circuit - so the source-based split and the short bound are gone, and
+# await_compaction's own default is the SAME generous patience for everyone.
+check(not hasattr(S, "_COMPACT_WAIT_S"), "the owner-specific short wait is gone")
+check(not hasattr(S, "_COMPACT_DEFER_SOURCES"),
+      "the source-based defer split is gone - one bound for every steerer")
+default_timeout = inspect.signature(S.await_compaction).parameters["timeout"].default
+check(default_timeout == S._COMPACT_IDLE_S,
+      "await_compaction defaults to the compaction's own full idle patience")
+
+S._autocompact_supported = None
+S._turn = _turn_returning("sess-old", "compacted", new_ctx=40000, delay=1.2)
+t = _track()
+del spawned[:]
+th = threading.Thread(target=lambda: S._maybe_compact(dict(t), _Log()))
+th.start()
+time.sleep(0.3)
+waiter = _Log()
+t0 = time.time()
+cut = S.await_compaction("t1", waiter)      # DEFAULT timeout - no source special-case anymore
+check(cut is False,
+      "the default wait outlasts an ordinary compaction, same as a background waiter used to")
+check(time.time() - t0 > 0.2, "the waiter actually blocked until the compaction finished")
+th.join(10)
 
 print(("\nFAILED: %d" % len(_fails)) if _fails else "\nall compaction-interrupt checks pass")
 sys.exit(1 if _fails else 0)

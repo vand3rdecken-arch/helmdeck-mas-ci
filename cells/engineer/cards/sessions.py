@@ -517,38 +517,33 @@ _compacting = {}                 # tid -> threading.Event (set when the turn end
 _compacting_guard = _threading.Lock()
 _compact_interrupted = set()     # tids whose in-flight compaction we cut on purpose
 
-# HOW LONG A COMPACTION MAY BE SILENT, and how long the OWNER waits for one.
-# These used to be the same number (180s, chosen 2026-08-15 when a wedged
-# compact turn blocked the whole post-turn pipeline for 15 minutes). Measured
-# 2026-08-30 on the 183k session this bug was found on: `/compact` emits NOTHING
-# on the stream for over three minutes on a near-full window - it was still
-# working (the transcript grew at 08:04:16) when the 180s watchdog killed it.
-# So 180s was not "generous slack above every observed compaction", it was
-# tuned on small sessions and fails exactly on the big ones that need it most.
-# They are now two DIFFERENT numbers because they answer two questions:
-#   _COMPACT_IDLE_S  - how patient the watchdog is with a working compaction.
-#                      Generous, because compaction no longer sits on the
-#                      critical path (it runs off the turn thread, copilot's
-#                      _schedule_compact precedent) so nobody is waiting on it.
-#   _COMPACT_WAIT_S  - how long a STEERING OWNER defers to maintenance. Short,
-#                      because the owner must never feel the harness. If his
-#                      message arrives mid-compaction the compaction is cut and
-#                      RE-QUEUED (compact_pending) - it finishes at the next
-#                      idle moment, where it has the full patience above.
+# HOW LONG A COMPACTION MAY BE SILENT - and, since 2026-09-11, how long ANY
+# steerer (owner or harness) defers to one. These used to be the same number
+# (180s, chosen 2026-08-15 when a wedged compact turn blocked the whole
+# post-turn pipeline for 15 minutes). Measured 2026-08-30 on the 183k session
+# this bug was found on: `/compact` emits NOTHING on the stream for over three
+# minutes on a near-full window - it was still working (the transcript grew at
+# 08:04:16) when the 180s watchdog killed it. So 180s was not "generous slack
+# above every observed compaction", it was tuned on small sessions and fails
+# exactly on the big ones that need it most - hence the bigger number below.
+#
+# A STEERING OWNER used to get a much shorter allowance (25s) than a harness
+# self-continuation (this same bound) - found 2026-09-05, a COWORK card
+# watching a red CI run fired a `background-task` auto-steer on every task
+# completion, each cutting the compaction after 25s and re-queueing it, so a
+# 97%/195k session livelocked, starting and dying forever while the context
+# never shrank. Giving background sources the full bound fixed that livelock -
+# but left the SHORT cut for genuine owner input, on the theory that "the
+# owner must never feel the harness". Measured wrong: Paseo's steerActiveTurn
+# is simply unavailable while compacting - no owner-specific short-circuit -
+# and the 25s cut bought nothing but a near-certain re-queue on any session big
+# enough to need compacting in the first place (a real /compact routinely
+# takes minutes). So there is now ONE bound for every steerer, and the
+# owner-specific short defer is gone. A compaction that is still running past
+# THIS bound is genuinely wedged - it yields and RE-QUEUES (compact_pending),
+# same fallback as before, just no longer the routine case.
 # Neither is a wall-clock cap on a turn: the watchdog still measures SILENCE.
 _COMPACT_IDLE_S = 600
-_COMPACT_WAIT_S = 25
-
-# Steer SOURCES that are the harness continuing itself, with NO human waiting -
-# these must NOT cut an in-flight compaction with the short owner-wait above.
-# Found 2026-09-05 (owner "warum fail compact"): a COWORK card watching a red CI
-# run fired a `background-task` auto-steer on every task completion, each cutting
-# the compaction after 25s and re-queueing it - so a 97%/195k session livelocked,
-# the compaction starting and dying forever while the context never shrank. A
-# background continuation is the LEAST urgent steer there is; letting the session
-# compact FIRST is strictly better, and nobody feels the wait. Only genuine owner
-# input keeps the short 25s preemption.
-_COMPACT_DEFER_SOURCES = frozenset({"background-task"})
 
 
 def compacting(tid):
@@ -559,7 +554,7 @@ def compacting(tid):
         return _compacting.get(tid)
 
 
-def await_compaction(tid, log=None, timeout=_COMPACT_WAIT_S):
+def await_compaction(tid, log=None, timeout=_COMPACT_IDLE_S):
     """Let an in-flight compaction FINISH before this caller's own turn.
     Returns True if we ended up cutting it short (caller may proceed to
     cancel), False if there was nothing to wait for or it finished cleanly."""
@@ -661,7 +656,23 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
     if not t.get("session_id"):
         return None
     if ctx < 0.8 * window and not force:
-        _mark_compact_pending(t["id"], False)   # dropped below the brim on its own
+        # NOT this call's decision to make. This runs after EVERY turn (via
+        # _compact_after_turn), not just retries, and `window` can have grown
+        # in the very same turn that got us here (ctx_window is re-derived
+        # from live evidence - see econ.py's "[1m]"/proof-beyond-200k rule).
+        # Clearing compact_pending here used to mean: a card queued for retry
+        # after an interrupted/died/owner-forced-while-busy compaction lost
+        # that obligation the instant a reclassification made the ratio look
+        # fine - no idle grace, no re-read of the live figure, same turn that
+        # caused the reclassification. Measured 2026-09-10 (card 20260910-
+        # 134430): a genuinely-owed retry evaporated this way at 604k context
+        # right as the session reclassified to the 1M tier.
+        # compact_pending has exactly ONE owner for "is this retry still
+        # needed": lifecycle.sweep_pending_compaction, which re-reads the live
+        # ctx/window AGAINST THE FRESH THRESHOLD with an idle gate before
+        # dropping the flag - the re-evaluation this card asks for. A plain
+        # "nothing to do" turn never sets compact_pending in the first place,
+        # so leaving it untouched here costs nothing.
         return None
     tid = t["id"]
     # SINGLE FLIGHT. Without this, an owner-typed /compact landing on a card
@@ -828,14 +839,13 @@ def steer(tid, text, perm=None, actor="owner", source="you",
         return t
     # A COMPACTION IS NOT A TURN TO REPLACE. It is bounded maintenance on the
     # session this very instruction needs, and cancelling it both loses the
-    # compaction AND (before the fix above) taught the probe a lie. So wait for
-    # it - the wait is bounded by the compact turn's own 180s idle watchdog, no
-    # new wall-clock cap - and only cut it if it wedges past that.
-    # A harness background-continuation defers to a running compaction with the
-    # FULL idle patience (no human is waiting on it); only real owner input keeps
-    # the short 25s preemption. This is what breaks the CI-watch livelock above.
-    _cwait = _COMPACT_IDLE_S if source in _COMPACT_DEFER_SOURCES else _COMPACT_WAIT_S
-    if await_compaction(tid, log, timeout=_cwait):
+    # compaction AND (before the fix above) taught the probe a lie. So EVERY
+    # steerer - owner typing or the harness continuing itself - waits it out
+    # (Paseo steerActiveTurn: unavailable while compacting), bounded by the
+    # compact turn's own idle watchdog, no new wall-clock cap; only a
+    # genuinely wedged compaction past that bound yields, and it re-queues
+    # (compact_pending) rather than being lost.
+    if await_compaction(tid, log):
         try:
             drivers.cancel(tid)
         except Exception:
