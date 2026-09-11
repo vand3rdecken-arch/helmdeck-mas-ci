@@ -188,8 +188,9 @@ def main():
             ok(a == b, "%s: re-export matches the original export" % key)
         # memory rows carry updated_at/actor - the import legitimately writes
         # a NEW timestamp (db.memory_put stamps "now"), so only CONTENT is
-        # compared here; the timestamp/actor semantics are the fold
-        # mechanism's contract, not the export/import round-trip's.
+        # compared here; the timestamp/actor are the sentinel write path's own
+        # contract (cells/copilot/chat/copilot_memory.py), not the
+        # export/import round-trip's.
         mem_a = {k: v["content"] for k, v in (exported.get("memory") or {}).items()}
         mem_b = {k: v["content"] for k, v in (reexported.get("memory") or {}).items()}
         ok(mem_a == mem_b, "memory: re-export content matches the original export")

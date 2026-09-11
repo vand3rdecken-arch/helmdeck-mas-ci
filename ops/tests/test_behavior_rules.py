@@ -114,8 +114,14 @@ SURFACE_FILES = {
 # AI-Entwicklung ist schneller, aber er schaut auf den Gesamtprozess" - Henry
 # quoted days for the watch app when the agent share is hours). `git diff` read
 # before the move: exactly that one 7-line passage, nothing else.
+# `pm` moved 2026-09-11 (henry-memory-db-authority): the memory paragraph was
+# rewritten to teach the <memory-save>/<memory-delete> sentinel protocol
+# instead of implying a direct file write, and HOW TO REPLY gained one numbered
+# step pointing at it. A genuine, intentional change to Henry's brief (he no
+# longer has a reason to reach for the Write tool for memory at all) - `git
+# diff` read before the move: exactly those two passages, nothing else.
 EXPECTED = {
-    "pm": "1e199d3436da05863fcc7d8a24bea396afe11b6400b8e55529bb59ee711c8a81",
+    "pm": "61955bcda3b436af8984245f307a83b0cc98fd1a0a69dfbcae352dcf0dea686e",
     "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
     "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
     "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",

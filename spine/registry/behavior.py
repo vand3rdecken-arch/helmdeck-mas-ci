@@ -226,7 +226,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "When a card's work is done, DRIVE it home instead of\nparking it: move it to review (runs the gate), and when the verdict is green\nand cleanly mergeable, move it to done yourself - the harness gates, merges\nand deploys; you never bypass any of that, you just stop waiting for a human\ndrag.",
              False: "When a card's work is done, move it to review and STOP -\nthe owner accepts it himself."}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:254"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:256"},
 
     {"key": "initiative.questions", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "number", "scope": "project", "binds": ["backlog"],
@@ -242,7 +242,7 @@ BEHAVIOR_RULES = [
          1: "ask the ONE question that",
          2: "ask the 2-3 questions that",
          3: "ask the 3-4 questions that"}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:223"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:225"},
 
     {"key": "initiative.stale_check", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "toggle", "scope": "project", "binds": [],
@@ -254,7 +254,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "A card's lane/status in the DB is not proof its\ntext still holds - the newer evidence wins.",
              False: "Cite a card's own text as it stands."}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:320"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:336"},
 
     {"key": "initiative.repo_default", "block": "initiative", "wire": "slot", "kind": "policy",
      "control": "single", "options": ["direkt", "worktree"],
@@ -267,7 +267,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": "direkt", "renders": {
              "direkt": "This is the DEFAULT for repo fixes and small/medium features the owner asks for",
              "worktree": "Use it only when the owner asks for the live tree explicitly"}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:119"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:121"},
 
     # --------------------------------------------------------------- hands --
     {"key": "hands.own_hands", "block": "hands", "wire": "slot", "kind": "policy",
@@ -279,7 +279,7 @@ BEHAVIOR_RULES = [
          "pm": {"default": True, "renders": {
              True: "You HAVE HANDS (owner decree 2026-08-21: \"do\nstuff directly instead of waiting\"): for a SMALL, immediate fix - read a log,\ncorrect a config value, restart a stuck script, patch an obvious one-file bug -\nuse your own tools in this turn and tell the owner what you did. Do NOT file a\ncard for something you can finish yourself in under a few minutes.",
              False: "You have NO hands of your own: every change, however small,\ngoes to an agent you dispatch."}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:203"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:205"},
 
     {"key": "hands.protected_files", "block": "hands", "wire": "slot", "kind": "fixed",
      "control": "list", "scope": "workspace", "binds": ["working"],
@@ -293,7 +293,7 @@ BEHAVIOR_RULES = [
                             "spine/auth/charter.py", "spine/auth/policy.py",
                             "spine/auth/gxp.py", "ops/tools/run_gate.py"],
                 "renders": None}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:244"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:246"},
 
     {"key": "hands.configure_allowlist", "block": "hands", "wire": "slot", "kind": "fixed",
      "control": "prose", "scope": "workspace", "binds": [],
@@ -312,7 +312,7 @@ BEHAVIOR_RULES = [
      "why": "Zerstoerendes ohne klaren Auftrag bleibt beim Menschen. Das ist "
             "keine Einstellung.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:236"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:238"},
 
     {"key": "hands.permission_mode", "block": "hands", "wire": "code", "kind": "policy",
      "control": "single", "options": ["plan", "acceptEdits"],
@@ -436,7 +436,7 @@ BEHAVIOR_RULES = [
      "why": "Owner-Decree: Henry ist die eine Schnittstelle zu Maschine und "
             "Board. Ein \"kann ich nicht\" ist dort ein Defekt, keine Antwort.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:202"},
+     "source": "cells/copilot/harness/agents/board-copilot.md:204"},
 
     # -------------------------------------------------------------- memory --
     {"key": "memory.enabled", "block": "memory", "wire": "slot", "kind": "policy",
@@ -447,9 +447,9 @@ BEHAVIOR_RULES = [
             "Zusammenfassung.",
      "surfaces": {
          "pm": {"default": True, "renders": {
-             True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - schreib es\nsofort als eigene Datei dorthin und trag eine Zeile im Index nach.",
-             False: "Lege KEINE neuen Notizen an; lies nur, was schon dort steht."}}},
-     "source": "cells/copilot/harness/agents/board-copilot.md:272"},
+             True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - haeng SOFORT\neinen <memory-save>-Block an deine Antwort und zieh den Index nach.",
+             False: "Lege KEINE neuen Notizen an (kein <memory-save>-Block); lies nur, was schon dort steht."}}},
+     "source": "cells/copilot/harness/agents/board-copilot.md:304"},
 
     {"key": "memory.index_path", "block": "memory", "wire": "readonly", "kind": "fixed",
      "control": "prose", "scope": "workspace", "binds": [],
@@ -457,7 +457,7 @@ BEHAVIOR_RULES = [
      "why": "Der Pfad ist maschinenlokal und wird vom Prozess bestimmt, nicht "
             "von Policy.",
      "surfaces": {"pm": {"default": None, "renders": None}},
-     "source": "cells/copilot/copilot.py::MEMORY_DIR"},
+     "source": "cells/copilot/chat/copilot_memory.py::MEMORY_DIR"},
 
     # ------------------------------------------------------------- routing --
     # WHICH MODEL, WHEN - owner decree 2026-09-04 ("das ist doch Logik von

@@ -458,14 +458,17 @@ def _migrate():
             print("db: connector state import failed:", e)
     # daemon/henry_memory/*.md -> memory table, store of record (config-
     # consolidation phase 5, owner decree: "das muss ins db... wenn es hier
-    # bleibt erreicht es niemanden"). FIRST-START ONLY, same rule as every
+    # bleibt erreicht es niemanden"; flipped fully DB-authoritative by the
+    # henry-memory-db-authority card). FIRST-START ONLY, same rule as every
     # migration above: an empty table + files on disk means this install
-    # predates the db store. The DIRECTORY IS NOT ARCHIVED - unlike
-    # settings.json/policy_live.json it stays the live WRITE SURFACE a
-    # spawned Henry turn edits with its own hands; copilot.py folds it into
-    # this table at event time after every save turn from here on
-    # (cells/copilot/copilot.py::_fold_memory_to_db). This import only
-    # covers notes that existed before that mechanism shipped.
+    # predates the db store. The DIRECTORY IS NOT ARCHIVED, but it is no
+    # longer a write surface either - Henry writes memory through his own
+    # turn output now (a <memory-save>/<memory-delete> sentinel, parsed by
+    # cells/copilot/chat/copilot_memory.py), and the directory is a
+    # DISPOSABLE READ CACHE that copilot_memory.regenerate_cache() clobbers
+    # from this table at session establishment. Nothing ever folds the
+    # directory back - a planted file is never trusted. This import is the
+    # one-time bridge for notes that predate the db becoming authoritative.
     mdir = os.path.join(ROOT, "henry_memory")
     if (os.path.isdir(mdir)
             and c.execute("SELECT 1 FROM memory LIMIT 1").fetchone() is None):
@@ -829,7 +832,8 @@ def policy_doc_put(doc):
 
 def memory_all():
     """{name: {content, updated_at, actor}} for every note. The brief digest
-    and /harness/export read this - never the write-surface dir."""
+    and /harness/export read this - never the disposable henry_memory/ read
+    cache (see the boot-import comment above)."""
     try:
         rows = conn().execute(
             "SELECT name,content,updated_at,actor FROM memory").fetchall()
