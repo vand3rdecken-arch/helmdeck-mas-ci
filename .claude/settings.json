@@ -17,6 +17,8 @@
       "Bash(bash ops/deploy/push_ntfy.sh*)",
       "Bash(bash ops/deploy/push_relay.sh*)",
       "Bash(bash ops/deploy/cloudflare_tunnel.sh*)",
+      "Bash(schtasks /Create /TN HelmDeckRestart*)",
+      "Bash(schtasks /Run /TN HelmDeckRestart*)",
       "WebSearch",
       "WebFetch"
     ]
