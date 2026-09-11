@@ -28,6 +28,102 @@ from spine.media import wincap
 
 DEFAULT_PORT = int(os.environ.get("HELMDECK_CHROME_PORT") or "9222")
 
+# token-burn-hardening Karte C: the antidote to windows-mcp's Snapshot, which
+# returned 600-700 KB of UIA tree PER CALL (the 190M-token Wear-OS turn -
+# ops/docs/backlog/token-burn-hardening/README.md). Every browser verb's
+# return value is capped here, upstream of the model context, same principle
+# as ops/tools/mcp_capper.py's channel-level cap.
+MAX_ACTION_CHARS = 5_000
+_TRUNC = "\n…[gekürzt — Selektor oder Viewport enger fassen]"
+
+# Fails-fast default for every page action (Playwright's own default is 30s):
+# a selector miss should cost seconds, not eat the turn, and a raw Playwright
+# TimeoutError's "Call log:" tail is exactly the kind of unbounded text this
+# card exists to cap.
+DEFAULT_ACTION_TIMEOUT_MS = 8_000
+
+
+def _cap_text(text, limit=MAX_ACTION_CHARS):
+    """Named _cap_text, not _cap: AgentBrowser already owns a `self._cap`
+    (the wincap recording handle) - same word, different thing, kept apart
+    on sight."""
+    text = text or ""
+    return text if len(text) <= limit else text[:limit] + _TRUNC
+
+
+# document.querySelectorAll order == Playwright's own `nth=` chaining engine
+# order, so an index this returns is directly usable as `<selector> >> nth=i`
+# in click()/type() - no separate ID scheme to keep in sync.
+#
+# Page.evaluate takes exactly ONE expression - each visibility check is
+# nested INSIDE its arrow function (not concatenated before it) so the
+# string it receives stays a single, valid function expression.
+#
+# TWO different checks on purpose: read() must be viewport-scoped (the
+# viewport IS the cap - that's what keeps a 2000-paragraph page small
+# without truncating mid-thought), but find() locates something to act on
+# and Playwright's own click()/fill() already scroll a target into view
+# before acting - restricting find() to the current scroll position would
+# make an off-screen element permanently unreachable through these five
+# verbs (no scroll verb exists). So find() only excludes genuinely NOT
+# rendered elements (zero-size, display:none, visibility:hidden), not
+# off-screen ones. Registered as debt (browser-find-not-viewport-scoped):
+# every non-viewport-scoped output is a shortcut per this card's own rule.
+_ON_SCREEN_FN = """
+  function _hdOnScreen(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (r.bottom <= 0 || r.right <= 0) return false;
+    if (r.top >= window.innerHeight || r.left >= window.innerWidth) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none';
+  }
+"""
+
+_RENDERED_FN = """
+  function _hdRendered(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none';
+  }
+"""
+
+_READ_JS = """
+() => {""" + _ON_SCREEN_FN + """
+  const leaf = 'h1,h2,h3,h4,h5,h6,a,button,li,p,span,label,td,th,div';
+  const out = [], seen = new Set();
+  document.querySelectorAll(leaf).forEach(el => {
+    if (!_hdOnScreen(el)) return;
+    // skip containers whose own visible child already emits this text
+    if (Array.from(el.children).some(c => _hdOnScreen(c) && c.innerText && c.innerText.trim())) return;
+    const text = (el.innerText || '').trim().replace(/\\s+/g, ' ');
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    if (el.tagName === 'A' && el.href) out.push(`[${text}](${el.href})`);
+    else if (/^H[1-6]$/.test(el.tagName)) out.push('#'.repeat(+el.tagName[1]) + ' ' + text);
+    else out.push(text);
+  });
+  return out.join('\\n');
+}
+"""
+
+_FIND_JS = """
+({selector, limit}) => {""" + _RENDERED_FN + """
+  const all = Array.from(document.querySelectorAll(selector));
+  const out = [];
+  for (let i = 0; i < all.length && out.length < limit; i++) {
+    const el = all[i];
+    if (!_hdRendered(el)) continue;
+    const label = (el.innerText || el.getAttribute('aria-label') ||
+                   el.getAttribute('placeholder') || el.value || '')
+                  .trim().replace(/\\s+/g, ' ').slice(0, 60);
+    out.push({i, tag: el.tagName.toLowerCase(), label});
+  }
+  return out;
+}
+"""
+
 
 def _chrome_exe():
     """Locate a Chrome/Edge binary: env override, then the usual install paths, then Edge."""
@@ -107,6 +203,9 @@ class AgentBrowser:
                 record_video_dir=run_dir, record_video_size={"width": 1280, "height": 720},
                 viewport={"width": 1280, "height": 720})
             self.page = self._ctx.new_page()
+        # fails-fast (see DEFAULT_ACTION_TIMEOUT_MS): a selector miss should
+        # cost seconds, not Playwright's 30s default eating the turn.
+        self.page.set_default_timeout(DEFAULT_ACTION_TIMEOUT_MS)
 
     # -- the audited verbs ------------------------------------------------
     def goto(self, url):
@@ -121,6 +220,34 @@ class AgentBrowser:
         shown = "•" * len(text) if secret else text
         self.log.log("type", "%s ← %s" % (label or selector, shown), selector=selector)
         self.page.fill(selector, text)
+
+    def read(self):
+        """Markdown-ish text of what is CURRENTLY VISIBLE in the viewport, hard-
+        capped at MAX_ACTION_CHARS - the bounded alternative to windows-mcp's
+        whole-tree Snapshot (token-burn-hardening Karte C). Off-screen content
+        is never included - find() and click()/type() are NOT viewport-limited
+        (Playwright scrolls a target into view before acting), so locate
+        something further down with find() first; read() then shows the
+        viewport around wherever the page ends up."""
+        raw = self.page.evaluate(_READ_JS)
+        out = _cap_text(raw)
+        self.log.log("read", "%d chars%s" % (len(out), " (capped)" if len(raw) > len(out) else ""))
+        return out
+
+    def find(self, selector, limit=20):
+        """Up to `limit` rendered (non-zero-size, not display:none/hidden)
+        matches for `selector` ANYWHERE on the page - not viewport-limited,
+        because click()/type() already scroll their target into view and
+        these five verbs have no separate scroll primitive (debt: browser-
+        find-not-viewport-scoped). Each match carries a ready-to-use locator
+        (`<selector> >> nth=i`, the same order Playwright's own `nth=`
+        chaining engine uses) that click()/type() can take directly."""
+        items = self.page.evaluate(_FIND_JS, {"selector": selector, "limit": limit})
+        lines = ["%d: <%s> %r -> %s >> nth=%d" % (it["i"], it["tag"], it["label"], selector, it["i"])
+                 for it in items]
+        out = _cap_text("\n".join(lines) if lines else "(no visible matches)")
+        self.log.log("find", "%r -> %d match(es)" % (selector, len(items)), selector=selector)
+        return out
 
     def press(self, key):
         self.log.log("key", key)
