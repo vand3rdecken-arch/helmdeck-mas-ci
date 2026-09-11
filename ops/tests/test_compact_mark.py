@@ -45,6 +45,18 @@ small, why_small = copilot._compact_mark({"ctx_window": 200_000})
 ok(why_small == "overflow" and small == 160_000,
    "a 200k session keeps the stricter overflow guard (%d, %s)" % (small, why_small))
 
+# token-burn-hardening Karte D companion (2026-09-11): _compact_mark takes no
+# history, so it must judge the window it is HANDED, not one cached from
+# before a reclassification - the exact contract sessions._maybe_compact's own
+# re-evaluation now depends on (see test_card_compact_interrupt.py, card
+# 20260910-134430, where a stale-window read let a queued retry evaporate).
+# Same window floor both lanes share: sessions._CTX_WINDOW.
+from cells.engineer.cards import sessions as _sessions            # noqa: E402
+ok(copilot._compact_mark({})[0] == copilot._compact_mark(
+    {"ctx_window": _sessions._CTX_WINDOW})[0],
+   "an absent ctx_window floors to the SAME shared default as an explicit one "
+   "(no separate, driftable default in the copilot lane)")
+
 # the memory surface
 ok(copilot.MEMORY_DIR.endswith("henry_memory"),
    "memory lives under the daemon's runtime dir, not the CLI's shared auto-memory")
@@ -65,5 +77,5 @@ ok(src.index("_save_memory(user, sid)") < src.index('p.stdin.write("/compact")')
 ok('"--permission-mode", henry_pmode()' in src,
    "the save turn runs with hands (acceptEdits), not in plan mode")
 
-print("\n%s (%d checks, %d failed)" % ("PASS" if not fails else "FAIL", 12, len(fails)))
+print("\n%s (%d checks, %d failed)" % ("PASS" if not fails else "FAIL", 13, len(fails)))
 sys.exit(1 if fails else 0)
