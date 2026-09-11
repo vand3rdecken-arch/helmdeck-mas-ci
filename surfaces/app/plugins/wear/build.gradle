@@ -98,7 +98,13 @@ android {
         // superseded by an abandoned Produktion draft mid-promotion, and
         // Play's "Add from library" picker then permanently excludes a
         // versionCode tied to any existing release record, live or not.
-        versionCode 1000003
+        // 1000003 burned 2026-09-11 the same way: staged into an abandoned
+        // Produktion (Wear OS) draft (never published), which left it as
+        // the track's remembered floor - Play then refused BOTH a re-submit
+        // of 1000002 (downgrade) and a re-submit of 1000003 itself ("keine
+        // App Bundles hinzugefuegt oder entfernt", since the track already
+        // remembers that exact bundle) when promoting from Interner Test.
+        versionCode 1000004
         versionName "1.0.0"
     }
 
