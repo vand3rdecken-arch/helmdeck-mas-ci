@@ -52,6 +52,10 @@ PM_DEFAULTS = {
                                        # left when no €/% calibration is reachable at all
                                        # (owner decree 2026-09-04: never a shadow-$ price)
     "watch_ctx_floor": 150_000, # context tokens considered runaway (window nearly full)
+    # -- per-turn spend tripwire (drivers._turn_burn_check: code thresholds,
+    # folded live off the stream, no LLM judgement on the arithmetic) --------
+    "turn_burn_soft_pct": 2.0,  # %-of-weekly-quota ONE turn may burn -> Henry ("turn-burn", can steer)
+    "turn_burn_hard_pct": 5.0,  # %-of-weekly-quota ONE turn may burn -> cooperative cancel, needs_you
 }
 
 

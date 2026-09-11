@@ -4641,6 +4641,41 @@ DEBT = [
         "since": "2026-09-10",
         "order": 64,
     },
+    {
+        "id": "turn-burn-tripwire-needs-calibration",
+        "title": "the per-turn spend tripwire (drivers._turn_burn_check) is "
+                  "silent whenever events.plan_calibration() can't calibrate "
+                  "- exactly the coverage the 190M-token incident needed",
+        "status": "open",
+        "what": "Karte B (token-burn-hardening) reads spend as a %-of-"
+                "weekly-quota, on purpose (owner decree costs-are-plan-share, "
+                "NEVER shadow-euros or a raw token count) - so it needs "
+                "events.plan_calibration()'s tokens_per_pct. When that's "
+                "unreachable (an api-plan board with monthly_eur unset, or "
+                "a cold usage cache on a freshly booted daemon before the "
+                "first calibration lands) _turn_burn_check returns early "
+                "with NO fallback rung - unlike _cost_watch's pct/eur/tokens "
+                "3-way degradation (pm_watchdog._watch_budget_ctx), which "
+                "always has an honest absolute-token floor left.",
+        "why_it_bites": "the exact runaway-turn shape this Karte exists to "
+                        "catch can still burn unlimited tokens, ungated, on "
+                        "any board where calibration is cold or never "
+                        "reachable - the tripwire looks armed (the code "
+                        "path exists, the test suite is green) but is a "
+                        "no-op there, which is worse than an obviously "
+                        "absent feature because nobody thinks to check.",
+        "trigger": "a machine/direct card runs a long tool-loop turn on an "
+                   "api-plan board with no monthly_eur configured, or in "
+                   "the first minutes after a daemon restart before "
+                   "usage.cached() has ever warmed",
+        "fix": "give _turn_burn_check the same tokens-as-last-resort rung "
+               "_cost_watch already has (pm.watch_floor_tokens or an "
+               "equivalent turn-scoped absolute floor) instead of returning "
+               "early on calib=None, so every board keeps SOME ceiling even "
+               "without a %-calibration to report against.",
+        "since": "2026-09-11",
+        "order": 65,
+    },
 ]
 
 def list_debt():

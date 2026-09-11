@@ -291,6 +291,8 @@ def turn_active(tid):
 _IDLE_TTL_DEFAULT = 300.0      # seconds a worker may sit idle before it's reaped
 _SWEEP_INTERVAL = 15.0         # Paseo polls its idle collector this often
 _BURN_REPEATS = 5              # identical consecutive tool calls that look like a loop
+_TURN_BURN_SOFT_PCT = 2.0      # default: %-of-weekly-quota one turn may burn before Henry sees it
+_TURN_BURN_HARD_PCT = 5.0      # default: %-of-weekly-quota one turn may burn before it self-cancels
 _sweeper_started = False
 
 
@@ -1040,6 +1042,136 @@ class _ClaudeSession:
         except Exception:
             pass
 
+    def _turn_burn_watch(self, ev, cur):
+        """Turn-Burn-Tripwire (token-burn-hardening Karte B). The 190M-token,
+        94-minute incident (2026-09-10/11) had no mechanism watching a LIVE
+        turn's spend - auto-compact is post-turn, the 150k-bloat escalation is
+        PM's idle tick reading a stale persisted field. This is the missing
+        live observer: it FOLDS each assistant usage-block onto the turn-
+        scoped `cur` - same signal fold_timeline_event writes to the feed,
+        same event-time/single-owner shape as _burn_watch above - and hands
+        the running total to _turn_burn_check. NEVER a wall-clock cap (Memory
+        turn-idle-watchdog: nie wieder einfuehren) - this bounds SPEND, not
+        duration. Best-effort: any error here must never disturb the turn."""
+        if ev.get("type") != "assistant":
+            return
+        try:
+            msg = ev.get("message") or {}
+            for p in (msg.get("content") or []):
+                if isinstance(p, dict) and p.get("type") == "tool_use" and p.get("id"):
+                    cur.setdefault("burn_tools", {})[p["id"]] = p.get("name") or "tool"
+            u = msg.get("usage")
+            if not isinstance(u, dict) or not u:
+                return
+            tok = (int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+                   + int(u.get("cache_read_input_tokens") or 0)
+                   + int(u.get("cache_creation_input_tokens") or 0))
+            if not tok:
+                return
+            cur["burn_total"] = cur.get("burn_total", 0) + tok
+            cur["burn_iters"] = cur.get("burn_iters", 0) + 1
+            self._turn_burn_check(cur)
+        except Exception:
+            pass
+
+    def _turn_burn_result(self, ev, cur):
+        """Tool-result half of the same fold: attributes result BYTES to the
+        tool that produced them, for the evidence's "top-3 result producers"
+        (the incident's whole cost was ~700KB/call windows-mcp Snapshots).
+        Cheap - len() on text already extracted for the timeline fold."""
+        if ev.get("type") != "user":
+            return
+        try:
+            for p in ((ev.get("message") or {}).get("content") or []):
+                if isinstance(p, dict) and p.get("type") == "tool_result":
+                    name = (cur.get("burn_tools") or {}).get(p.get("tool_use_id"), "tool")
+                    n = len(_result_text(p) or "")
+                    if n:
+                        sizes = cur.setdefault("burn_sizes", {})
+                        sizes[name] = sizes.get(name, 0) + n
+        except Exception:
+            pass
+
+    def _burn_evidence(self, cur):
+        sizes = sorted((cur.get("burn_sizes") or {}).items(), key=lambda kv: -kv[1])[:3]
+        top = ", ".join("%s ~%dk" % (n, b // 1000) for n, b in sizes) if sizes else "-"
+        return ("%.1fM Tokens kumuliert, %d Iterationen, groesste Result-Quellen: %s"
+                % (cur.get("burn_total", 0) / 1e6, cur.get("burn_iters", 0), top))
+
+    def _turn_burn_check(self, cur):
+        """Compare THIS turn's cumulative spend to soft/hard %-of-weekly-quota
+        thresholds (settings.pm.turn_burn_soft_pct/turn_burn_hard_pct - owner
+        decree costs-are-plan-share, NEVER shadow-euros or an absolute token
+        count). Each rung fires AT MOST ONCE per turn (cur["burn_soft_fired"]/
+        ["burn_hard_fired"]):
+          soft -> a NEW Henry escalation kind "turn-burn", mid-turn
+                  actionable (unlike context-bloat: Henry can `steer` a live
+                  turn back on track instead of just filing a chore).
+          hard -> a cooperative cancel(tid) - the same Stop path the composer
+                  uses, non-blocking (see _ClaudeSession.cancel's own escort
+                  thread) - plus a burn report left in the card's feed. The
+                  turn lands on needs_you the same way any plain cancelled
+                  turn does; the session survives, resumable. No escalation
+                  here - the action already happened, the owner sees it
+                  directly on the card.
+        Calibration (events.plan_calibration) is cached on `cur` for the life
+        of the turn - it scans the event log, and re-fetching it on every one
+        of a burning turn's many assistant frames would itself be the kind of
+        quadratic cost this Karte exists to stop."""
+        if cur.get("burn_hard_fired"):
+            return
+        calib = cur.get("burn_calib")
+        if calib is None:
+            try:
+                from spine.storage import events
+                calib = events.plan_calibration() or False
+            except Exception:
+                calib = False
+            cur["burn_calib"] = calib
+        if not calib:
+            return                      # nothing honest to calibrate against yet
+        tpp = calib.get("tokens_per_pct")
+        if not tpp:
+            return
+        pct = cur["burn_total"] / float(tpp)
+        try:
+            from cells.copilot.planning.pm import _pm
+            pm = _pm()
+        except Exception:
+            pm = {}
+        soft = float(pm.get("turn_burn_soft_pct") or 0) or _TURN_BURN_SOFT_PCT
+        hard = float(pm.get("turn_burn_hard_pct") or 0) or _TURN_BURN_HARD_PCT
+        if pct >= hard:
+            cur["burn_hard_fired"] = True
+            evidence = self._burn_evidence(cur)
+            try:
+                if self.run_dir:
+                    from spine.ops.actionlog import ActionLog
+                    ActionLog(self.run_dir).log("note",
+                        "\U0001F6D1 Turn-Burn HARD (%.1f%% Wochenkontingent, Schwelle %.1f%%): "
+                        "%s - Turn wird abgebrochen (Session bleibt erhalten)."
+                        % (pct, hard, evidence))
+            except Exception:
+                pass
+            try:
+                cancel(self.tid)
+            except Exception:
+                pass
+        elif pct >= soft and not cur.get("burn_soft_fired"):
+            cur["burn_soft_fired"] = True
+            evidence = self._burn_evidence(cur)
+            try:
+                from cells.copilot.planning.pm_comm import _to_henry
+                _to_henry("turn-burn", card=self.tid,
+                    detail=("Laufender Turn hat %.1f%% des Wochenkontingents verbraucht "
+                            "(Schwelle %.1f%%): %s. Mid-turn actionable - steer die Karte "
+                            "auf Kurs oder lass sie bewusst weiterlaufen."
+                            % (pct, soft, evidence)),
+                    feed="Turn-Burn: %.1f%% Woche in einem laufenden Turn - an Henry: %s"
+                         % (pct, evidence))
+            except Exception:
+                pass
+
     def _on_event(self, ev):
         cur = self._cur
         if cur is not None:
@@ -1051,6 +1183,8 @@ class _ClaudeSession:
             # wedged process (no frame for the whole idle window) is.
             cur["last_event"] = _time.time()
             self._burn_watch(ev, cur)
+            self._turn_burn_watch(ev, cur)
+            self._turn_burn_result(ev, cur)
         typ = ev.get("type")
         if typ in ("assistant", "user"):
             try:
