@@ -574,8 +574,10 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     # A grant pre-authorises tools; this REGISTERS the server that owns them,
     # because --setting-sources project drops the user layer it normally lives
     # in (see _mcp_config_arg). Without it windows-mcp was a ghost the card
-    # could never reach.
-    argv += _mcp_config_arg(cfg)
+    # could never reach. Machine cards additionally route through the
+    # token-burn-hardening capper (Karte A): they are the ones actually
+    # driving windows-mcp's Snapshot/Screenshot at volume.
+    argv += _mcp_config_arg(cfg, capper=(agent == MACHINE_AGENT))
     if session_id:
         argv += ["--resume", session_id]
         # An adopted card still pointing at its SOURCE session must not write

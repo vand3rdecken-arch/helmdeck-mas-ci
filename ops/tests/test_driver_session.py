@@ -293,6 +293,47 @@ def test_build_argv_threads_mcp_config():
         agentcli._user_mcp_servers = saved
 
 
+def test_build_argv_capperizes_machine_cards_only():
+    """token-burn-hardening Karte A: a machine card's windows-mcp gets routed
+    through ops/tools/mcp_capper.py (the 190M-token Wear-OS turn was a machine
+    card driving windows-mcp's Snapshot at volume); a regular card-worker keeps
+    the direct path unchanged - test_build_argv_threads_mcp_config above must
+    stay green exactly as it is."""
+    import json as _j
+    # A command guaranteed NOT to resolve on any machine, so the wrapped/direct
+    # command comparison below is deterministic regardless of what happens to
+    # be on this box's PATH (real `uvx` would silently resolve to an absolute
+    # path first - see _resolve_cmd - which would make the assertions below
+    # flaky across machines).
+    fake_cmd = "definitely-not-a-real-mcp-server-binary-xyz"
+    saved = agentcli._user_mcp_servers
+    agentcli._user_mcp_servers = lambda: {
+        "windows-mcp": {"command": fake_cmd, "args": ["serve"]}}
+    try:
+        argv = drivers.build_argv("machine-worker",
+                                  {"allowed_tools": ["mcp__windows-mcp__*"]},
+                                  "BRIEF", exe="claude")
+        cfg_json = argv[argv.index("--mcp-config") + 1]
+        srv = _j.loads(cfg_json)["mcpServers"]["windows-mcp"]
+        check(srv["command"] == sys.executable,
+              "machine-card server command is re-pointed at this Python (got %r)" % srv["command"])
+        check(srv["args"][:2] == [agentcli._CAPPER_SCRIPT, "--"],
+              "capper script + separator lead the wrapped args (got %r)" % srv["args"][:2])
+        check(srv["args"][2:] == [fake_cmd, "serve"],
+              "the original command/args are preserved AFTER the separator (got %r)"
+              % srv["args"][2:])
+
+        card_argv = drivers.build_argv("card-worker",
+                                       {"allowed_tools": ["mcp__windows-mcp__*"]},
+                                       "BRIEF", exe="claude")
+        card_srv = _j.loads(card_argv[card_argv.index("--mcp-config") + 1])["mcpServers"]["windows-mcp"]
+        check(card_srv["command"] == fake_cmd and card_srv["args"] == ["serve"],
+              "a card-worker's windows-mcp stays UNCAPPED (direct command/args, got %r/%r)"
+              % (card_srv["command"], card_srv["args"]))
+    finally:
+        agentcli._user_mcp_servers = saved
+
+
 if __name__ == "__main__":
     test_reuse()
     test_timeout_is_bounded()
@@ -306,5 +347,6 @@ if __name__ == "__main__":
     test_mcp_config_bridges_grant_to_server()
     test_mcp_config_never_invents_a_command()
     test_build_argv_threads_mcp_config()
+    test_build_argv_capperizes_machine_cards_only()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)

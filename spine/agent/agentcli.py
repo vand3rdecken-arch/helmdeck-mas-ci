@@ -21,9 +21,17 @@ import os
 import re as _re
 import shutil
 import subprocess
+import sys
 
 CLAUDE = (os.environ.get("HELMDECK_CLAUDE") or shutil.which("claude")
           or r"C:\Program Files\nodejs\claude.cmd")
+
+# Repo root via relative dirname, NOT daemon.paths - this module stays a leaf
+# with zero daemon.* imports on purpose (see module docstring). Only used to
+# locate the token-burn-hardening MCP capper (ops/tools/mcp_capper.py).
+_CAPPER_SCRIPT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "ops", "tools", "mcp_capper.py")
 
 
 def _real_claude_exe(cmd_path):
@@ -140,7 +148,23 @@ def _resolve_cmd(cmd):
     return shutil.which(cmd, path=os.pathsep.join(existing)) if existing else None
 
 
-def _mcp_config_arg(cfg):
+def _capperize(d):
+    """Route a resolved server definition through ops/tools/mcp_capper.py
+    instead of spawning it directly (token-burn-hardening Karte A: a single
+    windows-mcp `Snapshot` call returned 600-700 KB of UIA tree straight into
+    the model's context, 122 calls in one turn). The capper execs the SAME
+    command/args this function already resolved - it never re-resolves or
+    invents a path of its own, it only wraps one it is handed."""
+    cmd = d.get("command")
+    if not cmd:
+        return d
+    wrapped = dict(d)
+    wrapped["command"] = sys.executable or "python"
+    wrapped["args"] = [_CAPPER_SCRIPT, "--", cmd] + list(d.get("args") or [])
+    return wrapped
+
+
+def _mcp_config_arg(cfg, capper=False):
     """`--mcp-config` for the MCP servers a driver's tool grants actually need.
 
     THE BUG THIS CLOSES: an `allowed_tools` pattern `mcp__<server>__*` only
@@ -166,7 +190,11 @@ def _mcp_config_arg(cfg):
     bare shell and the spawned CLI cannot be assumed to find it otherwise -
     verbatim if PATH can't resolve it (never invent a path). A server the grant
     NAMES but the user config does not DEFINE is reported, never dropped in
-    silence (HARNESS.md's measured trap: the CLI ignores a bad config quietly)."""
+    silence (HARNESS.md's measured trap: the CLI ignores a bad config quietly).
+
+    `capper=True` (build_argv, machine cards only) wraps each resolved server
+    through mcp_capper.py so an oversized result never reaches the model raw -
+    see _capperize. Card-worker spawns keep the direct path unchanged."""
     try:
         wanted = set()
         for pat in cfg.get("allowed_tools") or []:
@@ -191,6 +219,8 @@ def _mcp_config_arg(cfg):
                           "daemon PATH nor the usual user-local bins - it will "
                           "likely fail to start; add its dir to the daemon PATH "
                           "or the driver's env in settings.json." % (n, cmd))
+            if capper:
+                d = _capperize(d)
             picked[n] = d
         missing = wanted - set(picked)
         if missing:
