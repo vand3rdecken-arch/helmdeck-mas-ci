@@ -126,6 +126,92 @@ check("30 lost frames -> 4 log calls (1st, 10th, 20th, 30th)", len(_log_calls) =
 give_up_lines = [m for _, m in _log_calls]
 check("all 4 are push-lost lines", all("push lost" in m for m in give_up_lines), str(give_up_lines))
 
+# -- 5) 400 "truncated body" is TRANSPORT: retried, then delivered ----------
+# relay.py's own verdict that the upload never fully arrived (measured
+# 2026-09-11 18:28: a 1.96 MB board reply cut at 720 KB). Before: any 4xx was
+# "our bug", no retry, the frame - and the phone's board - was simply lost.
+class _Body:
+    def __init__(self, b): self._b = b
+    def read(self): return self._b
+    def close(self): pass
+
+class _BodyResp(_FakeResp):
+    def __init__(self, status, body):
+        _FakeResp.__init__(self, status); self._b = body
+    def read(self): return self._b
+
+_reset()
+calls = {"n": 0}
+def _truncated_then_ok(req, timeout=None):
+    calls["n"] += 1
+    if calls["n"] == 1:
+        raise urllib.error.HTTPError("url", 400, "Bad Request", {}, _Body(b'{"error": "truncated body"}'))
+    return _FakeResp(200)
+_patch_urlopen(_truncated_then_ok)
+ok5 = rc._push("https://relay.example", "room1", "frame-eeee", "cipher")
+check("truncated-400 then 200: 2 urlopen calls (retried)", calls["n"] == 2, str(calls["n"]))
+check("truncated-400 then 200: delivered", ok5 is True, str(ok5))
+check("truncated-400: no 'rejected' log", not any("rejected" in m for _, m in _log_calls), str(_log_calls))
+
+# a plain 400 with another body is still OUR bug - unchanged, no retry
+_reset()
+calls = {"n": 0}
+def _rejected_body(req, timeout=None):
+    calls["n"] += 1
+    raise urllib.error.HTTPError("url", 400, "Bad Request", {}, _Body(b'{"error": "bad room"}'))
+_patch_urlopen(_rejected_body)
+ok6 = rc._push("https://relay.example", "room1", "frame-ffff", "cipher")
+check("other 400: exactly 1 call, not delivered", calls["n"] == 1 and ok6 is False, "%s %s" % (calls["n"], ok6))
+
+# -- 6) the upload timeout scales with the frame ---------------------------
+_reset()
+seen = {}
+def _capture_timeout(req, timeout=None):
+    seen["t"] = timeout
+    seen["n"] = len(req.data or b"")
+    return _FakeResp(200)
+_patch_urlopen(_capture_timeout)
+rc._push("https://relay.example", "room1", "frame-small", "x")
+small = seen["t"]
+rc._push("https://relay.example", "room1", "frame-big", "x" * (2 * 1024 * 1024))
+big = seen["t"]
+check("small frame keeps the 15 s floor", small == rc.PUSH_TIMEOUT_BASE, str(small))
+check("a 2 MB frame gets ~20 s more", big >= rc.PUSH_TIMEOUT_BASE + 20, "%s (bytes %s)" % (big, seen["n"]))
+
+# -- 7) loopback only when PROVEN: same instance id on both /health ---------
+def _health_map(mapping):
+    def fn(req, timeout=None):
+        url = req if isinstance(req, str) else req.full_url
+        for prefix, body in mapping.items():
+            if url.startswith(prefix):
+                if body is None:
+                    raise urllib.error.URLError("down")
+                return _BodyResp(200, body)
+        raise urllib.error.URLError("unknown " + url)
+    return fn
+LOCAL = "http://127.0.0.1:%d" % rc.LOCAL_RELAY_PORT
+PUB = "https://relay.example"
+def _fresh():
+    rc._base_cache.update(ts=0.0, public=None, base=None)
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: b'{"ok": true, "instance": "abc"}'}))
+check("same instance on both -> loopback", rc._resolve_base(PUB) == LOCAL, rc._resolve_base(PUB))
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: b'{"ok": true, "instance": "zzz"}'}))
+check("different instance -> public URL", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: None}))
+check("public unreachable -> cannot prove -> public URL (fail-safe)", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true}', PUB: b'{"ok": true}'}))
+check("older relay without instance id -> public URL", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+_fresh(); _patch_urlopen(_health_map({LOCAL: None, PUB: b'{"ok": true, "instance": "abc"}'}))
+check("no local relay -> public URL", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+# cached: a second call inside the TTL must not probe again
+_fresh(); probes = {"n": 0}
+def _counting(req, timeout=None):
+    probes["n"] += 1
+    return _BodyResp(200, b'{"ok": true, "instance": "abc"}')
+_patch_urlopen(_counting)
+rc._resolve_base(PUB); rc._resolve_base(PUB)
+check("verdict cached within the TTL (2 probes, not 4)", probes["n"] == 2, str(probes["n"]))
+
 print()
 print("ALL PASS" if not FAILS else "FAILED: %s" % FAILS)
 sys.exit(1 if FAILS else 0)

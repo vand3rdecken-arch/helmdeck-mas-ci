@@ -32,6 +32,13 @@ APK_DIR = os.environ.get("HELMDECK_APK_DIR", "/opt/helmdeck-apk")
 
 _lock = threading.Lock()
 _rooms = {}   # room -> {"q": [...], "cv": Condition, "waiting": {id: slot}, "last_pull": ts}
+# Per-PROCESS identity, exposed on /health. Exists for one reason: the daemon
+# may run on the same box as this relay (2026-09-08 local fallback) and then
+# has no business pushing a 2 MB reply frame out through Cloudflare and back
+# in through the tunnel - but it may only take the loopback shortcut when it
+# can PROVE the relay on 127.0.0.1 is the one its public URL resolves to.
+# Comparing this id on both probes is that proof (relay_client._resolve_base).
+_INSTANCE = uuid.uuid4().hex
 
 # --- phone pairing (App Links) -------------------------------------------
 # Android verifies HelmDeck can own https://<relay>/pair via this file, so a
@@ -438,7 +445,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = urlparse(self.path).path
         if p == "/health":
-            return self._send(200, json.dumps({"ok": True, "rooms": len(_rooms)}))
+            return self._send(200, json.dumps({"ok": True, "rooms": len(_rooms), "instance": _INSTANCE}))
         if p in ("/privacy", "/datenschutz"):
             body = PRIVACY_HTML.encode("utf-8")
             self.send_response(200)

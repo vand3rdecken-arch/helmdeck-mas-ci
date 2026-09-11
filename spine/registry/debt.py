@@ -4817,6 +4817,40 @@ DEBT = [
         "since": "2026-09-11",
         "order": 68,
     },
+    {
+        "id": "board-list-payload-unbounded",
+        "title": "GET /tracks ships every field of every card ever - 1.4 MB and growing",
+        "status": "open",
+        "what": "routes_tracks.tracks_list_get returns sessions.present(t) for ALL "
+                "stored tracks - archived and done included - with every stored "
+                "field. Measured 2026-09-11: 216 cards, 1,380,496 bytes raw JSON, "
+                "1.96 MB as the sealed relay frame; heaviest fields last_reply "
+                "(376 KB), bg_tasks (324 KB), task (149 KB), checkpoints (109 KB), "
+                "deploy_hook (108 KB). Every app screen - board, needs, history, "
+                "palette, settings AND the card detail - reads this one "
+                "['tracks'] query, so the list cannot be slimmed without giving "
+                "the detail screen its own /tracks/<id> fetch first.",
+        "why_it_bites": "The phone refetches the whole list on every stream tick. "
+                        "Over the relay that is a 2 MB sealed frame per lane move; "
+                        "on a slow tunnel leg it exceeded the daemon's fixed push "
+                        "timeout, was cut at 720 KB, and the board simply did not "
+                        "move (owner report 2026-09-11 18:30). The transport now "
+                        "retries a truncated upload, sizes its timeout by body "
+                        "length and uses loopback when the relay is this PC - "
+                        "but the frame still grows with every card filed, and the "
+                        "phone's own 20 s request budget is next.",
+        "trigger": "the board list crossing ~4 MB, or a paired device on a real "
+                   "remote relay (no loopback) reporting a stale board again",
+        "fix": "1) card/[id].tsx fetches its own card via GET /tracks/<id> "
+               "(present() applied) instead of picking it out of the list; "
+               "2) tracks_list_get projects a BOARD shape: drop last_reply, "
+               "bg_tasks, checkpoints, deploy_hook, outcome bodies (keep counts/"
+               "flags) and exclude archived cards unless ?archived=1; "
+               "3) the stream's `v` becomes a per-card cursor so a tick refetches "
+               "the changed cards, not the list.",
+        "since": "2026-09-11",
+        "order": 69,
+    },
 ]
 
 def list_debt():

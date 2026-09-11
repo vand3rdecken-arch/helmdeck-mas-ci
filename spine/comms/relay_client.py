@@ -44,6 +44,69 @@ _push_fails = 0
 # way, at any count.
 PAIR_TTL = 900
 
+# --- loopback preference (measured 2026-09-11 18:28: a 1.96 MB board reply
+# pushed out through Cloudflare + tunnel was cut at 720 KB, the relay answered
+# 400 "truncated body", the daemon gave up, the phone's board never moved) ---
+# The relay usually runs on THIS box (ops/deploy/relay_local.cmd). Then the
+# daemon->relay leg has no reason to leave the machine. But "usually" is not
+# evidence: the shortcut is taken only when the relay answering on 127.0.0.1
+# reports the SAME per-process instance id as the configured public URL -
+# probed live, re-probed every LOCAL_PROBE_TTL seconds, never stored. If the
+# public probe fails, or the ids differ, or either lacks an id (older relay),
+# the public URL is used exactly as before - fail-safe, never assumed.
+import os as _os
+LOCAL_RELAY_PORT = int(_os.environ.get("HELMDECK_RELAY_PORT", "6790") or 6790)
+LOCAL_PROBE_TTL = 60.0
+PUSH_TIMEOUT_BASE = 15          # seconds, the old fixed value
+PUSH_TIMEOUT_PER_100K = 1       # +1 s per 100 KB of frame - a 2 MB reply gets ~35 s
+_base_lock = threading.Lock()
+_base_cache = {"ts": 0.0, "public": None, "base": None}
+
+
+def _health(url, timeout=3):
+    try:
+        with urllib.request.urlopen(url + "/health", timeout=timeout) as resp:
+            d = json.loads(resp.read() or b"{}")
+            return d if isinstance(d, dict) and d.get("ok") else None
+    except Exception:
+        return None
+
+
+def _resolve_base(relay):
+    """The URL the bridge actually pulls from / pushes to for `relay`.
+
+    Loopback iff the local relay's /health instance id equals the public one's.
+    One owner of the decision, cached LOCAL_PROBE_TTL seconds so the loop does
+    not probe twice per second; a change of verdict is logged once."""
+    now = time.time()
+    with _base_lock:
+        c = _base_cache
+        if c["public"] == relay and c["base"] and now - c["ts"] < LOCAL_PROBE_TTL:
+            return c["base"]
+    local = "http://127.0.0.1:%d" % LOCAL_RELAY_PORT
+    base = relay
+    if not relay.startswith(local):
+        lh = _health(local)
+        if lh and lh.get("instance"):
+            ph = _health(relay)
+            if ph and ph.get("instance") == lh.get("instance"):
+                base = local
+    with _base_lock:
+        changed = (c["public"] == relay and c["base"] is not None and c["base"] != base)
+        c.update(ts=now, public=relay, base=base)
+    if changed:
+        try:
+            from spine.storage import events
+            events.log("relay", "bridge leg is now %s" % (
+                "LOOPBACK (same relay instance on 127.0.0.1)" if base == local else "the public URL"))
+        except Exception:
+            pass
+    return base
+
+
+def _push_timeout(nbytes):
+    return PUSH_TIMEOUT_BASE + PUSH_TIMEOUT_PER_100K * (nbytes // (100 * 1024))
+
 
 def insecure_url(url):
     """True when this url would carry secrets in CLEARTEXT across a network:
@@ -149,17 +212,33 @@ def _push(relay, room, fid, cipher):
     push (200) at any attempt."""
     body = json.dumps({"id": fid, "cipher": cipher}).encode("utf-8")
     req_kwargs = dict(data=body, headers={"Content-Type": "application/json"})
+    # The timeout is an UPLOAD budget and must scale with what is uploaded: the
+    # fixed 15 s cut a 1.96 MB board reply at 720 KB on a slow tunnel leg
+    # (relay log 2026-09-11 18:28) - the daemon aborted its own push.
+    timeout = _push_timeout(len(body))
     last_err = None
     for attempt in range(1, 4):
         try:
             with urllib.request.urlopen(urllib.request.Request(
-                    relay + "/tunnel/push?room=" + room, **req_kwargs), timeout=15) as resp:
+                    relay + "/tunnel/push?room=" + room, **req_kwargs), timeout=timeout) as resp:
                 status = getattr(resp, "status", 200)
         except urllib.error.HTTPError as e:
             if e.code < 500:
-                _push_giveup("push rejected frame=%s: HTTP %d" % (fid[:8], e.code))
-                return False
-            last_err = e   # 5xx: Cloudflare/relay-side error, treat as transport
+                # relay.py answers 400 {"error": "truncated body"} when the
+                # bytes never fully ARRIVED - that is the relay reporting a
+                # transport failure on our upload, not a bad payload. Retry it
+                # like a reset; every other 4xx stays our bug and is not retried.
+                try:
+                    detail = (e.read() or b"").decode("utf-8", "replace")
+                except Exception:
+                    detail = ""
+                if e.code == 400 and "truncated" in detail:
+                    last_err = Exception("relay saw a truncated upload")
+                else:
+                    _push_giveup("push rejected frame=%s: HTTP %d" % (fid[:8], e.code))
+                    return False
+            else:
+                last_err = e   # 5xx: Cloudflare/relay-side error, treat as transport
         except (urllib.error.URLError, socket.timeout, ConnectionResetError,
                 http.client.RemoteDisconnected) as e:
             last_err = e
@@ -279,6 +358,7 @@ def _loop(port):
             if not (relay and room and sk):
                 time.sleep(5)
                 continue
+            relay = _resolve_base(relay)     # loopback when PROVEN to be the same relay
             if insecure_url(relay) and not warned_http:
                 # Legacy config from before the https guard. Frames stay
                 # E2EE-sealed either way, so keep bridging - but say it once:
