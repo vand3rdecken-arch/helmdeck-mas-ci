@@ -111,6 +111,27 @@ def main():
                   "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
                   "modelUsage": {"claude-fake": {}}, "session_id": SID})
             continue
+        if text.startswith("__BURN__"):
+            # Synthetic per-iteration usage stream for the turn-burn tripwire
+            # (token-burn-hardening Karte B): N assistant frames, each
+            # carrying a usage block of `tok` cache-read tokens - mirrors the
+            # incident's actual pattern (every iteration re-pays the whole
+            # accumulated context via cache-read) - then a normal result.
+            try:
+                _, n_s, tok_s = text.split(":", 2)
+                n, tok = int(n_s), int(tok_s)
+            except ValueError:
+                n, tok = 10, 1000
+            for _ in range(n):
+                emit({"type": "assistant", "session_id": SID, "message": {
+                    "role": "assistant", "content": [{"type": "text", "text": "."}],
+                    "usage": {"input_tokens": 0, "output_tokens": 1,
+                              "cache_read_input_tokens": tok,
+                              "cache_creation_input_tokens": 0}}})
+            emit({"type": "result", "subtype": "success", "result": "burn-done",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text == "__ERR__":
             emit({"type": "result", "subtype": "error_during_execution",
                   "is_error": True, "errors": ["boom: usage limit reached"],
