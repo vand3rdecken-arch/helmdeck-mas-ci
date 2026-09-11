@@ -232,3 +232,9 @@ surfaces/app/modules/livemic/android/libs/
 .wear_rows_check/
 .wearaar/
 shot_chat_scroll_*.png
+
+# Henry's live action log (superseded by the DB-authoritative memory,
+# 9dd70f8) - machine-local runtime data, same class as daemon/'s db/events/
+# certs. Got tracked once by accident (e06e417, a baseline-snapshot commit
+# that swept it in alongside real code changes); never again.
+recordings/
