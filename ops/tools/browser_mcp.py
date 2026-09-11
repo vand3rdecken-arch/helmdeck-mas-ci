@@ -18,17 +18,14 @@ action timeline) backs the whole process lifetime - lazily opened on first
 verb call, closed on stdin EOF (the CLI closes stdin when the card's turn
 ends, same shutdown signal mcp_capper.py's child-process relay relies on).
 
-Registration is a ONE-TIME manual step on the owner's machine (same as
-windows-mcp - see spine/agent/agentcli.py._user_mcp_servers, HARNESS.md's
-`--mcp-config` section): this script is not on any card's PATH by itself,
-`~/.claude.json` mcpServers is the single source of truth _mcp_config_arg
-reads from, and it is outside this repo so no card can write it.
-
-    claude mcp add -s user helmdeck-browser -- python <repo>/ops/tools/browser_mcp.py
-
-Then add "mcp__helmdeck-browser__*" to the machine driver's allowed_tools
-(events.settings()["drivers"][driver]["allowed_tools"] - settings.json is
-git-ignored, so this is also an owner/UI step, not a commit)."""
+SELF-REGISTERING, no per-machine setup: spine/agent/agentcli.py
+._builtin_mcp_servers() derives this server's definition at spawn time
+(sys.executable + this file's repo-relative path), so a fresh install needs
+no `claude mcp add` step and no ~/.claude.json edit. The "claude-desktop"
+driver's default allowed_tools (spine/storage/events.py DEFAULTS) already
+grants "mcp__helmdeck-browser__*". An owner MAY still add a `helmdeck-browser`
+entry to ~/.claude.json by hand (e.g. to point at a different interpreter) -
+_user_mcp_servers() merges it over the builtin definition, user config wins."""
 import os
 import sys
 

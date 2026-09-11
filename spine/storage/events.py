@@ -81,10 +81,14 @@ DEFAULTS = {
     # preset repo: filing a ticket never needs a path typed (fallback repo).
     "default_repo": "",
     # execution drivers (drivers.py): a card picks one by name. claude-desktop =
-    # Claude Code allowed to drive Windows/browser via windows-mcp, screen-recorded.
+    # Claude Code allowed to drive Windows via windows-mcp and a real page via
+    # the bounded helmdeck-browser verbs (navigate/read/find/click/type -
+    # spine/agent/agentcli._builtin_mcp_servers self-registers that server, no
+    # per-machine `claude mcp add` step needed), screen-recorded.
     "drivers": {"claude": {"type": "claude"},
                 "claude-desktop": {"type": "claude",
-                                   "allowed_tools": ["mcp__windows-mcp__*"],
+                                   "allowed_tools": ["mcp__windows-mcp__*",
+                                                      "mcp__helmdeck-browser__*"],
                                    "record": True}},
     # Self-registration on the sign-in screen. `open` is the ONLY live knob
     # left here: True lets anyone reach the sign-up form without a code, and

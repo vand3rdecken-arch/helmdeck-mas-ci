@@ -110,18 +110,45 @@ def _opts_sig(cfg, t):
             tuple(cfg.get("allowed_tools") or []))
 
 
+def _builtin_mcp_servers():
+    """MCP servers this repo can define FOR ITSELF - no `claude mcp add`
+    hand-registration step, no per-machine ~/.claude.json entry to forget on a
+    fresh install (the trap that left helmdeck-browser wired into the brief
+    and the driver grant but absent from every actual spawn until an owner
+    ran the one-time `claude mcp add` by hand - see browser_mcp.py's
+    docstring). helmdeck-browser is IN this repo (ops/tools/browser_mcp.py)
+    and its interpreter is just `sys.executable`, so both halves of its
+    definition are derivable at spawn time instead of owner-typed - the same
+    "derived, not stored" reasoning CLAUDE.md's NO-MONKEY-PATCHES law applies
+    to state. windows-mcp stays user-config-only on purpose: it is a third-
+    party server this repo doesn't own or ship a path for."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    script = os.path.join(repo_root, "ops", "tools", "browser_mcp.py")
+    if not os.path.isfile(script):
+        return {}
+    return {"helmdeck-browser": {"type": "stdio",
+                                 "command": sys.executable or "python",
+                                 "args": [script],
+                                 "env": {}}}
+
+
 def _user_mcp_servers():
     """The user-scope MCP servers from ~/.claude.json - the SAME file
     `claude mcp add -s user` writes, and the single source of truth for a
     globally-configured server like windows-mcp. Returns {} on any error so a
     spawn is never broken by a missing or malformed config (test_never_breaks
-    _a_spawn is a law here)."""
+    _a_spawn is a law here). Merged with _builtin_mcp_servers() by callers,
+    with a user override taking priority in case an owner ever needs to point
+    helmdeck-browser at a different interpreter/script by hand."""
     try:
         path = os.path.join(os.path.expanduser("~"), ".claude.json")
         with open(path, encoding="utf-8") as f:
-            return json.load(f).get("mcpServers") or {}
+            user = json.load(f).get("mcpServers") or {}
     except Exception:
-        return {}
+        user = {}
+    merged = _builtin_mcp_servers()
+    merged.update(user)
+    return merged
 
 
 def _resolve_cmd(cmd):
