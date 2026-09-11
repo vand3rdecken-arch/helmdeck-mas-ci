@@ -341,8 +341,8 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
 // ---- chat column ----------------------------------------------------------
 
-function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bottomInset, me }: {
-  k: Track; feed: TStep[]; onSend: (text: string, o: SteerOpts) => Promise<void>; onStop: () => void;
+function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, setSeed, bottomInset, me }: {
+  k: Track; feed: TStep[]; loading: boolean; onSend: (text: string, o: SteerOpts) => Promise<void>; onStop: () => void;
   models: (string | { id: string; label?: string; desc?: string })[]; modeOptions: { id: string; label: string }[];
   seed: { text: string; key: number }; setSeed: (s: { text: string; key: number }) => void; bottomInset: number;
   me?: string;
@@ -523,7 +523,13 @@ function Chat({ k, feed, onSend, onStop, models, modeOptions, seed, setSeed, bot
         <ChatScroll ref={scrollRef} label={tr("card.chat.latest")}
           contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
           {steps.length === 0 ? (
-            <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
+            // Loading != empty (chat-load-latency phase A.1): the transcript
+            // fetch is still in flight for up to a few seconds on a cold
+            // cache/slow relay, and rendering "noch keine Nachrichten" during
+            // that window is a LIE - it read as the card having no history at
+            // all, not as still loading.
+            loading ? <ActivityIndicator color={t.accent} style={{ marginTop: 24 }} /> :
+              <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
           ) :
             <Transcript steps={steps} ctxWindow={k.ctx_window} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
         </ChatScroll>
@@ -637,11 +643,18 @@ export default function CardScreen() {
   // Live transcript via LONG-POLL PUSH (api.transcriptLive): the daemon holds
   // each request open until the transcript changes, so the feed grows with real
   // streaming latency over BOTH the sealed relay and direct — no SSE (which
-  // can't tunnel the relay) and no fixed 3s poll. The initial query loads the
-  // feed on open; the loop keeps it live, writing into the same cache.
-  const { data: transcript } = useQuery<TStep[]>({
-    queryKey: ["transcript", id], queryFn: () => api.transcript(id!) as Promise<TStep[]>,
-    enabled: !!id, staleTime: Infinity, refetchInterval: false });
+  // can't tunnel the relay) and no fixed 3s poll. This is now the ONLY loader
+  // (chat-load-latency phase A.2): a separate full-transcript useQuery used to
+  // fire alongside the loop's own first call, so BOTH pulled the whole
+  // 100-227KB transcript over the relay before anything rendered. This query
+  // no longer fetches (enabled: false) - it exists so the screen can read/
+  // subscribe to the cache the loop writes into (qc.setQueryData below), which
+  // on a warm start is whatever restoreCache() already hydrated from disk:
+  // `isPending` stays true until that first write, which is exactly the
+  // "still loading" signal the empty-state check below needs.
+  const { data: transcript, isPending: transcriptPending } = useQuery<TStep[]>({
+    queryKey: ["transcript", id], queryFn: () => Promise.resolve([] as TStep[]),
+    enabled: false, staleTime: Infinity });
   const { data: hist } = useQuery({ queryKey: ["history", id], queryFn: () => api.history(id!), enabled: !!id });
   const { data: models } = useModels();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -651,7 +664,13 @@ export default function CardScreen() {
     if (!id) return;
     let alive = true;
     let v = "";
-    let have = 0;
+    // Seed from whatever this card's transcript cache already holds - the
+    // persisted AsyncStorage cache on a warm start (restoreCache() hydrates it
+    // before this mounts), or a prior mount's in-memory cache. The daemon then
+    // answers with just the TAIL (base>0) instead of the whole transcript; a
+    // genuinely cold cache (have=0) still gets one full fetch, same as before
+    // minus the duplicate the removed useQuery used to add.
+    let have = (qc.getQueryData<TStep[]>(["transcript", id]) ?? []).length;
     (async () => {
       while (alive) {
         try {
@@ -923,7 +942,7 @@ export default function CardScreen() {
             <Overview k={k} edit={edit} />
           </ScrollView>
           <View style={{ flex: 1.2 }}>
-            <Chat k={k} feed={feed} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
+            <Chat k={k} feed={feed} loading={transcriptPending} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
               seed={seed} setSeed={setSeed} bottomInset={insets.bottom} me={me?.name} />
           </View>
         </View>
@@ -944,7 +963,7 @@ export default function CardScreen() {
               <Overview k={k} edit={edit} />
             </ScrollView>
           ) : (
-            <Chat k={k} feed={feed} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
+            <Chat k={k} feed={feed} loading={transcriptPending} onSend={send} onStop={stop} models={models ?? []} modeOptions={modeOptions}
               seed={seed} setSeed={setSeed} bottomInset={insets.bottom + 8} me={me?.name} />
           )}
         </>

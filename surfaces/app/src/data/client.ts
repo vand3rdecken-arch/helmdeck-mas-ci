@@ -46,19 +46,32 @@ function authHeaders(): Record<string, string> {
 // with daemon/relay_client.py + e2ee.py. The relay only ever sees ciphertext.
 // Every failure mode gets a DISTINCT message - "offline", "timeout", "wrong
 // keys" and "no network" need different owner actions.
-async function relayReq(method: string, path: string, bodyStr: string): Promise<{ status: number; body: string }> {
+//
+// `timeoutMs` (chat-load-latency phase A.3): this fetch had NO client bound at
+// all, so a hanging request held the spinner all the way to the relay's own
+// 504 after REPLY_TIMEOUT (120s) instead of failing fast. `undefined` means
+// "do not abort" - the ONLY caller that passes it is req()'s POST /chat, since
+// a client abort there leaves the send un-acked, which is exactly what drives
+// the chat_dedupe replay-duplicate path (already paid for once, see req()).
+async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string }> {
   const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
   const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
   const cipher = seal(inner, mySec, daemonPub);
+  const ctl = timeoutMs !== undefined ? new AbortController() : undefined;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : undefined;
   let r: Response;
   try {
     r = await fetch(`${relayUrl}/relay?room=${room}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pub: myPub, cipher }),
+      signal: ctl?.signal,
     });
-  } catch {
+  } catch (e) {
+    if (ctl && (e as Error)?.name === "AbortError") throw new TransportError(t("net.relayTimeout"));
     throw new TransportError(t("net.relayUnreachable"));
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   if (r.status === 503) throw new TransportError(t("net.desktopOffline"));
   if (r.status === 504) throw new TransportError(t("net.desktopTimeout"));
@@ -89,10 +102,19 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   }
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
+  // Shared by both transports (chat-load-latency phase A.3): /stream/wait and
+  // /tracks/:id/transcript/live are held server-side for ~22-25s by design
+  // (spine/http/server.py, routes_tracks.py - "22s < relay REPLY_TIMEOUT").
+  const isLongPoll = path.startsWith("/stream/wait") || path.includes("/transcript/live");
   let status: number, txt: string;
   try {
     if (cfg.relayMode()) {
-      ({ status, body: txt } = await relayReq(method, path, bodyStr));
+      // Relay ladder: 35s for a long-poll (> the server's ~22s hold + tunnel
+      // margin), 20s for a normal request, and POST /chat left UNBOUNDED
+      // (timeoutMs undefined) - see relayReq's docstring for why a chat abort
+      // is worse than the hang it would fix.
+      ({ status, body: txt } = await relayReq(method, path, bodyStr,
+        path === "/chat" ? undefined : isLongPoll ? 35_000 : 20_000));
     } else {
       // Bare fetch has NO default timeout (Paseo's daemon client bounds every
       // probe to 6-10s; this had none). Measured failure: a fresh install's
@@ -123,7 +145,6 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
       // report 2026-09-09 ("banner die ganze Zeit" on desktop). 30s clears the
       // server's own bound with margin and is still a real bound if the LAN
       // host is actually gone.
-      const isLongPoll = path.startsWith("/stream/wait") || path.includes("/transcript/live");
       const timer = setTimeout(() => timeoutCtl.abort(),
         path === "/chat" ? 900_000 : isLongPoll ? 30_000 : 8000);
       if (signal) {
