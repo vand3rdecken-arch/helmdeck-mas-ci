@@ -111,6 +111,17 @@ android {
         // TRACK page next to the newest draft. Uploading again afterwards hit
         // "wurde bereits verwendet", so the code is spent - 1000005 is the
         // bundle that must actually be rolled out.
+        // 1000005 ging durch (Einreichung #11, 2026-09-11 21:51, "Wird
+        // ueberprueft"). Die eigentliche Ursache war NIE der Versionscode,
+        // sondern Erweiterte Einstellungen -> Formfaktoren: Wear OS stand auf
+        // "2 von 3 erledigt", Punkt "Aktiviere deine App fuer Wear OS und
+        // stimme der Richtlinie fuer Ueberpruefungen zu" war offen. Solange
+        // der offen ist, nimmt Play den Wear-Produktions-Release NICHT in
+        // "Veroeffentlichungen -> Uebersicht" auf, es gibt keinen Einreichen-
+        // Button, und jedes gespeicherte Release kippt sofort auf "Durch
+        // einen anderen Release ersetzt / Nicht veroeffentlicht". Punkt 3 ist
+        // gesperrt, bis Wear-Screenshots in ALLEN Sprach-Store-Eintraegen
+        // liegen UND der Listing-Entwurf gespeichert ist.
         versionCode 1000005
         versionName "1.0.0"
     }
