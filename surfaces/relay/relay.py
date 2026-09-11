@@ -389,12 +389,35 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def _note(self, msg):
+        # ONE readable line for events worth seeing (a truncated push, bad
+        # json) without socketserver's full per-hit traceback. Deliberately
+        # separate from log_message (routine hits stay muted).
+        print("[relay] %s" % msg, flush=True)
+
     def _room_id(self):
         return (parse_qs(urlparse(self.path).query).get("room") or [""])[0]
 
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        return self.rfile.read(n) if n else b""
+        # protocol_version is HTTP/1.1 (keep-alive), so this handler instance
+        # serves multiple requests over its lifetime - reset the flag on
+        # EVERY call, never just set it, or a truncation on request N would
+        # still read as truncated on request N+1's clean body.
+        self._body_truncated = False
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return b""
+        if not n:
+            return b""
+        data = self.rfile.read(n)
+        if len(data) < n:
+            # peer hung up mid-body (reset/dropped tunnel leg, e.g. the
+            # daemon's own reply push over the Cloudflare hop) - flag it so
+            # the caller can answer cleanly instead of handing a truncated
+            # blob to json.loads and tracebacking
+            self._body_truncated = (len(data), n)
+        return data
 
     def _send(self, code, body=b""):
         if isinstance(body, str):
@@ -548,8 +571,27 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urlparse(self.path).path
         if p == "/tunnel/push":                       # daemon -> phone (response)
+            # Body first (see the /relay comment below on why: an early
+            # return that skips an unread body corrupts the next request on
+            # this keep-alive connection). This is the daemon's OWN reply
+            # upload, so it crosses whatever network sits between the
+            # daemon and this relay (often a Cloudflare tunnel even when
+            # both processes share one machine) - a reset mid-upload is
+            # expected traffic, not a bug, and must not traceback.
+            raw_body = self._body()
+            if self._body_truncated:
+                got, want = self._body_truncated
+                self.close_connection = True   # partial body left on the
+                                                # wire - this socket is done
+                self._note("push truncated room=%s got=%d want=%d"
+                           % (self._room_id()[:8], got, want))
+                return self._send(400, json.dumps({"error": "truncated body"}))
+            try:
+                data = json.loads(raw_body or b"{}")
+            except ValueError:
+                self._note("push bad json room=%s" % self._room_id()[:8])
+                return self._send(400, json.dumps({"error": "bad json"}))
             room = _room(self._room_id())
-            data = json.loads(self._body() or b"{}")
             rid = data.get("id")
             with room["cv"]:
                 slot = room["waiting"].get(rid)

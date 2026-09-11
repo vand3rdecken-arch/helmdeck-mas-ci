@@ -12,11 +12,26 @@ unknown key gets a sealed, explicit refusal - so a leaked room id can't be
 hijacked, and a failed pairing is VISIBLE on the phone instead of looking like
 "daemon offline". Unpair rotates room + keypair, killing every code ever
 issued."""
-import json, threading, time, urllib.request, urllib.error
+import http.client, json, socket, threading, time, urllib.request, urllib.error
 
 _thread = None
 _stop = False
 _pin_lock = threading.Lock()
+
+# -- push retry bookkeeping (relay-push-resilience Phase B) -----------------
+# A push (daemon -> relay -> phone) crosses whatever network sits between
+# this daemon and the relay - often a Cloudflare tunnel even when both
+# processes share one machine (memory helmdeck-relay-local-fallback). A
+# reset there used to be silent and final (bare `except Exception: pass`):
+# the relay's waiting slot stays open for REPLY_TIMEOUT (120s), so a retry a
+# few seconds later still delivers, but nothing ever retried. _push_fails
+# counts GIVE-UPs only (rejections + exhausted retries) and is process-wide
+# (both call sites in _serve_one share it), so a burst of concurrent frame
+# failures during one outage logs at the SAME first-then-every-10th cadence
+# as a sustained one, instead of each frame's thread emitting its own
+# "first failure" line.
+_push_lock = threading.Lock()
+_push_fails = 0
 
 # One pairing code admits ONE new device, and only this many seconds after the
 # owner issued it. Both bounds make the code lifecycle deterministic: the
@@ -122,6 +137,79 @@ def _local(port, inner):
         return {"status": 502, "headers": {}, "body": json.dumps({"error": str(e)[:200]})}
 
 
+def _push(relay, room, fid, cipher):
+    """POST one reply frame to the relay, retrying transport-level failures
+    (a reset/timeout on the tunnel leg) up to 3 attempts total. NEVER retries
+    a 4xx from the relay itself - that is our bug (bad room, bad payload),
+    and retrying would hide it instead of surfacing it. Idempotent by
+    construction: the relay keys pushes by frame id (relay.py's `waiting`
+    dict), so a duplicate delivery lands on an already-served or expired
+    slot and is a harmless 200 (relay.py's push handler has no side effect
+    beyond setting that one slot). Returns True iff the relay accepted the
+    push (200) at any attempt."""
+    body = json.dumps({"id": fid, "cipher": cipher}).encode("utf-8")
+    req_kwargs = dict(data=body, headers={"Content-Type": "application/json"})
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(
+                    relay + "/tunnel/push?room=" + room, **req_kwargs), timeout=15) as resp:
+                status = getattr(resp, "status", 200)
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                _push_giveup("push rejected frame=%s: HTTP %d" % (fid[:8], e.code))
+                return False
+            last_err = e   # 5xx: Cloudflare/relay-side error, treat as transport
+        except (urllib.error.URLError, socket.timeout, ConnectionResetError,
+                http.client.RemoteDisconnected) as e:
+            last_err = e
+        else:
+            if status == 200:
+                _push_recovered(attempt)
+                return True
+            last_err = Exception("relay returned HTTP %d" % status)
+        if attempt < 3:
+            time.sleep(1 if attempt == 1 else 3)
+    _push_giveup("push lost frame=%s after 3 attempts: %s" % (fid[:8], str(last_err)[:200]))
+    return False
+
+
+def _push_recovered(attempt):
+    # Per-call visibility: THIS push needed retries and still got through -
+    # log it immediately, independent of any other frame's failures. A push
+    # that succeeds on its first try (the common case) logs nothing.
+    # Resets the give-up cadence counter so the NEXT outage starts counting
+    # from "first failure" again, same as the pull loop resetting `errs` on
+    # any successful pull.
+    global _push_fails
+    with _push_lock:
+        _push_fails = 0
+    if attempt > 1:
+        try:
+            from spine.storage import events
+            events.log("relay", "push delivered after %d retry(s)" % (attempt - 1))
+        except Exception:
+            pass
+
+
+def _push_giveup(msg):
+    # A push that never got through this call (rejected outright, or
+    # exhausted all 3 attempts). Capped at first-then-every-10th (same
+    # cadence as the pull loop's `bridge unreachable`) so a sustained
+    # relay/tunnel outage - many frames, each giving up - logs as ONE
+    # readable trend instead of one line per lost frame.
+    global _push_fails
+    with _push_lock:
+        _push_fails += 1
+        n = _push_fails
+    if n == 1 or n % 10 == 0:
+        try:
+            from spine.storage import events
+            events.log("relay", msg)
+        except Exception:
+            pass
+
+
 def _serve_one(relay, room, sk_b64, port, frame):
     from spine.comms import e2ee
     fid = frame.get("id")
@@ -140,10 +228,7 @@ def _serve_one(relay, room, sk_b64, port, frame):
             resp["cipher"] = e2ee.seal_b64(json.dumps(
                 {k: resp[k] for k in ("status", "headers", "body")}).encode(),
                 sk, e2ee.import_pub(pub))
-            urllib.request.urlopen(urllib.request.Request(
-                relay + "/tunnel/push?room=" + room,
-                data=json.dumps({"id": fid, "cipher": resp["cipher"]}).encode("utf-8"),
-                headers={"Content-Type": "application/json"}), timeout=15)
+            _push(relay, room, fid, resp["cipher"])
         except Exception:
             pass
         return
@@ -158,13 +243,7 @@ def _serve_one(relay, room, sk_b64, port, frame):
         cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
     except Exception:
         return
-    try:
-        urllib.request.urlopen(urllib.request.Request(
-            relay + "/tunnel/push?room=" + room,
-            data=json.dumps({"id": fid, "cipher": cipher}).encode("utf-8"),
-            headers={"Content-Type": "application/json"}), timeout=15)
-    except Exception:
-        pass
+    _push(relay, room, fid, cipher)
 
 
 def _pull(relay, room):
