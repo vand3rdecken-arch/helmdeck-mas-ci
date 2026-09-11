@@ -28,6 +28,8 @@ entry to ~/.claude.json by hand (e.g. to point at a different interpreter) -
 _user_mcp_servers() merges it over the builtin definition, user config wins."""
 import os
 import sys
+import threading
+import queue
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -35,18 +37,65 @@ from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("helmdeck-browser")
 
-_browser = None
+# THE THREAD RULE (root cause of "Playwright Sync API inside the asyncio
+# loop", measured on the first real card turn after registration): FastMCP
+# calls a sync tool function ON its asyncio loop thread, and Playwright's sync
+# API refuses any thread that has a running loop - it is greenlet-based and
+# thread-affine, every call must come from the thread that started it. So the
+# browser cannot live on the server's thread at all. It lives on exactly ONE
+# owner thread of its own, created lazily, and every verb is a job marshalled
+# onto that thread and awaited. Not a workaround: this is the documented way
+# to host the sync API inside an async program, and it matches the repo's
+# one-owner rule for mutable state. AgentBrowser stays sync on purpose - its
+# other consumers (card recorders, ops runs) are sync, and a second async
+# copy of browsercap would be the real monkey patch.
+_jobs = queue.Queue()
+_owner = None
+_owner_lock = threading.Lock()
+_browser = None            # only ever touched from the owner thread
+
+
+def _owner_loop():
+    while True:
+        fn, done = _jobs.get()
+        if fn is None:
+            done.put((True, None))
+            return
+        try:
+            done.put((True, fn()))
+        except BaseException as e:      # a verb must never kill the owner
+            done.put((False, e))
+
+
+def _on_owner(fn):
+    """Run fn on the browser owner thread and return its result (re-raises
+    its exception here, on the caller's thread)."""
+    global _owner
+    with _owner_lock:
+        if _owner is None or not _owner.is_alive():
+            _owner = threading.Thread(target=_owner_loop, name="helmdeck-browser-owner", daemon=True)
+            _owner.start()
+    done = queue.Queue(maxsize=1)
+    _jobs.put((fn, done))
+    ok, val = done.get()
+    if ok:
+        return val
+    raise val
 
 
 def _get_browser():
     """Lazily open the shared AgentBrowser on first verb call - not at process
-    start, so `tools/list` still answers even before Chrome is reachable."""
+    start, so `tools/list` still answers even before Chrome is reachable.
+    Owner-thread only (called from inside a job).
+    HELMDECK_BROWSER_ATTACH=0 selects browsercap's sandbox fallback context
+    (no CDP attach to the owner's Chrome) - what the e2e test uses."""
     global _browser
     if _browser is None:
         from spine.media.browsercap import AgentBrowser
         from spine.ops.runs import new_run
         _rid, run_dir = new_run("agent", "browser-verbs MCP session")
-        _browser = AgentBrowser(run_dir)
+        attach = os.environ.get("HELMDECK_BROWSER_ATTACH", "1") != "0"
+        _browser = AgentBrowser(run_dir, attach=attach)
     return _browser
 
 
@@ -58,7 +107,7 @@ def _shaped(fn):
     from the error path instead of the result path."""
     from spine.media.browsercap import _cap_text
     try:
-        return fn()
+        return _on_owner(fn)
     except Exception as e:
         return _cap_text("error: %s" % e)
 
@@ -119,9 +168,22 @@ def type(selector: str, text: str) -> str:
 
 
 def _close():
-    if _browser is not None:
+    """Close the browser ON ITS OWNER THREAD, then retire the thread."""
+    global _browser
+    def shut():
+        global _browser
+        if _browser is not None:
+            try:
+                _browser.close()
+            except Exception:
+                pass
+            _browser = None
+    if _owner is not None and _owner.is_alive():
         try:
-            _browser.close()
+            _on_owner(shut)
+            done = queue.Queue(maxsize=1)
+            _jobs.put((None, done))
+            done.get(timeout=10)
         except Exception:
             pass
 

@@ -151,20 +151,72 @@ def test_selector_miss_fails_fast_with_a_bounded_error():
         b.close()
 
 
-def test_mcp_click_on_a_miss_returns_a_short_error_not_a_hang():
-    import browser_mcp as bmcp
-    bmcp._browser = _fresh_browser()
+def test_mcp_server_end_to_end_over_stdio():
+    """THE test that was missing when the verbs shipped (4474e29): the old
+    MCP-level check called browser_mcp.navigate() as a plain Python function,
+    so FastMCP's real dispatch - a sync tool run ON the asyncio loop thread,
+    where Playwright's sync API refuses to work - was never exercised, and a
+    server that failed every verb passed green. This one speaks MCP JSON-RPC
+    over stdio to the real server process, exactly as the CLI does, and drives
+    navigate/read/click through it. HELMDECK_BROWSER_ATTACH=0 = browsercap's
+    sandbox context, never the owner's Chrome."""
+    import json
+    import subprocess
+    env = dict(os.environ, HELMDECK_BROWSER_ATTACH="0", PYTHONIOENCODING="utf-8")
+    p = subprocess.Popen([sys.executable, os.path.join(ROOT, "ops", "tools", "browser_mcp.py")],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf-8", env=env)
+    _id = [0]
+
+    def rpc(method, params=None):
+        _id[0] += 1
+        p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": _id[0], "method": method,
+                                  "params": params or {}}) + "\n")
+        p.stdin.flush()
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                raise RuntimeError("server closed stdout; stderr: " + p.stderr.read()[-2000:])
+            msg = json.loads(line)
+            if msg.get("id") == _id[0]:
+                return msg
+
+    def call(name, **args):
+        r = rpc("tools/call", {"name": name, "arguments": args})
+        res = r.get("result") or {}
+        text = "".join(c.get("text", "") for c in res.get("content", []))
+        return text, bool(res.get("isError")), r.get("error")
+
     try:
-        url = _file_url("<html><body><p>hello</p></body></html>")
-        nav = bmcp.navigate(url)
-        check(nav.startswith("ok:"), "navigate() through the MCP wrapper succeeds")
-        out = bmcp.click("#totally-absent")
-        check(out.startswith("error: "), "a miss surfaces as a shaped 'error: ...' string, not an exception")
+        rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {},
+                           "clientInfo": {"name": "test", "version": "0"}})
+        p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        p.stdin.flush()
+        tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
+        check(tools == ["navigate", "read", "find", "click", "type"], "tools/list = the five verbs, in order")
+
+        url = _file_url("<html><body><p>hello e2e</p><button id=b>Go</button></body></html>")
+        out, err, rpcerr = call("navigate", url=url)
+        check(not rpcerr and not err and out.startswith("ok:"),
+              "navigate() through REAL FastMCP dispatch succeeds: %r" % out[:120])
+        check("asyncio" not in out, "no 'Sync API inside the asyncio loop' - the browser runs on its owner thread")
+        out, err, _ = call("read")
+        check("hello e2e" in out, "read() through the server returns the page text")
+        out, err, _ = call("click", selector="#b")
+        check(out.startswith("ok: clicked"), "click() through the server hits the element")
+        t0 = time.time()
+        out, err, _ = call("click", selector="#totally-absent")
+        check(out.startswith("error: ") and time.time() - t0 < 20,
+              "a miss surfaces as a shaped 'error: ...' string in bounded time, not a hang")
         check(len(out) <= browsercap.MAX_ACTION_CHARS + len(browsercap._TRUNC) + 10,
               "the MCP-level error stays capped too")
     finally:
-        bmcp._close()
-        bmcp._browser = None
+        try:
+            p.stdin.close()
+            p.wait(timeout=30)
+        except Exception:
+            p.kill()
+    check(p.returncode == 0, "server exits 0 on stdin EOF (browser closed on its owner thread)")
 
 
 if __name__ == "__main__":
@@ -176,6 +228,6 @@ if __name__ == "__main__":
     test_find_caps_at_20_and_locators_are_click_addressable()
     test_find_reaches_off_screen_elements_that_read_cannot_see()
     test_selector_miss_fails_fast_with_a_bounded_error()
-    test_mcp_click_on_a_miss_returns_a_short_error_not_a_hang()
+    test_mcp_server_end_to_end_over_stdio()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)
