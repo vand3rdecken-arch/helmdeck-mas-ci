@@ -104,7 +104,14 @@ android {
         // of 1000002 (downgrade) and a re-submit of 1000003 itself ("keine
         // App Bundles hinzugefuegt oder entfernt", since the track already
         // remembers that exact bundle) when promoting from Interner Test.
-        versionCode 1000004
+        // 1000004 was consumed 2026-09-11 by a saved-but-never-rolled-out
+        // draft: the card pressed "Speichern" and then searched the release
+        // DETAILS page for a submit control, which that page never has. The
+        // "Release ueberpruefen" -> "Roll-out starten" button lives on the
+        // TRACK page next to the newest draft. Uploading again afterwards hit
+        // "wurde bereits verwendet", so the code is spent - 1000005 is the
+        // bundle that must actually be rolled out.
+        versionCode 1000005
         versionName "1.0.0"
     }
 
