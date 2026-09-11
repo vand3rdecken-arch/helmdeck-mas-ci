@@ -62,6 +62,7 @@ export const composer: Dict = {
   "chat.mirror.result": { de: "Ergebnis", en: "Result" },
   "chat.mirror.blocker": { de: "Blocker", en: "Blocker" },
   "chat.mirror.card": { de: "Karte", en: "Card" },
+  "chat.mirror.closed": { de: "Geschlossen", en: "Closed" },
   "chat.glassesTalk": { de: "Mit Henry über die Brille sprechen", en: "Talk to Henry through the glasses" },
   "chat.glassesUnconfigured": {
     de: "Brillen-Modus nicht eingerichtet: glance_origin + glance_token in den Daemon-Einstellungen setzen (Glance-Worker deployen: ops/deploy/push_glance.sh).",

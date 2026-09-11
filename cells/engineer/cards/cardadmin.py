@@ -68,7 +68,20 @@ def archive_track(tid, on=True, actor="owner"):
         # construction: a dirty tree is kept, an unmerged branch is kept (only
         # the regenerable worktree of a landed/clean card goes).
         reclaim_worktree(t, log)
+        _say_closed(t, "archived", actor)
     return t
+
+
+def _say_closed(t, how, actor):
+    """Fold 'this card is gone' into the Henry transcript, bound to the card, so
+    the composer's derived reply target releases it (card_mirror.say_closed).
+    Best-effort like every chat write - never lets a chat hiccup block the
+    delete/archive it reports."""
+    try:
+        from cells.copilot.chat import card_mirror
+        card_mirror.say_closed(t, how, actor)
+    except Exception:
+        pass
 
 def delete_track(tid, actor="owner"):
     """Destructive but bounded: removes the card, its worktree and branch.
@@ -84,6 +97,7 @@ def delete_track(tid, actor="owner"):
     if _branch_exists(t["repo"], t["branch"]):
         subprocess.run(["git", "-C", t["repo"], "branch", "-D", t["branch"]],
                        capture_output=True, text=True)
+    _say_closed(t, "deleted", actor)      # before the row goes: the label needs the task text
     _db.track_delete(tid)
     events.emit("delete", tid, branch=t["branch"], task=t["task"][:80], actor=actor)
     return {"deleted": tid}

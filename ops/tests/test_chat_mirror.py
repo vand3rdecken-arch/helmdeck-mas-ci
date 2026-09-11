@@ -375,6 +375,63 @@ check(not [m for m in logged() if m.get("cls") == "you"],
       "verbatim words - a re-rendered second copy would duplicate the message "
       "AND pin the app's optimistic bubble forever (it never finds its text)")
 
+# -- 8. a card that is DELETED or ARCHIVED says so, bound to its id ----------
+# Owner screenshot 2026-09-11 18:02: a deleted card's question stayed the newest
+# unsettled `card` entry, so the composer kept pinning the dead card as the
+# reply target (derived from the transcript, chat.tsx openChatQuestion: open
+# until a LATER entry bound to the same card lands) and every send died with
+# 'no such card'. The entry that settles it is written by the ONE owner of the
+# transition, at event time - the real cardadmin.delete_track / archive_track
+# against the sandbox db, not a stub.
+from cells.engineer.cards import cardadmin
+from spine.storage import db as _db
+
+def _closed_after(tid, kind_key="closed"):
+    ms = logged()
+    qi = max((i for i, m in enumerate(ms) if m.get("card") == tid and m.get("kind") == "question"), default=-1)
+    return [m for m in ms[qi + 1:] if m.get("card") == tid and m.get("kind") == kind_key]
+
+reset()
+GONE = card(tid="c-del", question=ask_block("q-del"), run_dir=SANDBOX,
+            repo=SANDBOX, branch="hd/c-del", worktree=None)
+_db.track_put(GONE)
+notify.card_event(GONE, "question")
+check(_closed_after("c-del") == [], "before the delete nothing bound to the card follows its question")
+cardadmin.delete_track("c-del", actor="tien")
+cl = _closed_after("c-del")
+check(len(cl) == 1 and cl[0].get("cls") == card_mirror.CLS,
+      "DELETE writes exactly one card-bound CLOSED entry AFTER the question - "
+      "the later same-card entry that releases the composer's derived target")
+check(cl and cl[0].get("cardName") and cl[0]["cardName"] != "c-del",
+      "it still carries the card's short name (written before the row went)")
+check(_db.track_get("c-del") is None, "and the row is really gone")
+
+reset()
+ARCH = card(tid="c-arc", question=ask_block("q-arc"), run_dir=SANDBOX,
+            repo=SANDBOX, branch="hd/c-arc", worktree=None)
+_db.track_put(ARCH)
+notify.card_event(ARCH, "question")
+cardadmin.archive_track("c-arc", on=True, actor="tien")
+check(len(_closed_after("c-arc")) == 1,
+      "ARCHIVE (on) writes the same card-bound CLOSED entry")
+cardadmin.archive_track("c-arc", on=False, actor="tien")
+check(len(_closed_after("c-arc")) == 1,
+      "UNARCHIVE does not: the card is back on the board, nothing closed")
+
+# -- 9. a reply to a card the store no longer has heals the transcript --------
+# Pre-fix history (deleted before say_closed existed) or a race with the delete:
+# the failed lookup IS the runtime's evidence, folded in at the moment it is
+# observed - then still 404, the words were not delivered.
+reset()
+sessions.get_track = lambda tid: None
+req = FakeReq()
+routes_copilot.chat_post(req, {"name": OWNER, "role": "owner"},
+                         {"text": "nochmal", "reply_to_card": "ghost"})
+check((req.body or {}).get("error") == "no such card", "the reply still errors - nothing pretends to be delivered")
+check(any(m.get("card") == "ghost" and m.get("kind") == card_mirror.KIND_CLOSED for m in logged()),
+      "but a card-bound CLOSED entry is folded in, so the next history poll "
+      "releases the ghost target instead of dead-ending on every send")
+
 print()
 if _fails:
     print("FAILED (%d):" % len(_fails))

@@ -81,7 +81,7 @@ export const useCopilotPanel = create<CopilotPanel>((set) => ({
 // hardcoded "Frage" inside an otherwise English UI.
 const CARD_KIND_KEY: Record<string, string> = {
   question: "chat.mirror.question", result: "chat.mirror.result",
-  blocker: "chat.mirror.blocker",
+  blocker: "chat.mirror.blocker", closed: "chat.mirror.closed",
 };
 
 function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {

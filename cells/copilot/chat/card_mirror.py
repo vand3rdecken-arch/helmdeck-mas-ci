@@ -53,6 +53,7 @@ CLS = "card"
 KIND_QUESTION = "question"     # the card is ASKING - the owner's move
 KIND_RESULT = "result"         # a turn ended and handed work back
 KIND_BLOCKER = "blocker"       # the card cannot proceed on its own
+KIND_CLOSED = "closed"         # the card is GONE (deleted/archived) - nothing bound to it can be answered any more
 
 # notify reason -> mirror kind. Absent reasons are not mirrored at all (see the
 # module docstring for why `done`/`bounced`/`background` are not here).
@@ -124,6 +125,23 @@ def say_card(track, kind, text, question=None):
         return True
     except Exception:
         return False
+
+
+def say_closed(track, how, actor="owner"):
+    """The card is GONE - say so IN THE TRANSCRIPT, bound to its id.
+
+    THE DEFECT (owner screenshot 2026-09-11 18:02): a deleted card's last
+    question stayed the newest unsettled `card` entry in the Henry chat, so
+    the composer kept pinning that card as the reply target on every device
+    and every send died with 'no such card' - there was no way to change the
+    context, because the target is DERIVED from the transcript (chat.tsx
+    openChatQuestion: a card question is open until a later entry bound to
+    the same card lands) and nothing bound to the card ever landed again.
+    This line is that entry, written by the ONE owner of the transition
+    (cardadmin.delete_track / archive_track) at event time - not a client
+    heuristic, not a stored flag. `how` is "deleted" | "archived"."""
+    label = {"deleted": "geloescht", "archived": "archiviert"}.get(how, how)
+    return say_card(track, KIND_CLOSED, "Karte %s (%s)." % (label, actor))
 
 
 def mirror(track, status):

@@ -104,6 +104,17 @@ def _route_to_card(self, user, text, tid, mid=""):
     from spine.http import server
     t = sessions.get_track(tid)
     if not t:
+        # The transcript still binds replies to a card the store no longer has
+        # (deleted before say_closed existed, or a race with the delete). The
+        # failed lookup IS the evidence - fold it in as a card-bound CLOSED
+        # line so the composer's derived target releases the ghost on the next
+        # history poll instead of dead-ending on every send. Then still 404:
+        # the words were not delivered and must not pretend to be.
+        try:
+            from cells.copilot.chat import card_mirror
+            card_mirror.say_closed({"id": tid, "task": ""}, "deleted", "system")
+        except Exception:
+            pass
         return self._send(404, json.dumps({"error": "no such card"}))
     if not auth.owns_card(user, t):
         return self._send(403, json.dumps({"error": "not your card"}))
