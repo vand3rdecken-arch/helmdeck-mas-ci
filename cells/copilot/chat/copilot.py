@@ -1320,19 +1320,9 @@ def _copilot_run_dir(user):
     return d
 
 
-def _cwrite(path, text):
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-    except OSError:
-        pass
-
-
-def _crm(path):
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+def _live_key(user):
+    """livebuf key for the board chat's in-flight turn state."""
+    return "copilot:" + (user or "u")
 
 
 
@@ -1341,14 +1331,11 @@ def live(user):
     """The board agent's live streaming reply + reasoning for /chat/live - the
     board chat polls this while a turn runs so it streams like a card AND shows a
     live 'thinking' preview during the pre-output reasoning (no dead 40s wait)."""
-    d = _copilot_run_dir(user)
+    from spine.agent import livebuf
+    key = _live_key(user)
 
     def _rd(name):
-        try:
-            with open(os.path.join(d, name), encoding="utf-8") as f:
-                return f.read()
-        except OSError:
-            return ""
+        return livebuf.get_field(key, name, "")
     # strip_stream, not strip: while the block is still being typed its CLOSING
     # tag has not arrived, so strip() (which needs a complete block) would let
     # the JSON appear character by character in the live bubble and only tidy
@@ -1360,11 +1347,11 @@ def live(user):
     # card chat can stream Henry's card-scoped reply (debt
     # card-henry-reply-not-streamed) without ever painting a BOARD turn's prose
     # into a card's timeline - see _running_card.
-    return {"text": ask.strip_stream(_rd("live_partial.txt")),
-            "thinking": _rd("live_thinking.txt"),
+    return {"text": ask.strip_stream(_rd("partial")),
+            "thinking": _rd("thinking"),
             # the tool action currently executing ("Bash: py -3.12 ..."), so the
             # UI can show WHAT is happening while prose and thinking are silent
-            "status": _rd("live_status.txt"),
+            "status": _rd("status"),
             "running": user in _running,
             "card": _running_card.get(user)}
 
@@ -1659,11 +1646,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # into the per-user live feed the board chat polls, instead of a blocking
     # black box. The turn goes in on stdin (it is huge - never a cmd arg).
     run_dir = _copilot_run_dir(user)
-    live_path = os.path.join(run_dir, "live_partial.txt")
-    think_path = os.path.join(run_dir, "live_thinking.txt")
-    sid_path = os.path.join(run_dir, "live_session.txt")
-    status_path = os.path.join(run_dir, "live_status.txt")   # current tool action
-    _crm(live_path); _crm(think_path); _crm(sid_path); _crm(status_path)
+    from spine.agent import livebuf
+    live_key = _live_key(user)          # in-flight state (state-into-db phase I)
+    livebuf.clear(live_key)
     # Speech rides the SAME prose stream as the live text - one source, folded in
     # at event time below, never re-derived from the finished reply.
     from spine.media import voice_stream as _vstream
@@ -1759,7 +1744,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # --resume ECHOES the asked-for id in the init event.
                 if ev.get("subtype") == "init" and sid and got == sid:
                     resume_echo = True
-                session_id = got; _cwrite(sid_path, session_id)
+                session_id = got; livebuf.set_session(live_key, session_id)
             elif typ == "assistant":
                 # TOOL ACTIVITY into the live feed (Paseo parity, owner report
                 # 2026-09-02 17:23 "34s ohne Rueckmeldung"): Paseo renders every
@@ -1776,7 +1761,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _inp = _b.get("input") or {}
                         _brief = str(_inp.get("command") or _inp.get("description")
                                      or _inp.get("query") or _inp.get("file_path") or "")
-                        _cwrite(status_path, ("%s: %s" % (_b.get("name") or "tool",
+                        livebuf.set_field(live_key, "status", ("%s: %s" % (_b.get("name") or "tool",
                                                           _brief))[:200])
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly
@@ -1798,7 +1783,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     if dl.get("type") == "text_delta":
                         parts.append(dl.get("text", ""))
                         _live_prose = _strip_actions_live("".join(parts))
-                        _cwrite(live_path, _live_prose)
+                        livebuf.set_partial(live_key, _live_prose)
                         if voice_stream:
                             _vstream.feed(user, _live_prose)
                     elif dl.get("type") == "thinking_delta":
@@ -1806,7 +1791,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         # prose, so the chat shows live progress instead of a
                         # dead "denkt 40s" wait. Rolling tail (last ~600 chars).
                         think.append(dl.get("thinking", ""))
-                        _cwrite(think_path, "".join(think)[-600:])
+                        livebuf.set_field(live_key, "thinking", "".join(think)[-600:])
             elif typ == "result":
                 result = ev
                 if persistable:
@@ -1833,7 +1818,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 _vstream.drop(user)
             else:
                 _vstream.finish(user, _strip_actions_live("".join(parts)))
-        _crm(live_path); _crm(think_path); _crm(status_path)   # done streaming - clear the live preview
+        livebuf.clear(live_key)   # done streaming - clear the live preview
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}

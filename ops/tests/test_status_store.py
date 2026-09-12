@@ -21,6 +21,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 from spine.storage import db
+# this test used to db.init() the LIVE store (caught by the state-into-db
+# live-db guard): sandbox it
+import tempfile as _tf
+db.DBPATH = os.path.join(_tf.mkdtemp(prefix="hd-statusstore-"), "test.db")
 db.init()                      # role defaults to "tool": NO boot devaluation here
 from spine.storage import trackstore
 from cells.engineer.cards import sessions

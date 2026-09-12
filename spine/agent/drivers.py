@@ -33,6 +33,7 @@ import hashlib, json, os, re as _re, shutil, subprocess, threading, time as _tim
 import urllib.request
 from spine.agent.spawnenv import _card_env, _env
 from spine.agent.proctable import (_pid_table, _descendants, _tree_kill, _read_pids, _write_pids, _record_pid, _forget_pid, _proc_start_epoch, _is_agent_pid, _is_ours, reap_orphans)
+from spine.agent import livebuf
 from spine.agent.agentcli import (CLAUDE, _real_claude_exe, _cmd_line, argv_form_safe, _opts_sig, _user_mcp_servers, _resolve_cmd, _mcp_config_arg)
 from spine.agent import timeline_store
 from spine.agent.claude_transcript_fmt import (
@@ -1237,7 +1238,7 @@ class _ClaudeSession:
                 self.session_id = sid
                 if cur:
                     cur["session_id"] = sid
-                    _write(cur["sid_path"], sid)
+                    livebuf.set_session(cur["live_key"], sid)
         elif typ == "result":
             # NULL-result guard: resuming a session whose previous turn was
             # HARD-KILLED (tree-kill on timeout/restart) makes the CLI emit the
@@ -1313,12 +1314,14 @@ class _ClaudeSession:
             # session died (crash/cancel/opts-restart/idle-evict) - respawn & --resume.
             _tree_kill(self.proc)
             self._spawn()
-        live_path = os.path.join(run_dir, "live_partial.txt")
-        sid_path = os.path.join(run_dir, "live_session.txt")
-        _rm(live_path); _rm(sid_path)
+        # in-flight state lives in livebuf (state-into-db phase I): the
+        # partial in memory, the rotated session id as a runtime_doc row
+        from spine.ops.runs import run_id_of
+        live_key = run_id_of(run_dir)
+        livebuf.clear(live_key)
         cur = {"parts": [], "result": None, "session_id": self.session_id,
-               "done": threading.Event(), "live_path": live_path,
-               "sid_path": sid_path, "last_flush": 0.0, "last_event": _time.time()}
+               "done": threading.Event(), "live_key": live_key,
+               "last_flush": 0.0, "last_event": _time.time()}
         self._cur = cur
         msg = json.dumps({"type": "user",
                           "message": {"role": "user", "content": prompt}})
@@ -1402,7 +1405,7 @@ class _ClaudeSession:
                 why = "exceeded hard cap %ss" % hard
                 break
         self._cur = None
-        _rm(live_path); _rm(sid_path)
+        livebuf.clear(live_key)
 
         if self.tid in _cancelled:            # Stop was pressed - clean, not error
             _cancelled.discard(self.tid)
@@ -1456,11 +1459,7 @@ class _ClaudeSession:
 
 
 def _flush_cur(cur):
-    try:
-        with open(cur["live_path"], "w", encoding="utf-8") as f:
-            f.write("".join(cur["parts"]))
-    except OSError:
-        pass
+    livebuf.set_partial(cur["live_key"], "".join(cur["parts"]))
 
 
 def _result_error(d):

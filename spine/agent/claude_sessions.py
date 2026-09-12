@@ -208,19 +208,15 @@ def live_session_id(track):
     """The session whose transcript is CURRENT for this card.
 
     While a turn RUNS, `claude --resume` has already rotated to a new session
-    id (written to live_session.txt by the driver) - the recorded session_id
+    id (published by the driver through livebuf) - the recorded session_id
     still points at the previous file, which contains neither the user's new
     message nor any of the new steps. Reading the old file made a running
     steer look frozen. So: running turn -> live file first; otherwise the
     recorded id (with the live file as the turn-1 fallback)."""
     run_dir = (track or {}).get("run_dir") or ""
-    live = None
-    if run_dir:
-        try:
-            with open(os.path.join(run_dir, "live_session.txt"), encoding="utf-8") as f:
-                live = f.read().strip() or None
-        except OSError:
-            pass
+    from spine.agent import livebuf
+    from spine.ops.runs import run_id_of
+    live = livebuf.get_session(run_id_of(run_dir)) if run_dir else None
     if (track or {}).get("status") == "running" and live:
         return live
     return (track or {}).get("session_id") or live
@@ -228,7 +224,7 @@ def live_session_id(track):
 
 def transcript_version(track):
     """A change token for the card's live FEED: bytes of the current session
-    .jsonl + the driver's live_partial.txt + the flight recorder's
+    .jsonl + the driver's live partial (livebuf) + the flight recorder's
     actions.jsonl. It bumps whenever the agent flushes a block, streams a
     token, OR the harness records a lifecycle note. This is the long-poll key
     that lets the phone get PUSH latency over the sealed relay (which can't
@@ -243,8 +239,9 @@ def transcript_version(track):
     sid = live_session_id(track)
     jp = _find_transcript(sid) if sid else None
     js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
-    lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
-    ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
+    from spine.agent import livebuf
+    from spine.ops.runs import run_id_of
+    ls = len(livebuf.get_partial(run_id_of(run_dir))) if run_dir else 0
     # the actionlog is the `actions` table (state-into-db phase F): its row
     # count is the monotonic stand-in for the file size
     try:
@@ -304,8 +301,9 @@ def read_transcript_live(track, limit=400):
     run_dir = (track or {}).get("run_dir") or ""
     if run_dir:
         try:
-            with open(os.path.join(run_dir, "live_partial.txt"), encoding="utf-8") as f:
-                partial = f.read()
+            from spine.agent import livebuf
+            from spine.ops.runs import run_id_of
+            partial = livebuf.get_partial(run_id_of(run_dir))
             # strip the question block here too: while the worker streams it,
             # the owner would otherwise watch raw protocol JSON being typed out.
             from spine.ops import ask
@@ -340,7 +338,7 @@ def read_transcript_store(track, limit=400):
       - session_chain history: conversation from BEFORE this card's store
         started recording (a rotated-away or ADOPTED foreign session) lives
         only in Claude Code's own file, never folded live.
-      - live_partial.txt: an in-progress, uncommitted streaming block - the
+      - the live partial (livebuf): an in-progress, uncommitted streaming block - the
         store only ever holds COMPLETED blocks by design (see
         _fold_timeline's docstring), so the live-typing view is unchanged.
 
@@ -378,8 +376,9 @@ def read_transcript_store(track, limit=400):
                 st["error"] = None
     if run_dir:
         try:
-            with open(os.path.join(run_dir, "live_partial.txt"), encoding="utf-8") as f:
-                partial = f.read()
+            from spine.agent import livebuf
+            from spine.ops.runs import run_id_of
+            partial = livebuf.get_partial(run_id_of(run_dir))
             from spine.ops import ask
             partial = ask.strip_stream(partial)
             if partial.strip():
@@ -392,7 +391,7 @@ def read_transcript_store(track, limit=400):
 
 def transcript_store_version(track):
     """The long-poll change token for read_transcript_store: bytes of
-    timeline.jsonl + live_partial.txt + actionlog's actions.jsonl (same three-
+    timeline rows + the live partial + action rows (same three-
     file composition as transcript_version, timeline.jsonl standing in for
     the session .jsonl - see that function's docstring for why actions.jsonl
     is in the token)."""
@@ -409,8 +408,9 @@ def transcript_store_version(track):
         as_ = db.actions_count(rid) if rid else 0
     except Exception:                                            # noqa: BLE001
         ts = as_ = 0
-    lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
-    ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
+    from spine.agent import livebuf
+    from spine.ops.runs import run_id_of
+    ls = len(livebuf.get_partial(run_id_of(run_dir))) if run_dir else 0
     return ts + ls + as_
 
 

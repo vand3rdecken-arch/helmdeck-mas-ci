@@ -34,7 +34,7 @@ def _interrupt_note_report(t, note):
 def _promote_live_session(t):
     """Paseo-style LOSSLESS resume. A turn that died WITH the daemon (a restart, a
     crash) emitted a rotated `claude --resume` session id to run_dir/
-    live_session.txt, but the track's session_id is only written back AFTER a turn
+    livebuf (a runtime_doc row), but the track's session_id is only written back AFTER a turn
     returns - so a killed turn leaves the card pointing at the PRE-steer session.
     The next steer would then --resume the old conversation and lose the
     interrupted turn's context. Promoting the live session id fixes that: the next
@@ -44,10 +44,10 @@ def _promote_live_session(t):
     rd = t.get("run_dir") or ""
     if not rd:
         return False
-    try:
-        with open(os.path.join(rd, "live_session.txt"), encoding="utf-8") as f:
-            live = f.read().strip()
-    except OSError:
+    from spine.agent import livebuf
+    from spine.ops.runs import run_id_of
+    live = livebuf.get_session(run_id_of(rd))
+    if not live:
         return False
     if live and live != t.get("session_id"):
         t["session_id"] = live
@@ -61,11 +61,6 @@ def _track_idle_s(t):
     (has_session False for ~1s). Unknown -> treated as very idle."""
     rd = t.get("run_dir") or ""
     newest = 0.0
-    for f in ("live_session.txt", "live_partial.txt"):
-        try:
-            newest = max(newest, os.path.getmtime(os.path.join(rd, f)))
-        except OSError:
-            pass
     # the actionlog is the `actions` table (state-into-db phase F): its last
     # absolute timestamp replaces the file's mtime
     try:
@@ -193,7 +188,7 @@ def sweep_zombies(min_idle_s=0):
     steer-start race window and only reaps cards genuinely idle that long.
 
     Paseo-parity (the loss is now RECOVERABLE): before surfacing, promote the
-    interrupted session id (run_dir/live_session.txt) onto the track, so
+    interrupted session id (livebuf) onto the track, so
     re-steering RESUMES the interrupted conversation instead of the pre-steer
     one. We still surface it (bounce is re-steerable, and async push-driven
     ownership wants the owner to know a turn was cut) - but the context is no

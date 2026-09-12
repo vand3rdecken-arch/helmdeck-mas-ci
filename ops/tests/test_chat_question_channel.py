@@ -229,8 +229,9 @@ def test_live_stream():
     copilot._copilot_run_dir = lambda user: run          # sandboxed, no daemon dir
 
     def _partial(text):
-        with open(os.path.join(run, "live_partial.txt"), "w", encoding="utf-8") as f:
-            f.write(text)
+        # in-flight state is a livebuf entry (state-into-db phase I), not a file
+        from spine.agent import livebuf
+        livebuf.set_partial(copilot._live_key("owner"), text)
         return copilot.live("owner")["text"]
 
     check(_partial("Beide Karten sind gruen.\n\n<helmdeck-ask>\n{\"questions\": [{")
