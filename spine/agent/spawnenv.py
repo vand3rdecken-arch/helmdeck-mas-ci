@@ -77,9 +77,20 @@ def tool_path(env=None):
     which the CLI treats as non-blocking: the guard was silently never armed.
     pm._ask had the same finding the same day and patched it inline; this is
     the single owner - the interpreter that runs the daemon, the Windows root
-    (py launcher) and System32 (taskkill, schtasks, tasklist)."""
+    (py launcher) and System32 (taskkill, schtasks, tasklist).
+
+    HELMDECK_GUARD is set here for the same reason (hooks need it, every spawn
+    passes through): the settings layers used to call the guard as
+    "$CLAUDE_PROJECT_DIR/ops/tools/...", but the CLI sets that to the SESSION
+    cwd - daemon/ for Henry's chat, a foreign folder for a machine/client card -
+    so python could not open the file, exit 2 = blocking, and every tool call
+    died (2026-09-12). Absolute path of the RUNNING daemon's guard instead:
+    right from any cwd, and a worktree card can no longer disarm its own fence
+    by editing its checkout's copy. ops/tests/test_guard_hook_cwd.py pins it."""
     import sys
+    from daemon.paths import REPO_ROOT
     env = dict(os.environ if env is None else env)
+    env["HELMDECK_GUARD"] = os.path.join(REPO_ROOT, "ops", "tools", "card_tool_guard.py")
     root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
     extra = [os.path.dirname(sys.executable), root, os.path.join(root, "System32")]
     have = [p.lower() for p in env.get("PATH", "").split(os.pathsep)]
