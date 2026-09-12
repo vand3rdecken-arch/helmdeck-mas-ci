@@ -2,13 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Keyboard, Platform, Pressable, Text, View } from "react-native";
+import { Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
 import { CHAT_FOCUS, usePresence } from "@/data/presence";
-import { chatFallbackInterval, useStreamCaps } from "@/data/stream";
+import { chatFallbackInterval, ensureChatFresh, useStreamCaps } from "@/data/stream";
 import type { PendingQuestion } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
@@ -226,6 +226,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     return () => usePresence.getState().setFocusedCard(null);
   }, []);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
   // the busy->false edge: a refetch that hadn't persisted the just-sent turn
@@ -245,6 +247,22 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // the board agent's live streaming prose while a turn runs - polled from
   // /chat/live so the board chat STREAMS like a card (one shared surface).
   const [stream, setStream] = useState("");
+  // THE LAST STREAMED PROSE, kept on screen AFTER the turn ends until the
+  // persisted bot line has actually arrived. `busy=false` used to wipe the
+  // streaming bubble synchronously while the history refetch was still 1-3s
+  // out over the relay - and if that refetch failed, the answer the owner had
+  // just watched Henry type was simply gone (2026-09-12 22:06). `len` is the
+  // server transcript length at hand-over: the hold is released the moment
+  // the transcript grows past it with something that is not the owner's own
+  // echo, i.e. the daemon's copy of this very answer (or its error).
+  const [held, setHeld] = useState<{ text: string; len: number } | null>(null);
+  // A turn OBSERVED rather than sent: the daemon reports `running` on
+  // /chat/live, so a screen that (re)mounts or resumes while Henry is still
+  // working - or whose POST /chat died on the relay's 115s leg while the turn
+  // went on - shows the thinking row and the stream instead of a dead
+  // transcript. Derived from the daemon's own signal, never from a stored
+  // flag (CLAUDE.md). While true, the live poll (not a POST) ends the turn.
+  const derived = useRef(false);
   const [think, setThink] = useState("");
   // the tool action currently executing ("Bash: py ..."): tool rounds used to
   // go DARK in the live feed - since Henry actually checks (2026-09-02), the
@@ -280,7 +298,16 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }, []);
   useEffect(() => {
-    if (!busy) { setStream(""); setThink(""); setLiveStatus(""); return; }
+    if (!busy) {
+      // hand the stream over to `held` instead of dropping it (see `held`)
+      setStream((cur) => {
+        if (cur.trim()) setHeld({ text: cur, len: (data?.messages ?? []).length });
+        return "";
+      });
+      setThink(""); setLiveStatus("");
+      derived.current = false;
+      return;
+    }
     let alive = true, to: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
@@ -289,6 +316,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         if (alive && r) {
           setStream(r.text || ""); setThink(r.thinking || "");
           setLiveStatus(r.status || ""); takeClips(r);
+          // An observed turn has no POST to end it: the daemon saying
+          // "not running" IS the end. Strictly `false` - an old daemon omits
+          // the field, and undefined must not end anything.
+          if (derived.current && r.running === false) {
+            derived.current = false;
+            setBusy(false);
+            void ensureChatFresh(qc);
+            return;
+          }
         }
       } catch { /* keep polling */ }
       if (alive) to = setTimeout(poll, 500);
@@ -375,6 +411,30 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // so once the user text's occurrence count exceeds this turn's baseline the
   // whole optimistic pair is redundant and the persisted version takes over.
   const server = data?.messages;
+  // Release the held stream once the daemon's own copy is on screen: the
+  // transcript grew past the hand-over length and its tail is not the owner.
+  useEffect(() => {
+    if (!held || !server) return;
+    const tail = server[server.length - 1];
+    if (server.length > held.len && tail && tail.cls !== "user" && tail.cls !== "you") setHeld(null);
+  }, [server, held]);
+  // OBSERVE a turn already running on the daemon (mount + every foreground
+  // resume): /chat/live `running` is the one place that state is owned.
+  useEffect(() => {
+    let alive = true;
+    const probe = async () => {
+      try {
+        const r = await api.chatLive();
+        if (!alive || !r || r.running !== true || busyRef.current) return;
+        derived.current = true;
+        turn.current++;            // a late POST result of a dead screen cannot end this one
+        setBusy(true);
+      } catch { /* offline - the stream loop's reconnect is the catch-up */ }
+    };
+    void probe();
+    const sub = AppState.addEventListener("change", (st) => { if (st === "active") void probe(); });
+    return () => { alive = false; sub.remove(); };
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!server || !pending.length) return;
     // IDENTITY FIRST. The daemon echoes the `mid` this turn was sent with back
@@ -450,6 +510,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   function queueTurn(id: number, q: string, mid: string) {
     const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
       + pending.filter((tn) => tn.key === q).length;
+    setHeld(null);
     setPending((p) => [...p, {
       id, key: q, mid, baseline,
       // Where this bubble belongs: after everything the server had shown at the
@@ -540,9 +601,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         else await outbox.park("board", q, opts, msg, Date.now());
       }
       if (turn.current !== id) return;
+      // The POST leg over the relay is bounded (daemon _local 115s, relay
+      // 120s) while a Henry turn is not - so a transport error here usually
+      // means "the answer is still being written", not "it failed". Ask the
+      // daemon: if the turn is running, keep observing it via /chat/live and
+      // let the history deliver the answer; only a turn that is NOT running
+      // gets the error bubble.
+      try {
+        const live = await api.chatLive();
+        if (turn.current === id && live?.running === true) { derived.current = true; return; }
+      } catch { /* daemon unreachable - fall through to the error bubble */ }
       appendReply(id, { cls: "error", text: msg });
     } finally {
-      if (turn.current === id) { setBusy(false); setTimeout(() => scroll.current?.toBottom(), 50); }
+      if (turn.current === id && !derived.current) { setBusy(false); setTimeout(() => scroll.current?.toBottom(), 50); }
     }
   }
 
@@ -724,6 +795,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
                 if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
+                else if (!busy && held) s.push({ role: "assistant", kind: "text", text: held.text, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
           {busy && !stream.trim() ? <ThinkingIndicator preview={think.trim() || liveStatus} /> : null}

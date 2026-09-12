@@ -18,7 +18,7 @@ import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
-import { useStreamCaps } from "@/data/stream";
+import { ensureChatFresh, useStreamCaps } from "@/data/stream";
 import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { armDiagCapture } from "@/data/diag";
@@ -93,7 +93,10 @@ function useGlobalStream() {
           // derived from the reply at event time, never assumed.
           useStreamCaps.getState().setChatEvents(typeof r?.c === "number");
           if (typeof r?.c === "number") {
-            if (r.c !== c) queryClient.invalidateQueries({ queryKey: ["chatHistory"] });
+            // NOT invalidateQueries: that fires exactly one refetch, and if it
+            // fails the wake is consumed for good (data/stream.ts
+            // ensureChatFresh - the owner's "Antwort erst nach Neustart").
+            if (r.c !== c) void ensureChatFresh(queryClient);
             c = r.c;
           }
         } catch {
@@ -251,7 +254,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 function useResumeRefetch() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") queryClient.invalidateQueries();
+      if (s === "active") { queryClient.invalidateQueries(); void ensureChatFresh(queryClient); }
     });
     return () => sub.remove();
   }, []);
