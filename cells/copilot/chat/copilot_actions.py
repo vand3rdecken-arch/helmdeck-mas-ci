@@ -456,6 +456,32 @@ def _run_action(a, actor, role="operator"):
         bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
             t["id"], a["text"], actor=actor, source="board copilot"))
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "hands_mode":
+        # Henry picks his OWN permission mode (owner decree 2026-09-12: "erlaubt
+        # Henry verschiedene Modi auszuwaehlen, damit er hoehere Rechte hat").
+        # ONE knob for chat AND broker (hands.permission_mode, read by
+        # copilot.henry_pmode); written through write_scoped so the rule's own
+        # declaration decides the layer, same as the Settings row. The chat's
+        # persistent process is keyed on the mode, so the NEXT turn respawns
+        # with it - this turn keeps the mode it started in. Admin-gated: only
+        # an admin-role account may hand Henry more (or fewer) hands.
+        from spine.auth import auth
+        admin_roles = auth.chat_admin_roles()
+        if role not in admin_roles:
+            return _denied("hands_mode", role, admin_roles, "policy.chat_admin_roles")
+        mode = (a.get("mode") or "").strip()
+        allowed = ("plan", "acceptEdits", "bypassPermissions")
+        if mode not in allowed:
+            return "hands_mode: mode muss einer von %s sein" % "|".join(allowed)
+        from spine.storage import projectconfig
+        from cells.copilot.chat import copilot
+        before = copilot.henry_pmode()
+        _, err = projectconfig.write_scoped({"rule.hands.permission_mode.all": mode}, actor=actor,
+                                            note="hands_mode via chat")
+        if err:
+            return "hands_mode nicht gesetzt: %s" % err
+        return ("Haende-Modus %s -> %s (gilt ab dem naechsten Turn, Chat und Broker; "
+                "der Guard-Hook bleibt in jedem Modus scharf)" % (before, mode))
     if kind == "follow_up":
         # The honest replacement for "schau ich mir gleich an" (board-copilot.md
         # forbids that prose now - it promised a check nothing ever performs,
