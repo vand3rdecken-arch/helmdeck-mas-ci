@@ -363,7 +363,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // daemon per finished turn (copilot._fold_stats) and served with the history.
   const stats = data?.stats;
   const flat = useAiFlat();
-  const modeBase = [{ id: "bypassPermissions", label: tr("card.perm.full") },
+  const modeBase = [{ id: "auto", label: tr("card.perm.auto") }, { id: "bypassPermissions", label: tr("card.perm.full") },
     { id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") }]
     .filter((m) => m.id !== "bypassPermissions" || me?.role === "owner");
   const cur = data?.hands_mode;

@@ -13,7 +13,7 @@ from spine.ops.runs import REC
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
 STORE = os.path.join(ROOT, "tracks.json")
-DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
+DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "auto")   # 2026-09-12: Claude auto mode - "nur fragen wenn notwendig"
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 
 from spine.storage import db as _db
@@ -402,7 +402,7 @@ def get_track(tid):
 
 
 
-MODES = ("plan", "acceptEdits", "default", "bypassPermissions")
+MODES = ("auto", "plan", "acceptEdits", "default", "bypassPermissions")
 
 def _pending_context(t):
     """Review/merge/gate checks run OUTSIDE the agent session (daemon-side, only

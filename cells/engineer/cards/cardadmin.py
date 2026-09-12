@@ -23,7 +23,7 @@ from spine.git.worktrees import reclaim_worktree
 # same source-of-truth as sessions.{ROOT,DEFAULT_PERM} - process-idempotent,
 # safe to read independently rather than importing sessions (would cycle).
 from daemon.paths import DAEMON_ROOT as ROOT
-DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
+DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "auto")   # 2026-09-12: Claude auto mode - "nur fragen wenn notwendig"
 
 
 EDITABLE = ("task", "description", "priority", "due", "value", "client", "driver",

@@ -177,6 +177,7 @@ export const card: Dict = {
   "card.toast.moveFailed": { de: "Verschieben fehlgeschlagen: {err}", en: "Move failed: {err}" },
 
   // permission modes offered to the composer
+  "card.perm.auto": { de: "Auto", en: "Auto" },
   "card.perm.edit": { de: "Bearbeiten", en: "Edit" },
   "card.perm.plan": { de: "Plan", en: "Plan" },
   "card.perm.full": { de: "Voll", en: "Full" },

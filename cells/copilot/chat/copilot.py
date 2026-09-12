@@ -468,10 +468,15 @@ def henry_pmode(project=""):
     # reasons for every block. The fence is now code: card_tool_guard's hard
     # invariants + the settings deny-list (both still enforced in bypass mode,
     # measured by spine/ops/probe_henry_guard.py).
-    return legacy or "bypassPermissions"
+    # ... and since the same evening: "auto" (owner: "nur fragen wenn
+    # notwendig"). Claude's own classifier approves the unremarkable and denies
+    # the risky, PC-wide, with no human at the prompt - measured headless by
+    # probe_henry_guard.py --mode auto (benign tasklist ran, secrets/daemon-kill
+    # denied). bypassPermissions stays a per-turn owner pick in the Mode row.
+    return legacy or "auto"
 
 
-HANDS_MODES = ("plan", "acceptEdits", "bypassPermissions")
+HANDS_MODES = ("auto", "plan", "acceptEdits", "bypassPermissions")
 
 
 def set_hands_mode(mode, actor="owner", note="hands_mode"):

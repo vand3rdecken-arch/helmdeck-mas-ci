@@ -121,7 +121,7 @@ SURFACE_FILES = {
 # longer has a reason to reach for the Write tool for memory at all) - `git
 # diff` read before the move: exactly those two passages, nothing else.
 EXPECTED = {
-    "pm": "7d38d20c724493837397b8de7170c42c8255944dbd94178c75329365ae8d635a",
+    "pm": "2bd8e69924b90e8cc52619914b56bcc8be4d13ef5c7c14fb7f1207a11a076d80",
     "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
     "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
     "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",

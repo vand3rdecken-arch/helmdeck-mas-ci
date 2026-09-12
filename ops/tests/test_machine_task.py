@@ -73,8 +73,8 @@ def test_machine_card_runs_in_place():
           "NO git worktree was created in the owner's folder")
     check(turns and os.path.normcase(turns[-1]["cwd"]) == os.path.normcase(WORKPLACE),
           "the agent turn ran in that folder")
-    check(turns[-1]["perm"] == "bypassPermissions",
-          "headless machine work gets a perm mode that can actually run commands "
+    check(turns[-1]["perm"] == "auto",
+          "headless machine work gets a perm mode that can actually run commands (auto: classifier, no human) "
           "(got %r)" % turns[-1]["perm"])
     check(t["status"] == "needs_you" and t["lane"] == "working", "card is live on the board")
     check(any(e.get("action") == "filed" for e in _events("machine")), "dispatch is audited")

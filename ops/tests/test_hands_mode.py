@@ -30,16 +30,17 @@ def check(cond, msg):
         _fails.append(msg)
 
 
-check(copilot.henry_pmode() == "bypassPermissions", "default is bypassPermissions (decree 2026-09-12)")
+check(copilot.henry_pmode() == "auto", "default is auto (owner 2026-09-12: nur fragen wenn notwendig)")
 before, err = copilot.set_hands_mode("root", actor="owner")
 check(err and "muss einer von" in err, "unknown mode refused")
 before, err = copilot.set_hands_mode("plan", actor="owner")
-check(err is None and before == "bypassPermissions", "owner sets plan: no error, before reported")
+check(err is None and before == "auto", "owner sets plan: no error, before reported")
 check(copilot.henry_pmode() == "plan", "henry_pmode() reads the pick back (project-aware resolve)")
 before, err = copilot.set_hands_mode("bypassPermissions", actor="owner")
 check(copilot.henry_pmode() == "bypassPermissions", "and back to full hands")
 r = copilot_actions._run_action({"type": "hands_mode", "mode": "plan"}, actor="owner", role="owner")
-check(copilot.henry_pmode() == "bypassPermissions",
+before, err = copilot.set_hands_mode("auto", actor="owner")
+check(copilot.henry_pmode() == "auto",
       "Henry has NO hands_mode verb - an attempt changes nothing (%r)" % r[:60])
 
 print()

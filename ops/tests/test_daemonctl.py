@@ -101,6 +101,28 @@ routes_system.admin_restart_post(_H(), {"role": "owner", "name": "own"}, {})
 check(sent and sent[-1][0] == 409 and "turn_active" in sent[-1][1],
       "routes: owner restart while a turn is live -> 409 turn_active (no force)")
 
+# 8) Henry's broker verb "restart" is THIS verb, not a shell command
+from cells.copilot.broker import henry_broker as hb
+fired = []
+saved = daemonctl.restart
+daemonctl.restart = lambda force=False, actor="owner", runner=None: fired.append(actor) or {"ok": True}
+class _E:
+    notes = []
+    def record_note(self, i, n): self.notes.append(n)
+hb.escalations = _E()
+try:
+    ok = hb._execute("restart", "", "", "", {"id": "e1"})
+finally:
+    daemonctl.restart = saved
+check(ok is True and fired == ["henry"], "broker: action restart calls daemonctl.restart(actor=henry)")
+daemonctl.restart = lambda force=False, actor="owner", runner=None: {"ok": False, "reason": "turn_active", "detail": "x"}
+try:
+    ok = hb._execute("restart", "", "", "", {"id": "e2"})
+finally:
+    daemonctl.restart = saved
+check(ok is False and any("turn_active" in n for n in hb.escalations.notes),
+      "broker: a refused restart stays open with the reason noted")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

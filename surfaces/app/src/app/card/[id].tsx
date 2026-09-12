@@ -898,7 +898,7 @@ export default function CardScreen() {
   }
 
   // permission modes — bypass ("Full") is owner-only; current perm first
-  const modeBase = [{ id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") },
+  const modeBase = [{ id: "auto", label: tr("card.perm.auto") }, { id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") },
     ...(me?.role === "owner" ? [{ id: "bypassPermissions", label: tr("card.perm.full") }] : [])];
   const modeOptions = k
     ? [...modeBase.filter((m) => m.id === k.perm), ...modeBase.filter((m) => m.id !== k.perm)]

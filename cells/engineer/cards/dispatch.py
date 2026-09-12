@@ -34,7 +34,7 @@ from spine.turn.outcomes import extract_outcome, _record_outcome
 
 # same env var as sessions.DEFAULT_PERM - process-idempotent, safe to read
 # independently rather than importing sessions (would cycle).
-DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "acceptEdits")
+DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "auto")   # 2026-09-12: Claude auto mode - "nur fragen wenn notwendig"
 
 
 def _repo_default_kind(repo):
@@ -134,7 +134,7 @@ def new_track(repo, branch, task, perm=DEFAULT_PERM, lane="working", client="",
             # stalls with nothing saying why. Only filled when the caller did
             # not ask for a specific mode - an explicit perm still wins.
             if perm == DEFAULT_PERM:
-                perm = pol.get("perm", "bypassPermissions")
+                perm = pol.get("perm", "auto")
         else:
             kind = "new_track"
             print("dispatch: %s wants live-tree cards (Vorlage card_kind="
@@ -419,7 +419,7 @@ def machine_policy():
     p.setdefault("enabled", True)
     p.setdefault("roles", ["owner"])
     p.setdefault("roots", [])
-    p.setdefault("perm", "bypassPermissions")
+    p.setdefault("perm", "auto")
     return p
 
 
@@ -464,7 +464,7 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
         raise RuntimeError(why)
     t = new_track(cwd, MACHINE_BRANCH, task, lane="backlog", actor=actor,
                   priority=priority, description=description, driver=driver,
-                  value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
+                  value=value, model=model, perm=pol.get("perm", "auto"))
     def _mark(tt):
         tt["machine"] = True
         tt["worktree"] = cwd         # the driver's cwd - a real folder, no worktree
@@ -526,7 +526,7 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
         raise RuntimeError(why)
     t = new_track(repo, DIRECT_BRANCH, task, lane="backlog", actor=actor,
                   priority=priority, description=description, driver=driver,
-                  value=value, model=model, perm=pol.get("perm", "bypassPermissions"))
+                  value=value, model=model, perm=pol.get("perm", "auto"))
     # machine/direct/worktree are NOT set here any more: passing DIRECT_BRANCH
     # already told new_track which kind of card this is, and it writes those
     # three at build time (one owner for the shape - see its comment). What is

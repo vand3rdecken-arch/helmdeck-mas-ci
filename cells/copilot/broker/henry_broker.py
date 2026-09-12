@@ -488,8 +488,11 @@ def _decide(esc):
           "Fertige Arbeit SCHIEBST du durch: action \"move\" mit lane review "
           "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht "
           "parken und auf den Owner warten. "
+          "action \"restart\" = Daemon-Neustart ueber den Harness (dasselbe Verb wie der "
+          "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
+          "im Turn ist - NIE taskkill/schtasks selbst tippen). "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|rerun_deploy|steer|notify_owner|ignore",\n'
+          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
           ' "kind": "bei ship: none|ota|native",\n'
@@ -548,7 +551,7 @@ def _decide(esc):
     # card_event - the SAME event, already on the owner's screen. Henry's
     # `why` rides INSIDE that line (move_lane's `note`, see _execute) instead
     # of a second bubble + second push one second later. ONE event, ONE line.
-    if action in ("did", "ship", "rerun_deploy", "steer"):
+    if action in ("did", "ship", "restart", "rerun_deploy", "steer"):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
@@ -599,6 +602,18 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
                 str((t.get("question") or {}).get("header")
                     or (t.get("question") or {}).get("question") or "")[:80]))
         return False
+    if action == "restart":
+        # The ONE restart verb (spine/ops/daemonctl, 2026-09-12): the same
+        # code path as the Settings button. It refuses while a turn is live -
+        # that refusal is a fact for the next attempt, not something Henry
+        # works around with a shell.
+        from spine.ops import daemonctl
+        r = daemonctl.restart(actor="henry")
+        if not r.get("ok"):
+            escalations.record_note(esc["id"], "restart verweigert: %s %s" % (
+                r.get("reason"), (r.get("detail") or "")[:160]))
+            return False
+        return True
     if action == "ship":
         # The ship DECISION, executed as its own visible board card (owner
         # decree 2026-09-01: shipping is Henry's judgement, not a post-done

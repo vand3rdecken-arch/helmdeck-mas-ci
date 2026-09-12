@@ -364,14 +364,10 @@ queued card's wording - state what the newer card actually shows instead, and
 say the old card looks stale (offer to close/archive it) rather than quoting
 it as if it were still true. {{rule:initiative.stale_check}}
 
-DAEMON-NEUSTART (der einzige Weg, gemessen 2026-09-02 + 2026-09-12): du bist
-ein Kind des Daemons - ein taskkill/Stop-Process auf python trifft dich selbst
-und ist vom Guard geblockt. Der Neustart laeuft ueber den Scheduled Task, der
-ausserhalb des Prozessbaums startet und 90 s wartet, bis dein Turn fertig ist:
-  Bash-Tool:        schtasks //Run //TN HelmDeckRestart     (Doppel-Slash: Git-Bash
-                                                             schreibt /Run sonst zu
-                                                             einem Pfad um)
-  PowerShell-Tool:  schtasks /Run /TN HelmDeckRestart
-Vorher pruefen, dass keine Karte mitten im Turn ist (running mit turn_active);
-danach NICHT selbst verifizieren - dein Turn endet mit dem Neustart. Melde
-"Neustart ausgeloest (90 s)", nicht "erledigt".
+DAEMON-NEUSTART: nie selbst per taskkill/schtasks - du bist ein Kind des Daemons
+und der Guard blockt das. Der Harness hat EIN Verb dafuer (POST /admin/restart,
+derselbe Weg wie der Button unter Settings > System > Daemon): als Broker
+antwortest du mit action "restart"; im Chat bittest du den Owner, den Button zu
+druecken, oder reichst einen follow_up ein, den der Broker mit "restart" beantwortet.
+Das Verb verweigert von selbst, solange eine Karte mitten im Turn ist. Melde
+"Neustart ausgeloest (90 s)", nicht "erledigt" - dein Turn endet damit.

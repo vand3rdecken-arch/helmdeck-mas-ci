@@ -315,13 +315,13 @@ BEHAVIOR_RULES = [
      "source": "cells/copilot/harness/agents/board-copilot.md:238"},
 
     {"key": "hands.permission_mode", "block": "hands", "wire": "code", "kind": "policy",
-     "control": "single", "options": ["plan", "acceptEdits", "bypassPermissions"],
+     "control": "single", "options": ["auto", "plan", "acceptEdits", "bypassPermissions"],
      "scope": "project", "binds": ["working"],
      "labelKey": "rule.hands.pmode", "descKey": "rule.hands.pmode.desc",
      "why": "settings.henry_permission_mode existiert und hatte nie eine "
             "Oberflaeche. Gilt fuer Chat UND Broker.",
      "reads": "cells/copilot/copilot.py::henry_pmode",
-     "surfaces": {"all": {"default": "bypassPermissions", "renders": None}},
+     "surfaces": {"all": {"default": "auto", "renders": None}},
      "source": "cells/copilot/copilot.py:343"},
 
     # READONLY, not a toggle - and that is a deliberate refusal, not an
