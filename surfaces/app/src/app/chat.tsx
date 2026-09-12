@@ -15,6 +15,7 @@ import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { planLabel, useAiFlat } from "@/ui/billing";
+import { BackgroundTasks } from "@/ui/card_background";
 import { Composer, type Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
@@ -759,6 +760,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               hint={openQ.card ? undefined : tr("card.q.hintChat")}
               onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
           ) : null}
+          {/* Henry's follow-ups in flight (owner report 2026-09-12: "er sagt er
+              macht was, aber ich sehe nichts") - the SAME line a card shows for
+              its background tasks, fed by /chat/history's derived descriptors. */}
+          <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"

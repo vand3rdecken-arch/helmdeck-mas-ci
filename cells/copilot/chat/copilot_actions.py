@@ -479,7 +479,7 @@ def _run_action(a, actor, role="operator"):
         # follow-ups on their own thread precisely so this stays close to
         # true in the common case, but the chat confirmation must not assert
         # a number the broker never actually guaranteed).
-        return "notiert - ich melde mich, sobald ich das geprueft habe"
+        return "notiert - laeuft im Hintergrund (Status: die Zeile ueber dem Eingabefeld)"
     if kind == "resolve_blocker":
         # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
         # the shared repo checkout - a cross-cutting fix the sandboxed worker

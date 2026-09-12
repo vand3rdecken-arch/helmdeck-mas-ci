@@ -82,10 +82,13 @@ def fold():
             e = out[r["id"]]
             if ev == "attempt":
                 e["attempts"] += 1
+            elif ev == "note":
+                e["last_note"] = r.get("detail") or ""
             elif ev == "decision":
                 e["closed"] = True
                 e["action"] = r.get("action")
                 e["why"] = r.get("why")
+                e["decided_ts"] = r.get("ts")
     return out
 
 

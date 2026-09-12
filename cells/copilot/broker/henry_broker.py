@@ -822,6 +822,54 @@ _followups_inflight = set()
 _followups_lock = threading.Lock()
 
 
+def _ts_epoch(s):
+    try:
+        return time.mktime(time.strptime(s or "", "%Y-%m-%dT%H:%M:%S"))
+    except Exception:
+        return 0.0
+
+
+def followup_tasks(closed_within_s=3600):
+    """The Henry chat's BACKGROUND line (owner report 2026-09-12: "Henry sagt
+    er macht was, aber ich sehe nichts"): every henry-followup escalation as a
+    BgTask-shaped descriptor - the same object a card's bg_tasks are (Paseo
+    status running|completed|failed), rendered by the same BackgroundTasks
+    line. The follow_up verb answers "notiert" and the broker judges on its
+    own thread for minutes; this is the ONLY place the owner can see that
+    something is in flight, how long, and how it ended.
+
+    DERIVED from the append-only escalation records at read time (fold):
+      open                      -> running,   result = last note if any
+      decided (real action)     -> completed, result = why
+      given up ("escalated")    -> failed,    result = last note or detail
+      closed > closed_within_s  -> dropped (the chat line reported it)"""
+    out = {}
+    now = time.time()
+    try:
+        folded = escalations.fold()
+    except Exception:
+        return out
+    for eid, e in folded.items():
+        if e.get("kind") != _FOLLOWUP_KIND:
+            continue
+        opened = _ts_epoch(e.get("ts"))
+        detail = (e.get("detail") or "").strip()
+        if e.get("closed"):
+            decided = _ts_epoch(e.get("decided_ts")) or opened
+            if now - decided > closed_within_s:
+                continue
+            failed = (e.get("action") or "") == "escalated"
+            out[eid] = {"title": detail[:90], "status": "failed" if failed else "completed",
+                        "since": opened, "updated": decided, "detail": detail,
+                        "result": ((e.get("last_note") or detail) if failed
+                                   else (e.get("why") or e.get("action") or ""))}
+        else:
+            out[eid] = {"title": detail[:90], "status": "running",
+                        "since": opened, "updated": opened, "detail": detail,
+                        "result": e.get("last_note") or ""}
+    return out
+
+
 def _decide_or_give_up(esc):
     if esc["attempts"] >= _max_attempts():
         _give_up(esc)

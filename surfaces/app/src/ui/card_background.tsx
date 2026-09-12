@@ -83,8 +83,11 @@ function Row({ task, t, tr, now }: {
 
 const LIST_MAX_HEIGHT = 200;   // Paseo SUBAGENTS_LIST_MAX_HEIGHT
 
-export function BackgroundTasks({ tasks, waiting }: {
+export function BackgroundTasks({ tasks, waiting, variant = "card" }: {
   tasks: Record<string, BgTask>;
+  /** "henry": the board chat's follow-up line ("Henry prueft: ...") - same
+   *  descriptors, same row, only the header wording differs. */
+  variant?: "card" | "henry";
   /** the card is parked ON these tasks (waiting_on === "background") - the
    *  header then says "not your move" instead of a bare count, replacing the
    *  separate blocker pill so background state is exactly ONE line. */
@@ -103,9 +106,10 @@ export function BackgroundTasks({ tasks, waiting }: {
     || (b.updated || b.since || 0) - (a.updated || a.since || 0));
   const running = list.filter((x) => x.status === "running").length;
   const live = running > 0;
+  const k = variant === "henry" ? "chat.followups" : "card.bg";
   const label = waiting && live ? tr("card.bg.lineWaiting", { m: running })
-    : live ? tr("card.bg.lineLive", { n: list.length, m: running })
-    : tr("card.bg.line", { n: list.length });
+    : live ? tr(`${k}.lineLive`, { n: list.length, m: running })
+    : tr(`${k}.line`, { n: list.length });
   return (
     <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
       <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle,

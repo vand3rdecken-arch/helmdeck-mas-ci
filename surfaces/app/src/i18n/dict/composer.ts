@@ -53,6 +53,8 @@ export const composer: Dict = {
   "chat.title": { de: "Henry", en: "Henry" },
   "chat.placeholder": { de: "Frage…", en: "Question…" },
   "chat.empty": { de: "Frag Henry über die Arbeit.", en: "Ask Henry about the work." },
+  "chat.followups.line": { de: "Henry hat geprüft: {n}", en: "Henry checked: {n}" },
+  "chat.followups.lineLive": { de: "Henry prüft gerade: {m} · {n} gesamt", en: "Henry is checking: {m} · {n} total" },
   "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
   "chat.thinking": { de: "denkt nach", en: "thinking" },
   "chat.noReply": { de: "(keine Antwort)", en: "(no reply)" },

@@ -8,6 +8,7 @@ import { useHealth } from "./health";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
+import type { BgTask } from "./types";
 import type { Track, LaneMove, Metrics, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
   PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
   GxpState } from "./types";
@@ -976,7 +977,10 @@ export const api = {
   transcribe: (audioB64: string, lang?: string) =>
     req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(
       "POST", "/voice/transcribe", { audio: audioB64, lang }),
-  chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null }>("GET", "/chat/history"),
+  chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
+    /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
+     *  descriptors, rendered by the same BackgroundTasks line a card uses. */
+    followups?: Record<string, BgTask> }>("GET", "/chat/history"),
   /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
    *  taken): pass it to also collect the speech the daemon has rendered so far,
    *  omit it to stay the text-only poller the board chat has always been — the

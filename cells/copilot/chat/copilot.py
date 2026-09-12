@@ -1084,9 +1084,17 @@ def history(user):
     if st:
         st = dict(st)
         st["plan_pct"] = _plan_share(st)
+    try:
+        from cells.copilot.broker import henry_broker
+        followups = henry_broker.followup_tasks()
+    except Exception:                                        # noqa: BLE001
+        followups = {}          # a broken fold must never take the chat down
     return {"messages": [_readable(m) for m in _entries(user)],
             "session_id": _sessions().get(user),
-            "stats": st}
+            "stats": st,
+            # Henry's in-flight follow-ups as bg-task descriptors (2026-09-12):
+            # the chat renders them as ONE BackgroundTasks line above the composer.
+            "followups": followups}
 
 
 def owner_name():
