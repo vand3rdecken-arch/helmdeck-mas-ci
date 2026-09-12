@@ -86,6 +86,24 @@ check(HENRY and HENRY[0][0] == "turn-burn" and HENRY[0][1] == "burn-soft",
 check(HENRY and "%" in HENRY[0][2], "evidence detail carries the %-of-quota figure")
 check("burn-soft" not in drivers._cancelled, "soft alone never cancels the turn")
 
+# --- 2b) Henry JUST decided this card's burn (his steer replaced the turn) ->
+# the next turn re-crossing soft is the same stuck session, NOT a new alarm
+# (measured 2026-09-11: 18:57 + 19:03 for one card). Derived from the decision
+# record, so a decision older than the window (or on another card) still fires.
+HENRY.clear()
+from spine.registry import escalations
+eid = escalations.emit("turn-burn", card="burn-soft", detail="first alarm")
+escalations.record_decision(eid, "steer", card="burn-soft", why="korrigiert")
+s = _spawn("burn-soft")
+s.run_turn("__BURN__:25:100", os.path.join(runs.REC, "burn-soft"))
+s.kill()
+check(not HENRY, "soft re-crossed right after Henry's decision -> tripwire held (got %d)" % len(HENRY))
+s = _spawn("burn-other")
+s.run_turn("__BURN__:25:100", os.path.join(runs.REC, "burn-other"))
+s.kill()
+check(len(HENRY) == 1 and HENRY[0][1] == "burn-other",
+      "another card's burn is still news (decision is per card)")
+
 # --- 3) crosses hard -> soft fired once en route, hard cancels exactly once ---
 HENRY.clear()
 s = _spawn("burn-hard")

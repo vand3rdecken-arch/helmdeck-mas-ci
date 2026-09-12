@@ -93,6 +93,34 @@ def list_open():
     return [e for e in fold().values() if not e["closed"]]
 
 
+def decided_recently(kind, card, within_s):
+    """True when an escalation of `kind` for `card` was DECIDED within the
+    last `within_s` seconds - derived from the append-only decision records
+    at read time, never a stored flag (the no-monkey-patch law).
+
+    Why (owner report 2026-09-12, "viele Meldungen doppelt"): drivers' turn-
+    burn tripwire latches per TURN (cur['burn_soft_fired']). Henry's answer to
+    a turn-burn is a `steer`, and a steer-while-running is interrupt-and-
+    replace - a NEW turn on the same bloated session, which re-crosses the
+    threshold within minutes and re-emits (measured 18:57 + 19:03 for one
+    card). _to_henry's open-dedup cannot see it: Henry had already closed the
+    first. The signal that a re-emit is noise is the decision itself."""
+    now = time.time()
+    for r in records():
+        if r.get("event") != "decision":
+            continue
+        rid = r.get("id") or ""
+        if not rid.startswith(kind + "-") or (r.get("card") or "") != (card or ""):
+            continue
+        try:                     # _append stamps LOCAL time -> mktime, not timegm
+            t = time.mktime(time.strptime(r.get("ts") or "", "%Y-%m-%dT%H:%M:%S"))
+        except Exception:
+            continue
+        if now - t <= within_s:
+            return True
+    return False
+
+
 def list_all(limit=50):
     """Newest-first full view for the UI/route."""
     rows = sorted(fold().values(), key=lambda e: e.get("ts") or "", reverse=True)

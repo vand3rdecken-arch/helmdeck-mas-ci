@@ -294,6 +294,7 @@ _SWEEP_INTERVAL = 15.0         # Paseo polls its idle collector this often
 _BURN_REPEATS = 5              # identical consecutive tool calls that look like a loop
 _TURN_BURN_SOFT_PCT = 2.0      # default: %-of-weekly-quota one turn may burn before Henry sees it
 _TURN_BURN_HARD_PCT = 5.0      # default: %-of-weekly-quota one turn may burn before it self-cancels
+_TURN_BURN_REEMIT_S = 900      # a turn-burn Henry decided within this window is not re-raised (steer = new turn, same session)
 _sweeper_started = False
 
 
@@ -1161,6 +1162,21 @@ class _ClaudeSession:
         elif pct >= soft and not cur.get("burn_soft_fired"):
             cur["burn_soft_fired"] = True
             evidence = self._burn_evidence(cur)
+            try:
+                # Henry already judged this card's burn a moment ago (his
+                # steer REPLACED the turn, so this is the same stuck session
+                # re-crossing the line, not news) -> hold the tripwire.
+                # Derived from the decision record, not a flag on the track.
+                from spine.registry import escalations
+                if escalations.decided_recently("turn-burn", self.tid, _TURN_BURN_REEMIT_S):
+                    if self.run_dir:
+                        from spine.ops.actionlog import ActionLog
+                        ActionLog(self.run_dir).log("note",
+                            "Turn-Burn: %.1f%% Woche erneut - Henry hat vor <%d min "
+                            "entschieden, kein zweiter Alarm." % (pct, _TURN_BURN_REEMIT_S // 60))
+                    return
+            except Exception:
+                pass
             try:
                 from cells.copilot.planning.pm_comm import _to_henry
                 _to_henry("turn-burn", card=self.tid,
