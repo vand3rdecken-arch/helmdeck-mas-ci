@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Henry picks his own permission mode (owner decree 2026-09-12) - through
-the REAL action dispatch (copilot_actions._run_action) and the real rule
-store, so what the chat verb writes is exactly what henry_pmode() reads for
-the next chat/broker spawn. Admin-gated; bad modes refused; sandboxed db.
+"""The OWNER picks Henry's permission mode from the composer's Mode row
+(owner 2026-09-12: "ich will bypass auswaehlen, warum soll das Henry
+machen") - Henry has no verb to change it himself. This pins the one writer
+(copilot.set_hands_mode) and that henry_pmode() reads the pick back for the
+next spawn. Sandboxed db with a default repo (the rule is per-project).
 """
 import os
 import sys
@@ -17,8 +18,6 @@ db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events  # noqa: E402
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
-
-# the rule is per-project; a chat names no repo -> the workspace's default repo
 events.save_settings({"default_repo": SANDBOX}, actor="test")
 from cells.copilot.chat import copilot, copilot_actions  # noqa: E402
 
@@ -31,24 +30,17 @@ def check(cond, msg):
         _fails.append(msg)
 
 
-start = copilot.henry_pmode()
-check(start == "bypassPermissions", "default mode is bypassPermissions (decree 2026-09-12), got %r" % start)
-
-r = copilot_actions._run_action({"type": "hands_mode", "mode": "plan"}, actor="c", role="client")
-check("hands_mode" in r and ("nicht" in r.lower() or "denied" in r.lower() or "erlaubt" in r.lower()),
-      "a client-role chat cannot change Henry's hands: %r" % r[:80])
-check(copilot.henry_pmode() == start, "denied call left the mode untouched")
-
-r = copilot_actions._run_action({"type": "hands_mode", "mode": "root"}, actor="owner", role="owner")
-check("muss einer von" in r, "an unknown mode is refused with the allowed list")
-check(copilot.henry_pmode() == start, "refused call left the mode untouched")
-
-r = copilot_actions._run_action({"type": "hands_mode", "mode": "plan"}, actor="owner", role="owner")
-check("bypassPermissions -> plan" in r, "owner drops Henry to plan: %r" % r[:90])
-check(copilot.henry_pmode() == "plan", "henry_pmode() now reads plan - the next spawn gets it")
-
-r = copilot_actions._run_action({"type": "hands_mode", "mode": "bypassPermissions"}, actor="owner", role="owner")
+check(copilot.henry_pmode() == "bypassPermissions", "default is bypassPermissions (decree 2026-09-12)")
+before, err = copilot.set_hands_mode("root", actor="owner")
+check(err and "muss einer von" in err, "unknown mode refused")
+before, err = copilot.set_hands_mode("plan", actor="owner")
+check(err is None and before == "bypassPermissions", "owner sets plan: no error, before reported")
+check(copilot.henry_pmode() == "plan", "henry_pmode() reads the pick back (project-aware resolve)")
+before, err = copilot.set_hands_mode("bypassPermissions", actor="owner")
 check(copilot.henry_pmode() == "bypassPermissions", "and back to full hands")
+r = copilot_actions._run_action({"type": "hands_mode", "mode": "plan"}, actor="owner", role="owner")
+check(copilot.henry_pmode() == "bypassPermissions",
+      "Henry has NO hands_mode verb - an attempt changes nothing (%r)" % r[:60])
 
 print()
 if _fails:
