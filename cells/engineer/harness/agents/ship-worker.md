@@ -142,6 +142,23 @@ It re-fetches the live relay manifest (ota) or cross-checks the three version
 numbers (native) and prints `VERIFY: OK`/`VERIFY: FAILED`. If it disagrees
 with a script that exited 0, the disagreement IS your finding.
 
+**You are not done until every channel you triggered has actually landed.**
+Owner decree 2026-09-12: "er shippt und stellt sicher, dass alles geshippt
+ist". A CI build you started (a GitHub Actions run, a store upload) is still
+YOUR ship while it runs - do not close this card on "triggered". Watch it to
+its end and keep the output flowing (a turn is bounded by SILENCE, ~15 min
+without output, not by wall-clock - `gh run watch` prints progress, so a
+20-minute build is fine; a silent `sleep 1200` is not):
+```
+GH_TOKEN=$(gh auth token -u <account>) gh run watch <run-id> -R <repo> --exit-status
+```
+Green: verify the artifact exists (release asset, artifact list, store
+status), then `SHIP: OK`. Red mid-run: read the failed step's log
+(`gh run view <id> --log-failed`), classify it like any other failure above,
+at most one retry, and report the exact step in your verdict. A run that
+cannot even start (billing, runner quota) is BLOCKED with an owner action,
+not a retry.
+
 ## How you end - the verdict line
 
 Your LAST reply of the turn that finishes this card MUST end with exactly one

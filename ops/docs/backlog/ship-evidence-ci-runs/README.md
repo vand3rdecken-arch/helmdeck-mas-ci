@@ -73,3 +73,14 @@ Henry bleibt Exception-Broker für hängende Karten.
 Push rot wird, z.B. ein 20-Minuten-Build, der bei Minute 15 scheitert):
 Daemon pollt den Run nach dem Push und öffnet bei `failure` eine Eskalation
 `ci-failed` an Henry. Kleine Karte, kein Blocker.
+
+## Status 2026-09-12 23:55 — Schritt 3 GESCHLOSSEN, in der Karte statt im Daemon
+
+Owner: "Sollte das nicht in Karte sein? Er shippt und stellt sicher, dass
+alles geshippt ist." Genau so: kein Daemon-Poller, keine Extra-Eskalation.
+Die Ship-Karte begleitet jeden Run, den sie anstößt, mit `gh run watch
+--exit-status` bis zum Ende (Turns sind silence-bounded, nicht wall-clock;
+watch liefert laufend Output) und sagt SHIP: OK erst, wenn der Run grün ist
+und das Artefakt existiert. Rot mittendrin = klassifizieren, max. ein Retry,
+sonst FAILED mit dem Schritt, und die Karte parkt sichtbar bei Henry.
+Brief ship-worker.md (Verify) + HelmDeck-Prozess-Zeile in der DB angepasst.
