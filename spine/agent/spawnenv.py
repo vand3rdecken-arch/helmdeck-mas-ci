@@ -68,6 +68,27 @@ def _card_env(t):
     return out
 
 
+def tool_path(env=None):
+    """The PATH every headless CLI spawn needs, prepended ONCE (2026-09-12,
+    measured with --include-hook-events): the daemon's inherited PATH carries
+    only Git's own dirs on this box - no C:/Windows, no Python - so inside the
+    CLI's Git Bash `py`, `taskkill`, `schtasks` were "command not found" and
+    EVERY `py -3.12 ...` PreToolUse hook (card_tool_guard!) died with exit 127,
+    which the CLI treats as non-blocking: the guard was silently never armed.
+    pm._ask had the same finding the same day and patched it inline; this is
+    the single owner - the interpreter that runs the daemon, the Windows root
+    (py launcher) and System32 (taskkill, schtasks, tasklist)."""
+    import sys
+    env = dict(os.environ if env is None else env)
+    root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    extra = [os.path.dirname(sys.executable), root, os.path.join(root, "System32")]
+    have = [p.lower() for p in env.get("PATH", "").split(os.pathsep)]
+    add = [p for p in extra if p and p.lower() not in have]
+    if add:
+        env["PATH"] = os.pathsep.join(add + [env.get("PATH", "")])
+    return env
+
+
 def _env(cfg, card=None):
     """The environment the agent's shell inherits (the EXTERNAL env model -
     the daemon's own os.environ stays the internal one).
@@ -87,7 +108,7 @@ def _env(cfg, card=None):
     be prepended with the "PATH+" key so the toolchain wins without discarding
     the inherited PATH.
     """
-    env = dict(os.environ)
+    env = tool_path()
     for k in _CONTROL_ENV_KEYS:
         env.pop(k, None)
     for k in _PARENT_SESSION_ENV_KEYS:

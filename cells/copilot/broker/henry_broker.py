@@ -179,8 +179,9 @@ def _ask(prompt, model="", perm=None):
     argv += harness.cli_args("board-copilot")
     if model:
         argv += ["--model", model]
+    from spine.agent.spawnenv import tool_path
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=_HENRY_REPO_ROOT,
-                         stdin=subprocess.PIPE,
+                         stdin=subprocess.PIPE, env=tool_path(),
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace")
     try:

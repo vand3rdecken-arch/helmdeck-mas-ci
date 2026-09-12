@@ -259,11 +259,10 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
         # every evidence call died and the planner fell back to guessing.
         # Prepend the interpreter that runs the daemon and the Windows py
         # launcher dir, so `py -3.12 ...` resolves wherever the daemon does.
-        import sys as _sys
-        env = dict(os.environ)
-        extra = [os.path.dirname(_sys.executable),
-                 os.environ.get("SystemRoot") or os.environ.get("WINDIR") or "C:\\Windows"]
-        env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
+        # ONE owner since 2026-09-12: spawnenv.tool_path (same finding hit the
+        # guard hook and Henry's broker the same day).
+        from spine.agent.spawnenv import tool_path
+        env = tool_path()
     cwd = _scratch_cwd() if hands else ROOT
     try:
         p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

@@ -421,7 +421,8 @@ def _persist_get(skey, cli_model, sid, system):
     argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
     from spine.agent.drivers import _cmd_line
-    p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+    from spine.agent.spawnenv import tool_path
+    p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                          text=True, encoding="utf-8", errors="replace", bufsize=1)
     with _persist_lock:
@@ -932,7 +933,8 @@ def _save_memory(user, sid):
             "--permission-mode", henry_pmode(), "--resume", sid]
     result = {}
     try:
-        p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+        from spine.agent.spawnenv import tool_path
+        p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              text=True, encoding="utf-8", errors="replace")
         p.stdin.write(copilot_memory.SAVE_PROMPT); p.stdin.close()
@@ -991,7 +993,8 @@ def _maybe_compact(user):
     cmd = drivers._cmd_line(argv)
     result, new_sid, after_usage = {}, sid, {}
     try:
-        p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        from spine.agent.spawnenv import tool_path
+        p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
                              stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
         p.stdin.write("/compact"); p.stdin.close()
         for line in p.stdout:
@@ -1698,7 +1701,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # output as cp1252 and mangles em dashes / arrows into mojibake in the chat.
             # stderr -> DEVNULL: we read stdout line-by-line (the pump), so an undrained
             # stderr pipe could fill and DEADLOCK the process mid-turn.
-            p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE,
+            from spine.agent.spawnenv import tool_path
+            p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                  text=True, encoding="utf-8", errors="replace")
     except Exception:
