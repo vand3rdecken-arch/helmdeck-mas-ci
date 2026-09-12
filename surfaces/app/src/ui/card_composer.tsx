@@ -11,7 +11,22 @@ import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
 import { useT } from "@/i18n";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
-export interface ModeOption { id: string; label: string }
+export interface ModeOption { id: string; label: string; desc?: string }
+
+// One line per permission mode on WHAT IT ALLOWS - the picker's second line.
+// Keyed by the harness's own mode ids so a surface only has to pass id+label.
+const MODE_DESC: Record<string, string> = {
+  auto: "composer.mode.desc.auto",
+  bypassPermissions: "composer.mode.desc.full",
+  acceptEdits: "composer.mode.desc.edit",
+  plan: "composer.mode.desc.plan",
+};
+const MODE_ICON: Record<string, React.ComponentProps<typeof Ionicons>["name"]> = {
+  auto: "shield-half-outline",
+  bypassPermissions: "shield-outline",
+  acceptEdits: "create-outline",
+  plan: "reader-outline",
+};
 export interface Recipient {
   id: string; label: string; color: string; hint?: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -74,6 +89,7 @@ export function Composer({
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
   const [picker, setPicker] = useState(false);
+  const [modePicker, setModePicker] = useState(false);   // permission-mode sheet
   const [to, setTo] = useState(defaultTo);
   const manualTo = useRef(false);
   useEffect(() => { if (!manualTo.current) setTo(defaultTo); }, [defaultTo]);
@@ -311,10 +327,17 @@ export function Composer({
           <Text style={{ color: thinking !== "" ? t.accent : t.txtSecondary, fontSize: 12 }}>{thinkShort}</Text>
         </Pressable>
         {modeOptions && modeOptions.length > 1 ? (
-          <Pressable onPress={() => { const i = modeOptions.findIndex((m) => m.id === mode); pickMode(modeOptions[(i + 1) % modeOptions.length].id); }}
-            style={toolBtn(true)}>
-            <Ionicons name="options-outline" size={13} color={t.accent} />
-            <Text style={{ color: t.accent, fontSize: 12 }}>{modeLabel}</Text>
+          // PERMISSION MODE. A sheet, not a cycle (owner, 2026-09-12: the
+          // cycling chip that only showed "Auto" read as model routing, and
+          // nothing said four states sat behind it). The chip names what it
+          // is; the sheet says what each mode allows.
+          <Pressable onPress={() => setModePicker(true)} style={toolBtn(mode !== "auto")}
+            accessibilityLabel={tr("composer.mode")}>
+            <Ionicons name={MODE_ICON[mode] ?? "shield-half-outline"} size={13}
+              color={mode !== "auto" ? t.accent : t.txtSecondary} />
+            <Text style={{ color: mode !== "auto" ? t.accent : t.txtSecondary, fontSize: 12 }}>
+              {tr("composer.modeChip", { mode: modeLabel ?? mode })}
+            </Text>
           </Pressable>
         ) : null}
         <Pressable onPress={() => setAttachMenu(true)} style={toolBtn(atts.length > 0)}
@@ -467,6 +490,39 @@ export function Composer({
           </View>
         </Pressable>
       </Modal>
+
+      {/* permission-mode sheet - same shape as the model picker so the two
+          read as one system: caption, one row per option, radio, a line on
+          what the option allows. Current mode is the checked row, whatever
+          order the surface passed. */}
+      {modeOptions ? (
+        <Modal visible={modePicker} transparent animationType="fade" onRequestClose={() => setModePicker(false)}>
+          <Pressable onPress={() => setModePicker(false)} style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "center", padding: 24 }}>
+            <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", paddingHorizontal: 12, paddingTop: 12 }}>{tr("composer.mode")}</Text>
+              <Text style={{ color: t.txtTertiary, fontSize: 11.5, paddingHorizontal: 12, paddingTop: 4, paddingBottom: 10 }}>{tr("composer.mode.hint")}</Text>
+              <ScrollView>
+                {modeOptions.map((m) => {
+                  const desc = m.desc ?? (MODE_DESC[m.id] ? tr(MODE_DESC[m.id]) : "");
+                  const on = m.id === mode;
+                  return (
+                    <Pressable key={m.id} onPress={() => { pickMode(m.id); setModePicker(false); }}
+                      accessibilityRole="radio" accessibilityState={{ checked: on }}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+                      <Ionicons name={on ? "radio-button-on" : "radio-button-off"} size={16} color={on ? t.accent : t.txtTertiary} />
+                      <Ionicons name={MODE_ICON[m.id] ?? "shield-half-outline"} size={15} color={on ? t.accent : t.txtSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{m.label}</Text>
+                        {desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{desc}</Text> : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </Pressable>
+        </Modal>
+      ) : null}
     </View>
   );
 }

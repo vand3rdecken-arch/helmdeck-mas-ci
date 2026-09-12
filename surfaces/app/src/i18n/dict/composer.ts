@@ -34,6 +34,21 @@ export const composer: Dict = {
   "composer.modelAutoShort": { de: "Auto", en: "Auto" },
   "composer.modelAuto": { de: "Auto (nach Aufgabe wählen)", en: "Auto (route by task)" },
 
+  // permission mode - the chip names what it is, the sheet says what each
+  // mode allows (owner, 2026-09-12: "Auto" alone read as model routing)
+  "composer.mode": { de: "RECHTE", en: "PERMISSIONS" },
+  "composer.modeChip": { de: "Rechte: {mode}", en: "Mode: {mode}" },
+  "composer.mode.hint": { de: "Was der Agent in diesem Chat ohne Rückfrage tun darf.",
+                          en: "What the agent may do in this chat without asking." },
+  "composer.mode.desc.auto": { de: "Claude entscheidet pro Schritt – sichere Aktionen laufen, riskante fragen.",
+                               en: "Claude decides per step – safe actions run, risky ones ask." },
+  "composer.mode.desc.full": { de: "Alles ohne Rückfrage – auch Shell, Git und Löschen. Nur für Owner.",
+                               en: "Everything without asking – shell, git and deletes included. Owner only." },
+  "composer.mode.desc.edit": { de: "Dateien lesen und ändern ohne Rückfrage; Befehle fragen.",
+                               en: "Read and edit files without asking; commands ask." },
+  "composer.mode.desc.plan": { de: "Nur lesen und planen – nichts wird geändert oder ausgeführt.",
+                               en: "Read and plan only – nothing is changed or run." },
+
   // thinking budget (the ids stay technical - these are only the button labels)
   "composer.thinkOff": { de: "aus", en: "off" },
   "composer.thinkOn": { de: "denken", en: "think" },
