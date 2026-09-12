@@ -1,6 +1,5 @@
 {
   "$schema": "../schema/settings.schema.json",
-
   "//": [
     "The board copilot's OWN settings layer. Passed as",
     "`--settings ops/harness/settings/copilot.json` with `--setting-sources \"\"`.",
@@ -15,46 +14,42 @@
     "  so it would be blocked for a build state it can neither cause nor fix.",
     "  So: no ambient layer at all, and everything it needs stated here.",
     "",
-    "STALE NOTE, kept for history: 'runs --permission-mode plan, granted no",
-    "tools' described the pre-2026-08-21 world. Owner decree since then: Henry",
-    "runs a WORKING mode (henry_pmode, default acceptEdits). acceptEdits",
-    "auto-approves EDITS but not Bash - and a headless -p session has no",
-    "permission prompt (repo memory: no AskUserQuestion in -p), so every",
-    "ungated Bash call just dies. Measured 2026-09-02 14:55: Henry, told to",
-    "verify a dispatch instead of assuming it, tried the check and reported",
-    "'Freigabe fuer das Kommando fehlt'. The allow list below grants exactly",
-    "the read-only checks his job needs - the board reader",
-    "(ops/tools/board_state.py, relative to his cwd=daemon/) and read-only",
-    "git. Nothing that writes, ships, or leaves the repo.",
     "",
-    "Agent/Task DENIED (2026-09-02 15:07, measured): on Henry's very first",
-    "checking turn he also spawned a stray subagent by accident (Agent tool,",
-    "prompt 'n/a - not used'), then stopped it - extra seconds, extra cost,",
-    "and an English 'that was a mistake' narration the owner saw as a second",
-    "answer. Chat CHECKS things; BUILDING goes through cards (```actions ->",
-    "the daemon dispatches). A subagent from inside the chat process is",
-    "neither - it bypasses the card rails entirely.",
+    "HANDS (state 2026-09-12 evening, owner decree 'mehr Rechte geben und ueber",
+    "Hook einschraenken' + 'es soll offen bleiben, nicht ploetzlich",
+    "eingeschraenkt'): Henry runs permission-mode AUTO (copilot.henry_pmode, one",
+    "knob for chat + broker). Claude's own classifier approves the unremarkable",
+    "and denies the risky, PC-wide, with no human at the prompt. HISTORY, so",
+    "nobody re-adds it: under acceptEdits a headless -p could edit files but",
+    "run NO command outside a literal allow rule, and the deny was silent -",
+    "measured 2026-09-02: 'Freigabe fuer das Kommando fehlt' on a read-only",
+    "check. The allow list below is therefore only a pre-approval of the",
+    "board reader + read-only git in their exact form, NOT the fence.",
     "",
-    "The memory Write()/Edit() deny below is belt-and-suspenders for the same reason:",
-    "plan mode already withholds the Write/Edit tools, so this only matters if that",
-    "mode ever changes - but memory_paths.auto resolves to the SAME shared, non-git",
-    "directory for this surface too (measured), so it costs nothing to say twice.",
-    "See ops/harness/settings/card.json for the full story."
+    "THE FENCE is code, not a list: ops/tools/card_tool_guard.py (the one rule",
+    "Claude cannot know - never kill the daemon's process tree) plus the deny",
+    "rules below, which hold ONLY the secrets and the shared memory dir (laws).",
+    "Agent/Task were denied 2026-09-02 after one stray subagent; removed",
+    "2026-09-12 with the openness decree - chat CHECKS, building goes through",
+    "cards, and that is policy prose in the brief, not a tool ban."
   ],
-
   "env": {
     "HELMDECK_SURFACE": "copilot"
   },
-
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
-        "hooks": [ { "type": "command",
-                     "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
-                     "timeout": 30 } ] }
+      {
+        "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
-
   "permissions": {
     "allow": [
       "Bash(py -3.12 ../ops/tools/board_state.py:*)",
@@ -66,8 +61,6 @@
       "Bash(git show:*)"
     ],
     "deny": [
-      "Agent",
-      "Task",
       "Read(./daemon/settings.json)",
       "Read(./daemon/users.json)",
       "Read(./daemon/helmdeck.db)",

@@ -5,6 +5,7 @@
     "Passed as `--settings <this file>` with `--setting-sources \"\"` - no",
     "ambient layer, same reasoning as copilot.json (the repo's Stop hook would",
     "block a turn that writes no code).",
+    "OPEN BY DECREE (2026-09-12, owner: 'es soll offen bleiben, nicht ploetzlich eingeschraenkt'): permission-mode is AUTO (pm._ask), so the allow list is a pre-approval of the wrapper form, not a fence - Claude's classifier decides the rest. The deny list holds ONLY the secrets (a law, not a preference); Write/Edit/Web/Agent are no longer denied here. The planner's cwd is still a throwaway scratch folder, so a stray write dies with it, and its answer is still JSON the harness parses - a plan PROPOSES, code disposes.",
     "",
     "WHY THE PLANNER HAS HANDS AT ALL: measured 2026-09-12 - the plan turn",
     "used to run `--permission-mode plan` with NOTHING to fetch and only the",
@@ -18,8 +19,6 @@
     "inlined. The allow list below is exactly those read-only fetch tools -",
     "relative to cwd=daemon/, the same form copilot.json grants Henry.",
     "",
-    "Nothing that writes, ships, spawns or leaves the repo: Write/Edit/Agent",
-    "denied, and the planner's answer is JSON the harness parses - a plan",
     "PROPOSES, code disposes (pm_triangle).",
     "",
     "PowerShell entries (measured 2026-09-12, stream-json): the CLI's Bash tool",
@@ -44,27 +43,24 @@
   },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
-        "hooks": [ { "type": "command",
-                     "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
-                     "timeout": 30 } ] }
+      {
+        "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
-
   "permissions": {
     "allow": [
       "PowerShell(py -3.12 hd.py:*)",
       "Bash(py -3.12 hd.py:*)"
     ],
     "deny": [
-      "Agent",
-      "Task",
-      "Write",
-      "Edit",
-      "MultiEdit",
-      "NotebookEdit",
-      "WebFetch",
-      "WebSearch",
       "Read(./daemon/settings.json)",
       "Read(./daemon/users.json)",
       "Read(./daemon/helmdeck.db)",

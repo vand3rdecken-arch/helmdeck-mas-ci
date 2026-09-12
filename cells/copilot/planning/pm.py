@@ -226,10 +226,18 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
     the system prompt (a stable prefix - the same bytes every run, so the
     API's prompt cache can hit; volatile facts never ride in it), the turn
     text on stdin, and the planner gets the pm.json settings layer: a
-    read-only allowlist (board_state.py --find/--card, henry_memory_get.py
-    find/get, git log) in permission-mode default, where anything NOT
-    allowlisted is silently denied in a headless -p (no prompt exists to
-    answer). That is the fetch-as-needed half: history and memory are pulled
+    pre-approved evidence wrapper (hd.py -> board_state.py --find/--card,
+    henry_memory_get.py find/get, git log) in permission-mode AUTO. Owner
+    decree 2026-09-12 ("offen bleiben, nicht ploetzlich eingeschraenkt"):
+    the first cut ran `default`, where anything NOT allowlisted dies
+    SILENTLY in a headless -p (no prompt exists to answer) - the same
+    trap Henry had under acceptEdits, and the planner then guessed instead
+    of fetching. Auto lets Claude's classifier approve the unremarkable
+    (any read, any git log spelling) and deny the risky, PC-wide; the
+    secret deny-rules in pm.json still apply (measured in auto mode by
+    spine/ops/probe_henry_guard.py --mode auto). The allowlist stays as a
+    pre-approval of the exact wrapper form, nothing more.
+    That is the fetch-as-needed half: history and memory are pulled
     by query when a claim needs them, never inlined. Measured 2026-09-12:
     without it the planner asked for a Play account that eight finished
     cards already documented.
@@ -243,7 +251,7 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
     argv = [copilot.CLAUDE, "-p", "--output-format", "json",
-            "--permission-mode", "default" if hands else "plan"]
+            "--permission-mode", "auto" if hands else "plan"]
     if model:
         argv += ["--model", model]
     if hands:
