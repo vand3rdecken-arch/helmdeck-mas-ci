@@ -535,7 +535,8 @@ def _decide(esc):
         return False
     if not _execute(action, card, lane, text, esc, kind=kind, why=why):
         return False   # malformed verb - stays open for the next attempt
-    escalations.record_decision(esc["id"], action, card=card, why=why)
+    escalations.record_decision(esc["id"], action, card=card, why=why,
+                                kind=kind if action == "ship" else "")
     # Full text here too: _audit lands as a `note` in the card's ActionLog, and
     # the card chat RENDERS notes (card_transcript.tsx kind === "note") - so a
     # cut here is a mid-word chat message on the card surface as well.

@@ -82,3 +82,12 @@ dem `why`-Freitext bzw. dem Karten-Actionlog rekonstruierbar.
 - Test: Direct-Karte ohne fast_track endet needs_you → delivered-parked offen.
 - Test: Worktree-Karte mit DELIVERED an Position > 200 → delivered-parked offen.
 - Live: nächste Direct-Karte steht ohne Owner-Klick auf done + Henry-Ship-Urteil.
+
+---
+**Status 2026-09-12: FIXED direkt im Live-Tree** — `sessions._after_turn_land`
+(ein Verzweiger für Steer- und Erst-Turn), `_emit_delivered_parked` auf
+`is_delivered` ohne direct/fast_track-Ausschluss und 200-Zeichen-Regex,
+`record_decision(..., kind=)` → `ship_kind`. Test
+`ops/tests/test_direct_cards_land.py` (rot auf dem alten Code an Pin 1).
+Nebenbefund: `test_fast_track_direct.py` war schon vorher rot (Live-DB-Guard +
+`fake_turn` ohne `by=`-Parameter) — eigener Fix.

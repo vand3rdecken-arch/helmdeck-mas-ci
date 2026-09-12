@@ -614,14 +614,15 @@ def _start_machine(t):
     t, reason = _finish_turn(tid, sid, result, meta, log)
     from spine.comms import notify
     notify.card_event(t, reason)
-    if t.get("ship_kind"):
-        # A Ship card's FIRST turn dispatches through here, not through
-        # sessions.py's steer-completion path - see _maybe_ship_card_close's
-        # own docstring for why both call sites share this one function.
-        # MUST reassign t: move_lane's write is on the STORED record, not
-        # this local variable - returning the stale copy would show the
-        # caller "working" on a card that just self-closed to "done".
-        t = _maybe_ship_card_close(t, log)
+    # The SAME landing branch as the steer path (sessions._after_turn_land):
+    # ship card -> self-close on its verdict; direct card -> autocommit + ship
+    # decision to Henry; worktree fast-track -> convert. Was ship-cards-only
+    # here until 2026-09-12, so a direct card finishing in its first turn
+    # never landed (backlog/direct-cards-never-land). Lazy import: sessions
+    # imports this module at load time. MUST reassign t: a ship card's
+    # move_lane writes the STORED record, not this local variable.
+    from cells.engineer.cards import sessions as _sessions
+    t = _sessions._after_turn_land(t, log)
     return t
 
 

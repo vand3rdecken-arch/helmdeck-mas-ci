@@ -507,28 +507,39 @@ def _finish_turn(tid, sid, result, meta, log):
 
 
 def _emit_delivered_parked(t, reason, cleaned):
-    """A worker that says DELIVERED and then PARKS on needs_you is finished
-    work nobody drives (owner 2026-08-22: the research card delivered at 08:50
-    and sat in working). Henry owns FINISH-WHAT-YOU-START (verb move ->
-    review/done, full rails) but only hears the escalation CHANNEL - so the
-    engineer cell reports the FACT here and Henry judges whether to land it.
-    Facts only, event-time: the DELIVERED marker is the worker's own closing
-    signal (harness convention, same anchor outcomes.py keys off). Fast-track
-    and direct cards are excluded - their own pipelines already land/deploy."""
+    """A worker that PARKS on needs_you with no question and no background
+    task is HANDING WORK BACK (is_delivered - the harness's own definition of
+    finished) - and nobody drives it from there. Henry owns FINISH-WHAT-YOU-
+    START (verb move -> review/done, full rails) but only hears the escalation
+    CHANNEL - so the engineer cell reports the FACT here and Henry judges
+    whether to land it (owner 2026-08-22: the research card delivered at
+    08:50 and sat in working).
+
+    2026-09-12 (backlog/direct-cards-never-land): three filters that used to
+    sit here silenced exactly the cards the owner had to push by hand:
+      - direct/fast_track cards were EXCLUDED ("their own pipelines land") -
+        stale since the 2026-09-01 ship decree: fast-track never moves a card
+        any more, and a plain direct card has no pipeline at all;
+      - the literal DELIVERED had to sit in the reply's first 200 chars - a
+        worker opening with "I fixed the cause, ..." never escalated;
+    Now: is_delivered(t) on working, deduped against an open escalation for
+    the card AND a fresh decision (Henry judged an earlier turn of this card
+    within the last 15 min - a re-emit per steer is noise, same reasoning as
+    escalations.decided_recently for turn-burn). A parked card whose reply
+    is "keep waiting" reaches Henry too - his brief allows ignore/notify."""
     try:
         if reason != "needs_you" or not t or t.get("lane") != "working":
             return
-        if t.get("fast_track") or t.get("direct"):
-            return
-        from spine.turn.outcomes import _DELIVERED_RE
-        if not _DELIVERED_RE.search((cleaned or "")[:200]):
+        if not is_delivered(t):
             return
         from spine.registry import escalations
         if any(e.get("kind") == "delivered-parked" and e.get("card") == t["id"]
                for e in escalations.list_open()):
             return                      # already reported, Henry hasn't judged yet
+        if escalations.decided_recently("delivered-parked", t["id"], 15 * 60):
+            return                      # judged minutes ago - the next turn is not news
         escalations.emit("delivered-parked", card=t["id"],
-                         detail="Worker meldet DELIVERED, Karte parkt in working: %s"
+                         detail="Worker meldet fertig, Karte parkt in working: %s"
                                 % (t.get("task") or "")[:140])
     except Exception:
         pass                            # a cue is never worth failing a turn

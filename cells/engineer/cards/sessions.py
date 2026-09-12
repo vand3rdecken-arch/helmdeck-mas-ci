@@ -1018,6 +1018,19 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     _threading.Thread(target=_compact_after_turn, args=(t, log), daemon=True).start()
     from spine.comms import notify
     notify.card_event(t, reason)
+    return _after_turn_land(t, log)
+
+
+def _after_turn_land(t, log):
+    """THE ONE turn-end landing branch, shared by BOTH completion paths: the
+    steer path above and the FIRST turn of a machine/direct card
+    (dispatch._start_machine). Until 2026-09-12 only the steer path had it -
+    a direct card that finished in its first turn (the common case, e.g.
+    20260912-113606-direct, DELIVERED 11:38) never autocommitted, never
+    asked Henry for a ship decision, and sat in working until the owner
+    moved it by hand 4.5h later (backlog/direct-cards-never-land). Two
+    copies of this branch would drift again; one function cannot.
+    Returns t - a ship card may have self-closed (stored record wins)."""
     # FAST-TRACK = ship EVERY finished turn, hands-free. The flag used to fire
     # only when the OWNER dragged the card to Review - which is exactly the
     # manual push fast-track exists to remove ("man muss immer noch schieben,

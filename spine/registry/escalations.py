@@ -59,9 +59,15 @@ def record_note(eid, detail):
     _append({"event": "note", "id": eid, "detail": str(detail)[:400]})
 
 
-def record_decision(eid, action, card="", why=""):
-    _append({"event": "decision", "id": eid, "action": action,
-             "card": card, "why": why})
+def record_decision(eid, action, card="", why="", kind=""):
+    """`kind` = the ship verb's none|ota|native (2026-09-12: the decision row
+    used to say only `action: ship`, so whether anything shipped was
+    recoverable from the why-prose alone)."""
+    rec = {"event": "decision", "id": eid, "action": action,
+           "card": card, "why": why}
+    if kind:
+        rec["ship_kind"] = kind      # not `kind`: that column is the ESCALATION kind
+    _append(rec)
 
 
 def records():

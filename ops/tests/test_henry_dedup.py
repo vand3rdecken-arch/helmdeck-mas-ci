@@ -99,7 +99,7 @@ class _Esc:
     def record_note(self, i, n):
         self.notes.append(n)
 
-    def record_decision(self, i, a, card=None, why=""):
+    def record_decision(self, i, a, card=None, why="", kind=""):
         self.decisions.append(a)
 
 
