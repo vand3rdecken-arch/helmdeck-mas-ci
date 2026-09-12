@@ -8,7 +8,21 @@ mentioned above."
 This card is the revised implementation plan (v2, scored below; v1 was the
 file inventory + phases only and is superseded, its inventory is section 3).
 
-**Status:** phase A shipped (this commit); B-I open.
+**Status (2026-09-12, end of the first session):** shipped A, B, C, D, E, F,
+G-auth (sessions/invites/devices) and I - commits ec80a67 .. a0d8386, ledger
+head = 10, every file store of 60 MB is a table, the trigger is closed. OPEN:
+G-rest (`ops/harness/.versions/`, `.loop/workorder.md` + history,
+`checkpoints/<id>/settings.json`, `backups/reset-log.jsonl`) and H (events
+db-first - needs the owner's decision on the audit law). The running daemon
+applies ledger steps 1-10 on its next restart (one-time ~10 s for the
+recordings import).
+
+**Found on the way (not in the plan):** three tests had been `db.init()`-ing
+the LIVE db for weeks (steer_replace, steer_folds_clarification,
+status_store) - the new live-db guard in `db.conn()` caught them. Six tests
+fail identically on the baseline and were left alone (background_continue,
+worktree_never_init, lane_visibility, remote_device, fasttrack_deploy_autofix,
+henry_privilege_gate: stale stubs).
 
 ---
 
@@ -153,8 +167,21 @@ found and scheduled for deletion, secrets classified. Deductions:
 measurability 4 (the SessionStart latency for phase G and the chat window
 change are designed, not yet measured); events flip still an owner gate.
 
-**v2 final (4.8, this document):** phase order set by risk and proof value
+**v2 final (4.8):** phase order set by risk and proof value
 (A proves the ledger on existing tables, C proves the import-archive pattern
 on the smallest jsonl, F is the bulk), each phase names the failing-on-old-code
 test, done-criteria are all commands or counts. Remaining 0.2: phase H needs
 the owner, phase G latency needs a measurement.
+
+**v3 (post-execution re-score, 4.7):** root cause 5 (the trigger is closed by
+construction: scratch cwd + wrapper + leak detector, proven by a fake CLI that
+tries the exact redirect); law compliance 5 (append-only tables have no
+mutation path, one writer per store, every phase registered); migration
+safety 5 (every step count-verified, archived, dry-run on a copy of the live
+db before commit, rollback = retry); test proof 5 (each phase's test fails on
+the old code; the live-db guard turned three silent live writes into loud
+failures); scope 4 (G-rest and H not shipped; six baseline-broken tests left
+untouched by design); measurability 4 (the recordings import is measured at
+10.2 s and 78.5 MB, the cold fold at 48 ms, but the running daemon has not
+restarted yet, so the "zero untracked after a plan turn" criterion is proven
+by test, not yet observed live).

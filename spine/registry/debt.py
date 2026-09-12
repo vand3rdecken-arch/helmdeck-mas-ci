@@ -4873,7 +4873,14 @@ DEBT = [
                         "the exportability decree is unverifiable.",
         "trigger": "any second account or project, any restore, any card with "
                    "a long transcript",
-        "fix": "Phase A PAID in this commit: schema ledger (schema_migrations + "
+        "fix": "SHIPPED 2026-09-12 (ec80a67..a0d8386): A ledger + scope columns + "
+               "audit fixes + export/import; B planner scratch cwd + hd.py wrapper + "
+               "loop_state leak detector; C escalations; D pm_plans/pm_activity/"
+               "runtime_doc; E chat (full history); F runs/actions/timeline (57 MB); "
+               "G-auth sessions/invites/devices; I livebuf. OPEN: G-rest (harness "
+               ".versions, .loop workorders, checkpoints' settings copy, reset-log) "
+               "and H (events db-first - owner decision). Original plan text: "
+               "Phase A PAID in this commit: schema ledger (schema_migrations + "
                "PRAGMA user_version, one transaction per step, rollback + retry), "
                "virtual generated scope columns + indexes over the card/process/"
                "project blobs (writers untouched), dead `users` row deleted, "
