@@ -100,7 +100,7 @@ call = seen[0]
 check(call["hands"] is True, "_ask called with hands=True (permission default + pm.json allowlist)")
 check("PM / CTO role" in call["system"] or "PM/CTO" in call["system"], "role rides as the SYSTEM prompt")
 check("PM / CTO role" not in call["prompt"], "role is NOT duplicated in the turn text")
-check("EVIDENCE TOOLS" in call["prompt"] and "board_state.py --find" in call["prompt"]
+check("EVIDENCE TOOLS" in call["prompt"] and "hd.py board --find" in call["prompt"]
       and "henry_memory_get.py find" in call["prompt"], "turn carries the evidence tools block")
 check("DEIN GEDAECHTNIS" in call["prompt"], "turn carries the memory INDEX (progressive disclosure)")
 check("2 finished/archived cards" in call["prompt"], "turn states the measured hidden-history count")

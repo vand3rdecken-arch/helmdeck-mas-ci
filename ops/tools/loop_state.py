@@ -241,8 +241,25 @@ def checks_red(touched):
     return problems
 
 
+def state_leaks():
+    """Untracked, NOT-ignored files under daemon/ - a runtime write that
+    landed in the tree. Every store HelmDeck owns is a db row or an ignored
+    path by now (state-into-db), so anything git can see here was written by
+    an agent turn or a tool that should have written a row - the class of
+    the 2026-09-11 daemon/board_full.txt dump, caught by code in seconds
+    instead of by the owner's diff view a day later."""
+    out = []
+    for line in _git("status", "--porcelain", "--untracked-files=all", "--", "daemon").splitlines():
+        if line.startswith("?? "):
+            out.append(line[3:].strip())
+    return out
+
+
 def hygiene_problems():
     problems = []
+    for f in state_leaks():
+        problems.append("state leak: %s (untracked runtime write under daemon/ - a db row or a "
+                        ".gitignore rule, never a file in the tree)" % f)
     tracked = _git("ls-files").splitlines()
     for t in tracked:
         base = os.path.basename(t)

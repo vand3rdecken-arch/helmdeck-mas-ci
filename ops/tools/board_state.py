@@ -98,7 +98,13 @@ def format_card(t):
         lines.append("OUTCOME:\n" + str(t["outcome"]))
     if t.get("last_reply"):
         lines.append("LAST REPLY (full):\n" + str(t["last_reply"]))
-    return "\n".join(lines)
+    out = "\n".join(lines)
+    # CAP (state-into-db phase B): a planner-facing answer must never be worth
+    # dumping to a file - 8k chars is a whole card for any question a plan
+    # asks; the tail is the least useful part of a long last reply.
+    if len(out) > 8000:
+        out = out[:8000] + "\n... [card output capped at 8000 chars]"
+    return out
 
 
 def main(argv):

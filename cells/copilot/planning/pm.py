@@ -264,9 +264,15 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
         extra = [os.path.dirname(_sys.executable),
                  os.environ.get("SystemRoot") or os.environ.get("WINDIR") or "C:\\Windows"]
         env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
-    p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env)
-    stdout, stderr = p.communicate(input=prompt, timeout=timeout)
+    cwd = _scratch_cwd() if hands else ROOT
+    try:
+        p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env)
+        stdout, stderr = p.communicate(input=prompt, timeout=timeout)
+    finally:
+        if hands:
+            import shutil
+            shutil.rmtree(cwd, ignore_errors=True)
     if not (stdout or "").strip():
         raise RuntimeError("pm: no model output: " + (stderr or "").strip()[:200])
     d = json.loads(stdout)
@@ -291,20 +297,70 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
 # exact strings pm.json allowlists, so a differently-spelled call would die
 # silently in headless -p.
 EVIDENCE_TOOLS = (
-    "\n\nEVIDENCE TOOLS (run them with the PowerShell tool, read-only, pre-approved in exactly this form; your cwd is daemon/):\n"
-    "    py -3.12 ../ops/tools/board_state.py --find <term> [term ...]   # finished+live cards carrying ALL terms (outcome + reply)\n"
-    "    py -3.12 ../ops/tools/board_state.py --card <id-fragment>       # ONE card in full\n"
-    "    py -3.12 ../ops/tools/henry_memory_get.py find <term> [term ...] # Henry's memory notes carrying ALL terms, in full\n"
-    "    py -3.12 ../ops/tools/henry_memory_get.py get <name>             # one note by index name\n"
-    "    git log --oneline -n 30                                            # what actually shipped lately\n"
-    "FIRST CALL, always: `py -3.12 ../ops/tools/henry_memory_get.py find owner` - every note naming a delivery or "
+    "\n\nEVIDENCE TOOLS (run them with the PowerShell tool, read-only, pre-approved in exactly this form; "
+    "your cwd is a scratch folder that holds only hd.py):\n"
+    "    py -3.12 hd.py board --find <term> [term ...]   # finished+live cards carrying ALL terms (outcome + reply)\n"
+    "    py -3.12 hd.py board --card <id-fragment>       # ONE card in full\n"
+    "    py -3.12 hd.py memory find <term> [term ...]    # Henry's memory notes carrying ALL terms, in full\n"
+    "    py -3.12 hd.py memory get <name>                # one note by index name\n"
+    "    py -3.12 hd.py log                              # what actually shipped lately (git log, 30 lines)\n"
+    "FIRST CALL, always: `py -3.12 hd.py memory find owner` - every note naming a delivery or "
     "decision that WAITS ON THE OWNER (a demo video, an approval, a go) is a launch blocker candidate; the oldest "
     "unresolved one is critical_path step 1 with who=du. Measured 2026-09-12: the plan asked about test automation "
-    "while the iOS resubmission had been waiting two days on the owner's iPhone demo video, recorded in memory.\\n"
+    "while the iOS resubmission had been waiting two days on the owner's iPhone demo video, recorded in memory.\n"
     "Budget: at most 8 tool calls. Search BEFORE you assume or ask - the board below is the LIVE slice only; "
     "%d finished/archived cards and the memory notes are behind these tools, and that is where the answer to "
-    "'has X already been done/decided' lives. Never Read a file path directly; never write anything."
+    "'has X already been done/decided' lives. Never Read a file path directly; never write anything - a tool "
+    "answer is already the smallest slice that answers the question, there is nothing worth dumping to a file."
 )
+
+
+# The ONE script the planner's scratch cwd contains. It dispatches to the
+# real read-only tools by ABSOLUTE path (spaces in the repo path never touch
+# a permission rule: the allowlisted command is always `py -3.12 hd.py ...`)
+# and runs git in the repo. Generated per spawn, so the baked-in root is
+# always this daemon's.
+_WRAPPER = """# -*- coding: utf-8 -*-
+# HelmDeck PM evidence wrapper - generated per planning turn, read-only.
+import os, subprocess, sys
+REPO = %(repo)r
+TOOLS = os.path.join(REPO, "ops", "tools")
+
+
+def run(argv, cwd=None):
+    r = subprocess.run(argv, cwd=cwd or REPO, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    sys.stdout.write(r.stdout)
+    if r.returncode:
+        sys.stdout.write(r.stderr)
+    return r.returncode
+
+
+a = sys.argv[1:]
+if a and a[0] == "board" and len(a) > 1 and a[1] in ("--find", "--card", "--live"):
+    sys.exit(run([sys.executable, os.path.join(TOOLS, "board_state.py")] + a[1:]))
+if a and a[0] == "memory" and len(a) > 1 and a[1] in ("find", "get", "list"):
+    sys.exit(run([sys.executable, os.path.join(TOOLS, "henry_memory_get.py")] + a[1:]))
+if a and a[0] == "log":
+    sys.exit(run(["git", "-C", REPO, "log", "--oneline", "-n", "30"]))
+sys.stdout.write("usage: hd.py board --find|--card ... | memory find|get ... | log\\n")
+sys.exit(2)
+"""
+
+
+def _scratch_cwd():
+    """A fresh, empty working directory OUTSIDE the repo for one planning
+    turn, holding only hd.py. The trigger of state-into-db (2026-09-11
+    22:01Z): the planner dumped `board_state.py --full` to a file so it could
+    grep it, the prefix allowlist cannot see a `>` redirect, and cwd was
+    daemon/ - so the dump landed in the repo. Whatever a turn writes now lands
+    here and is removed with the directory."""
+    import tempfile
+    from daemon.paths import REPO_ROOT
+    d = tempfile.mkdtemp(prefix="hd-pm-")
+    with open(os.path.join(d, "hd.py"), "w", encoding="utf-8") as f:
+        f.write(_WRAPPER % {"repo": REPO_ROOT})
+    return d
 
 
 def _memory_index():

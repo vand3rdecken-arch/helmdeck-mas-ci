@@ -25,20 +25,27 @@
     "PowerShell entries (measured 2026-09-12, stream-json): the CLI's Bash tool",
     "runs Git-Bash where `py` is NOT on PATH (exit 127), the model then retries",
     "in the PowerShell tool, which needs its own allow rule or it dies with",
-    "'requires approval'. Both tools are therefore allowed for the same three",
-    "read-only commands, and EVIDENCE_TOOLS tells the planner to use PowerShell."
+    "'requires approval'. Both tools are therefore allowed for the same",
+    "read-only command, and EVIDENCE_TOOLS tells the planner to use PowerShell.",
+    "",
+    "ONE command (state-into-db phase B, 2026-09-12): the planner's cwd is a",
+    "throwaway scratch folder outside the repo holding only hd.py, a wrapper",
+    "pm._scratch_cwd() generates per turn that dispatches to board_state.py /",
+    "henry_memory_get.py / git log by ABSOLUTE path. Why: on 2026-09-11 the",
+    "planner redirected a 105k-char board dump to a file so it could grep it -",
+    "a `:*` prefix rule cannot see a `>` redirect - and with cwd=daemon/ the",
+    "dump landed in the repo (daemon/board_full.txt). Now any stray write lands",
+    "in the scratch folder and dies with it. Relative ../ops paths would not",
+    "resolve from there and absolute paths carry spaces that break prefix",
+    "matching, hence the wrapper."
   ],
   "env": {
     "HELMDECK_SURFACE": "pm"
   },
   "permissions": {
     "allow": [
-      "PowerShell(py -3.12 ../ops/tools/board_state.py:*)",
-      "PowerShell(py -3.12 ../ops/tools/henry_memory_get.py:*)",
-      "PowerShell(git log:*)",
-      "Bash(py -3.12 ../ops/tools/board_state.py:*)",
-      "Bash(py -3.12 ../ops/tools/henry_memory_get.py:*)",
-      "Bash(git log:*)"
+      "PowerShell(py -3.12 hd.py:*)",
+      "Bash(py -3.12 hd.py:*)"
     ],
     "deny": [
       "Agent",
