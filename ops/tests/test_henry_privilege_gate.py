@@ -49,8 +49,7 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     auth.SESS = os.path.join(tmp, "sessions.json")
     db.init()
-    from spine.registry import escalations
-    escalations.ESC_PATH = os.path.join(tmp, "escalations.jsonl")
+    # escalations live in the sandboxed db since state-into-db phase C
 
     auth.create_user("duy", "owner-password-1", "owner")
     auth.create_user("opuser", "operator-password-1", "operator")

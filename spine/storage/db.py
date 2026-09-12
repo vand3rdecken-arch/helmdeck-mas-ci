@@ -1212,6 +1212,94 @@ def _m5(c):
     _add_json_column(c, "events", "at_utc")
 
 
+def _file_steps_allowed():
+    """The A7 guard, for ledger steps that import a file under ROOT: a caller
+    that repointed DBPATH but not ROOT (or vice versa) gets the table but not
+    the import, loudly - never a live file archived into a sandbox db."""
+    ok = os.path.dirname(os.path.abspath(DBPATH)) == os.path.abspath(ROOT)
+    if not ok:
+        print("db: ledger file import SKIPPED - ROOT (%s) and DBPATH's directory (%s) disagree"
+              % (ROOT, os.path.dirname(DBPATH)))
+    return ok
+
+
+def _import_jsonl(c, path, insert):
+    """Stream a legacy .jsonl into the db via insert(c, rec) and archive it.
+    Nothing-lost: the number of rows inserted must equal the number of
+    parsable lines, else the step raises (rolled back, file untouched, retried
+    next boot). Returns the count."""
+    n_lines = n_rows = 0
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            n_lines += 1
+            n_rows += 1 if insert(c, rec) else 0
+    if n_rows != n_lines:
+        raise RuntimeError("import of %s: %d lines but %d rows inserted" % (path, n_lines, n_rows))
+    _archive(path)
+    print("db: imported %d rows from %s (archived)" % (n_rows, os.path.basename(path)))
+    return n_rows
+
+
+@_migration(6, "escalations-table")
+def _m6(c):
+    """Phase C: the escalation bus (spine/registry/escalations.py) was an
+    append-only JSONL folded in full on EVERY list_open() - 1292 lines parsed
+    per lane tick, per Henry pass, per PM question. Same records, same
+    append-only law (no UPDATE/DELETE path - test_db_schema pins it), folded
+    by one indexed query instead."""
+    c.execute("""CREATE TABLE IF NOT EXISTS escalations(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, ts TEXT NOT NULL,
+        event TEXT NOT NULL, kind TEXT, track TEXT, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS esc_id ON escalations(id)")
+    c.execute("CREATE INDEX IF NOT EXISTS esc_track ON escalations(track)")
+    legacy = os.path.join(ROOT, "state", "escalations.jsonl")
+    if os.path.exists(legacy) and _file_steps_allowed():
+        def ins(c, r):
+            _escalation_insert(c, r)
+            return True
+        _import_jsonl(c, legacy, ins)
+
+
+def _escalation_insert(c, rec):
+    extra = {k: v for k, v in rec.items() if k not in ("id", "ts", "event", "kind", "card")}
+    c.execute("INSERT INTO escalations(id,ts,event,kind,track,data) VALUES(?,?,?,?,?,?)",
+              (rec.get("id"), rec.get("ts") or "", rec.get("event") or "", rec.get("kind"),
+               rec.get("card"), json.dumps(extra, ensure_ascii=False)))
+
+
+def escalation_append(rec):
+    """ONE row per bus record (open/attempt/note/decision). Append-only."""
+    with conn() as c:
+        _escalation_insert(c, rec)
+    bump()
+
+
+def escalations_rows():
+    """Every record in bus order, as the dicts escalations.py folds - the
+    `card` key is the track column, everything else rides in data."""
+    rows = conn().execute(
+        "SELECT id,ts,event,kind,track,data FROM escalations ORDER BY seq").fetchall()
+    out = []
+    for rid, ts, ev, kind, track, data in rows:
+        r = {"id": rid, "ts": ts, "event": ev}
+        if kind is not None:
+            r["kind"] = kind
+        r["card"] = track
+        try:
+            r.update(json.loads(data))
+        except ValueError:
+            pass
+        out.append(r)
+    return out
+
+
 def schema_head():
     """The highest ledger version this code knows - what user_version must
     equal after init() on any install."""
