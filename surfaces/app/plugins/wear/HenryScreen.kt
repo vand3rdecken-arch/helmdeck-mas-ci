@@ -50,6 +50,7 @@ import app.helmdeck.wear.data.RelayClient
 import app.helmdeck.wear.data.VoicePlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -370,13 +371,27 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     suspend fun refresh() {
         val device = DeviceStore.load(context) ?: return
         loadingHistory = lines.isEmpty()
-        val result = withContext(Dispatchers.IO) {
-            runCatching {
-                RelayClient.authedCall(
-                    device.relayUrl, device.room, device.daemonPubB64,
-                    device.myPublicKeyB64, device.mySecretKeyB64,
-                    device.deviceToken, "GET", "/wear/chat")
-            }.getOrNull()
+        // RETRY, not return: the wake-up (WearStream's chat cursor) and this
+        // load are two requests, and the cursor is already consumed by the
+        // time we get here. One failed load - a relay timeout, a socket the
+        // watch dropped in ambient mode - used to leave the transcript stuck
+        // until the NEXT chat write (owner 2026-09-12: "auf keinem Geraet
+        // sehe ich die Antwort direkt"). Same shape as the phone's
+        // ensureChatFresh (data/stream.ts): capped backoff, bounded.
+        var result: Pair<Int, String>? = null
+        var wait = 2_000L
+        for (attempt in 0 until 5) {
+            result = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "GET", "/wear/chat")
+                }.getOrNull()
+            }
+            if (result != null && result.first in 200..299) break
+            delay(wait)
+            wait = minOf(wait * 2, 15_000L)
         }
         loadingHistory = false
         if (result == null || result.first !in 200..299) return
