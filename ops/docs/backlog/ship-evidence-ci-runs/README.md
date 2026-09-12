@@ -59,3 +59,17 @@ berührt, weiter einen Failure aus (Push-Trigger in `.github/workflows/desktop-m
 `gh api`-Ergebnis (billing-Annotation) laufen lässt und den `ci`-Block prüft;
 Test, dass ein failure-Run genau EINE `ci-failed`-Eskalation erzeugt und ein
 zweiter Poll keine zweite.
+
+## Status 2026-09-12 23:40 — Schritte 1+2 durch die Karten-Architektur erledigt (4e4f5cc)
+
+Owner-Korrektur: nicht `ship_facts.py` erweitern, sondern die ENTSCHEIDUNG
+als Karte laufen lassen, die selbst recherchiert. Umgesetzt: jede Landung
+legt eine `decide`-Ship-Karte an (`ship-worker.md`, Phase DECIDE liest
+GitHub-Actions-Runs mit dem Tienduyvo-Token, Relay, git diff), entscheidet
+none|ota|native, führt aus, verifiziert, schließt sich mit SHIP: OK|NONE.
+Henry bleibt Exception-Broker für hängende Karten.
+
+**Offen bleibt nur Schritt 3** (Rückkanal für einen Run, der ERST NACH dem
+Push rot wird, z.B. ein 20-Minuten-Build, der bei Minute 15 scheitert):
+Daemon pollt den Run nach dem Push und öffnet bei `failure` eine Eskalation
+`ci-failed` an Henry. Kleine Karte, kein Blocker.
