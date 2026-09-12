@@ -217,6 +217,16 @@ export const harnessRules: Dict = {
     de: "An: er schreibt Karte, Arbeit, Abnahme — nicht die internen Wörter dafür.",
     en: "On: he writes card, work, acceptance — not the internal words for them.",
   },
+  "harness.blk.ship": { de: "Wie geshippt wird", en: "How it ships" },
+  "harness.blk.ship.desc": {
+    de: "Der Ship-Prozess dieses Projekts — Kanäle, Skripte, CI, Konto. Die Ship-Karte liest ihn und recherchiert selbst weiter.",
+    en: "This project's ship process — channels, scripts, CI, account. The ship card reads it and researches the rest itself.",
+  },
+  "rule.ship.process": { de: "Ship-Prozess", en: "Ship process" },
+  "rule.ship.process.desc": {
+    de: "Freitext pro Projekt: welche Kanäle es gibt, welche Skripte shippen, wo CI läuft und mit welchem Konto, wie verifiziert wird. Leer = die Karte liest DEPLOY.md/README selbst.",
+    en: "Free text per project: which channels exist, which scripts ship, where CI runs and under which account, how to verify. Empty = the card reads DEPLOY.md/README itself.",
+  },
   "rule.tone.houseRules": { de: "Eigene Hausregeln", en: "Your own house rules" },
   "rule.tone.houseRules.desc": {
     de: "Freitext, den Henry zusätzlich zu allem anderen befolgt. Eine Regel pro Zeile. Er kann damit nur strenger werden, nie nachlässiger.",

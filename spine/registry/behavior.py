@@ -93,6 +93,7 @@ BLOCKS = (
     {"key": "report", "labelKey": "harness.blk.report", "descKey": "harness.blk.report.desc"},
     {"key": "memory", "labelKey": "harness.blk.memory", "descKey": "harness.blk.memory.desc"},
     {"key": "routing", "labelKey": "harness.blk.routing", "descKey": "harness.blk.routing.desc"},
+    {"key": "ship", "labelKey": "harness.blk.ship", "descKey": "harness.blk.ship.desc"},
 )
 
 # How a rule is wired to reality. The distinction is load-bearing: it is what
@@ -470,6 +471,29 @@ BEHAVIOR_RULES = [
     # `reads` names the CELL that actually calls turnopts with this value -
     # cell_of() therefore attributes ownership to engineer/copilot, not spine,
     # exactly the split the owner asked for.
+    # ------------------------------------------------------------------ ship --
+    # THE SHIP PROCESS IS CONFIG, PER PROJECT (owner decree 2026-09-12: "der
+    # shipping process ist auch config und muss in die db, schliesslich hat
+    # jede Software einen anderen shipping process"). The ship card's brief
+    # (cells/engineer/harness/agents/ship-worker.md) holds the METHOD only -
+    # research wide, three questions, verdict line. WHERE to look and WHAT
+    # to run for THIS project (channels, deploy scripts, CI repos, which gh
+    # account, verify commands) is this row, appended verbatim to every ship
+    # card's task text by dispatch.ship_process(). Empty = the card reads the
+    # repo's own DEPLOY.md/README and repo_hooks.deploy and says what it
+    # could not find. HelmDeck's own process is a stored project row, not a
+    # default here - a second project must never inherit HelmDeck's relay.
+    {"key": "ship.process", "block": "ship", "wire": "code", "kind": "policy",
+     "control": "text", "scope": "project", "binds": [],
+     "labelKey": "rule.ship.process", "descKey": "rule.ship.process.desc",
+     "why": "Jede Software shippt anders (Relay+OTA+APK hier, ein Docker-Push "
+            "oder ein npm publish woanders). Steht der Prozess im Brief, gilt er "
+            "fuer alle Projekte zugleich - also Config pro Projekt, die Karte "
+            "liest sie im Task und recherchiert selbst weiter.",
+     "reads": "cells/engineer/cards/dispatch.py::ship_process",
+     "surfaces": {"all": {"default": "", "renders": None}},
+     "source": "cells/engineer/harness/agents/ship-worker.md"},
+
     {"key": "routing.auto_model", "block": "routing", "wire": "code", "kind": "policy",
      "control": "single", "options": ["claude-sonnet-5", "claude-opus-5"],
      "scope": "project", "binds": [],

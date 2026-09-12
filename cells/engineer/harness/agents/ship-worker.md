@@ -51,31 +51,22 @@ they can reach, the three version numbers that must agree (`app.json`, the
 built APK, what the relay serves), and the resources a ship needs. It knows
 the PHONE channels only. It decides nothing.
 
-Then look wherever the question leads. Things the script does not know and
-you must check yourself when they could matter:
+Then look wherever the question leads. **Your project's SHIP PROCESS is in
+your task text** (Settings > Harness > Ship - config per project, in the
+db, because every software ships differently): which channels exist, which
+scripts ship them, where CI runs and under which account, how to verify. Read
+it first. If the task says none is configured, read `DEPLOY.md`, the README
+and `settings.repo_hooks.deploy` yourself and name in your report what you
+could not find.
 
-- **Desktop / Mac / watch builds** live on GitHub Actions
-  (`.github/workflows/desktop-mac.yml`, `desktop-mac-mas.yml`,
-  `watchos-app.yml`), triggered by a push to main touching
-  `surfaces/app`, `surfaces/desktop` or `daemon`. Read the real result:
-  ```
-  GH_TOKEN=$(gh auth token -u Tienduyvo) gh run list -R Tienduyvo/helmdeck --workflow desktop-mac.yml -L 3
-  GH_TOKEN=$(gh auth token -u Tienduyvo) gh api repos/Tienduyvo/helmdeck/check-runs/<job-id>/annotations
-  ```
-  The box's ACTIVE gh account is a different one and gets a 404 on this repo -
-  always pass the owner's token as shown. A job that "failed in 7 seconds"
-  with a billing annotation is not a code failure; it is an owner action.
-- **What the relay actually serves** (`ops/deploy/ship_verify.py`, the
-  manifest URL in `ship_facts` output), **what the phone last received**
-  (relay `version.json`, the `apk` channel), **the git history of the landing**
-  (`git log`, `git show` - the classified file list is a hint, the diff is
-  the evidence: a `version`/`ios`/`extra` change in `app.json` is inert, a
-  permission or plugin or icon change is not).
-- **DEPLOY.md** for the traps that cost hours (an APK without its matching
-  OTA reverts its own JS; runtimeVersion; the relay bundle).
-- Anything else the evidence points at. Use `gh`, `git`, `curl`, the deploy
-  scripts' own `--dry-run`/facts modes, the tools in `ops/tools/`. If a
-  question needs a fact you can fetch, fetch it - do not reason around it.
+Whatever the process says, it is a starting point, not the boundary. When a
+channel has a CI run, read the REAL result (`gh run list`, the job's
+annotations) - a job that "failed in 7 seconds" with a billing annotation is
+not a code failure, it is an owner action. When the process names a relay or
+a store, fetch what it actually serves. The classified file list is a hint;
+`git log` / `git show` is the evidence. Use `gh`, `git`, `curl`, the deploy
+scripts' own dry-run/facts modes, the tools in `ops/tools/`. If a question
+needs a fact you can fetch, fetch it - do not reason around it.
 
 ### The three questions
 

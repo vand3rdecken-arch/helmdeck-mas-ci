@@ -548,6 +548,22 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     return cur
 
 
+def ship_process(repo):
+    """This project's SHIP PROCESS - the text of rule.ship.process (spine/
+    registry/behavior.py, block `ship`), resolved for the repo's project key.
+    Owner decree 2026-09-12: the ship process is config per project, in the
+    db, because every software ships differently; the ship card's brief is
+    the METHOD, this is the WHERE/WHAT. Returns "" when the project set none
+    (the brief then tells the card to read DEPLOY.md/README itself). Never
+    raises - a broken row must not stop a landing from filing its card."""
+    try:
+        from spine.storage import projectconfig
+        got = projectconfig.resolve("rule.ship.process.all", projectconfig.project_key(repo))
+        return (got.get("value") or "").strip()
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+
 def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True):
     """Owner decree 2026-09-09 (18:04 correction): a ship runs as its own
     visible board card - lane, timeline, steerable, self-correcting like any
@@ -599,6 +615,13 @@ def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True):
                "final reply with exactly the line 'SHIP: OK' or 'SHIP: FAILED'." % kind)
         desc = "Ausgeloest von Henrys Ship-Entscheid (%s)%s." % (
             kind, (" fuer Karte %s" % origin_card) if origin_card else "")
+    proc = ship_process(repo)
+    if proc:
+        task += "\n\nSHIP-PROZESS DIESES PROJEKTS (Settings > Harness > Ship, pro Projekt):\n" + proc
+    else:
+        task += ("\n\nSHIP-PROZESS: fuer dieses Projekt ist keiner hinterlegt (Settings > "
+                 "Harness > Ship). Lies DEPLOY.md / README / settings.repo_hooks.deploy "
+                 "und nenne im Bericht, was du nicht finden konntest.")
     t = new_direct_task(repo, task, actor=actor, priority="high",
                         description=desc, dispatch=False, driver="claude")
 

@@ -159,6 +159,20 @@ check("SHIP: NONE self-closed the decide card to Done", t4.get("lane") == "done"
 t5 = dispatch.new_ship_task(repo, "decide", actor="harness", dispatch=False)
 check("dispatch=False files without starting a turn", t5.get("lane") != "done" and not t5.get("session_id"))
 
+# -- 4c) the project's ship process rides in the task text (config, not brief) --
+from spine.storage import projectconfig as _pc
+_real_resolve = _pc.resolve
+_pc.resolve = lambda path, project="": ({"value": "OTA: bash deploy/ota.sh", "layer": "project", "inherited": False}
+                                        if path == "rule.ship.process.all" else _real_resolve(path, project))
+try:
+    t6 = dispatch.new_ship_task(repo, "decide", actor="harness", dispatch=False)
+    check("ship.process row lands verbatim in the card's task", "OTA: bash deploy/ota.sh" in t6["task"])
+    _pc.resolve = lambda path, project="": {"value": "", "layer": "default", "inherited": True}
+    t7 = dispatch.new_ship_task(repo, "decide", actor="harness", dispatch=False)
+    check("no process configured -> the task says so and points at DEPLOY.md", "DEPLOY.md" in t7["task"])
+finally:
+    _pc.resolve = _real_resolve
+
 # -- 5) kind is validated - dispatch never guesses --------------------------
 try:
     dispatch.new_ship_task(repo, "banana", actor="henry")
