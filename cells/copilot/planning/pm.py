@@ -18,7 +18,8 @@ import json, math, os, re, subprocess, threading, time
 from spine.registry import i18n as _i18n
 
 from daemon.paths import DAEMON_ROOT as ROOT
-PLANS = os.path.join(ROOT, "pm")
+# Plan artifacts, activity and loop state are db rows since state-into-db
+# phase D (ledger step 7 imported daemon/pm/*) - there is no PLANS dir.
 
 PM_DEFAULTS = {
     "goal": "",
@@ -204,7 +205,7 @@ def _system_state():
 
 from cells.copilot.planning.pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
                        _usage_flag_text, _quota_floor, _goal_budget_text, _triage_green)
-from cells.copilot.planning.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle, LOOPSTATE
+from cells.copilot.planning.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle
 
 
 # -- golden-triangle gate: extracted to pm_triangle.py (god-file breakup). --
@@ -330,24 +331,20 @@ def _hidden_history_count():
 
 
 def _write_artifact(out):
+    """One plan per day (pm_plans row keyed by day - a re-plan the same day
+    replaces it, exactly as the plan-YYYYMMDD.json file did)."""
     try:
-        os.makedirs(PLANS, exist_ok=True)
-        with open(os.path.join(PLANS, "plan-%s.json" % time.strftime("%Y%m%d")), "w", encoding="utf-8") as f:
-            json.dump(out, f, indent=1, ensure_ascii=False)
-    except OSError:
-        pass
+        from spine.storage import db
+        db.pm_plan_put(time.strftime("%Y%m%d"), out)
+    except Exception as e:                                       # noqa: BLE001
+        print("pm: plan artifact not stored:", e)
 
 
 def latest_plan():
-    if not os.path.isdir(PLANS):
-        return None
-    days = sorted(f for f in os.listdir(PLANS) if f.startswith("plan-"))
-    if not days:
-        return None
     try:
-        with open(os.path.join(PLANS, days[-1]), encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+        from spine.storage import db
+        return db.pm_plan_latest()
+    except Exception:                                            # noqa: BLE001
         return None
 
 
@@ -642,18 +639,12 @@ _STALE_Q_PLANS = 3
 
 def _recent_plans(n):
     """The last n plan artifacts (oldest first), for measuring repetition.
-    Read from disk each time - no stored counter to drift."""
-    if not os.path.isdir(PLANS):
+    Read from the store each time - no stored counter to drift."""
+    try:
+        from spine.storage import db
+        return db.pm_plans_recent(n)
+    except Exception:                                            # noqa: BLE001
         return []
-    days = sorted(f for f in os.listdir(PLANS) if f.startswith("plan-"))[-n:]
-    out = []
-    for f in days:
-        try:
-            with open(os.path.join(PLANS, f), encoding="utf-8") as fh:
-                out.append(json.load(fh))
-        except (OSError, ValueError):
-            continue
-    return out
 
 
 def _stale_question_guard(questions, prev):
@@ -1597,9 +1588,8 @@ def status():
 # existing pm.<name> caller (routes_pm.py, this file's own many callers)
 # stays unchanged.
 from cells.copilot.planning.pm_comm import (
-    PLANS as _COMM_PLANS, _ACTIVITY, _activity, _say, _escalation_tid,
+    _activity, _say, _escalation_tid,
     _escalate, _ask_owner, _to_henry, _short, _read_activity)
-assert _COMM_PLANS == PLANS, "pm_comm.PLANS drifted from pm.PLANS"
 
 
 def activity():

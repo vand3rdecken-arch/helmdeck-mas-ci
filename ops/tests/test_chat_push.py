@@ -54,8 +54,6 @@ from cells.copilot.routes import routes_copilot
 # session - the class of accident that once wiped real recordings.
 copilot.ROOT = SANDBOX
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
-copilot.SESS = os.path.join(SANDBOX, "copilot_sessions.json")
-copilot_stats.STATS = os.path.join(SANDBOX, "copilot_stats.json")
 
 from spine.agent import drivers
 from spine.auth import auth

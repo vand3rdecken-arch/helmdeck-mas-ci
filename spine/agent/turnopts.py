@@ -149,7 +149,7 @@ def _settings_models():
 # it for: curated labels/order + an OFFLINE FALLBACK. Cached 24h; any failure
 # (no token, offline, 401) silently falls back to the last cache, then the
 # manifest - the picker is never empty.
-_MODELS_CACHE = os.path.join(_DAEMON_ROOT, "state", "models_cache.json")
+_MODELS_CACHE_KEY = "models_cache"   # runtime_doc row (state-into-db phase D)
 _DISCOVER_TTL = 24 * 3600
 
 
@@ -186,17 +186,18 @@ def _discovered():
     """Cached live models (24h TTL). Fetches when stale; on failure serves the
     last good cache; [] if none (then the manifest stands alone)."""
     now = time.time()
+    from spine.storage import db
     try:
-        cache = json.load(open(_MODELS_CACHE, encoding="utf-8"))
-    except (OSError, ValueError):
+        cache = db.doc_get(_MODELS_CACHE_KEY)
+    except Exception:                                            # noqa: BLE001
         cache = None
     if cache and (now - cache.get("at", 0)) < _DISCOVER_TTL:
         return cache.get("models", [])
     fresh = _fetch_models()
     if fresh is not None:
         try:
-            json.dump({"at": now, "models": fresh}, open(_MODELS_CACHE, "w", encoding="utf-8"))
-        except OSError:
+            db.doc_put(_MODELS_CACHE_KEY, {"at": now, "models": fresh})
+        except Exception:                                        # noqa: BLE001
             pass
         return fresh
     return (cache or {}).get("models", [])   # stale cache, or [] -> manifest only

@@ -73,8 +73,9 @@ def main():
     real_threading, real_gate = processes.threading, sessions._gate
     real_directives = cardadmin.DIRECTIVES
     real_settings = events.settings
-    real_pm_threading, real_loopstate, real_say = (
-        pm_resolve.threading, pm_state.LOOPSTATE, pm_resolve._say)
+    from spine.storage import db
+    real_pm_threading, real_dbpath, real_say = (
+        pm_resolve.threading, db.DBPATH, pm_resolve._say)
     try:
         fake = FakeDB()
         trackstore._db = fake
@@ -85,7 +86,10 @@ def main():
         # the PM ladder is driven, not run: its threads are recorded, its
         # loopstate lives in the temp dir, and it never speaks into the chat
         pm_resolve.threading = FakeThreading
-        pm_state.LOOPSTATE = os.path.join(tmp, "loop.json")
+        # loop state is a db row (state-into-db phase D): sandbox the store
+        db.DBPATH = os.path.join(tmp, "test.db")
+        db._local.c = None
+        db.init()
         pm_resolve._say = lambda *a, **k: None
 
         # -- the flag is its own field, editable both ways ------------------
@@ -220,8 +224,9 @@ def main():
         processes.threading = real_threading
         sessions._gate = real_gate
         cardadmin.DIRECTIVES = real_directives
-        pm_resolve.threading, pm_state.LOOPSTATE, pm_resolve._say = (
-            real_pm_threading, real_loopstate, real_say)
+        pm_resolve.threading, db.DBPATH, pm_resolve._say = (
+            real_pm_threading, real_dbpath, real_say)
+        db._local.c = None
         pm._resolving.clear()
         shutil.rmtree(tmp, ignore_errors=True)
 

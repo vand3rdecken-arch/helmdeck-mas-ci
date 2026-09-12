@@ -7,8 +7,7 @@ Computed from the REAL board, never LLM-guessed, so it's reliable.
 
 Depends only on i18n/copilot/sessions/notify - nothing back into pm.py's own
 logic, so pm.py (and the extracted pm_resolve.py) import these at module
-level with no cycle. PLANS is recomputed independently rather than imported
-from pm.py (same value, process-idempotent - importing it would cycle back).
+level with no cycle.
 
 THE NOTICE LAW (owner decree 2026-08-30, verbatim: "Diese Karte sollte in der
 Form nicht mehr im Chat sein. Zu viel info.. bzw ich weiss nicht was ich dazu
@@ -31,25 +30,21 @@ context watchdog was worse - it was ADDRESSED to Henry ("Karte kompaktieren,
 aufteilen oder abschliessen") and delivered to the owner. Both are routed by
 the rule above now, not by whoever wrote the string."""
 import json
-import os
 import time
 
 from spine.registry import i18n as _i18n
 from spine.comms.notice import short as _short
 from daemon.paths import DAEMON_ROOT as ROOT
 
-PLANS = os.path.join(ROOT, "pm")
-_ACTIVITY = os.path.join(PLANS, "activity.jsonl")
-
-
 def _activity(kind, msg, card=None):
-    """Append one plain-language line the PM 'said' (planned/started/blocked)."""
+    """Append one plain-language line the PM 'said' (planned/started/blocked).
+    Store: the pm_activity table (state-into-db phase D; ledger step 7
+    imported daemon/pm/activity.jsonl). Best-effort - a feed line must never
+    break the planning turn that emits it."""
     try:
-        os.makedirs(PLANS, exist_ok=True)
-        with open(_ACTIVITY, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": time.strftime("%Y-%m-%d %H:%M"), "kind": kind,
-                                "msg": msg, "card": card}, ensure_ascii=False) + "\n")
-    except OSError:
+        from spine.storage import db
+        db.pm_activity_append(kind, msg, card=card, ts=time.strftime("%Y-%m-%d %H:%M"))
+    except Exception:                                            # noqa: BLE001
         pass
 
 
@@ -248,8 +243,7 @@ def _escalate(text, tid="", title=""):
 
 def _read_activity(n=20):
     try:
-        with open(_ACTIVITY, encoding="utf-8") as f:
-            lines = f.readlines()[-n:]
-        return [json.loads(x) for x in lines if x.strip()]
-    except (OSError, ValueError):
+        from spine.storage import db
+        return db.pm_activity_tail(n)
+    except Exception:                                            # noqa: BLE001
         return []

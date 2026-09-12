@@ -7,26 +7,21 @@ the flat subscription, owner decree). Not monkeypatched by the suite; copilot.py
 re-imports these names so every caller is unchanged.
 """
 import json
-import os
 import time
 
-from daemon.paths import DAEMON_ROOT as ROOT
-STATS = os.path.join(ROOT, "state", "copilot_stats.json")
+# The stats doc is the runtime_doc row "copilot_stats" (state-into-db phase D;
+# ledger step 7 imported state/copilot_stats.json).
+_STATS_KEY = "copilot_stats"
 
 
 def _stats():
-    try:
-        with open(STATS, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    from spine.storage import db
+    return db.doc_get(_STATS_KEY, {}) or {}
 
 
 def _save_stats(d):
-    tmp = STATS + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f)
-    os.replace(tmp, STATS)
+    from spine.storage import db
+    db.doc_put(_STATS_KEY, d)
 
 
 def _fold_stats(user, result, ctx_usage):

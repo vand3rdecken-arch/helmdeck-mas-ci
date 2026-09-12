@@ -31,11 +31,10 @@ SANDBOX = tempfile.mkdtemp()
 from cells.copilot.planning import pm
 from cells.copilot.planning import pm_state
 
-PLANS = os.path.join(SANDBOX, "pm")
-pm.PLANS = PLANS
-pm_state.PLANS = PLANS
-pm_state.LOOPSTATE = os.path.join(PLANS, "loop.json")
-os.makedirs(PLANS, exist_ok=True)
+# plans + loop state are db rows (state-into-db phase D): sandbox the store
+from spine.storage import db
+db.DBPATH = os.path.join(SANDBOX, "test.db")
+db.init()
 
 _fails = []
 

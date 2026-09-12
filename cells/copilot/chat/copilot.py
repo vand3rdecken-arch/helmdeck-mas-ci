@@ -7,8 +7,10 @@ processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time, uuid
 
 from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
-SESS = os.path.join(ROOT, "state", "copilot_sessions.json")
-MODELS_F = os.path.join(ROOT, "state", "copilot_models.json")
+# Session pointers and per-conversation model prefs are runtime_doc rows
+# (state-into-db phase D). The chat log itself moves in phase E.
+_SESS_KEY = "copilot_sessions"
+_MODELS_KEY = "copilot_models"
 CHATLOG = os.path.join(ROOT, "state", "copilot_log.json")
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
@@ -493,25 +495,19 @@ def _chat_routing_policy(card):
 # (never-break-a-spawn), loud in harness.errors() instead of silently stale.
 
 def _sessions():
-    try:
-        with open(SESS, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    """{user: session id} - the runtime_doc row "copilot_sessions" (state-
+    into-db phase D; ledger step 7 imported state/copilot_sessions.json)."""
+    from spine.storage import db
+    return db.doc_get(_SESS_KEY, {}) or {}
 
 def _save_sessions(d):
-    tmp = SESS + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f)
-    os.replace(tmp, SESS)
+    from spine.storage import db
+    db.doc_put(_SESS_KEY, d)
 
 
 def _model_prefs():
-    try:
-        with open(MODELS_F, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    from spine.storage import db
+    return db.doc_get(_MODELS_KEY, {}) or {}
 
 
 def _save_model_pref(skey, mid):
@@ -529,12 +525,10 @@ def _save_model_pref(skey, mid):
     if d.get(skey) == mid:
         return
     d[skey] = mid
-    tmp = MODELS_F + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, MODELS_F)
-    except OSError:
+        from spine.storage import db
+        db.doc_put(_MODELS_KEY, d)
+    except Exception:                                            # noqa: BLE001
         pass                       # a lost pref re-learns next turn; never break the turn
 
 

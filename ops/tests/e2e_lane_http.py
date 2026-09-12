@@ -65,7 +65,6 @@ from cells.engineer.cards import sessions
 from spine.http import server
 
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
-copilot.SESS = os.path.join(SANDBOX, "copilot_sessions.json")
 # role="tool": this process owns no driver sessions, so it must never be allowed
 # to devalue persisted lifecycle state (db.init's own docstring).
 db.init(role="tool")

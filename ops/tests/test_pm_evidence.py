@@ -39,12 +39,11 @@ from cells.copilot.chat import copilot, copilot_memory
 from cells.engineer.cards import sessions
 import board_state, henry_memory_get
 
-PLANS = os.path.join(SANDBOX, "pm")
-pm.PLANS = PLANS
-pm_state.PLANS = PLANS
-pm_state.LOOPSTATE = os.path.join(PLANS, "loop.json")
-pm_comm._ACTIVITY = os.path.join(PLANS, "activity.jsonl")
-os.makedirs(PLANS, exist_ok=True)
+# plans, loop state and the activity feed are db rows (state-into-db phase
+# D): sandbox the store
+from spine.storage import db
+db.DBPATH = os.path.join(SANDBOX, "test.db")
+db.init()
 
 _fails = []
 
@@ -117,7 +116,7 @@ check(out["question_evidence"].get("Zaehlt gelauncht erst mit dem Produktionsrel
 check(out["evidence"].get("num_turns") == 4 and "_meta" not in out,
       "CLI accounting lands under `evidence`, _meta stripped")
 check(out["triage"]["scope"] == "blocked", "a checked question still blocks Scope (decree kept)")
-act = open(pm_comm._ACTIVITY, encoding="utf-8").read()
+act = " ".join(a["msg"] for a in pm_comm._read_activity(50))
 check("ohne Belegsuche verworfen" in act, "dropping is reported in the activity feed")
 
 print("3. evidence tools find by content, done + archived included, examples excluded")
@@ -135,12 +134,12 @@ found = henry_memory_get.find_notes(notes, ["zieldatum"])
 check([n for n, _ in found] == ["helmdeck-launch-planung"], "memory find matches content, skips the index")
 
 print("4. a question repeated in 3 consecutive plans is handed to Henry once, never removed")
-for f in os.listdir(PLANS):                      # step 1 wrote today's artifact - the guard
-    if f.startswith("plan-"):                    # runs BEFORE the write in brief(), so clear it
-        os.remove(os.path.join(PLANS, f))
+# step 1 wrote today's artifact - the guard runs BEFORE the write in brief(),
+# so clear the plans table and seed three consecutive days (pm_plans rows)
+with db.conn() as _c:
+    _c.execute("DELETE FROM pm_plans")
 for d in ("20260909", "20260910", "20260911"):
-    with open(os.path.join(PLANS, "plan-%s.json" % d), "w", encoding="utf-8") as f:
-        json.dump({"open_questions": ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"]}, f)
+    db.pm_plan_put(d, {"open_questions": ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"]})
 qs = ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"]
 pm._stale_question_guard(qs, None)
 check(len(henry_calls) == 1 and henry_calls[0][0] == "pm-question-stale",

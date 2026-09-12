@@ -56,9 +56,11 @@ from cells.copilot.planning import pm_comm
 
 # -- CUT THE WIRES TO PRODUCTION FIRST, before any test code can run ----------
 _TMP = tempfile.mkdtemp(prefix="hd-notice-test-")
-escalations.ESC_PATH = os.path.join(_TMP, "escalations.jsonl")
-pm_comm._ACTIVITY = os.path.join(_TMP, "activity.jsonl")
-pm_comm.PLANS = _TMP
+# escalations + the PM activity feed are db rows (state-into-db phases C/D):
+# sandbox the store itself
+from spine.storage import db
+db.DBPATH = os.path.join(_TMP, "test.db")
+db.init()
 
 FAILS = []
 

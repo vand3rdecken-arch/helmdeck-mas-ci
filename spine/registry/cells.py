@@ -239,9 +239,9 @@ CELLS = [
                      "planning/pm.py", "planning/pm_state.py", "planning/pm_budget.py",
                      "planning/pm_triangle.py", "planning/pm_resolve.py",
                      "planning/pm_watchdog.py", "planning/pm_goal.py", "planning/pm_comm.py"),
-        storage="copilot_sessions.json, copilot_log.json, escalations.jsonl "
-                "(shared bus); loop.json (daemon/pm/ runtime dir - unrelated "
-                "to where the code now lives)",
+        storage="db: runtime_doc[copilot_sessions|copilot_models|copilot_stats|"
+                "pm_loop], pm_plans, pm_activity, escalations (shared bus); "
+                "state/copilot_log.json (moves in state-into-db phase E)",
         harness_file="cells/copilot/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
         # cells/copilot/harness/agents/pm.md rides in repo_files below (harness_file
         # stays singular - board-copilot.md is Henry's primary identity brief,

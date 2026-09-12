@@ -28,8 +28,11 @@ def check(cond, msg):
 
 
 tmp = tempfile.mkdtemp(prefix="copilot_stats_")
-copilot_stats.STATS = os.path.join(tmp, "copilot_stats.json")
-c.SESS = os.path.join(tmp, "copilot_sessions.json")
+# stats + session pointers are runtime_doc rows (state-into-db phase D):
+# sandbox the store, not a file path
+from spine.storage import db
+db.DBPATH = os.path.join(tmp, "test.db")
+db.init()
 c.CHATLOG = os.path.join(tmp, "copilot_log.json")
 
 # 1) first turn: summed result usage feeds the cumulative counters, the LAST

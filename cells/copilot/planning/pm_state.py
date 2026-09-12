@@ -7,17 +7,15 @@ Depends on sessions.list_tracks (lazy, no cycle). pm.py re-imports the
 names; pm.touch() (called from server.py on every authenticated request)
 is unchanged since that call is module-qualified.
 """
-import os
-import json
 import time
 
-# same source-of-truth as pm.{ROOT,PLANS} - process-idempotent directory
-# join, safe to compute independently rather than importing pm (would cycle).
-from daemon.paths import DAEMON_ROOT as ROOT
-PLANS = os.path.join(ROOT, "pm")
-
-
-LOOPSTATE = os.path.join(PLANS, "loop.json")
+# The loop state is the runtime_doc row "pm_loop" (state-into-db phase D,
+# 2026-09-12; ledger step 7 imported daemon/pm/loop.json). It used to be a
+# file read-modify-written by every ladder step from several threads - the
+# race registered as debt pm-loopstate-races. A row written in one
+# transaction has no such window; a caller that must fold (read+write) uses
+# update_loopstate().
+_LOOP_KEY = "pm_loop"
 _last_touch = 0.0
 
 
@@ -29,17 +27,19 @@ def touch():
 
 
 def _loopstate():
-    try:
-        with open(LOOPSTATE, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    from spine.storage import db
+    return db.doc_get(_LOOP_KEY, {}) or {}
 
 
 def _save_loopstate(s):
-    os.makedirs(PLANS, exist_ok=True)
-    with open(LOOPSTATE, "w", encoding="utf-8") as f:
-        json.dump(s, f, indent=1)
+    from spine.storage import db
+    db.doc_put(_LOOP_KEY, s)
+
+
+def update_loopstate(fn):
+    """fn(state) -> state, applied inside ONE write transaction."""
+    from spine.storage import db
+    return db.doc_update(_LOOP_KEY, fn, default={})
 
 
 def _today():

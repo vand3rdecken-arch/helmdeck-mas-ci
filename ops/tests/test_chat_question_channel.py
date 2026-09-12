@@ -42,10 +42,12 @@ from spine.ops import ask
 from cells.copilot.chat import copilot
 from cells.copilot.routes import routes_copilot
 
-# Redirect the ONLY two files this module reads/writes before anything touches
-# them. _log() opens CHATLOG directly, so this is the whole isolation.
+# Redirect the chat log file AND the db (session pointers are a runtime_doc
+# row since state-into-db phase D) before anything touches them.
+from spine.storage import db
+db.DBPATH = os.path.join(SANDBOX, "test.db")
+db.init()
 copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
-copilot.SESS = os.path.join(SANDBOX, "copilot_sessions.json")
 
 _fails = []
 

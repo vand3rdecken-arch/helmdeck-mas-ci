@@ -53,9 +53,35 @@ _chat_version = 0
 _glass_version = 0
 _version_cond = threading.Condition()
 
+# The REAL daemon store, derived from this file's own location (repo/daemon/)
+# rather than from DBPATH at import time: a test that repoints daemon.paths
+# BEFORE importing this module (test_boards' pattern) has a sandboxed DBPATH
+# from the start, and the guard must still know what "live" means.
+_LIVE_DB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "daemon", "helmdeck.db")
+
+
+def _refuse_live_db_from_tests():
+    """A test that sandboxes a module's file constant but not the store
+    itself used to write into the LIVE db in silence (bitten twice: the
+    events.SET-only sandbox, memory helmdeck-config-consolidation). Now that
+    escalations/plans/chat/... are rows here, that silent path would be the
+    default failure mode of every partially sandboxed test - so it is loud:
+    a process whose entry script lives under ops/tests must repoint DBPATH
+    before the first conn(). HELMDECK_ALLOW_LIVE_DB=1 is the explicit
+    override for a test that really means the live store."""
+    import sys
+    entry = os.path.abspath(sys.argv[0] or "").replace("\\", "/")
+    if "/ops/tests/" in entry and os.path.abspath(DBPATH) == os.path.abspath(_LIVE_DB) \
+            and not os.environ.get("HELMDECK_ALLOW_LIVE_DB"):
+        raise RuntimeError("REFUSING to open the LIVE db (%s) from a test (%s): sandbox db.DBPATH "
+                           "first, or set HELMDECK_ALLOW_LIVE_DB=1" % (DBPATH, entry))
+
+
 def conn():
     c = getattr(_local, "c", None)
     if c is None:
+        _refuse_live_db_from_tests()
         c = sqlite3.connect(DBPATH, timeout=15)
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
@@ -1298,6 +1324,154 @@ def escalations_rows():
             pass
         out.append(r)
     return out
+
+
+def _read_json_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _now():
+    import datetime
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+@_migration(7, "pm-artifacts-and-runtime-docs")
+def _m7(c):
+    """Phase D. Three stores that were files under daemon/pm/ and daemon/state/:
+    the PM's daily plan artifacts (one JSON per day, listed+sorted per read),
+    its activity feed (append-only jsonl) and the loop state (loop.json, a
+    hot read-modify-write with a registered race, debt pm-loopstate-races) -
+    plus the small key docs copilot.py/copilot_stats.py/turnopts.py kept as
+    files (sessions, model prefs, stats, models cache). Records -> tables;
+    key docs -> runtime_doc rows written in one transaction each."""
+    c.execute("""CREATE TABLE IF NOT EXISTS pm_plans(
+        day TEXT PRIMARY KEY, generated_at TEXT, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS pm_activity(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT,
+        track TEXT, msg TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS runtime_doc(
+        key TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+    if not _file_steps_allowed():
+        return
+    pm_dir = os.path.join(ROOT, "pm")
+    if os.path.isdir(pm_dir):
+        n = 0
+        for f in sorted(os.listdir(pm_dir)):
+            if f.startswith("plan-") and f.endswith(".json"):
+                day = f[len("plan-"):-len(".json")]
+                doc = _read_json_file(os.path.join(pm_dir, f))
+                if doc is None:
+                    continue
+                c.execute("INSERT OR REPLACE INTO pm_plans(day,generated_at,data) VALUES(?,?,?)",
+                          (day, doc.get("generated_at"), json.dumps(doc, ensure_ascii=False)))
+                _archive(os.path.join(pm_dir, f))
+                n += 1
+        if n:
+            print("db: imported %d PM plan(s) from pm/ (archived)" % n)
+        act = os.path.join(pm_dir, "activity.jsonl")
+        if os.path.exists(act):
+            def ins(c, r):
+                c.execute("INSERT INTO pm_activity(ts,kind,track,msg) VALUES(?,?,?,?)",
+                          (r.get("ts") or "", r.get("kind"), r.get("card"), r.get("msg") or ""))
+                return True
+            _import_jsonl(c, act, ins)
+    for key, rel in (("pm_loop", os.path.join("pm", "loop.json")),
+                     ("copilot_sessions", os.path.join("state", "copilot_sessions.json")),
+                     ("copilot_models", os.path.join("state", "copilot_models.json")),
+                     ("copilot_stats", os.path.join("state", "copilot_stats.json")),
+                     ("models_cache", os.path.join("state", "models_cache.json"))):
+        path = os.path.join(ROOT, rel)
+        if os.path.exists(path):
+            doc = _read_json_file(path)
+            if doc is not None:
+                c.execute("INSERT OR REPLACE INTO runtime_doc(key,data,updated_at) VALUES(?,?,?)",
+                          (key, json.dumps(doc, ensure_ascii=False), _now()))
+            _archive(path)
+            print("db: imported %s -> runtime_doc[%s] (archived)" % (rel, key))
+
+
+# -- runtime docs: small key -> JSON documents a module keeps about its own
+# machinery (loop state, session pointers, stats, caches). One row, one
+# transaction per write - the lost-update shape a tmp+os.replace file had is
+# gone with the file.
+
+def doc_get(key, default=None):
+    r = conn().execute("SELECT data FROM runtime_doc WHERE key=?", (key,)).fetchone()
+    if not r:
+        return default
+    try:
+        return json.loads(r[0])
+    except ValueError:
+        return default
+
+
+def doc_put(key, data):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO runtime_doc(key,data,updated_at) VALUES(?,?,?)",
+                  (key, json.dumps(data, ensure_ascii=False), _now()))
+
+
+def doc_update(key, fn, default=None):
+    """Read-modify-write of one doc INSIDE one transaction (BEGIN IMMEDIATE
+    takes the write lock before the read, so two threads folding into the
+    same doc serialise instead of the last writer winning). fn(doc) returns
+    the new doc."""
+    c = conn()
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        r = c.execute("SELECT data FROM runtime_doc WHERE key=?", (key,)).fetchone()
+        cur = json.loads(r[0]) if r else (default if default is not None else {})
+        new = fn(cur)
+        c.execute("INSERT OR REPLACE INTO runtime_doc(key,data,updated_at) VALUES(?,?,?)",
+                  (key, json.dumps(new, ensure_ascii=False), _now()))
+        c.execute("COMMIT")
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+    return new
+
+
+# -- PM artifacts ------------------------------------------------------------
+
+def pm_plan_put(day, doc):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO pm_plans(day,generated_at,data) VALUES(?,?,?)",
+                  (day, doc.get("generated_at"), json.dumps(doc, ensure_ascii=False)))
+    bump()
+
+
+def pm_plans_recent(n):
+    """The last n plans, OLDEST first (the shape pm._recent_plans folded from
+    the directory listing)."""
+    rows = conn().execute("SELECT data FROM pm_plans ORDER BY day DESC LIMIT ?", (n,)).fetchall()
+    out = []
+    for (d,) in reversed(rows):
+        try:
+            out.append(json.loads(d))
+        except ValueError:
+            continue
+    return out
+
+
+def pm_plan_latest():
+    r = pm_plans_recent(1)
+    return r[0] if r else None
+
+
+def pm_activity_append(kind, msg, card=None, ts=None):
+    with conn() as c:
+        c.execute("INSERT INTO pm_activity(ts,kind,track,msg) VALUES(?,?,?,?)",
+                  (ts or _now(), kind, card, msg))
+
+
+def pm_activity_tail(n=20):
+    rows = conn().execute(
+        "SELECT ts,kind,track,msg FROM pm_activity ORDER BY seq DESC LIMIT ?", (n,)).fetchall()
+    return [{"ts": ts, "kind": kind, "msg": msg, "card": track} for ts, kind, track, msg in reversed(rows)]
 
 
 def schema_head():
