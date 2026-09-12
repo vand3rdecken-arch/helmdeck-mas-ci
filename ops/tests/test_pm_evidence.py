@@ -101,7 +101,7 @@ check(call["hands"] is True, "_ask called with hands=True (permission default + 
 check("PM / CTO role" in call["system"] or "PM/CTO" in call["system"], "role rides as the SYSTEM prompt")
 check("PM / CTO role" not in call["prompt"], "role is NOT duplicated in the turn text")
 check("EVIDENCE TOOLS" in call["prompt"] and "hd.py board --find" in call["prompt"]
-      and "henry_memory_get.py find" in call["prompt"], "turn carries the evidence tools block")
+      and "hd.py memory find" in call["prompt"], "turn carries the evidence tools block")
 check("DEIN GEDAECHTNIS" in call["prompt"], "turn carries the memory INDEX (progressive disclosure)")
 check("2 finished/archived cards" in call["prompt"], "turn states the measured hidden-history count")
 check("GOAL:\nHelmDeck launchen" in call["prompt"], "goal + volatile facts stay in the turn")
