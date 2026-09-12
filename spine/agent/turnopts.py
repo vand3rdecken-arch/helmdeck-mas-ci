@@ -20,7 +20,8 @@ from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 # list_models() merges this with any custom models in the user's ~/.claude/
 # settings.json (exactly like Paseo's getClaudeModelsWithSettings).
 CLAUDE_MODELS = [
-    {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Most powerful"},
+    {"id": "claude-fable-5-1",  "label": "Fable 5.1",  "desc": "Most powerful"},
+    {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Previous Fable"},
     {"id": "claude-opus-5",     "label": "Opus 5",     "desc": "Latest · most capable", "default": True},
     {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Previous Opus"},
     {"id": "claude-sonnet-5",   "label": "Sonnet 5",   "desc": "Best for everyday work"},
@@ -69,6 +70,7 @@ CTX_WINDOWS = {
     "claude-opus-4-8":   1_000_000,
     "claude-opus-5":     1_000_000,
     "claude-fable-5":    1_000_000,
+    "claude-fable-5-1":  1_000_000,
 }
 # room the resumed transcript is NOT allowed to occupy: the board snapshot, the
 # system brief, this turn's text and the reply all ride on top of ctx_tokens.
