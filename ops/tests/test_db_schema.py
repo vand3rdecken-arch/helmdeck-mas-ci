@@ -130,7 +130,9 @@ WORKSPACE_LEVEL = {"workspace_config", "policy_doc", "process_template", "connec
                    # workspace-level records per the data model (card section 2.1)
                    "pm_plans", "pm_activity", "runtime_doc",
                    # an invite is minted for a ROLE, not an account
-                   "invites"}
+                   "invites",
+                   # harness edit history and the ops audit are workspace-level
+                   "harness_versions", "audit_ops"}
 SCOPE_COLS = {"account", "user", "owner", "project", "project_id", "track", "run_id"}
 for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
     if t in WORKSPACE_LEVEL:

@@ -56,7 +56,6 @@ def main():
     db.init()
 
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")  # SEED stays real (read-only)
 
     from spine.auth import permissions
     from spine.auth import auth

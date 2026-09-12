@@ -51,7 +51,6 @@ def main():
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
 
     from cells.engineer.cards import lanemachine
 

@@ -1811,6 +1811,146 @@ def _m11(c):
             pass
 
 
+@_migration(12, "harness-versions-audit-ops-dead-files")
+def _m12(c):
+    """Phase G (rest). harness_versions: the undo history of every brief/
+    settings edit was one full file copy per edit under ops/harness/.versions/
+    (never pruned, no external reader - restore goes through Python).
+    audit_ops: ops/tools/reset.py appended its audit line to backups/
+    reset-log.jsonl - an audit record outside the audit store. Dead files:
+    daemon/policy_live.json (no writer since 2026-08-18, policy_doc is the
+    store; a pre-db install's file is imported once if the row is missing) and
+    daemon/nightshift/state.json (writer removed with the PM loop)."""
+    c.execute("""CREATE TABLE IF NOT EXISTS harness_versions(
+        vid TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL,
+        actor TEXT, ts TEXT NOT NULL, text TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS harness_versions_file ON harness_versions(kind, name, ts)")
+    c.execute("""CREATE TABLE IF NOT EXISTS audit_ops(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT,
+        op TEXT NOT NULL, data TEXT NOT NULL)""")
+    if not _file_steps_allowed():
+        return
+    import shutil
+    repo = os.path.dirname(ROOT)
+    vroot = os.path.join(repo, "ops", "harness", ".versions")
+    if os.path.isdir(vroot):
+        n = 0
+        for kind in sorted(os.listdir(vroot)):
+            kd = os.path.join(vroot, kind)
+            if not os.path.isdir(kd):
+                continue
+            for name in sorted(os.listdir(kd)):
+                nd = os.path.join(kd, name)
+                if not os.path.isdir(nd):
+                    continue
+                for vid in sorted(os.listdir(nd)):
+                    fp = os.path.join(nd, vid)
+                    try:
+                        with open(fp, encoding="utf-8") as f:
+                            text = f.read()
+                        st = os.stat(fp)
+                    except OSError:
+                        continue
+                    stamp, _, who = vid.rpartition("__")
+                    actor = who.rsplit(".", 1)[0] if who else "?"
+                    ts = stamp.replace("_", " ", 1) if stamp else _now()
+                    c.execute("INSERT OR IGNORE INTO harness_versions(vid,kind,name,actor,ts,text) "
+                              "VALUES(?,?,?,?,?,?)", (vid, kind, name, actor, ts, text))
+                    n += 1
+        dest = os.path.join(ROOT, "backups", "harness.versions.imported")
+        os.makedirs(os.path.join(ROOT, "backups"), exist_ok=True)
+        k = 2
+        while os.path.exists(dest):
+            dest = os.path.join(ROOT, "backups", "harness.versions.imported.%d" % k)
+            k += 1
+        shutil.move(vroot, dest)
+        print("db: imported %d harness version(s) from ops/harness/.versions (archived)" % n)
+    rl = os.path.join(ROOT, "backups", "reset-log.jsonl")
+    if os.path.exists(rl):
+        def ins(c, r):
+            c.execute("INSERT INTO audit_ops(ts,actor,op,data) VALUES(?,?,?,?)",
+                      (r.get("ts") or "", r.get("os_user"), r.get("op") or "reset",
+                       json.dumps(r, ensure_ascii=False)))
+            return True
+        _import_jsonl(c, rl, ins)
+    pl = os.path.join(ROOT, "policy_live.json")
+    if os.path.exists(pl):
+        if c.execute("SELECT 1 FROM policy_doc WHERE id='live'").fetchone() is None:
+            doc = _read_json_file(pl)
+            if isinstance(doc, dict):
+                c.execute("INSERT INTO policy_doc(id,json,version,updated_at) VALUES('live',?,?,?)",
+                          (json.dumps(doc, ensure_ascii=False), int(doc.get("version") or 1), _now()))
+                print("db: policy_live.json imported into policy_doc (pre-db install)")
+        _archive(pl)
+        print("db: policy_live.json archived (policy_doc is the store)")
+    ns = os.path.join(ROOT, "nightshift")
+    if os.path.isdir(ns):
+        # archive into ROOT/backups (not <ns>/backups - _archive's default
+        # would leave the dir non-empty and undeletable)
+        sj = os.path.join(ns, "state.json")
+        if os.path.exists(sj):
+            bdir = os.path.join(ROOT, "backups")
+            os.makedirs(bdir, exist_ok=True)
+            dest = os.path.join(bdir, "nightshift.state.json.imported")
+            k = 2
+            while os.path.exists(dest):
+                dest = os.path.join(bdir, "nightshift.state.json.imported.%d" % k)
+                k += 1
+            os.replace(sj, dest)
+        try:
+            os.rmdir(ns)
+            print("db: dead nightshift/ dir removed (state archived)")
+        except OSError:
+            pass
+
+
+# -- harness versions ------------------------------------------------------
+
+def harness_version_put(vid, kind, name, actor, text):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO harness_versions(vid,kind,name,actor,ts,text) "
+                  "VALUES(?,?,?,?,?,?)", (vid, kind, name, actor, _now(), text))
+
+
+def harness_versions_list(kind, name):
+    """Newest first: [{id, ts, actor, bytes}]."""
+    rows = conn().execute(
+        "SELECT vid,ts,actor,length(text) FROM harness_versions WHERE kind=? AND name=? "
+        "ORDER BY ts DESC, vid DESC", (kind, name)).fetchall()
+    return [{"id": v, "ts": ts, "actor": a or "?", "bytes": n} for v, ts, a, n in rows]
+
+
+def harness_version_text(kind, name, vid):
+    r = conn().execute("SELECT text FROM harness_versions WHERE kind=? AND name=? AND vid=?",
+                       (kind, name, vid)).fetchone()
+    return r[0] if r else None
+
+
+# -- ops audit (append-only) -----------------------------------------------
+
+def audit_op_append(op, actor, **data):
+    with conn() as c:
+        # ops/tools/reset.py writes here WITHOUT running init() (it must not
+        # migrate the store it is about to wipe) - the table is ensured inline
+        c.execute("""CREATE TABLE IF NOT EXISTS audit_ops(
+            seq INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT,
+            op TEXT NOT NULL, data TEXT NOT NULL)""")
+        c.execute("INSERT INTO audit_ops(ts,actor,op,data) VALUES(?,?,?,?)",
+                  (_now(), actor, op, json.dumps(data, ensure_ascii=False)))
+
+
+def audit_ops_all():
+    out = []
+    for ts, actor, op, data in conn().execute("SELECT ts,actor,op,data FROM audit_ops ORDER BY seq"):
+        r = {"ts": ts, "actor": actor, "op": op}
+        try:
+            r.update(json.loads(data))
+        except ValueError:
+            pass
+        out.append(r)
+    return out
+
+
 def schema_head():
     """The highest ledger version this code knows - what user_version must
     equal after init() on any install."""

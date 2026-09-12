@@ -55,7 +55,6 @@ def main():
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
     from spine.auth import auth, invites
     auth.USERS = os.path.join(tmp, "users.json")
     db.init(role="tool")
@@ -209,7 +208,7 @@ def main():
            "open registration still works and is hard-wired to the WEAKEST role")
 
         print("\naudit trail")
-        blob = open(events.EV, encoding="utf-8").read()
+        blob = json.dumps(events.read_events())     # the table is the record (phase H)
         for op in ("invite.create", "invite.redeem", "invite.revoke", "invite.release"):
             ok(op in blob, "%s is audited" % op)
         ok(PW not in blob, "no password anywhere in the audit sink")

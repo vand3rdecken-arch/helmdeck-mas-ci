@@ -85,10 +85,11 @@ def log_reset(bdir, removed, total, a):
            "op": "reset", "os_user": getpass.getuser(), "backup": bdir,
            "cards_removed": removed, "cards_total": total,
            "connectors": bool(a.connectors), "factory": bool(a.factory)}
-    logdir = os.path.join(ROOT, "daemon", "backups")
-    os.makedirs(logdir, exist_ok=True)
-    with open(os.path.join(logdir, "reset-log.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec) + "\n")
+    # the audit_ops table (state-into-db phase G) - an audit row in the audit
+    # store, in its own table so an events wipe can never erase the record of
+    # the wipe itself (the one honest reason this used to be a file)
+    from spine.storage import db
+    db.audit_op_append("reset", rec.pop("os_user"), **{k: v for k, v in rec.items() if k != "op"})
 
 
 def clear_recordings():

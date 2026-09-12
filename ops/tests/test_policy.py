@@ -32,7 +32,6 @@ from spine.auth import policy
 # (caught by this test itself: wipLimit read back as 6, the machine's real
 # live value, instead of the seed's 3). Point it at the empty tmp dir, same
 # as every other policy-touching test already does.
-policy.LIVE = os.path.join(_tmp, "policy_live.json")
 
 _fails = []
 def ok(cond, msg):

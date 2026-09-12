@@ -60,7 +60,6 @@ def _boot(tmp):
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
     db.init()
 
     from http.server import ThreadingHTTPServer

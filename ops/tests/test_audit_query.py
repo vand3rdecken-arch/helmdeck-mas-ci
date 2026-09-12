@@ -39,9 +39,7 @@ def main():
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
-    from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
-    db.init(role="tool")
+    db.init(role="tool")     # (policy_live.json is gone - the policy_doc row is the store)
 
     # ------------------------------------------------------------------ 1 ---
     print("\nsave_settings emits an old->new diff, changed keys only")

@@ -24,7 +24,8 @@ import threading
 
 from daemon.paths import DAEMON_ROOT as HERE
 SEED = os.path.join(HERE, "policy_seed.json")   # tracked file, the code default
-LIVE = os.path.join(HERE, "policy_live.json")   # PRE-db era only, see load()
+# (policy_live.json is gone - ledger step 12 imported/archived it; the
+# policy_doc row is the only store)
 
 _LOCK = threading.RLock()  # reentrant: swap() holds it and calls load()
 
@@ -74,10 +75,9 @@ def _backfill_new_seed_keys(doc):
 
 def load():
     """Current composed policy doc. Backed by db.policy_doc (config-
-    consolidation phase 3) - `LIVE` above is no longer written; it is read
-    ONCE, as a migration source, if a pre-db install's file is still there
-    and the db row does not exist yet (the file is never deleted, only left
-    behind - the db becomes the one source of truth going forward).
+    consolidation phase 3); the old policy_live.json is neither written nor
+    read any more (state-into-db phase G: ledger step 12 imported a pre-db
+    install's file once and archived it).
 
     Seeds from SEED on first run so the seed file itself is never mutated in
     place (seed = defaults, live = state)."""
@@ -89,19 +89,10 @@ def load():
                 db.policy_doc_put(doc)
                 print("policy: backfilled new seed key(s) into the stored doc")
             return doc
-        # BELT+SUSPENDERS (same shape as db._migrate()'s ROOT/DBPATH guard):
-        # LIVE binds to daemon.paths.DAEMON_ROOT at THIS module's import time,
-        # independent of db.ROOT/DBPATH - a sandbox that repoints only the
-        # latter (or forgets to patch LIVE itself) would otherwise migrate a
-        # REAL leftover policy_live.json into an isolated db (measured
-        # 2026-09-03: a test read back the machine's real wipLimit instead of
-        # the seed's). Only trust LIVE as a migration source when it sits
-        # next to the db this call is actually writing to.
-        live_is_local = (os.path.dirname(os.path.abspath(LIVE))
-                         == os.path.dirname(os.path.abspath(db.DBPATH)))
-        if live_is_local and os.path.exists(LIVE):
-            doc = _read(LIVE)          # migrate a pre-db install's file once
-        else:
+        # No row yet: seed. (A pre-db install's policy_live.json is imported
+        # by ledger step 12 before this ever runs - state-into-db phase G -
+        # so the file fallback that used to sit here is gone with the file.)
+        if True:
             doc = _seed()
             # wipLimit has an existing owner (settings.capacity.wip_limit). Seed
             # FROM it so the policy plane never diverges from the live board on
@@ -167,14 +158,14 @@ def swap(section, patch, actor="system", note=None):
 
 
 def _mirror(**fields):
-    """Append the reconfiguration to the real append-only audit. Best-effort on
-    the db write-through (same contract as events.emit), durable in events.jsonl."""
+    """Append the reconfiguration to the append-only audit (the events table;
+    events.emit raises on a failed insert since state-into-db phase H)."""
     try:
         from spine.storage import events
         events.emit("reconfig", "-", **fields)
     except Exception:
         # never let an audit-sink hiccup swallow the fact of the change; the
-        # LIVE file write already happened and is itself the durable state.
+        # policy_doc row is already written and is itself the durable state.
         pass
 
 

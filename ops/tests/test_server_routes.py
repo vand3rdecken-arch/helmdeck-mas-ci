@@ -122,7 +122,6 @@ def main():
     # they'd rewrite the daemon's live policy. SEED stays real (read-only) so the
     # seeded <cell>Enabled=true defaults load exactly as in production.
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
 
     # runs.REC (a card's run_dir root - screenshots/live.jpg/actionlog) is a
     # THIRD independent __file__-derived global, same class of bug as

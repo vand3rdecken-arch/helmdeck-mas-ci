@@ -55,7 +55,6 @@ def main():
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import policy
-    policy.LIVE = os.path.join(tmp, "policy_live.json")
     from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
     db.init(role="tool")

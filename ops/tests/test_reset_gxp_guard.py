@@ -108,14 +108,13 @@ def main():
     ok(os.path.isdir(os.path.join(tmp, "daemon", "backups")), "a backup WAS made this time")
 
     # ------------------------------------------------------------------ 4 ---
-    print("\nthe reset itself is logged, in a file clear_events() cannot reach")
-    logf = os.path.join(tmp, "daemon", "backups", "reset-log.jsonl")
-    ok(os.path.exists(logf), "reset-log.jsonl exists")
-    rows = [json.loads(l) for l in open(logf, encoding="utf-8") if l.strip()]
+    print("\nthe reset itself is logged, in a table clear_events() cannot reach")
+    # audit_ops (state-into-db phase G): its own table, so an events wipe can
+    # never erase the record of the wipe itself
+    rows = db.audit_ops_all()          # reset ran in-process against the sandboxed db
     ok(len(rows) == 1, "exactly one entry for the one completed reset (got %d)" % len(rows))
-    ok(rows[0]["op"] == "reset" and rows[0]["ts"].endswith("Z"),
-       "entry has an op and a UTC timestamp")
-    ok(rows[0].get("os_user"), "entry names the OS account that ran it")
+    ok(rows[0]["op"] == "reset" and rows[0]["ts"], "entry has an op and a timestamp")
+    ok(rows[0].get("actor"), "entry names the OS account that ran it")
     ok("backup" in rows[0], "entry points at the backup that was made")
 
     # ------------------------------------------------------------------ 5 ---
@@ -123,14 +122,14 @@ def main():
     events.emit("gate", "t-2", ok=True)
     rc = run(["--yes"])
     ok(rc == 0, "second reset also succeeds")
-    rows = [json.loads(l) for l in open(logf, encoding="utf-8") if l.strip()]
+    rows = db.audit_ops_all()
     ok(len(rows) == 2, "now two entries (got %d)" % len(rows))
 
     print("\nrefused reset was logged nowhere - only completed ones count")
     with open(gxp.LOCK, "w", encoding="utf-8") as f:
         json.dump({"enabled": True}, f)
     run(["--yes"])
-    rows = [json.loads(l) for l in open(logf, encoding="utf-8") if l.strip()]
+    rows = db.audit_ops_all()
     ok(len(rows) == 2, "still two - the refused attempt did not add a phantom entry")
 
     print()

@@ -47,6 +47,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 
+# The whole file runs against a sandboxed db: harness versions are rows
+# (state-into-db phase G), and build_argv() reads settings() from the store -
+# the live db is refused from a test by db.conn() itself.
+from spine.storage import db as _db
+_db.DBPATH = os.path.join(tempfile.mkdtemp(prefix="hd-harness-db-"), "test.db")
+_db.init()
+
 from spine.registry import harness
 
 _fails = []
@@ -85,7 +92,14 @@ class Sandbox:
 
     def __enter__(self):
         self.tmp = tempfile.mkdtemp(prefix="hd-harness-test-")
-        self.saved = (harness.AGENTS, harness.SETTINGS, harness.VERSIONS)
+        # version history is the harness_versions table (state-into-db phase
+        # G): sandbox the store
+        from spine.storage import db
+        self.saved_db = db.DBPATH
+        db.DBPATH = os.path.join(self.tmp, "test.db")
+        db._local.c = None
+        db.init()
+        self.saved = (harness.AGENTS, harness.SETTINGS)
         # card-worker/card now have a CELL home (cells/engineer/harness/) that
         # _agent_path()/_settings_path() check BEFORE this sandbox's redirected
         # AGENTS/SETTINGS - so a sandbox that only swaps those two constants
@@ -99,7 +113,6 @@ class Sandbox:
         harness.SETTINGS_CELL.clear()
         harness.AGENTS = os.path.join(self.tmp, "agents")
         harness.SETTINGS = os.path.join(self.tmp, "settings")
-        harness.VERSIONS = os.path.join(self.tmp, ".versions")
         os.makedirs(harness.AGENTS)
         os.makedirs(harness.SETTINGS)
         harness._cache.clear()
@@ -121,7 +134,10 @@ class Sandbox:
         return p
 
     def __exit__(self, *a):
-        harness.AGENTS, harness.SETTINGS, harness.VERSIONS = self.saved
+        harness.AGENTS, harness.SETTINGS = self.saved
+        from spine.storage import db
+        db.DBPATH = self.saved_db
+        db._local.c = None
         harness.AGENT_CELL.clear(); harness.AGENT_CELL.update(self.saved_cells[0])
         harness.SETTINGS_CELL.clear(); harness.SETTINGS_CELL.update(self.saved_cells[1])
         harness._cache.clear()

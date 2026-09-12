@@ -105,7 +105,7 @@ def _build_loop_enabled():
                             .get("buildLoopEnabled", True))
         except Exception:
             pass          # db not migrated yet / locked / corrupt -> fall through
-    for name in ("policy_live.json", "policy_seed.json"):
+    for name in ("policy_seed.json",):      # policy_live.json is gone (state-into-db phase G)
         path = os.path.join(_POLICY_ROOT, name)
         try:
             with open(path, encoding="utf-8") as f:

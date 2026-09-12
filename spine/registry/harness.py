@@ -593,7 +593,8 @@ def describe():
 # rejected edit must be loud, not silently ignored. That asymmetry is the point.
 # ---------------------------------------------------------------------------
 SCHEMA = os.path.join(HARNESS, "schema")
-VERSIONS = os.path.join(HARNESS, ".versions")
+# version history of harness edits: the harness_versions table (state-into-db
+# phase G; ledger step 12 imported ops/harness/.versions/)
 
 # The surfaces the board can spawn or overlay, and where each one's argv comes
 # from. `builder` names the ONE function that assembles that surface's command
@@ -738,41 +739,20 @@ def validate(obj, which):
 # ---------------------------------------------------------------------------
 # versions - every write keeps the file it replaced, so a bad edit is revertable
 # ---------------------------------------------------------------------------
-def _vdir(kind, name):
-    return os.path.join(VERSIONS, kind, name)
-
-
 def versions(kind, name):
     """Prior contents of a harness file, newest first. Never raises."""
-    d = _vdir(kind, name)
-    out = []
     try:
-        for fn in os.listdir(d):
-            p = os.path.join(d, fn)
-            try:
-                st = os.stat(p)
-            except OSError:
-                continue
-            stamp, _, who = fn.rpartition("__")
-            out.append({"id": fn, "ts": stamp.replace("_", " ", 1) if stamp else fn,
-                        "actor": (who.rsplit(".", 1)[0] if who else "?"),
-                        "bytes": st.st_size, "_m": st.st_mtime})
-    except OSError:
-        pass
-    # By MTIME, not by filename. The same-second collision suffix ("...-34-2__")
-    # sorts BEFORE the unsuffixed "...-34__" lexically ("-" < "_"), so a
-    # name sort silently mislabels the newest version as the oldest - and
-    # "restore the most recent" would then restore the wrong text. Measured.
-    out.sort(key=lambda v: (v["_m"], v["id"]), reverse=True)
-    for v in out:
-        v.pop("_m", None)
-    return out
+        from spine.storage import db
+        return db.harness_versions_list(kind, name)
+    except Exception:                                            # noqa: BLE001
+        return []
 
 
 def _keep_version(kind, name, path, actor):
-    """Snapshot the CURRENT bytes of `path` before it is overwritten. Best
-    effort by design: failing to archive must not block the owner's edit, and a
-    write that never happened has nothing to archive."""
+    """Snapshot the CURRENT bytes of `path` before it is overwritten - one
+    harness_versions row. Best effort by design: failing to archive must not
+    block the owner's edit, and a write that never happened has nothing to
+    archive."""
     cur = _read_text(path)
     if cur is None:
         return ""
@@ -780,36 +760,27 @@ def _keep_version(kind, name, path, actor):
     safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", str(actor))[:32] or "unknown"
     ext = os.path.splitext(path)[1]
     stamp = _t.strftime("%Y-%m-%d_%H-%M-%S")
-    d = _vdir(kind, name)
     try:
-        os.makedirs(d, exist_ok=True)
-        # The stamp has 1-second granularity and an edit-then-revert lands well
-        # inside one second, so the id needs a tiebreaker - but the tiebreaker
-        # must also SORT right, which is the part that bit us: an "…-2__" suffix
-        # collates BEFORE the unsuffixed "…__" ("-" < "_"), so history came back
-        # in the wrong order and "restore the newest" restored the oldest.
-        # A zero-padded sequence on EVERY id makes name order == time order.
+        from spine.storage import db
+        taken = {v["id"] for v in db.harness_versions_list(kind, name)}
         n = 1
         while True:
             vid = "%s-%03d__%s%s" % (stamp, n, safe, ext)
-            if not os.path.exists(os.path.join(d, vid)):
+            if vid not in taken:
                 break
             n += 1
-        # newline="\n": without it Windows rewrites every \n as \r\n, so a
-        # snapshot was 12 bytes longer than the file it archived and a restore
-        # silently changed the file's line endings.
-        with open(os.path.join(d, vid), "w", encoding="utf-8", newline="\n") as f:
-            f.write(cur)
+        db.harness_version_put(vid, kind, name, safe, cur)
         return vid
-    except OSError:
+    except Exception:                                            # noqa: BLE001
         return ""
 
 
 def version_text(kind, name, vid):
     """The bytes of one archived version, or None."""
-    if os.sep in vid or "/" in vid or ".." in vid:      # no traversal out of the box
+    if os.sep in vid or "/" in vid or ".." in vid:      # ids are opaque, never paths
         return None
-    return _read_text(os.path.join(_vdir(kind, name), vid))
+    from spine.storage import db
+    return db.harness_version_text(kind, name, vid)
 
 
 def _nl_style(path):
