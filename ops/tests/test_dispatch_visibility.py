@@ -30,6 +30,11 @@ class FakeDB:
 
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
+    # actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+    from spine.storage import db as _sdb
+    _sdb.DBPATH = os.path.join(tmp, "test.db")
+    _sdb._local.c = None
+    _sdb.init()
     real_db, real_emit = trackstore._db, events.emit
     try:
         nongit = os.path.join(tmp, "not-a-repo")
@@ -77,9 +82,9 @@ def main():
         assert any(e["kind"] == "error" and e["track"] == "t-test"
                    and e.get("where") == "dispatch" for e in emitted), \
             "no dispatch-error event emitted: %r" % emitted
-        with open(os.path.join(run_dir, "actions.jsonl"), encoding="utf-8") as f:
-            assert "DISPATCH FAILED" in f.read(), \
-                "failure missing from the flight recorder"
+        from spine.ops.actionlog import read_timeline
+        assert any("DISPATCH FAILED" in (r.get("detail") or "") for r in read_timeline(run_dir)), \
+            "failure missing from the flight recorder"
         print("PASS dispatch failure: status=bounced, error in last_reply, "
               "event emitted, actionlog noted")
         print("ALL PASS")

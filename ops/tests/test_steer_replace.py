@@ -11,6 +11,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 from spine.storage import db
+# this test used to db.init() the LIVE store (caught by the state-into-db
+# live-db guard): sandbox it
+import tempfile
+db.DBPATH = os.path.join(tempfile.mkdtemp(prefix="hd-steer-"), "test.db")
 db.init()
 from cells.engineer.cards import sessions
 from spine.agent import drivers

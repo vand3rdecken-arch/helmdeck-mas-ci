@@ -79,6 +79,11 @@ def main():
         sessions._autocommit, sessions._gate, sessions._merge_to_main,
         sessions._repo_hook, sessions.steer)
     tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
+    # actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+    from spine.storage import db as _sdb
+    _sdb.DBPATH = os.path.join(tmp, "test.db")
+    _sdb._local.c = None
+    _sdb.init()
     try:
         fake = FakeDB()
         run_dir = os.path.join(tmp, "run")

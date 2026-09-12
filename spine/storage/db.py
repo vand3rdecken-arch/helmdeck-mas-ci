@@ -1249,11 +1249,12 @@ def _file_steps_allowed():
     return ok
 
 
-def _import_jsonl(c, path, insert):
+def _import_jsonl(c, path, insert, archive=None, quiet=False):
     """Stream a legacy .jsonl into the db via insert(c, rec) and archive it.
     Nothing-lost: the number of rows inserted must equal the number of
     parsable lines, else the step raises (rolled back, file untouched, retried
     next boot). Returns the count."""
+    archive = archive or _archive
     n_lines = n_rows = 0
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -1268,8 +1269,9 @@ def _import_jsonl(c, path, insert):
             n_rows += 1 if insert(c, rec) else 0
     if n_rows != n_lines:
         raise RuntimeError("import of %s: %d lines but %d rows inserted" % (path, n_lines, n_rows))
-    _archive(path)
-    print("db: imported %d rows from %s (archived)" % (n_rows, os.path.basename(path)))
+    archive(path)
+    if not quiet:
+        print("db: imported %d rows from %s (archived)" % (n_rows, os.path.basename(path)))
     return n_rows
 
 
@@ -1551,6 +1553,180 @@ def chat_clear(account=None):
         else:
             c.execute("DELETE FROM chat WHERE account=?", (account,))
     bump_chat()
+
+
+def _archive_inplace(path):
+    """Retire an imported per-run file NEXT TO its media (recordings/<run>/
+    timeline.jsonl -> timeline.jsonl.imported) instead of a backups/ dir per
+    run - 450 one-file backup folders would be worse than the suffix. Never
+    clobbers: a taken name gets a numbered sibling."""
+    dest = path + ".imported"
+    n = 2
+    while os.path.exists(dest):
+        dest = "%s.imported.%d" % (path, n)
+        n += 1
+    os.replace(path, dest)
+    return dest
+
+
+@_migration(9, "runs-actions-timeline")
+def _m9(c):
+    """Phase F - the bulk of the bytes. Every card/run kept three record
+    files under recordings/<run>/: meta.json (runs.py), actions.jsonl (the
+    'primary review artifact', actionlog.py) and timeline.jsonl (the card
+    feed the driver folds at event time, timeline_store.py) - 57 MB across
+    ~450 files, the timeline re-read per long-poll tick. Rows now, scoped by
+    run_id (= the run directory's basename, which for a card is its id);
+    media (mp4/jpg/attachments) stays in the directory."""
+    c.execute("""CREATE TABLE IF NOT EXISTS runs(
+        id TEXT PRIMARY KEY, kind TEXT, title TEXT, status TEXT,
+        started TEXT, ended TEXT, track TEXT, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS actions(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
+        ta REAL, kind TEXT, detail TEXT, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS actions_run ON actions(run_id, seq)")
+    c.execute("""CREATE TABLE IF NOT EXISTS timeline(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
+        step_id TEXT NOT NULL, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS timeline_run ON timeline(run_id, seq)")
+    if not _file_steps_allowed():
+        return
+    rec = os.path.join(ROOT, "recordings")
+    if not os.path.isdir(rec):
+        return
+    n_runs = n_act = n_tl = 0
+    for rid in sorted(os.listdir(rec)):
+        d = os.path.join(rec, rid)
+        if not os.path.isdir(d):
+            continue
+        meta = os.path.join(d, "meta.json")
+        if os.path.exists(meta):
+            doc = _read_json_file(meta)
+            if isinstance(doc, dict):
+                _run_upsert(c, dict(doc, id=doc.get("id") or rid))
+                n_runs += 1
+            _archive_inplace(meta)
+        act = os.path.join(d, "actions.jsonl")
+        if os.path.exists(act):
+            def ins_a(c, r, rid=rid):
+                _action_insert(c, rid, r)
+                return True
+            n_act += _import_jsonl(c, act, ins_a, archive=_archive_inplace, quiet=True)
+        tl = os.path.join(d, "timeline.jsonl")
+        if os.path.exists(tl):
+            def ins_t(c, r, rid=rid):
+                sid = r.pop("_id", None)
+                if sid is None:
+                    return True      # a line without a step id was never folded
+                _timeline_insert(c, rid, sid, r)
+                return True
+            n_tl += _import_jsonl(c, tl, ins_t, archive=_archive_inplace, quiet=True)
+    print("db: imported %d run(s), %d action(s), %d timeline line(s) from recordings/ (archived in place)"
+          % (n_runs, n_act, n_tl))
+
+
+# -- runs ----------------------------------------------------------------
+
+def _run_upsert(c, meta):
+    c.execute("INSERT OR REPLACE INTO runs(id,kind,title,status,started,ended,track,data) "
+              "VALUES(?,?,?,?,?,?,?,?)",
+              (meta["id"], meta.get("kind"), meta.get("title"), meta.get("status"),
+               meta.get("started"), meta.get("ended"), meta.get("track"),
+               json.dumps(meta, ensure_ascii=False)))
+
+
+def run_put(meta):
+    with conn() as c:
+        _run_upsert(c, meta)
+
+
+def run_get(rid):
+    r = conn().execute("SELECT data FROM runs WHERE id=?", (rid,)).fetchone()
+    if not r:
+        return None
+    try:
+        return json.loads(r[0])
+    except ValueError:
+        return None
+
+
+def runs_all():
+    rows = conn().execute("SELECT data FROM runs ORDER BY id DESC").fetchall()
+    out = []
+    for (d,) in rows:
+        try:
+            out.append(json.loads(d))
+        except ValueError:
+            continue
+    return out
+
+
+# -- actions (append-only) -------------------------------------------------
+
+def _action_insert(c, run_id, rec):
+    c.execute("INSERT INTO actions(run_id,ta,kind,detail,data) VALUES(?,?,?,?,?)",
+              (run_id, rec.get("ta"), rec.get("kind"), rec.get("detail"),
+               json.dumps(rec, ensure_ascii=False)))
+
+
+def action_append(run_id, rec):
+    with conn() as c:
+        _action_insert(c, run_id, rec)
+
+
+def actions_for(run_id):
+    rows = conn().execute("SELECT data FROM actions WHERE run_id=? ORDER BY seq",
+                          (run_id,)).fetchall()
+    out = []
+    for (d,) in rows:
+        try:
+            out.append(json.loads(d))
+        except ValueError:
+            continue
+    return out
+
+
+def actions_count(run_id):
+    return conn().execute("SELECT count(*) FROM actions WHERE run_id=?", (run_id,)).fetchone()[0]
+
+
+def actions_last_ta(run_id):
+    """Epoch of the run's newest action, 0.0 if none - the activity signal
+    lifecycle._track_idle_s used to read off the file's mtime."""
+    r = conn().execute("SELECT max(ta) FROM actions WHERE run_id=?", (run_id,)).fetchone()
+    return float(r[0] or 0.0)
+
+
+# -- timeline (append-only patches, folded by the reader) ------------------
+
+def _timeline_insert(c, run_id, step_id, patch):
+    c.execute("INSERT INTO timeline(run_id,step_id,data) VALUES(?,?,?)",
+              (run_id, str(step_id), json.dumps(patch, default=str)))
+
+
+def timeline_append(run_id, step_id, patch):
+    with conn() as c:
+        _timeline_insert(c, run_id, step_id, patch)
+
+
+def timeline_max_seq(run_id):
+    r = conn().execute("SELECT max(seq) FROM timeline WHERE run_id=?", (run_id,)).fetchone()
+    return int(r[0] or 0)
+
+
+def timeline_since(run_id, after_seq=0):
+    """[(seq, step_id, patch)] in order, only rows past after_seq - the
+    O(delta) read timeline_store's fold cache asks for."""
+    rows = conn().execute(
+        "SELECT seq,step_id,data FROM timeline WHERE run_id=? AND seq>? ORDER BY seq",
+        (run_id, after_seq)).fetchall()
+    out = []
+    for seq, sid, d in rows:
+        try:
+            out.append((seq, sid, json.loads(d)))
+        except ValueError:
+            continue
+    return out
 
 
 def schema_head():

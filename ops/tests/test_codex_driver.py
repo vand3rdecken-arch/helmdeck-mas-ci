@@ -100,6 +100,11 @@ def make_session(tid, run_dir, session_id=None):
 
 
 TMP = tempfile.mkdtemp(prefix="hd-codex-")
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+from spine.storage import db as _sdb
+_sdb.DBPATH = os.path.join(TMP, "test.db")
+_sdb._local.c = None
+_sdb.init()
 
 # ============================================================================
 print("build_argv - no cwd/session in argv (both are per-RPC-call params):")

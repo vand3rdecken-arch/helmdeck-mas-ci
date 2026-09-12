@@ -245,8 +245,14 @@ def transcript_version(track):
     js = os.path.getsize(jp) if jp and os.path.exists(jp) else 0
     lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
     ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
-    ap = os.path.join(run_dir, "actions.jsonl") if run_dir else None
-    as_ = os.path.getsize(ap) if ap and os.path.exists(ap) else 0
+    # the actionlog is the `actions` table (state-into-db phase F): its row
+    # count is the monotonic stand-in for the file size
+    try:
+        from spine.storage import db
+        from spine.ops.runs import run_id_of
+        as_ = db.actions_count(run_id_of(run_dir)) if run_dir else 0
+    except Exception:                                            # noqa: BLE001
+        as_ = 0
     return js + ls + as_
 
 
@@ -390,14 +396,21 @@ def transcript_store_version(track):
     file composition as transcript_version, timeline.jsonl standing in for
     the session .jsonl - see that function's docstring for why actions.jsonl
     is in the token)."""
-    from spine.agent import timeline_store
+    # timeline + actions are rows since state-into-db phase F: their part of
+    # the token is the last timeline seq plus the action count for this run
+    # (both monotonic - a new row always moves the token), the live partial
+    # is still a file until phase I.
+    from spine.storage import db
+    from spine.ops.runs import run_id_of
     run_dir = (track or {}).get("run_dir") or ""
-    tp = timeline_store._path(run_dir)
-    ts = os.path.getsize(tp) if tp and os.path.exists(tp) else 0
+    rid = run_id_of(run_dir)
+    try:
+        ts = db.timeline_max_seq(rid) if rid else 0
+        as_ = db.actions_count(rid) if rid else 0
+    except Exception:                                            # noqa: BLE001
+        ts = as_ = 0
     lp = os.path.join(run_dir, "live_partial.txt") if run_dir else None
     ls = os.path.getsize(lp) if lp and os.path.exists(lp) else 0
-    ap = os.path.join(run_dir, "actions.jsonl") if run_dir else None
-    as_ = os.path.getsize(ap) if ap and os.path.exists(ap) else 0
     return ts + ls + as_
 
 

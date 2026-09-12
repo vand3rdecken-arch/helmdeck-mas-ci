@@ -77,12 +77,15 @@ def _norm(step):
 def _pick_last():
     """Most recently touched card whose run_dir has a timeline.jsonl - i.e.
     one that has actually run a turn since Card 2 landed."""
+    # timeline rows live in the db (state-into-db phase F): "has a timeline"
+    # = has rows for its run id; "most recently touched" = the card's updated
+    from spine.storage import db
+    from spine.ops.runs import run_id_of
     cands = []
     for t in sessions.list_tracks():
         rd = t.get("run_dir") or ""
-        p = os.path.join(rd, timeline_store.FILENAME)
-        if rd and os.path.exists(p):
-            cands.append((os.path.getmtime(p), t))
+        if rd and db.timeline_max_seq(run_id_of(rd)) > 0:
+            cands.append((t.get("updated") or "", t))
     if not cands:
         return None
     cands.sort(key=lambda x: x[0], reverse=True)
@@ -145,7 +148,7 @@ def main():
     if sys.argv[1] == "--last":
         t = _pick_last()
         if not t:
-            print("no card has a timeline.jsonl yet - dispatch one first")
+            print("no card has timeline rows yet - dispatch one first")
             return 2
         tid = t["id"]
     else:

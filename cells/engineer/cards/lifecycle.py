@@ -61,11 +61,19 @@ def _track_idle_s(t):
     (has_session False for ~1s). Unknown -> treated as very idle."""
     rd = t.get("run_dir") or ""
     newest = 0.0
-    for f in ("actions.jsonl", "live_session.txt", "live_partial.txt"):
+    for f in ("live_session.txt", "live_partial.txt"):
         try:
             newest = max(newest, os.path.getmtime(os.path.join(rd, f)))
         except OSError:
             pass
+    # the actionlog is the `actions` table (state-into-db phase F): its last
+    # absolute timestamp replaces the file's mtime
+    try:
+        from spine.storage import db
+        from spine.ops.runs import run_id_of
+        newest = max(newest, db.actions_last_ta(run_id_of(rd)) if rd else 0.0)
+    except Exception:                                            # noqa: BLE001
+        pass
     return (time.time() - newest) if newest else 1e9
 
 

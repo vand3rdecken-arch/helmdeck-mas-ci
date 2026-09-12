@@ -62,6 +62,11 @@ def make_session(tid, run_dir):
 
 
 TMP = tempfile.mkdtemp(prefix="hd-omp-")
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+from spine.storage import db as _sdb
+_sdb.DBPATH = os.path.join(TMP, "test.db")
+_sdb._local.c = None
+_sdb.init()
 
 # ============================================================================
 print("build_argv - the assembly is byte-inspectable:")

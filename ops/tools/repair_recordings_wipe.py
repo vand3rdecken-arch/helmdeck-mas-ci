@@ -49,9 +49,10 @@ def main():
         rd, turns = t.get("run_dir"), t.get("turns", 0)
         if not rd or not turns:
             continue
-        has_content = os.path.isdir(rd) and (
-            os.path.exists(os.path.join(rd, "actions.jsonl"))
-            or os.path.exists(os.path.join(rd, "timeline.jsonl")))
+        # records are rows since state-into-db phase F; the dir only holds media
+        from spine.ops.runs import run_id_of
+        rid = run_id_of(rd)
+        has_content = db.actions_count(rid) > 0 or db.timeline_max_seq(rid) > 0
         if not has_content:
             affected.append(t)
 

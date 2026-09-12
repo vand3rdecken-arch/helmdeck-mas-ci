@@ -69,6 +69,11 @@ def make_session(tid, run_dir):
 
 
 TMP = tempfile.mkdtemp(prefix="hd-timeline-")
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+from spine.storage import db as _sdb
+_sdb.DBPATH = os.path.join(TMP, "test.db")
+_sdb._local.c = None
+_sdb.init()
 
 # ============================================================================
 print("timeline_store.append/read - low-level fold semantics:")
@@ -290,21 +295,24 @@ check("a turn-canceled step landed", any(x.get("event") == "canceled" for x in t
 print("read() incremental fold cache (chat-load-latency phase B):")
 rd = os.path.join(TMP, "fold-cache")
 os.makedirs(rd, exist_ok=True)
-p = timeline_store._path(rd)
+from spine.ops.runs import run_id_of
+rid = run_id_of(rd)
 
 timeline_store.append(rd, "s:1", {"kind": "text", "text": "first"})
 steps = timeline_store.read(rd)
 check("first read sees the first step", len(steps) == 1 and steps[0]["text"] == "first")
-offset_after_first = timeline_store._cache[p]["offset"]
-check("cached offset advanced to end of the parsed line",
-      offset_after_first == os.path.getsize(p))
+seq_after_first = timeline_store._cache[rid]["seq"]
+check("cached seq advanced to the last folded row",
+      seq_after_first == _sdb.timeline_max_seq(rid) > 0)
 
 timeline_store.append(rd, "s:2", {"kind": "text", "text": "second"})
 steps = timeline_store.read(rd)
 check("a later read sees the appended step too (delta picked up)",
       [s["text"] for s in steps] == ["first", "second"])
-check("cached offset advanced again, past the first read's offset",
-      timeline_store._cache[p]["offset"] > offset_after_first)
+check("cached seq advanced again, past the first read's seq",
+      timeline_store._cache[rid]["seq"] > seq_after_first)
+check("the delta read asks only for rows past the cached seq",
+      _sdb.timeline_since(rid, timeline_store._cache[rid]["seq"]) == [])
 
 # Mutation safety: read_transcript_store mutates returned step dicts in place
 # (the abandoned-tool relabel) - a cache that handed out its own live dicts
@@ -315,34 +323,23 @@ steps_again = timeline_store.read(rd)
 check("mutating a returned step does not corrupt the next read",
       steps_again[0]["text"] == "first")
 
-# Truncation/recreate (an external wipe of the run_dir, same class as the
-# recordings-wipe-root-cause incident): the file shrinks, so the cache must
-# rebuild from byte 0 instead of trying to resume from a now-invalid offset.
-with open(p, "w", encoding="utf-8") as f:
-    f.write('{"_id": "s:new", "kind": "text", "text": "after wipe"}\n')
+# A partial patch on an existing step folds INTO it and keeps its position
+# (a running tool receiving its result does not jump to the bottom).
+timeline_store.append(rd, "s:1", {"result": "done"})
 steps = timeline_store.read(rd)
-check("shrunk file triggers a clean rebuild, not a stale merge",
-      len(steps) == 1 and steps[0]["text"] == "after wipe")
-check("rebuild resets the cached offset to the new (smaller) file size",
-      timeline_store._cache[p]["offset"] == os.path.getsize(p))
+check("a later patch folds into the FIRST-SEEN step, position kept",
+      [s["text"] for s in steps] == ["first", "second"] and steps[0].get("result") == "done")
 
-# Partial trailing line (writer mid-flush, the same race append()'s callers
-# are inside): a read that lands between the writer's write() and its final
-# newline must not choke on it, and must not skip it once it completes.
-rd2 = os.path.join(TMP, "fold-cache-partial")
-os.makedirs(rd2, exist_ok=True)
-p2 = timeline_store._path(rd2)
-timeline_store.append(rd2, "s:whole", {"kind": "text", "text": "whole line"})
-with open(p2, "a", encoding="utf-8") as f:
-    f.write('{"_id": "s:partial", "kind": "text", "text": "cut off"')   # no closing brace/newline
-steps = timeline_store.read(rd2)
-check("an incomplete trailing line is not folded in yet",
-      len(steps) == 1 and steps[0]["text"] == "whole line")
-with open(p2, "a", encoding="utf-8") as f:
-    f.write('}\n')   # writer finishes the line
-steps = timeline_store.read(rd2)
-check("completing the line makes it appear on the next read, uncorrupted",
-      len(steps) == 2 and steps[1]["text"] == "cut off")
+# The wipe analogue (recordings-wipe-root-cause incident, now in row terms):
+# a run whose rows were cleared and whose cache was dropped rebuilds from
+# nothing instead of serving a stale fold.
+with _sdb.conn() as _c:
+    _c.execute("DELETE FROM timeline WHERE run_id=?", (rid,))
+timeline_store.forget(rd)
+timeline_store.append(rd, "s:new", {"kind": "text", "text": "after wipe"})
+steps = timeline_store.read(rd)
+check("a cleared run rebuilds cleanly, not a stale merge",
+      len(steps) == 1 and steps[0]["text"] == "after wipe")
 
 shutil.rmtree(TMP, ignore_errors=True)
 

@@ -73,6 +73,11 @@ def git(repo, *args):
 
 def clean_repo():
     d = tempfile.mkdtemp(prefix="hd-gateadmit-")
+    # actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+    from spine.storage import db as _sdb
+    _sdb.DBPATH = os.path.join(d, "test.db")
+    _sdb._local.c = None
+    _sdb.init()
     git(d, "init")
     git(d, "symbolic-ref", "HEAD", "refs/heads/main")
     git(d, "config", "user.email", "t@t.t")
@@ -104,15 +109,12 @@ def gate_track(repo, gate_body, tid="t-gate"):
 
 
 def notes(run_dir):
-    path = os.path.join(run_dir, "actions.jsonl")
-    if not os.path.exists(path):
-        return []
+    # the actionlog is the `actions` table (state-into-db phase F)
+    from spine.ops.actionlog import read_timeline
     out = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            d = json.loads(line)
-            if d.get("kind") == "note":
-                out.append(d.get("detail") or "")
+    for d in read_timeline(run_dir):
+        if d.get("kind") == "note":
+            out.append(d.get("detail") or "")
     return out
 
 

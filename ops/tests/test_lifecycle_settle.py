@@ -19,6 +19,10 @@ _RUN_TMP = tempfile.mkdtemp(prefix="hd-settle-")
 DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 from spine.storage import db
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+db.DBPATH = os.path.join(_RUN_TMP, "test.db")
+db._local.c = None
+db.init()
 db.init()
 from cells.engineer.cards import sessions
 from cells.engineer.cards import lifecycle

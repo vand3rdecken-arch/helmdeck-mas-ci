@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Run folders: recordings/<run-id>/ with meta.json, actions.jsonl, video files.
-Keep-all retention (owner decision) - nothing here ever deletes a run."""
-import json, os, time
+"""Runs: recordings/<run-id>/ holds the MEDIA of a run (video, live frame,
+attachments); the run's RECORD is the `runs` row (state-into-db phase F,
+2026-09-12; ledger step 9 imported every meta.json). Keep-all retention
+(owner decision) - nothing here ever deletes a run."""
+import os, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 REC = os.path.join(ROOT, "recordings")
+
+
+def run_id_of(run_dir):
+    """The run's id is its directory name - for a card that is the card id,
+    so actions/timeline rows are scoped by exactly the key the card has."""
+    return os.path.basename(os.path.normpath(run_dir)) if run_dir else ""
+
 
 def new_run(kind, title):
     """kind: agent|teach|test"""
@@ -16,6 +25,7 @@ def new_run(kind, title):
     _write_meta(d, meta)
     return rid, d
 
+
 def finish_run(run_dir, status="done", **extra):
     meta = load_meta(run_dir)
     meta["status"] = status
@@ -23,21 +33,20 @@ def finish_run(run_dir, status="done", **extra):
     meta.update(extra)
     _write_meta(run_dir, meta)
 
+
 def load_meta(run_dir):
-    with open(os.path.join(run_dir, "meta.json"), encoding="utf-8") as f:
-        return json.load(f)
+    from spine.storage import db
+    meta = db.run_get(run_id_of(run_dir))
+    if meta is None:
+        raise FileNotFoundError("no run record for %s" % run_dir)
+    return meta
+
 
 def _write_meta(run_dir, meta):
-    with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    from spine.storage import db
+    db.run_put(dict(meta, id=meta.get("id") or run_id_of(run_dir)))
+
 
 def list_runs():
-    if not os.path.isdir(REC):
-        return []
-    out = []
-    for rid in sorted(os.listdir(REC), reverse=True):
-        d = os.path.join(REC, rid)
-        if os.path.isfile(os.path.join(d, "meta.json")):
-            try: out.append(load_meta(d))
-            except Exception: pass
-    return out
+    from spine.storage import db
+    return db.runs_all()

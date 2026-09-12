@@ -25,6 +25,11 @@ sys.path.insert(0, ROOT)
 # run_dir lives in a temp dir: the sweep's ActionLog CREATES the directory it
 # logs into, so pointing it inside the repo litters the tree on every run.
 TMP = tempfile.mkdtemp(prefix="hd-queued-test-")
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+from spine.storage import db as _sdb
+_sdb.DBPATH = os.path.join(TMP, "test.db")
+_sdb._local.c = None
+_sdb.init()
 from spine.storage import db
 db.init()
 from cells.engineer.cards import sessions, lifecycle

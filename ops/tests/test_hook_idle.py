@@ -69,15 +69,12 @@ def _py(body):
 
 
 def _notes(run_dir):
-    path = os.path.join(run_dir, "actions.jsonl")
-    if not os.path.exists(path):
-        return []
+    # the actionlog is the `actions` table (state-into-db phase F)
+    from spine.ops.actionlog import read_timeline
     out = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            d = json.loads(line)
-            if d.get("kind") == "note":
-                out.append(d.get("detail") or "")
+    for d in read_timeline(run_dir):
+        if d.get("kind") == "note":
+            out.append(d.get("detail") or "")
     return out
 
 

@@ -389,9 +389,8 @@ def _card_log_tail(card, n=35):
         t = _find(_load(), card)
         if not t:
             return ""
-        path = os.path.join(t["run_dir"], "actions.jsonl")
-        with open(path, encoding="utf-8") as f:
-            recs = [json.loads(x) for x in f.read().splitlines()[-n:] if x.strip()]
+        from spine.ops.actionlog import read_timeline
+        recs = read_timeline(t.get("run_dir") or "")[-n:]
         return "\n".join("%s %s: %s" % (r.get("ts", "?"), r.get("kind", "?"),
                                         str(r.get("detail", ""))[:220]) for r in recs)
     except Exception as e:

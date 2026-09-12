@@ -29,7 +29,7 @@ from cells.engineer.cards import sessions as S
 S.REC = runs.REC
 notify.card_event = lambda *a, **k: None
 
-from spine.ops.actionlog import ActionLog
+from spine.ops.actionlog import ActionLog, read_timeline
 
 _fails = []
 
@@ -68,7 +68,7 @@ S._finish_turn("card-detach", "new-bbbb", "echo done.", _detached_meta("old-aaaa
 t2 = S._find(S._load(), "card-detach")
 check(t2["session_id"] == "new-bbbb", "pointer advanced to the continuation session")
 check("old-aaaa" in (t2.get("session_chain") or []), "old head preserved in session_chain")
-raw = open(os.path.join(t2["run_dir"], "actions.jsonl"), encoding="utf-8").read()
+raw = " ".join(r.get("detail") or "" for r in read_timeline(t2["run_dir"]))
 check("Kontext verloren" in raw, "a visible 'Kontext verloren' note was left")
 
 # --- 2) healthy same-session turn: no spurious rotation --------------------
@@ -84,7 +84,7 @@ S._finish_turn("card-rot", "new-2", "echo done.", _healthy_meta(), log)
 t2 = S._find(S._load(), "card-rot")
 check(t2["session_id"] == "new-2", "legit rotation advances the pointer")
 check("old-1" in (t2.get("session_chain") or []), "rotated-away session kept in chain")
-raw = open(os.path.join(t2["run_dir"], "actions.jsonl"), encoding="utf-8").read()
+raw = " ".join(r.get("detail") or "" for r in read_timeline(t2["run_dir"]))
 check("Kontext verloren" not in raw, "silent rotation: no scary note (chain divider only)")
 
 print()

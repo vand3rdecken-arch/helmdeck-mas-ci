@@ -24,6 +24,11 @@ DAEMON = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, DAEMON)
 
 SANDBOX = tempfile.mkdtemp()
+# actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
+from spine.storage import db as _sdb
+_sdb.DBPATH = os.path.join(SANDBOX, "test.db")
+_sdb._local.c = None
+_sdb.init()
 
 from spine.agent import claude_sessions
 from cells.copilot.chat import copilot
