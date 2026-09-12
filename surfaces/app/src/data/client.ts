@@ -991,7 +991,9 @@ export const api = {
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
     /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
      *  descriptors, rendered by the same BackgroundTasks line a card uses. */
-    followups?: Record<string, BgTask> }>("GET", "/chat/history"),
+    followups?: Record<string, BgTask>;
+    /** Henry's current permission mode (hands.permission_mode) - leads the composer's Mode row. */
+    hands_mode?: string }>("GET", "/chat/history"),
   /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
    *  taken): pass it to also collect the speech the daemon has rendered so far,
    *  omit it to stay the text-only poller the board chat has always been — the

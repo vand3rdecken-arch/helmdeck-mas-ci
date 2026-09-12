@@ -452,7 +452,11 @@ def henry_pmode(project=""):
     legacy = (events.settings().get("henry_permission_mode") or "").strip()
     try:
         from spine.storage import projectconfig
-        got = projectconfig.resolve("rule.hands.permission_mode.all", project)
+        # the rule is per-project: a chat/broker turn that names no repo means
+        # the default repo (for_chat), not "no project" - otherwise a mode set
+        # from the chat or the Settings row would never be READ by the spawn
+        got = projectconfig.resolve("rule.hands.permission_mode.all",
+                                    project or projectconfig.for_chat(""))
         if got["layer"] != "default" and got["value"]:
             return got["value"]
     except Exception:                                        # noqa: BLE001
@@ -465,6 +469,25 @@ def henry_pmode(project=""):
     # invariants + the settings deny-list (both still enforced in bypass mode,
     # measured by spine/ops/probe_henry_guard.py).
     return legacy or "bypassPermissions"
+
+
+HANDS_MODES = ("plan", "acceptEdits", "bypassPermissions")
+
+
+def set_hands_mode(mode, actor="owner", note="hands_mode"):
+    """THE one writer of Henry's permission mode (owner decree 2026-09-12:
+    Henry may pick his own mode; the composer's Mode row and the hands_mode
+    chat verb both land here). Writes the rule through write_scoped on the
+    chat's project (for_chat) - the same layer the Settings row uses - so
+    henry_pmode() reads it back for the NEXT chat/broker spawn (the persistent
+    chat process is keyed on the mode and respawns). Returns (before, error)."""
+    if mode not in HANDS_MODES:
+        return None, "mode muss einer von %s sein" % "|".join(HANDS_MODES)
+    from spine.storage import projectconfig
+    before = henry_pmode()
+    _, err = projectconfig.write_scoped({"rule.hands.permission_mode.all": mode},
+                                        project=projectconfig.for_chat(""), actor=actor, note=note)
+    return before, err
 
 
 def _chat_routing_policy(card):
@@ -1102,6 +1125,9 @@ def history(user):
     return {"messages": [_readable(m) for m in _entries(user)],
             "session_id": _sessions().get(user),
             "stats": st,
+            # Henry's current permission mode - the composer's Mode row shows
+            # it first (card parity: k.perm leads the card's list).
+            "hands_mode": henry_pmode(),
             # Henry's in-flight follow-ups as bg-task descriptors (2026-09-12):
             # the chat renders them as ONE BackgroundTasks line above the composer.
             "followups": followups}
@@ -1443,7 +1469,7 @@ def build_argv(cli_model, sid, system):
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
-         client_msg_id="", announce=True, _retried=False, model_source="user"):
+         client_msg_id="", announce=True, _retried=False, model_source="user", mode=""):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -1511,6 +1537,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                           policy=_chat_routing_policy(card))
     if cli_model and model_source != "voice":
         _save_model_pref(skey, cli_model)
+    # The composer's Mode row (2026-09-12): a picked mode is the owner's
+    # decision for Henry's hands from THIS turn on - written to the one knob
+    # before the spawn key is computed, so this very turn runs in it.
+    if mode and mode != henry_pmode() and role in ("owner", "operator"):
+        set_hands_mode(mode, actor=user, note="composer mode row")
     body = turnopts.augment_prompt(message, thinking, paths)
     focus = ""
     card_run_dir = None

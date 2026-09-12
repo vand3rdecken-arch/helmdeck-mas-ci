@@ -470,14 +470,8 @@ def _run_action(a, actor, role="operator"):
         if role not in admin_roles:
             return _denied("hands_mode", role, admin_roles, "policy.chat_admin_roles")
         mode = (a.get("mode") or "").strip()
-        allowed = ("plan", "acceptEdits", "bypassPermissions")
-        if mode not in allowed:
-            return "hands_mode: mode muss einer von %s sein" % "|".join(allowed)
-        from spine.storage import projectconfig
         from cells.copilot.chat import copilot
-        before = copilot.henry_pmode()
-        _, err = projectconfig.write_scoped({"rule.hands.permission_mode.all": mode}, actor=actor,
-                                            note="hands_mode via chat")
+        before, err = copilot.set_hands_mode(mode, actor=actor, note="hands_mode via chat")
         if err:
             return "hands_mode nicht gesetzt: %s" % err
         return ("Haende-Modus %s -> %s (gilt ab dem naechsten Turn, Chat und Broker; "

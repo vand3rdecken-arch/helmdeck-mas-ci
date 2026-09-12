@@ -363,6 +363,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // daemon per finished turn (copilot._fold_stats) and served with the history.
   const stats = data?.stats;
   const flat = useAiFlat();
+  const modeBase = [{ id: "bypassPermissions", label: tr("card.perm.full") },
+    { id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") }]
+    .filter((m) => m.id !== "bypassPermissions" || me?.role === "owner");
+  const cur = data?.hands_mode;
+  const henryModes = me?.role === "client" ? undefined
+    : [...modeBase.filter((m) => m.id === cur), ...modeBase.filter((m) => m.id !== cur)];
 
   // A pending turn dies only when the server history has caught up with it:
   // the daemon persists a turn as a unit (user msg + reply folded together),
@@ -766,6 +772,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
           <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
+            // Mode row (owner request 2026-09-12, screenshot of Claude Code's
+            // picker: Model / Thinking / Mode): Henry's permission mode, same
+            // three options and labels as a card's composer, current mode
+            // first. The pick rides in the send body (`mode`) and copilot.chat
+            // writes it to the one knob before spawning - card parity.
+            modeOptions={henryModes}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
             onVoice={canVoice ? () => setVoiceOpen(true) : undefined}
             // The routing target, made VISIBLE and switchable rather than

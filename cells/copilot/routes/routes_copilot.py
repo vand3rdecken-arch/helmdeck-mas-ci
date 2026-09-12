@@ -258,6 +258,7 @@ def chat_post(self, user, body):
             # thinking off while spoken: it buys quality the 3-sentence answer
             # can't spend, and every thinking second is dead air in the ear
             thinking="" if want_voice else body.get("thinking", ""),
+            mode=str(body.get("mode") or ""),
             attachments=body.get("attachments"),
             card=body.get("card"), voice_stream=streaming,
             # REUSES `mid`, the id the app already mints once per /chat call

@@ -18,6 +18,8 @@ from spine.storage import events  # noqa: E402
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
+# the rule is per-project; a chat names no repo -> the workspace's default repo
+events.save_settings({"default_repo": SANDBOX}, actor="test")
 from cells.copilot.chat import copilot, copilot_actions  # noqa: E402
 
 _fails = []
