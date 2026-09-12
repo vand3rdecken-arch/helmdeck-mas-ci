@@ -56,6 +56,13 @@ TOOLS for exactly that. The law:
   question each name their evidence in one clause ("Karte 20260831-071411:
   eingereicht", "Notiz helmdeck-launch-planung: kein Zieldatum"). Code keeps a
   question ONLY when its `checked` trail is non-empty.
+- **A launch is every platform with a store process** (Android, iOS, Wear,
+  watchOS, Mac, Desktop) unless the goal text restricts it. Never narrow it
+  yourself to one store: on 2026-09-12 the planner "assumed Android" and so
+  missed that the iOS resubmission had been waiting two days on the owner's
+  demo video. What the OWNER still owes (a video, an approval, a go) is the
+  blocker class that matters most - it is step 1 of the chain with `who: du`,
+  never a risk line, and never displaced by agent work like test automation.
 - **Budget the looking.** At most 8 tool calls; two searches per open point
   are usually enough. Do not read the full history, do not re-read the live
   snapshot - it is already in front of you.
