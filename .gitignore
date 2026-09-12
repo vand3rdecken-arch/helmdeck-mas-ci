@@ -238,3 +238,11 @@ shot_chat_scroll_*.png
 # certs. Got tracked once by accident (e06e417, a baseline-snapshot commit
 # that swept it in alongside real code changes); never again.
 recordings/
+
+# state-into-db phase A (2026-09-12): runtime records/locks that were never
+# ignored - devices.json holds hashed push tokens, gxp.lock is hand-edited
+# control, the other two are tool/harness scratch.
+daemon/devices.json
+daemon/gxp.lock
+ops/tools/stt_bench_results.json
+.claude/scheduled_tasks.lock

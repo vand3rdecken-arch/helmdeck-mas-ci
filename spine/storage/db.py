@@ -252,6 +252,7 @@ def init(role="tool"):
     c.execute("CREATE INDEX IF NOT EXISTS ev_track ON events(track)")
     c.commit()
     _migrate()
+    _apply_migrations()
     _reconcile_events()
     if role == "daemon":
         _devalue_persisted_running()
@@ -842,12 +843,16 @@ def memory_all():
             for r in rows}
 
 
-def memory_put(name, content, actor="henry"):
+def memory_put(name, content, actor="henry", account="owner"):
+    """`account` (ledger step 4): whose board the note belongs to. Every
+    caller today is the owner's Henry; the column exists so a second account's
+    notes never land in the same namespace, not because any caller passes it
+    yet."""
     import datetime
     now = datetime.datetime.now().isoformat(timespec="seconds")
     with conn() as c:
-        c.execute("INSERT OR REPLACE INTO memory(name,content,updated_at,actor) "
-                  "VALUES(?,?,?,?)", (name, content, now, actor))
+        c.execute("INSERT OR REPLACE INTO memory(name,content,updated_at,actor,account) "
+                  "VALUES(?,?,?,?,?)", (name, content, now, actor, account))
     bump_chat()   # the memory rides Henry's stream, not the board's
 
 
@@ -1114,3 +1119,154 @@ def events_all():
             pass
         out.append(r)
     return out
+
+
+# -- schema ledger (state-into-db phase A, 2026-09-12) ------------------------
+# Until here every table was `CREATE TABLE IF NOT EXISTS` at boot and the one
+# column ever added (events.id) was guarded by hand with PRAGMA table_info.
+# `PRAGMA user_version` was 0 on every install - nothing could say what shape
+# a db was on, and no phase of the files->db move could be applied exactly
+# once. The ledger below is the ONE place a shape change lives: a numbered
+# step, applied in its own transaction the first time a db below that version
+# boots, recorded in `schema_migrations` and mirrored into user_version.
+#
+# Rules: a step is idempotent on a FRESH db (init()'s CREATE TABLEs give the
+# base shape, the step adds to it) and on an OLD db; a step that imports a
+# file verifies its row count and archives the file with _archive() - never
+# deletes; the old writer of that file dies in the same commit. A step never
+# rewrites a blob's shape - scoping columns over `data` are VIRTUAL generated
+# columns (json_extract), so every existing writer keeps writing (id, data)
+# and every existing reader keeps json.loads(data), while WHERE/INDEX finally
+# see lane/status/project_id/... as real columns.
+
+_MIGRATIONS = []
+
+
+def _migration(version, name):
+    def deco(fn):
+        _MIGRATIONS.append((version, name, fn))
+        return fn
+    return deco
+
+
+def _has_column(c, table, col):
+    return col in {r[1] for r in c.execute("PRAGMA table_info(%s)" % table)}
+
+
+def _add_json_column(c, table, col, path=None, index=True):
+    """A VIRTUAL generated column over the row's JSON blob + its index. The
+    writer never learns about it; SQLite evaluates json_extract on read and
+    keeps the index current on every INSERT OR REPLACE."""
+    if not _has_column(c, table, col):
+        c.execute("ALTER TABLE %s ADD COLUMN %s TEXT GENERATED ALWAYS AS "
+                  "(json_extract(data,'$.%s')) VIRTUAL" % (table, col, path or col))
+    if index:
+        c.execute("CREATE INDEX IF NOT EXISTS %s_%s ON %s(%s)" % (table, col, table, col))
+
+
+@_migration(1, "ledger-baseline")
+def _m1(c):
+    """Records that every table init() creates existed at this point. Nothing
+    to do - the row in schema_migrations IS the fact."""
+
+
+@_migration(2, "tracks-scope-columns")
+def _m2(c):
+    """Audit finding A2: cards were (id, data) with owner/repo/project/lane/
+    status inside the JSON, so every board query loaded all rows and filtered
+    in Python. Generated columns + indexes over the same blob."""
+    for col in ("project_id", "repo", "lane", "status", "archived", "created", "updated", "client"):
+        _add_json_column(c, "tracks", col)
+    c.execute("CREATE INDEX IF NOT EXISTS tracks_lane_status ON tracks(lane, status)")
+    for col in ("status", "client", "template_id"):
+        _add_json_column(c, "processes", col)
+    for col in ("repo", "status", "client"):
+        _add_json_column(c, "projects", col)
+
+
+@_migration(3, "workspace-config-drop-dead-users")
+def _m3(c):
+    """Audit finding A4: a `users` row with plaintext account tokens sat in
+    workspace_config although events.py has documented it as a dead mirror of
+    auth.py's users.json since config-consolidation phase 4 - nothing read it,
+    nothing wrote it, it just kept a secret in the config table. Deleted; the
+    accounts have exactly one owner (spine/auth/auth.py)."""
+    c.execute("DELETE FROM workspace_config WHERE key='users'")
+
+
+@_migration(4, "memory-account")
+def _m4(c):
+    """Data model 2.1: Henry's notes get an account column (default 'owner',
+    which is what every existing row is - measured: 47 rows, all actor=henry
+    on the owner's board) so a second account never shares them by accident."""
+    if not _has_column(c, "memory", "account"):
+        c.execute("ALTER TABLE memory ADD COLUMN account TEXT NOT NULL DEFAULT 'owner'")
+    c.execute("CREATE INDEX IF NOT EXISTS memory_account ON memory(account)")
+
+
+@_migration(5, "events-actor-utc-columns")
+def _m5(c):
+    """Audit finding A3: actor and at_utc lived only inside the blob. Virtual
+    columns so audit queries (who/when in UTC) stop json-parsing 8k rows."""
+    _add_json_column(c, "events", "actor")
+    _add_json_column(c, "events", "at_utc")
+
+
+def schema_head():
+    """The highest ledger version this code knows - what user_version must
+    equal after init() on any install."""
+    return max(v for v, _, _ in _MIGRATIONS) if _MIGRATIONS else 0
+
+
+def schema_applied():
+    """[(version, name, applied_at)] as recorded in the db, ascending."""
+    try:
+        return conn().execute(
+            "SELECT version,name,applied_at FROM schema_migrations ORDER BY version").fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+
+def _apply_migrations():
+    import datetime
+    c = conn()
+    c.execute("""CREATE TABLE IF NOT EXISTS schema_migrations(
+        version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)""")
+    c.commit()
+    have = {r[0] for r in c.execute("SELECT version FROM schema_migrations")}
+    for version, name, fn in sorted(_MIGRATIONS):
+        if version in have:
+            continue
+        # One transaction per step: a step that raises leaves the db exactly
+        # as it was AND unrecorded, so the next boot retries it - never a
+        # half-applied shape with a ledger row claiming otherwise.
+        c.execute("BEGIN")
+        try:
+            fn(c)
+            c.execute("INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)",
+                      (version, name, datetime.datetime.now().isoformat(timespec="seconds")))
+            c.execute("PRAGMA user_version=%d" % version)
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+        print("db: schema %d %s applied" % (version, name))
+
+
+# -- scoped card queries (over the generated columns of migration 2) ----------
+
+def tracks_where(**eq):
+    """Cards matching every column=value given (lane, status, project_id,
+    repo, archived, client) - an indexed WHERE instead of tracks_all() +
+    Python filter. Values are compared as the JSON text json_extract yields
+    (booleans arrive as 1/0)."""
+    if not eq:
+        return tracks_all()
+    cols = ("project_id", "repo", "lane", "status", "archived", "created", "updated", "client")
+    bad = [k for k in eq if k not in cols]
+    if bad:
+        raise ValueError("tracks_where: no such scope column %s" % bad)
+    where = " AND ".join("%s=?" % k for k in eq)
+    rows = conn().execute("SELECT data FROM tracks WHERE %s ORDER BY id DESC" % where,
+                          tuple(eq.values())).fetchall()
+    return [json.loads(r[0]) for r in rows]

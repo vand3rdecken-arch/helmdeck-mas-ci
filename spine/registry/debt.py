@@ -4851,6 +4851,42 @@ DEBT = [
         "since": "2026-09-11",
         "order": 69,
     },
+    {
+        "id": "state-into-db",
+        "title": "Runtime records still written as files beside the db",
+        "status": "open",
+        "what": "Audit 2026-09-12 (ops/docs/backlog/state-into-db): 60 MB of "
+                "records sit as files next to helmdeck.db - per-card timeline.jsonl "
+                "(54.6 MB/134 files) and actions.jsonl, escalations.jsonl (full "
+                "re-parse per read), Henry's chat log (rolling 80-message window, "
+                "whole-file rewrite per turn), PM plans (one file per day), auth "
+                "sessions/invites/devices, harness edit versions, checkpoints' "
+                "settings copy, .loop workorders; events.jsonl is still the record "
+                "and the db only its index. The db itself had no schema version "
+                "and no scoping columns (cards were (id, data) blobs filtered in "
+                "Python) and carried a dead `users` row with a plaintext token.",
+        "why_it_bites": "No install can say what shape its store is on; a "
+                        "board query is O(all cards) in Python; two answers to "
+                        "'what happened' (file vs table) with nothing to tell "
+                        "them apart; chat history silently truncated at 80; a "
+                        "restore of the db alone loses every file-side record; "
+                        "the exportability decree is unverifiable.",
+        "trigger": "any second account or project, any restore, any card with "
+                   "a long transcript",
+        "fix": "Phase A PAID in this commit: schema ledger (schema_migrations + "
+               "PRAGMA user_version, one transaction per step, rollback + retry), "
+               "virtual generated scope columns + indexes over the card/process/"
+               "project blobs (writers untouched), dead `users` row deleted, "
+               "memory.account, events.actor/at_utc, db_export/db_import with "
+               "secret masking, ops/tests/test_db_schema.py (proven to fail on the "
+               "old code). Phases B-I per the card: planner scratch hole, "
+               "escalations, PM artifacts + runtime docs, chat, runs/actions/"
+               "timeline, auth/harness/workorders/checkpoints, events db-first "
+               "(owner gate), in-memory live buffers. Each phase: import + "
+               "_archive, old writer deleted in the same commit, no dual writer.",
+        "since": "2026-09-12",
+        "order": 70,
+    },
 ]
 
 def list_debt():
