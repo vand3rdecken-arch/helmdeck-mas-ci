@@ -134,10 +134,75 @@ def test_end_to_end_via_stdin():
        "end-to-end: a package-mutating command is denied by the real process")
 
 
+def test_live_invariants():
+    """The hard invariants of 2026-09-12 (owner decree: bypassPermissions +
+    hook fence). Pure-function checks on _live_rule_hit, worktree-less (Henry's
+    broker) unless stated, then the real process without HELMDECK_WORKTREE."""
+    hit = lambda tool, **ti: guard._live_rule_hit(tool, ti, "")  # noqa: E731
+    # daemon-kill: any killer + a daemon-tree marker
+    ok(hit("Bash", command="taskkill /IM pythonw.exe /F"), "taskkill by image is denied")
+    ok(hit("Bash", command="taskkill /PID 123 /T /F"), "taskkill /T (tree) is denied")
+    ok(hit("PowerShell", command="Stop-Process -Name python -Force"), "Stop-Process on python is denied")
+    ok(not hit("Bash", command="tasklist | grep python"), "listing processes is fine")
+    ok(not hit("Bash", command="kill %1"), "a bare job kill without a daemon marker is fine")
+    # secrets, in commands and in paths
+    ok(hit("Bash", command="cat daemon/users.json"), "reading users.json via cat is denied")
+    ok(hit("Bash", command="type daemon\\settings.json"), "backslash path to settings.json is denied")
+    ok(hit("Bash", command="sqlite3 daemon/helmdeck.db .tables"), "opening helmdeck.db is denied")
+    ok(hit("Read", file_path="C:/x/swarmdeck/.env"), "Read .env is denied")
+    ok(not hit("Bash", command="echo environment"), "'environment' is not '.env'")
+    ok(not hit("Read", file_path="C:/x/swarmdeck/daemon/restart_watch.log"), "a daemon log is readable")
+    # git history
+    ok(hit("Bash", command="git push --force origin main"), "force-push is denied")
+    ok(hit("Bash", command="git push -f"), "-f push is denied")
+    ok(hit("Bash", command="git push origin +main"), "+refspec push is denied")
+    ok(not hit("Bash", command="git push origin main"), "a plain push is fine")
+    ok(hit("Bash", command="git reset --hard HEAD~1"), "reset --hard on the live tree is denied")
+    ok(hit("Bash", command="git clean -fdx"), "clean -fdx on the live tree is denied")
+    ok(hit("Bash", command="git worktree remove ../x"), "worktree remove on the live tree is denied")
+    ok(not guard._live_rule_hit("Bash", {"command": "git reset --hard HEAD~1"}, "C:/wt/card"),
+       "reset --hard INSIDE a card's own worktree stays allowed (branch-only damage)")
+    ok(not hit("Bash", command="git reset --soft HEAD~1"), "reset --soft is fine")
+    # scheduled tasks: only the restart task, only run/create/query
+    ok(not hit("Bash", command="schtasks //Run //TN HelmDeckRestart"), "Git-Bash spelling of the restart is allowed")
+    ok(not hit("PowerShell", command='schtasks /Run /TN "HelmDeckRestart"'), "PowerShell spelling of the restart is allowed")
+    ok(not hit("Bash", command='schtasks //Create //TN HelmDeckRestart //SC ONCE //ST 23:59 //F //TR "x"'),
+       "creating the restart task is allowed")
+    ok(hit("Bash", command="schtasks /Delete /TN HelmDeckRestart /F"), "deleting the restart task is denied")
+    ok(hit("Bash", command="schtasks /Run /TN SomethingElse"), "running another task is denied")
+    # memory dir
+    ok(hit("Bash", command="rm ~/.claude/projects/x/memory/MEMORY.md"), "rm in the memory dir is denied")
+    ok(hit("Write", file_path="C:/Users/o/.claude/projects/x/memory/a.md"), "Write into the memory dir is denied")
+    ok(not hit("Read", file_path="C:/Users/o/.claude/projects/x/memory/a.md"), "Read from the memory dir is fine")
+    ok(hit("Edit", file_path="C:/x/swarmdeck/.git/config"), "editing .git internals is denied")
+
+    def run(tool, ti):
+        env = dict(os.environ)
+        env.pop("HELMDECK_WORKTREE", None)
+        env.pop("HELMDECK_TOOL_SCOPE", None)
+        payload = json.dumps({"tool_name": tool, "tool_input": ti})
+        r = subprocess.run([sys.executable, GUARD], input=payload,
+                           capture_output=True, text=True, env=env, timeout=15)
+        out = (r.stdout or "").strip()
+        if not out:
+            return None
+        o = json.loads(out)["hookSpecificOutput"]
+        return o["permissionDecision"], o.get("permissionDecisionReason", "")
+
+    d = run("Bash", {"command": "taskkill /IM pythonw.exe /F"})
+    ok(d and d[0] == "deny" and "HelmDeckRestart" in d[1],
+       "end-to-end, no worktree: daemon-kill denied WITH the restart route in the reason")
+    ok(run("Bash", {"command": "git status --short"}) is None,
+       "end-to-end, no worktree: an ordinary command gets no opinion")
+    ok(run("Read", {"file_path": os.path.join(ROOT, "daemon", "users.json")})[0] == "deny",
+       "end-to-end, no worktree: reading users.json is denied")
+
+
 def main():
     test_argv_allowlist_logic()
     test_deny_verbs_are_word_bounded()
     test_end_to_end_via_stdin()
+    test_live_invariants()
     if _fails:
         print("\n=== FAILED: %d ===" % len(_fails))
         for f in _fails:

@@ -45,7 +45,7 @@ hooks-only settings file) before concluding a flag has regressed.
 """
 import json, os, shutil, subprocess, sys, tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # spine/ops -> repo root
 from spine.agent import drivers  # _cmd_line: never exec the .cmd shim
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 from spine.registry import harness  # the shipped settings files to validate
@@ -131,7 +131,8 @@ def validate():
         if not key or key in seen:
             continue
         seen[key] = m.get("setting_sources")
-        path = os.path.join(harness.SETTINGS, "%s.json" % key)
+        # cells own their settings since the four-folder split - ask the registry
+        path = harness.settings_file(name) or os.path.join(harness.SETTINGS, "%s.json" % key)
         try:
             with open(path, encoding="utf-8") as f:
                 d = json.load(f)

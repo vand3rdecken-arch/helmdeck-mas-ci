@@ -456,7 +456,14 @@ def henry_pmode(project=""):
             return got["value"]
     except Exception:                                        # noqa: BLE001
         pass                  # a broken store must never cost Henry his hands
-    return legacy or "acceptEdits"
+    # Default bypassPermissions since 2026-09-12 (owner decree "mehr Rechte
+    # geben und ueber Hook einschraenken"): acceptEdits headless meant "may
+    # edit files, may run NO command outside a literal allow-rule, and the
+    # deny is silent" - Henry had hands to write and none to act, and invented
+    # reasons for every block. The fence is now code: card_tool_guard's hard
+    # invariants + the settings deny-list (both still enforced in bypass mode,
+    # measured by spine/ops/probe_henry_guard.py).
+    return legacy or "bypassPermissions"
 
 
 def _chat_routing_policy(card):

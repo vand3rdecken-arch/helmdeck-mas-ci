@@ -46,6 +46,15 @@
     "HELMDECK_SURFACE": "copilot"
   },
 
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
+        "hooks": [ { "type": "command",
+                     "command": "py -3.12 \"$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py\"",
+                     "timeout": 30 } ] }
+    ]
+  },
+
   "permissions": {
     "allow": [
       "Bash(py -3.12 ../ops/tools/board_state.py:*)",

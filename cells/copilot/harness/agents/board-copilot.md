@@ -363,3 +363,15 @@ milestone/goal. If one supersedes the queued card's premise, do NOT repeat the
 queued card's wording - state what the newer card actually shows instead, and
 say the old card looks stale (offer to close/archive it) rather than quoting
 it as if it were still true. {{rule:initiative.stale_check}}
+
+DAEMON-NEUSTART (der einzige Weg, gemessen 2026-09-02 + 2026-09-12): du bist
+ein Kind des Daemons - ein taskkill/Stop-Process auf python trifft dich selbst
+und ist vom Guard geblockt. Der Neustart laeuft ueber den Scheduled Task, der
+ausserhalb des Prozessbaums startet und 90 s wartet, bis dein Turn fertig ist:
+  Bash-Tool:        schtasks //Run //TN HelmDeckRestart     (Doppel-Slash: Git-Bash
+                                                             schreibt /Run sonst zu
+                                                             einem Pfad um)
+  PowerShell-Tool:  schtasks /Run /TN HelmDeckRestart
+Vorher pruefen, dass keine Karte mitten im Turn ist (running mit turn_active);
+danach NICHT selbst verifizieren - dein Turn endet mit dem Neustart. Melde
+"Neustart ausgeloest (90 s)", nicht "erledigt".

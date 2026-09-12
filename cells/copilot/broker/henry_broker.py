@@ -168,6 +168,15 @@ def _ask(prompt, model="", perm=None):
     from spine.agent import drivers
     argv = [copilot.CLAUDE, "-p", "--output-format", "json",
             "--permission-mode", perm or copilot.henry_pmode()]
+    # HENRY'S OWN SETTINGS LAYER, not whatever cwd implies (2026-09-12). Until
+    # now this spawn loaded the operator's personal ~/.claude (rtk hook, model
+    # pin, memory hooks) PLUS the repo's project layer (the build-loop Stop
+    # hook that once redirected two judgement turns into filling in
+    # .loop/workorder.md - debt henry-broker-loop). With bypassPermissions the
+    # copilot layer is also where the guard hook and the secret deny-list
+    # live - without it, "more rights, fenced by a hook" would be all rights.
+    from spine.registry import harness
+    argv += harness.cli_args("board-copilot")
     if model:
         argv += ["--model", model]
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=_HENRY_REPO_ROOT,
@@ -183,10 +192,16 @@ def _ask(prompt, model="", perm=None):
         raise
     if not (stdout or "").strip():
         raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
-    txt = json.loads(stdout).get("result", "")
+    raw = json.loads(stdout)
+    txt = raw.get("result", "")
     d = _extract_json(txt)
     if d is None:
         raise RuntimeError("henry: no JSON in reply: " + txt.strip()[:150])
+    # What the CLI refused this turn, VERBATIM - so a blocked hand is a fact in
+    # the escalation record (and the chat's follow-up line), not a story Henry
+    # tells about it. Measured 2026-09-11/12: three identical schtasks denials,
+    # three different invented reasons.
+    d["_denials"] = raw.get("permission_denials") or []
     return d
 
 
@@ -495,6 +510,10 @@ def _decide(esc):
     except Exception as e:
         escalations.record_note(esc["id"], "ask failed: %s" % str(e)[:200])
         return False
+    den = d.get("_denials") or []
+    if den:
+        escalations.record_note(esc["id"], "Policy hat %d Aufruf(e) geblockt: %s" % (
+            len(den), "; ".join(_denial_line(x) for x in den[:5])))
     action = (d.get("action") or "").strip()
     card = (d.get("card") or esc.get("card") or "").strip()
     lane = (d.get("lane") or "").strip()
@@ -538,6 +557,12 @@ def _decide(esc):
             esc["kind"], _label, (" -> " + lane) if action == "move" else "",
             text or why), None if action == "did" else _find_track(card))
     return True
+
+
+def _denial_line(x):
+    ti = x.get("tool_input") or {}
+    what = ti.get("command") or ti.get("file_path") or ti.get("path") or ""
+    return "%s %s" % (x.get("tool_name") or "?", str(what).replace("\n", " ")[:80])
 
 
 def _find_track(card):

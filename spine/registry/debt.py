@@ -828,7 +828,17 @@ DEBT = [
                 "narrowed to exactly one item: Henry's 'did' diffs are not "
                 "surfaced in the History view - an owner can still only "
                 "find out what changed by reading the audit note text or "
-                "running git log/diff by hand outside the app.",
+                "running git log/diff by hand outside the app. WIDENED "
+                "2026-09-12 (owner decree 'mehr Rechte geben und ueber Hook "
+                "einschraenken'): henry_pmode defaults to bypassPermissions, "
+                "the broker spawn now loads Henry's own settings layer "
+                "(harness.cli_args('board-copilot') - guard hook + secret "
+                "deny-list, no operator/project layer), and ops/tools/"
+                "card_tool_guard.py enforces the hard invariants in code "
+                "for every scope (secrets, daemon-kill, force-push, live-"
+                "tree history verbs, schtasks other than HelmDeckRestart, "
+                "memory-dir writes). Denials land verbatim in the escalation "
+                "record (_ask -> permission_denials -> record_note).",
         "why_it_bites": "Without diff visibility, reviewing what an "
                         "unattended 'did' fix actually changed means "
                         "leaving the app - the History view (built for "
@@ -1164,7 +1174,12 @@ DEBT = [
                         "cards. The prompt-level secret fence is guidance, not "
                         "enforcement.",
         "trigger": "the first machine task pointed at a broad folder (home, C:\\), "
-                   "or a second non-owner account being granted machine roles",
+                   "or a second non-owner account being granted machine roles. "
+                   "NARROWED 2026-09-12: the secret fence, daemon-kill and force-"
+                   "push are now enforced IN CODE by card_tool_guard's hard "
+                   "invariants (loaded via card.json for every card spawn, "
+                   "PowerShell tool included) - the brief is no longer the only "
+                   "fence. Roots/undo/dry-run remain open.",
         "fix": "Narrow by default: ship policy.machine.roots preset to the owner's "
                "usual work folders and require an explicit widening; add a "
                "recycle-bin-style undo (move-to-trash instead of delete) for "
@@ -1172,6 +1187,33 @@ DEBT = [
                "reads of settings.json/users.json/helmdeck.db via allowed_tools "
                "deny-rules) rather than in the brief; consider a dry-run turn that "
                "reports the plan before the acting turn for destructive verbs.",
+        "order": 12,
+    },
+    {
+        "id": "live-guard-text-scan",
+        "title": "card_tool_guard's hard invariants are a text scan, not a shell parser",
+        "status": "open",
+        "what": "Since 2026-09-12 Henry's broker and the direct/machine cards run "
+                "bypassPermissions; the only boundary left is ops/tools/"
+                "card_tool_guard.py's PreToolUse rules (secrets, daemon-kill, "
+                "force-push, live-tree git verbs, schtasks, memory-dir writes). "
+                "They match words/regexes on the command string and the path "
+                "arguments - deterministic and fail-closed, but a command that "
+                "reaches the same effect indirectly (a python one-liner that "
+                "opens helmdeck.db, a script file that force-pushes, a variable "
+                "holding the image name) is not seen. Claude Code's own docs say "
+                "the same of its Read/Edit deny rules: only the OS sandbox blocks "
+                "all processes.",
+        "why_it_bites": "An agent that WANTS around the fence gets around it; the "
+                        "fence is for the honest mistake and the obvious command. "
+                        "On the owner's own box with owner-dispatched cards this is "
+                        "the accepted trade (decree); it is NOT acceptable for "
+                        "client-scope cards, which stay in acceptEdits.",
+        "trigger": "a non-owner account gets hands on the live tree, or the "
+                   "sandbox feature becomes usable on Windows",
+        "fix": "Enable Claude Code's sandbox (filesystem + network allowlists) "
+               "for headless spawns once it is stable on Windows; until then keep "
+               "the rule list short and pinned in ops/tests/test_card_tool_guard.py.",
         "order": 12,
     },
     {

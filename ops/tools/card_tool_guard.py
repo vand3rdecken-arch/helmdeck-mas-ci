@@ -64,6 +64,7 @@ opposites, and permissive is not safe.
 """
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -109,6 +110,91 @@ def _grant(reason):
 
 
 _PATH_KEYS = ("file_path", "path", "notebook_path")
+
+# ---------------------------------------------------------------------------
+# HARD INVARIANTS FOR EVERY SCOPE (owner decree 2026-09-12: "mehr Rechte geben
+# und dann ueber Hook einschraenken"). Henry's broker and the machine/direct
+# cards run --permission-mode bypassPermissions; the Bash allow-list is gone
+# as a boundary, so the things the laws protect are enforced HERE, as code
+# that needs no judgement (HARNESS dual architecture: judgement -> Henry,
+# invariants -> code, never judgement in hooks). Deterministic, word/regex
+# based, fail-closed like everything else in this file. NOT a shell parser
+# (debt live-guard-text-scan): it catches the honest mistake and the obvious
+# command, not an adversary - the OS sandbox is the only thing that would.
+#
+# A deny here comes back to the model WITH its reason (permissionDecisionReason),
+# which is the other half of the decree: a headless permission deny is silent
+# and Henry used to invent a cause for it ("Sandbox-Policy", 3 times).
+_SECRET_MARKERS = ("daemon/settings.json", "daemon/users.json", "helmdeck.db",
+                   "daemon/certs", ".keystore", ".pem", "copilot_log.json")
+# process killers + anything that says "the daemon tree": taskkill /IM
+# pythonw.exe, /T (tree), /F on a python image, Stop-Process -Name python...
+_KILL_RE = re.compile(r"\b(taskkill|tskill|stop-process|pkill|killall|kill)(\.exe)?\b", re.I)
+_DAEMON_RE = re.compile(r"python|daemon\.swarm|8140|/im\b|/t\b|-name\b|-processname\b|-force\b", re.I)
+_FORCE_PUSH_RE = re.compile(
+    r"\bgit\b[^;&|]*\bpush\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+[\w./-]+)", re.I)
+# history-destroying verbs, denied on the LIVE tree only (a worktree card may
+# reset its own branch; the owner's checkout is not the card's to rewrite)
+_LIVE_GIT_RE = re.compile(
+    r"\bgit\b[^;&|]*\b(reset\s+--hard|clean\s+-[a-z]*[fdx]|worktree\s+(remove|prune)|branch\s+-D)\b", re.I)
+_SCHTASKS_RE = re.compile(r"\bschtasks(\.exe)?\b", re.I)
+# the ONE scheduled task an agent may touch, and only to run/create/query it
+# (ops/tools/restart_helmdeck.ps1 - the restart route that survives the
+# daemon's own taskkill /T). Double slashes are how Git Bash spells /Run.
+_SCHTASKS_OK = re.compile(r"/+(run|create|query)\b[^;&|]*/+tn\s+\"?helmdeckrestart", re.I)
+_MEMORY_DIR = ".claude/projects"
+_WRITEY_RE = re.compile(r"(\b(rm|del|erase|remove-item|ri|mv|move|move-item|set-content|out-file|add-content|cp|copy|copy-item|tee)\b|>)", re.I)
+
+
+def _norm(s):
+    return (s or "").replace("\\", "/").lower()
+
+
+def _secret_in(s):
+    n = _norm(s)
+    for m in _SECRET_MARKERS:
+        if m in n:
+            return m
+    # `.env` as a FILE, not the word "environment"
+    if re.search(r"(^|[/\s\"'])\.env(\.[a-z0-9]+)?([\s\"']|$)", n):
+        return ".env"
+    return ""
+
+
+def _live_rule_hit(tool, ti, worktree):
+    """The reason to deny, or "" - pure function over the hook payload."""
+    if tool in ("Bash", "PowerShell"):
+        cmd = ti.get("command") or ""
+        hit = _secret_in(cmd)
+        if hit:
+            return "touches a HelmDeck secret (%s) - never readable/writable by an agent" % hit
+        if _KILL_RE.search(cmd) and _DAEMON_RE.search(cmd):
+            return ("kills processes by image/tree - the daemon (and this very session) "
+                    "live in that tree; the restart route is: schtasks //Run //TN HelmDeckRestart")
+        if _FORCE_PUSH_RE.search(cmd):
+            return "force-push rewrites shared history - not available to an agent"
+        if not worktree and _LIVE_GIT_RE.search(cmd):
+            return "history-destroying git verb on the owner's live checkout (reset --hard / clean / worktree remove / branch -D)"
+        if _SCHTASKS_RE.search(cmd) and not _SCHTASKS_OK.search(cmd):
+            return "schtasks: only /Run, /Create or /Query on the HelmDeckRestart task is allowed"
+        if _MEMORY_DIR in _norm(cmd) and _WRITEY_RE.search(cmd):
+            return "writes into the shared memory directory (~/.claude/projects) - read-only for agents"
+        return ""
+    if tool in ("Read", "Write", "Edit", "MultiEdit", "NotebookEdit"):
+        for k in _PATH_KEYS:
+            p = ti.get(k) or ""
+            if not p:
+                continue
+            hit = _secret_in(p)
+            if hit:
+                return "%s targets a HelmDeck secret (%s)" % (tool, hit)
+            if tool != "Read":
+                n = _norm(p)
+                if "/.git/" in n or n.endswith("/.git"):
+                    return "%s targets .git internals" % tool
+                if _MEMORY_DIR in n:
+                    return "%s targets the shared memory directory - read-only for agents" % tool
+    return ""
 
 # Package-mutating/publishing verbs - network egress and arbitrary
 # postinstall-script execution, the two things a client card must not get
@@ -239,6 +325,17 @@ def main():
     scope = os.environ.get("HELMDECK_TOOL_SCOPE") or ""
     tool = payload.get("tool_name") or ""
     ti = payload.get("tool_input") or {}
+
+    # Hard invariants first, in EVERY scope (worktree card, live-tree direct/
+    # machine card, Henry's broker with no worktree at all).
+    try:
+        why = _live_rule_hit(tool, ti, worktree)
+    except Exception as e:                                     # noqa: BLE001
+        _deny("card_tool_guard: internal error in the invariant check, refusing (%s)" % str(e)[:120])
+        return
+    if why:
+        _deny("card_tool_guard: " + why)
+        return
 
     if not worktree:
         # No worktree var at all = not a normal card spawn (machine/direct-
