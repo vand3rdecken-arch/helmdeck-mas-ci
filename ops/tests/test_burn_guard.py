@@ -85,23 +85,30 @@ _track("burn-4", burn={"n": 6, "name": "Bash", "sample": "{}", "corrections": 0}
 pm._review_burn("burn-4")
 check(not steers, "legit verdict -> worker left alone (no steer)")
 
-# --- 5) already corrected _RESOLVE_MAX times -> escalate, no steer -----------
+# --- 5) already corrected _RESOLVE_MAX times -> Henry, no steer, NO owner push
+# (2026-09-12: the exhausted ladder used to push + chat the owner while drivers'
+# turn-burn tripwire handed the same loop to Henry - one stuck worker, four
+# messages. Now it is Henry's exception, and the owner hears from him once.)
 steers.clear()
-pushes = []
+pushes, henry = [], []
 from spine.comms import notify
-notify.push_fcm = lambda title, body, tid="": pushes.append(tid)
+from cells.copilot.planning import pm_comm
+notify.push_fcm = lambda title, body, tid="", **kw: pushes.append(tid)
+pm_comm._to_henry = lambda kind, detail, card=None, feed="": henry.append((kind, card)) or ""
 pm._ask = lambda prompt, model="": {"verdict": "loop", "fix": "x"}
 _track("burn-5", burn={"n": 20, "name": "Bash", "sample": "{}", "corrections": pm._RESOLVE_MAX})
 pm._review_burn("burn-5")
-check(not steers and pushes, "exhausted corrections -> escalate to owner, no more steers")
+check(not steers and henry == [("turn-burn", "burn-5")] and not pushes,
+      "exhausted corrections -> handed to Henry (turn-burn), no steer, no owner push")
 
 # --- 6) autonomy=notify -> never touches the worker --------------------------
-steers.clear(); pushes.clear()
+steers.clear(); pushes.clear(); henry.clear()
 events.settings = lambda: {"pm": {"autonomy": "notify"}}
 pm._ask = lambda prompt, model="": {"verdict": "loop", "fix": "x"}
 _track("burn-6", burn={"n": 5, "name": "Bash", "sample": "{}", "corrections": 0})
 pm._review_burn("burn-6")
-check(not steers and pushes, "autonomy=notify -> only owner push, never a steer")
+check(not steers and henry == [("turn-burn", "burn-6")] and not pushes,
+      "autonomy=notify -> Henry gets it, never a steer, no owner push")
 
 print()
 if _fails:

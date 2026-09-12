@@ -510,7 +510,7 @@ def _decide(esc):
             "Henry versuchte 'did' auf einer client-Karte ohne Haende - "
             "abgelehnt, bleibt offen")
         return False
-    if not _execute(action, card, lane, text, esc, kind=kind):
+    if not _execute(action, card, lane, text, esc, kind=kind, why=why):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why)
     # Full text here too: _audit lands as a `note` in the card's ActionLog, and
@@ -522,7 +522,13 @@ def _decide(esc):
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
-    if action in ("did", "move", "ship", "rerun_deploy", "steer"):
+    # NOT for `move` (owner report 2026-09-12, "Karte sendet push und Henry
+    # auch"): a lane move is narrated by the lane pipeline itself (_say_card:
+    # "auf Review geprueft" / "abgenommen und gemergt") and pushed by
+    # card_event - the SAME event, already on the owner's screen. Henry's
+    # `why` rides INSIDE that line (move_lane's `note`, see _execute) instead
+    # of a second bubble + second push one second later. ONE event, ONE line.
+    if action in ("did", "ship", "rerun_deploy", "steer"):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
@@ -542,7 +548,7 @@ def _find_track(card):
         return None
 
 
-def _execute(action, card, lane, text, esc, kind=""):
+def _execute(action, card, lane, text, esc, kind="", why=""):
     from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
@@ -656,7 +662,7 @@ def _execute(action, card, lane, text, esc, kind=""):
         # gate off the HTTP request thread).
         from cells.engineer.cards import sessions
         try:
-            r = sessions.move_lane(t["id"], lane, actor="henry")
+            r = sessions.move_lane(t["id"], lane, actor="henry", note=(text or why or ""))
         except Exception as e:
             escalations.record_note(esc["id"], "move fehlgeschlagen: %s" % str(e)[:200])
             return False
@@ -757,10 +763,18 @@ def _notify_owner(text, t):
     get the full message: callers must never pre-truncate for the push, or the
     notification's limit silently becomes the chat's (owner report 2026-08-28,
     "Nachrichten enden mitten im Wort")."""
+    # PRESENCE-GATED, like every other harness push (owner report 2026-09-12,
+    # "viele Meldungen doppelt"): this was a raw push_fcm - the ONE sender in
+    # the daemon that skipped notify's 3-tier presence policy, so a Henry
+    # decision buzzed the phone while the owner was looking at that very chat,
+    # right after the card's own (correctly suppressed) push. notify.escalate
+    # is the PM's path for exactly this shape - "alert whose chat line has
+    # already landed" - and its dedup is the caller's job: the chat line below
+    # is written once per decision, so the push is too.
     try:
         from spine.comms import notify
         from spine.registry import i18n as _i18n
-        notify.push_fcm(_i18n.t("push.henry"), text[:230])
+        notify.escalate(_i18n.t("push.henry"), text[:230], (t or {}).get("id") or "")
     except Exception:
         pass
     # ALSO into the board chat (owner observation 2026-08-28, "warum nichts im

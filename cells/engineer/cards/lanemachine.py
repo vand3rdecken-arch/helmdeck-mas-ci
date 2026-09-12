@@ -901,7 +901,7 @@ def _sod_block_reason(actor, t):
     return None
 
 
-def move_lane(tid, lane, actor="owner", _autopark=True):
+def move_lane(tid, lane, actor="owner", _autopark=True, note=""):
     """The board move is the workflow verb: ->working dispatches, ->review submits
     (GATED: the card bounces back with a punch list unless its work is green),
     ->done accepts (records the acceptance economics).
@@ -912,10 +912,16 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
     load-then-check has no race window. A DEPTH counter, not a flag:
     park_and_retry_merge re-enters move_lane('review') from inside a 'done'
     pipeline, and the outer pipeline must stay observable when the inner one
-    unwinds."""
+    unwinds.
+
+    `note` = the mover's one-line reason, folded INTO the pipeline's own
+    outcome line (owner report 2026-09-12: Henry's move produced the lane's
+    "abgenommen und gemergt" line AND a second "Henry: move -> done - <why>"
+    bubble for the same event). The pipeline is the one narrator of a move;
+    a reason is part of that sentence, not a second one."""
     _LANE_LIVE[tid] = _LANE_LIVE.get(tid, 0) + 1
     try:
-        return _move_lane(tid, lane, actor=actor, _autopark=_autopark)
+        return _move_lane(tid, lane, actor=actor, _autopark=_autopark, note=note)
     finally:
         _depth = _LANE_LIVE.get(tid, 1) - 1
         if _depth > 0:
@@ -924,7 +930,8 @@ def move_lane(tid, lane, actor="owner", _autopark=True):
             _LANE_LIVE.pop(tid, None)
 
 
-def _move_lane(tid, lane, actor="owner", _autopark=True):
+def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
+    _by = (" - %s: %s" % (actor.capitalize(), note.strip())) if note and note.strip() else ""
     from cells.engineer.cards import sessions  # lazy: LANES/_start/_accept_machine still live in sessions.py
     from spine.storage import events
     if lane not in sessions.LANES:
@@ -1200,7 +1207,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
                             "conflict": "verdict.conflict"}
                 _verdict = (_i18n.t(_VERDICT[kind]) if kind in _VERDICT
                             else _i18n.t("verdict.other", detail=msg[:200]))
-                _say_card(t, _i18n.t("say.reviewChecked", verdict=_verdict))
+                _say_card(t, _i18n.t("say.reviewChecked", verdict=_verdict) + _by)
                 return dict(t, review_preview=True, merge_kind=kind)
             log.log("note", "FAST-TRACK %s: gruenes Gate + sauberer Merge -> lande + deploye ohne Abnahme"
                     % t.get("branch", ""))
@@ -1291,7 +1298,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True):
                    "already_merged": "say.landed.redundant",
                    "redundant_uncommitted": "say.landed.redundant"}
         _say_card(t, _i18n.t(_LANDED.get(kind, "say.landed.plain")) + (
-            _i18n.t("say.shipHenry") if _ship_eid else ""))
+            _i18n.t("say.shipHenry") if _ship_eid else "") + _by)
         from spine.comms import notify
         notify.card_event(t, "done")
         try:

@@ -99,9 +99,13 @@ check(any(LONG in a for a in s.audited),
 s = _decide_with({"action": "steer", "card": "c1", "text": LONG, "why": "w"})
 check(any(LONG in n for n in s.notified), "steer: full text reaches the chat sink")
 
-# 3) `why` carries the message when there is no text - also uncut
+# 3) `why` carries the message when there is no text - also uncut. Since
+# 2026-09-12 a move has NO Henry bubble of its own (the lane pipeline's line
+# carries his note - ops/tests/test_henry_dedup.py pins that path); the full
+# `why` must still reach the card audit note uncut.
 s = _decide_with({"action": "move", "card": "c1", "lane": "review", "text": "", "why": LONG})
-check(any(LONG in n for n in s.notified), "move: full `why` reaches the chat sink")
+check(any(LONG in n for n in s.audited), "move: full `why` reaches the card audit note")
+check(not s.notified, "move: no separate Henry bubble - the lane line is the report")
 
 # ---------------------------------------------------------------------------
 # 4) _notify_owner itself: the push is the ONLY consumer allowed to truncate.
@@ -109,7 +113,11 @@ pushed, said = [], []
 
 
 class _Notify:
-    push_fcm = staticmethod(lambda title, body: pushed.append(body))
+    # since 2026-09-12 _notify_owner pushes through the presence-gated
+    # notify.escalate (same budget, one door); the raw push_fcm stub stays so
+    # a regression back to it is caught as "pushed twice", not silently.
+    escalate = staticmethod(lambda title, body, track_id="": pushed.append(body))
+    push_fcm = staticmethod(lambda title, body, *a, **k: pushed.append(body))
 
 
 class _I18n:
@@ -137,6 +145,7 @@ check(said and said[0].rstrip().endswith(TAIL), "_notify_owner: chat message is 
 check(pushed and len(pushed[0]) <= 230, "_notify_owner: the FCM push stays in its budget")
 check(pushed and said and len(pushed[0]) < len(said[0]),
       "_notify_owner: push is the truncated one - chat is not")
+check(len(pushed) == 1, "_notify_owner: exactly ONE push per decision (escalate, not push_fcm too)")
 
 # ---------------------------------------------------------------------------
 # 5) THE OTHER DOOR into the same chat card (owner report 2026-08-30, 14:08

@@ -185,14 +185,21 @@ def _burn_judge(b, t):
 
 
 def _push_burn(t, task, b):
+    """A loop the PM could not (or may not) correct is an EXCEPTION -> Henry,
+    not the owner (owner decree 2026-08-30: a notice that needs no owner
+    decision goes to the broker with hands). Until 2026-09-12 this pushed AND
+    wrote "dreht sich im Kreis" into the owner's chat while drivers' own
+    turn-burn tripwire handed the SAME loop to Henry, who then steered and
+    reported - four messages and three pushes for one stuck worker (measured
+    2026-09-11 18:53-19:07). ONE detector reports to the owner: Henry."""
     n, tool, corr = b.get("n", 0), b.get("name", ""), b.get("corrections", 0)
-    try:
-        from spine.comms import notify
-        notify.push_fcm(_i18n.t("push.pmBurn"),
-                        _i18n.t("push.pmBurnBody", task=task, n=n, tool=tool), t["id"])
-    except Exception:
-        pass
-    _say(_i18n.t("pm.burnStuck", task=task, n=n, tool=tool, corr=corr))
+    from cells.copilot.planning.pm_comm import _to_henry
+    _to_henry("turn-burn", card=t["id"],
+              detail=("Worker wiederholt denselben Tool-Aufruf (%dx %s), %d PM-Korrektur(en) "
+                      "haben nicht gereicht: %s. Mid-turn actionable - steer die Karte "
+                      "auf Kurs, brich sie ab oder lass sie bewusst weiterlaufen."
+                      % (n, tool, corr, task)),
+              feed=_i18n.t("pm.burnStuck", task=task, n=n, tool=tool, corr=corr))
 
 
 def _review_burn(tid):
