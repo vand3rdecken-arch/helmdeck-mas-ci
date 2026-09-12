@@ -98,6 +98,13 @@ class FakeEvents:
         return []
 
     @staticmethod
+    def settings():
+        # request_ship_decision reads settings() for repo_hooks; no hook
+        # configured means nothing to decide (FakeEvents IS the events module
+        # here, so the real DEFAULTS are not reachable through it)
+        return {"repo_hooks": {}, "capacity": {"wip_limit": 6}, "policy": {}}
+
+    @staticmethod
     def _completion_mode(te, turns):
         return "auto"
 

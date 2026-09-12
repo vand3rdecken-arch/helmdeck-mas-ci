@@ -99,7 +99,7 @@ def main():
     orig_ask = hb._ask
     orig_execute = hb._execute
     executed = []
-    hb._execute = lambda *a: (executed.append(a) or True)
+    hb._execute = lambda *a, **k: (executed.append(a) or True)   # real _execute grew kind=
 
     try:
         hb._ask = fake_ask_did

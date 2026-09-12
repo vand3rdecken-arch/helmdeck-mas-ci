@@ -1,96 +1,93 @@
 # -*- coding: utf-8 -*-
-"""Pins two fixes shipped together (2026-08-15) after a live incident: a
-fast-track card's native APK build broke (Gradle task failure), merged to
-main anyway (merge and deploy are separate steps), and just sat there with
-a red "Deploy-Hook rot" note until the owner happened to notice.
+"""Fast-track lands, Henry ships (owner decree 2026-09-01, d66084f).
 
-1. `_repo_hook`'s result (`t["deploy_hook"]`) was NEVER PERSISTED for the
-   fast-track path - `_ship()` called it but never wrote the result back to
-   the DB (unlike move_lane's `_land()`, which does). So the earlier fix
-   that made `_pending_context()` surface deploy_hook to the worker's next
-   steer (2026-08-15, same day) was silently a no-op for every fast-track
-   ship specifically - the field only ever lived in `_ship()`'s local `t`.
+This file used to pin the auto-fix loop that ran the deploy hook INSIDE the
+fast-track turn end and steered the worker with the build error, capped by
+_DEPLOY_FIX_CAP. That loop is gone by decree: a finished fast-track turn is
+gated and merged in the background, the card stays where it is, and the
+DEPLOY is a ship-decision escalation to Henry - never automatic. The old
+assertions (deploy_hook persisted, auto-fix steer, streak cap) pinned code
+that no longer exists and failed on every run since.
 
-2. On a real failure, nothing acted on it - fast-track is supposed to be
-   unattended, so leaving a broken main branch for the owner to spot isn't
-   good enough. `_try_auto_fix_deploy` now feeds the worker the actual
-   error and lets it try to fix it, bounded by `_DEPLOY_FIX_CAP` attempts
-   in a row (mirrors the existing gate thrash-guard) so a persistently
-   broken build doesn't burn turns forever unattended either.
+What this pins now:
+  1. gate green + merge ok -> request_ship_decision(card, "fast-track") is
+     called exactly once; NO deploy hook runs; NO steer is issued
+  2. gate red -> nothing merged, nothing requested, the reason is in the
+     actionlog
+  3. a chat-only turn (clean tree, nothing ahead) -> no gate, no merge
 
-Self-sandboxing: fake DB, patched settings/emit/threading, stubbed git/gate/
-merge/hook, and `sessions.steer` itself replaced with a recorder - nothing
-touches a real repo, gate, board, or spawns an actual worker turn.
+Sandboxed: FakeDB for the track store, sandboxed db for the actionlog rows,
+git/gate/merge/threads stubbed - nothing touches a real repo.
 
 Run: py -3.12 ops/tests/test_fasttrack_deploy_autofix.py
 """
 import os, sys, tempfile
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from spine.storage import events
-from cells.engineer.cards import sessions
-from spine.storage import trackstore
-from spine.ops.actionlog import ActionLog
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
+
+from spine.storage import db                     # noqa: E402
+db.DBPATH = os.path.join(tempfile.mkdtemp(prefix="hd-fasttrack-"), "test.db")
+db.init()
+from spine.storage import trackstore, events     # noqa: E402
+from cells.engineer.cards import sessions        # noqa: E402
+from spine.ops.actionlog import ActionLog, read_timeline   # noqa: E402
 
 
 class FakeDB:
     def __init__(self):
-        self.tracks = {}
+        self.rows = {}
+
     def tracks_all(self):
-        return [dict(t) for t in self.tracks.values()]
-    def tracks_replace(self, ts):
-        self.tracks = {t["id"]: dict(t) for t in ts}
-    def track_put(self, t):
-        self.tracks[t["id"]] = dict(t)
+        return [dict(v) for v in self.rows.values()]
+
     def track_get(self, tid):
-        t = self.tracks.get(tid)
-        return dict(t) if t else None
+        return dict(self.rows[tid]) if tid in self.rows else None
 
+    def track_put(self, t):
+        self.rows[t["id"]] = dict(t)
 
-class SyncThread:
-    """threading.Thread stand-in: runs the target inline on start()."""
-    def __init__(self, target=None, args=(), daemon=None, **_kw):
-        self._target, self._args = target, args
-    def start(self):
-        self._target(*self._args)
+    def tracks_replace(self, ts):
+        self.rows = {t["id"]: dict(t) for t in ts}
+
+    def track_delete(self, tid):
+        self.rows.pop(tid, None)
 
 
 class FakeThreading:
-    Thread = SyncThread
-    import threading as _real
-    Lock = _real.Lock
+    class Thread:
+        def __init__(self, target=None, daemon=None, name=None, args=()):
+            self._t, self._a = target, args
+
+        def start(self):
+            self._t(*self._a)      # run inline, synchronously
 
 
-def _card(tid, **over):
-    t = {"id": tid, "task": "task " + tid, "lane": "working", "status": "needs_you",
-         "fast_track": True, "machine": False, "question": None,
-         "worktree": "/fake/wt", "repo": "/fake/repo", "branch": "card/" + tid,
-         "priority": "medium", "created": "", "archived": None}
+def _card(tid, run_dir, **over):
+    t = {"id": tid, "repo": "C:/repo", "branch": "card/" + tid, "worktree": "C:/wt/" + tid,
+         "task": "x", "lane": "working", "status": "needs_you", "fast_track": True,
+         "run_dir": run_dir, "session_id": "s", "turns": 1}
     t.update(over)
     return t
 
 
 def main():
-    (real_db, real_emit, real_settings, real_threading, real_isdir,
-     real_git_try, real_current_branch, real_autocommit, real_gate,
-     real_merge, real_hook, real_steer) = (
-        trackstore._db, events.emit, events.settings, sessions._threading,
-        os.path.isdir, sessions._git_try, sessions._current_branch,
-        sessions._autocommit, sessions._gate, sessions._merge_to_main,
-        sessions._repo_hook, sessions.steer)
-    tmp = tempfile.mkdtemp(prefix="helmdeck-test-")
-    # actions/timeline/runs are db rows (state-into-db phase F): sandbox the store
-    from spine.storage import db as _sdb
-    _sdb.DBPATH = os.path.join(tmp, "test.db")
-    _sdb._local.c = None
-    _sdb.init()
+    tmp = tempfile.mkdtemp(prefix="hd-fasttrack-run-")
+    saved = (trackstore._db, events.emit, events.settings, sessions._threading, os.path.isdir,
+             sessions._git_try, sessions._current_branch, sessions._autocommit, sessions._gate,
+             sessions._merge_to_main, sessions.request_ship_decision, sessions.steer)
+    fails = []
+
+    def ok(cond, msg):
+        print(("  ok   " if cond else "  FAIL ") + msg)
+        if not cond:
+            fails.append(msg)
     try:
         fake = FakeDB()
-        run_dir = os.path.join(tmp, "run")
-        os.makedirs(run_dir)
         trackstore._db = fake
-        events.emit = lambda *a, **k: None
-        events.settings = lambda: {"policy": {}, "capacity": {}}
+        emitted = []
+        events.emit = lambda kind, track, **f: emitted.append({"kind": kind, "track": track, **f})
+        events.settings = lambda: {"policy": {}, "capacity": {}, "repo_hooks": {}}
         sessions._threading = FakeThreading
         os.path.isdir = lambda p: True
         sessions._git_try = lambda repo, *args: (
@@ -99,65 +96,51 @@ def main():
         sessions._autocommit = lambda t: "ok"
         sessions._gate = lambda t: (True, [])
         sessions._merge_to_main = lambda t: (True, "merged", "")
-        steered = []
-        sessions.steer = lambda tid, instr, **kw: steered.append(
-            {"tid": tid, "instr": instr, **kw})
+        asked, steered = [], []
+        sessions.request_ship_decision = lambda t, source: asked.append((t["id"], source))
+        sessions.steer = lambda tid, instr, **kw: steered.append(tid)
 
-        # -- a FAILING hook: writes t["deploy_hook"], returns False ----------
-        def _hook_fails(t, kind):
-            t["deploy_hook"] = {"ok": False, "tail": "BUILD FAILED: Gradle task X"}
-            return False
-        sessions._repo_hook = _hook_fails
+        print("1. green gate + merge -> ONE ship decision for Henry, no hook, no steer")
+        rd = os.path.join(tmp, "t-ok"); os.makedirs(rd)
+        fake.track_put(_card("t-ok", rd))
+        sessions._maybe_fast_track_ship(fake.track_get("t-ok"), ActionLog(rd))
+        ok(asked == [("t-ok", "fast-track")], "request_ship_decision called once with source fast-track (%r)" % asked)
+        ok(steered == [], "no auto-fix steer exists any more")
+        ok(any(e["kind"] == "merge" and e.get("ok") for e in emitted), "the merge was recorded as an event")
+        ok(fake.track_get("t-ok")["lane"] == "working" and fake.track_get("t-ok")["status"] == "needs_you",
+           "the card stays exactly where it was")
+        notes = [r.get("detail") or "" for r in read_timeline(rd)]
+        ok(any("Ship-Entscheidung liegt bei" in n for n in notes), "the actionlog says Henry decides the ship")
 
-        fake.track_put(_card("t-fail", run_dir=run_dir))
-        sessions._maybe_fast_track_ship(fake.track_get("t-fail"), ActionLog(run_dir))
+        print("2. red gate -> nothing merged, nothing requested, reason logged")
+        asked.clear(); emitted.clear()
+        sessions._gate = lambda t: (False, ["lint: 3 errors"])
+        rd2 = os.path.join(tmp, "t-red"); os.makedirs(rd2)
+        fake.track_put(_card("t-red", rd2))
+        sessions._maybe_fast_track_ship(fake.track_get("t-red"), ActionLog(rd2))
+        ok(asked == [], "no ship decision on a red gate")
+        ok(not any(e["kind"] == "merge" for e in emitted), "no merge attempted")
+        ok(any("lint: 3 errors" in (r.get("detail") or "") for r in read_timeline(rd2)),
+           "the gate reason is in the actionlog")
 
-        # -- 1: deploy_hook was actually PERSISTED to the DB, not just local --
-        persisted = fake.track_get("t-fail")
-        assert persisted.get("deploy_hook", {}).get("ok") is False, \
-            "deploy_hook result was not persisted to the DB: %r" % persisted.get("deploy_hook")
-        print("PASS: fast-track deploy_hook failure IS persisted to the DB "
-              "(previously silently local-only)")
-
-        # -- 2: a failure triggers an auto-fix steer with the real error -----
-        assert len(steered) == 1, "expected exactly one auto-fix steer: %r" % steered
-        s = steered[0]
-        assert s["tid"] == "t-fail"
-        assert "BUILD FAILED: Gradle task X" in s["instr"], \
-            "auto-fix steer did not carry the actual hook error: %r" % s["instr"]
-        assert s.get("source") == "fast-track-deploy-fix"
-        assert fake.track_get("t-fail").get("deploy_fail_streak") == 1
-        print("PASS: a deploy hook failure auto-steers the worker with the real error")
-
-        # -- 3: the streak caps out - no infinite auto-retry ------------------
-        steered.clear()
-        t2 = _card("t-cap", run_dir=run_dir, deploy_fail_streak=sessions._DEPLOY_FIX_CAP)
-        fake.track_put(t2)
-        sessions._maybe_fast_track_ship(fake.track_get("t-cap"), ActionLog(run_dir))
-        assert steered == [], \
-            "auto-fix must stop retrying once the cap is exceeded: %r" % steered
-        print("PASS: auto-fix stops retrying once _DEPLOY_FIX_CAP is exceeded "
-              "(no infinite loop on a persistently broken build)")
-
-        # -- 4: a SUCCESSFUL hook resets the streak ---------------------------
-        sessions._repo_hook = lambda t, kind: True
-        t3 = _card("t-ok", run_dir=run_dir, deploy_fail_streak=2)
-        fake.track_put(t3)
-        sessions._maybe_fast_track_ship(fake.track_get("t-ok"), ActionLog(run_dir))
-        assert "deploy_fail_streak" not in fake.track_get("t-ok"), \
-            "a successful deploy must reset the fail streak"
-        print("PASS: a successful fast-track deploy resets the fail streak")
-
-        print("ALL PASS")
+        print("3. chat-only turn -> no gate at all")
+        sessions._gate = lambda t: (_ for _ in ()).throw(AssertionError("gate must not run"))
+        sessions._git_try = lambda repo, *args: (0, "", "")      # clean tree, nothing ahead
+        rd3 = os.path.join(tmp, "t-chat"); os.makedirs(rd3)
+        fake.track_put(_card("t-chat", rd3))
+        sessions._maybe_fast_track_ship(fake.track_get("t-chat"), ActionLog(rd3))
+        ok(asked == [] and not read_timeline(rd3), "nothing happens for a chat-only turn")
     finally:
-        (trackstore._db, events.emit, events.settings, sessions._threading,
-         os.path.isdir, sessions._git_try, sessions._current_branch,
-         sessions._autocommit, sessions._gate, sessions._merge_to_main,
-         sessions._repo_hook, sessions.steer) = (
-            real_db, real_emit, real_settings, real_threading, real_isdir,
-            real_git_try, real_current_branch, real_autocommit, real_gate,
-            real_merge, real_hook, real_steer)
+        (trackstore._db, events.emit, events.settings, sessions._threading, os.path.isdir,
+         sessions._git_try, sessions._current_branch, sessions._autocommit, sessions._gate,
+         sessions._merge_to_main, sessions.request_ship_decision, sessions.steer) = saved
+    print()
+    if fails:
+        print("FAILED: %d" % len(fails))
+        return 1
+    print("fast-track: all pinned - PASS")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

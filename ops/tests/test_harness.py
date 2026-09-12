@@ -484,7 +484,9 @@ def test_pm_argv_is_its_own_isolated_layer():
     check(role_in_turn is (not drivers.argv_form_safe(copilot.CLAUDE)),
           "role_in_turn tracks whether args really travel as an argv list")
     if not role_in_turn:
-        check("--append-system-prompt" in argv,
+        # --append-system-prompt-file since the brief moved to a temp file
+        # (the CLI's --append-system-prompt form has an argument-length trap)
+        check(any(str(a).startswith("--append-system-prompt") for a in argv),
               "on the argv-list form the role travels as a system prompt, not "
               "stapled to the front of every user turn")
 

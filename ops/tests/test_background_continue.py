@@ -130,7 +130,7 @@ def test_cue_and_no_push():
     from spine.comms import notify
     pushed = []
     orig = notify.push_fcm
-    notify.push_fcm = lambda title, body, track_id="": pushed.append(title)
+    notify.push_fcm = lambda title, body, track_id="", **kw: pushed.append(title)   # real signature grew urgent/kind/ask
     try:
         notify.card_event(t, "background")
         check(not pushed, "a background wait NEVER pushes (not the owner's move)")

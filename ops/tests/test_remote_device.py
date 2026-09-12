@@ -77,7 +77,23 @@ class FakeH:
 
 
 def call(fn, *a):
+    """Invoke a route handler the way server.py dispatches it: the route's
+    declared capability (routes_devices.GET_CAPS/POST_CAPS) is checked with
+    permissions.require FIRST - a denied caller never reaches the handler.
+    Calling the bare handler used to skip that gate, so a `client` call
+    "succeeded" here and, worse, its no-op reassign cleared the card's
+    exec_site for every later check."""
+    from spine.http.routes import routes_devices as _rd
+    from spine.auth import permissions
     h = FakeH()
+    caps = {**{v: k for k, v in _rd.GET_ROUTES.items()}, **{v: k for k, v in _rd.POST_ROUTES.items()}}
+    path = caps.get(fn)
+    cap = (_rd.POST_CAPS.get(path) or _rd.GET_CAPS.get(path)) if path else None
+    if cap and a and isinstance(a[0], dict):
+        denial = permissions.require(a[0], cap)
+        if denial:
+            h._send(*denial)
+            return h
     fn(h, *a)
     return h
 
@@ -350,7 +366,7 @@ def main():
     h = call(routes_devices.devices_reassign_post, ALICE,
             {"track": t6b["id"], "to_device": rec_ext["id"]})
     ok(h.code == 200 and h.body.get("exec_site") == "local:" + rec_ext["id"],
-       "POST /devices/reassign works for the owning actor")
+       "POST /devices/reassign works for the owning actor (%s %s)" % (h.code, h.body))
 
     # -- 10: submit_remote_result folds usage_meta via the real econ path ----
     print("\nsubmit_remote_result: usage_meta -> spine.turn.econ, external tag by billing_scope")

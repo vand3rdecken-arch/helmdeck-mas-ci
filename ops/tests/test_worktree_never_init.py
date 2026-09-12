@@ -115,7 +115,7 @@ def test_steer_self_heal_guard_catches_existing_but_broken_worktree():
     sessions._ensure_worktree = spy_ensure
 
     seen_cwd = {}
-    def fake_turn(t, prompt, model=None, perm=None):
+    def fake_turn(t, prompt, model=None, perm=None, **kw):   # real _turn grew `by=`
         seen_cwd["worktree"] = t.get("worktree")
         return "sess-1", "done", {"usage": {}, "models": []}
     sessions._turn = fake_turn
