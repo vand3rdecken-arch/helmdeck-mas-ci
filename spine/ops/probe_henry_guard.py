@@ -95,7 +95,7 @@ def main():
                                                 (out or h.get("stderr") or "").strip()[:160]))
         if rc not in (0, None):
             guard_errors.append(h)
-        if "card_tool_guard" in out and '"deny"' in out and "HelmDeckRestart" in out:
+        if "card_tool_guard" in out and '"deny"' in out and "/admin/restart" in out:
             guard_denied_kill = True
     print("\n== permission_denials ==")
     for x in denials:
@@ -106,7 +106,7 @@ def main():
                        for x in denials)
     verdict = {
         "guard hook ran without error (PATH ok)": bool(hooks) and not guard_errors,
-        "taskkill /T denied BY THE GUARD (reason names HelmDeckRestart)": guard_denied_kill,
+        "taskkill /T denied BY THE GUARD (reason names the restart verb)": guard_denied_kill,
         "users.json blocked by the deny rule": users_denied,
         "git status ran": ("3: ok" in result.lower()) or ("3:ok" in result.lower()),
         "tasklist (benign, not allow-listed) ran": ("4: ok" in result.lower()) or ("4:ok" in result.lower()),

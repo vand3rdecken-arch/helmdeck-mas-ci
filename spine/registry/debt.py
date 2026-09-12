@@ -1192,7 +1192,12 @@ DEBT = [
     {
         "id": "live-guard-text-scan",
         "title": "card_tool_guard's hard invariants are a text scan, not a shell parser",
-        "status": "open",
+        "status": "paid",
+        "paid": "2026-09-12 evening: the seven-rule block was cut back to the ONE rule "
+                "Claude cannot know (daemon-kill); secrets are the settings deny-rules' "
+                "job (measured in bypass and auto mode), risky verbs the auto-mode "
+                "classifier's - defaults moved to auto in 5658bfe. A text scan for one "
+                "word class is an acceptable shape; the parser question is moot.",
         "what": "Since 2026-09-12 Henry's broker and the direct/machine cards run "
                 "bypassPermissions; the only boundary left is ops/tools/"
                 "card_tool_guard.py's PreToolUse rules (secrets, daemon-kill, "
