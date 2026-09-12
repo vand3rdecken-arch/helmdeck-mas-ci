@@ -48,7 +48,6 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
 from cells.copilot.chat import copilot, card_mirror
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 from spine.auth import auth
 from spine.comms import notify, presence
@@ -79,10 +78,7 @@ def cards():
 
 def reset():
     copilot._append_log  # noqa: B018  - keep the import honest
-    try:
-        os.remove(copilot.CHATLOG)
-    except OSError:
-        pass
+    db.chat_clear()
     card_mirror._last.clear()
     notify._last_push.clear()
 

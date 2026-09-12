@@ -73,7 +73,6 @@ def main():
     events.EV = os.path.join(tmp, "events.jsonl")
     from cells.copilot.chat import copilot
     copilot.ROOT = tmp
-    copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
 
     db.init(role="tool")
     events.save_settings({"glance_token": TOKEN, "glance_talk": True,

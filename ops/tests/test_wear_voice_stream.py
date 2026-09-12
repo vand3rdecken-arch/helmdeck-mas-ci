@@ -51,7 +51,6 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
 from cells.copilot.chat import copilot
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 from spine.http.routes import routes_wear as W
 from spine.media import voice as voice_mod

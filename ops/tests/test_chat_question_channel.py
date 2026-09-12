@@ -26,7 +26,7 @@ What this pins:
  5. copilot.live strips a HALF-TYPED block, so the JSON never streams in
     character by character (card parity: claude_sessions.read_transcript_live).
 
-Self-sandboxing: CHATLOG/SESS and the run dir are redirected into a temp dir -
+Self-sandboxing: the db (chat + session rows) and the run dir are redirected into a temp dir -
 no daemon state is read or written, no claude process, no network.
 Run: py -3.12 ops/tests/test_chat_question_channel.py
 """
@@ -42,12 +42,11 @@ from spine.ops import ask
 from cells.copilot.chat import copilot
 from cells.copilot.routes import routes_copilot
 
-# Redirect the chat log file AND the db (session pointers are a runtime_doc
-# row since state-into-db phase D) before anything touches them.
+# Redirect the db (chat rows + session pointers since state-into-db phases
+# D/E) before anything touches it.
 from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "test.db")
 db.init()
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 _fails = []
 
@@ -71,9 +70,8 @@ USER = {"name": "owner", "role": "owner"}
 
 def _seed(entries):
     """Put a chat log in place, exactly as _append_log would have left it."""
-    import json
-    with open(copilot.CHATLOG, "w", encoding="utf-8") as f:
-        json.dump({"owner": entries}, f)
+    db.chat_clear("owner")
+    db.chat_append("owner", entries)
 
 
 def _bot(text, question=None, **extra):

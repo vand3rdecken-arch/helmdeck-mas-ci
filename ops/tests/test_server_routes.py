@@ -114,8 +114,8 @@ def main():
     # was written/corrupted, but it proves the bug class isn't fully swept).
     from cells.copilot.chat import copilot
     copilot.ROOT = tmp
-    copilot.SESS = os.path.join(tmp, "copilot_sessions.json")
-    copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
+    # (copilot.SESS/CHATLOG are db rows since state-into-db phases D/E -
+    # the sandboxed db.DBPATH above covers them)
 
     # policy.py is a FIFTH __file__-derived-ROOT module: policy.swap() writes
     # policy_live.json next to policy.py. The cell-gate tests below toggle cells

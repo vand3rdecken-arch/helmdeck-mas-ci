@@ -53,7 +53,6 @@ from cells.copilot.routes import routes_copilot
 # resolved at import. Miss one and a test turn edits the owner's live PM
 # session - the class of accident that once wiped real recordings.
 copilot.ROOT = SANDBOX
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 from spine.agent import drivers
 from spine.auth import auth
@@ -148,10 +147,7 @@ notify.push_fcm = lambda *a, **k: PUSHED.append((a, k)) or True
 def reset(reply="Alles erledigt."):
     del PUSHED[:]
     REPLY["text"] = reply
-    try:
-        os.remove(copilot.CHATLOG)
-    except OSError:
-        pass
+    db.chat_clear()
 
 
 def logged():

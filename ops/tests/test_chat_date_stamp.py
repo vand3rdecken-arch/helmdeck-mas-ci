@@ -43,7 +43,6 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
 from cells.copilot.chat import copilot
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 _fails = []
 
@@ -94,10 +93,9 @@ check(logged()[-1].get("date") == TODAY,
       "while the STORED copy does carry the date")
 
 # -- 5. forward-only: an old entry keeps no date --------------------------
-raw = json.load(open(copilot.CHATLOG, encoding="utf-8"))
-raw[USER].append({"cls": "bot", "text": "alteintrag", "ts": "08:00"})
-with open(copilot.CHATLOG, "w", encoding="utf-8") as f:
-    json.dump(raw, f)
+# an entry that reached the store WITHOUT passing the stamping writer -
+# what every row imported from the pre-stamp file looks like
+db.chat_append(USER, [{"cls": "bot", "text": "alteintrag", "ts": "08:00"}])
 old = logged()[-1]
 check(old.get("text") == "alteintrag" and not old.get("date"),
       "an entry written before the stamp existed keeps NO date - reading the "

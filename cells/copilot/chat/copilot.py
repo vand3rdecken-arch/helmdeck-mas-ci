@@ -11,7 +11,12 @@ from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
 # (state-into-db phase D). The chat log itself moves in phase E.
 _SESS_KEY = "copilot_sessions"
 _MODELS_KEY = "copilot_models"
-CHATLOG = os.path.join(ROOT, "state", "copilot_log.json")
+# The chat log is the `chat` table (state-into-db phase E; ledger step 8
+# imported state/copilot_log.json) - one row per entry, scoped by account,
+# full history kept. history() reads the last _HISTORY_WINDOW entries, which
+# is the same slice the old file kept (it CLIPPED to 80 and threw the rest
+# away); the rest is now a bigger LIMIT away, not gone.
+_HISTORY_WINDOW = 80
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
@@ -55,17 +60,11 @@ def voice_style(project=""):
 _persist = {}            # user -> {"p": Popen, "key": (model, pmode)}
 _persist_lock = threading.Lock()
 
-# THE chat-log write lock. _append_log calls itself "the one writer" but ran
-# with no mutual exclusion, and it is reached from at least seven concurrent
-# threads (the HTTP submit, the turn's reply, the background-actions thread,
-# and copilot.say() from the Henry broker loop / card_mirror / pm_comm /
-# lanemachine / sessions). Two of them doing read-modify-write on the same
-# dict lost one message (last os.replace wins), and both writing the same
-# fixed CHATLOG+".tmp" made os.replace fail with WinError 5 on Windows (the
-# source handle was still open). One process-wide lock serialises the whole
-# read-modify-write; see _append_log for the unique-tmp + retry that also
-# rides out a READER (poll / Defender) holding the destination open.
-_log_lock = threading.Lock()
+# The chat-log write lock is GONE with the file (state-into-db phase E):
+# _append_log used to read-modify-write one JSON document from seven
+# concurrent threads and needed a process-wide lock plus a unique-tmp +
+# retry dance around os.replace. A row append in its own transaction
+# needs neither - SQLite serialises writers.
 
 
 _turn_locks = {}
@@ -727,12 +726,19 @@ from cells.copilot.chat.copilot_actions import (
 def _branchless_slug_fix():
     pass  # new_track slugs empty branch to 'track'; acceptable
 
+def _entries(user, limit=_HISTORY_WINDOW):
+    """The user's transcript slice, oldest first (limit=None: all of it)."""
+    from spine.storage import db
+    return db.chat_tail(user, limit)
+
+
 def _log():
-    try:
-        with open(CHATLOG, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
+    """{account: [entries]} over every account - the shape the old file had.
+    Kept for the few callers/tests that want the whole picture; production
+    paths use _entries(user)."""
+    from spine.storage import db
+    return {a: db.chat_tail(a, _HISTORY_WINDOW) for a in db.chat_accounts()}
+
 
 def _append_log(user, entries):
     """THE one writer of the chat log - and therefore the one place a DATE is
@@ -749,10 +755,16 @@ def _append_log(user, entries):
     exists to prevent, and whichever site got forgotten would emit messages that
     silently fall outside every separator.
 
-    FORWARD-ONLY, deliberately. Entries already on disk carry no date and get
+    FORWARD-ONLY, deliberately. Entries already stored carry no date and get
     none - one invented for them would be a guess printed as a fact. A client
     draws separators from here on and simply omits them above, which is the
     honest rendering of "this was never recorded".
+
+    STORE (state-into-db phase E): one INSERT per entry inside one transaction
+    (db.chat_append). The file era's process lock, unique tmp names and the
+    WinError-5 retry loop all compensated for rewriting a whole JSON file
+    under concurrent readers; a row append has none of those problems and
+    the "meine Nachricht verschwand" lost-update cannot happen.
     """
     stamped = []
     for e in entries:
@@ -760,43 +772,8 @@ def _append_log(user, entries):
             e = dict(e)          # never mutate the caller's entry
             e["date"] = time.strftime("%Y-%m-%d")
         stamped.append(e)
-    entries = stamped
-    # Serialise the WHOLE read-modify-write. Without this two threads read the
-    # same dict, each appends its own entry, and the last os.replace wins - the
-    # other message is simply gone (owner's "meine Nachricht verschwand"). The
-    # lock is process-wide because the writers live in different cells' threads
-    # (see _log_lock's note); it is held only across a small in-memory edit plus
-    # one rename, never across a model call.
-    with _log_lock:
-        d = _log()
-        d.setdefault(user, []).extend(entries)
-        d[user] = d[user][-80:]
-        # UNIQUE tmp per write (pid+ident), never the shared CHATLOG+".tmp":
-        # a fixed name let one thread's open handle collide with another's
-        # os.replace -> WinError 5. Even under the lock this stays unique so a
-        # crashed prior write can't leave a tmp another picks up half-written.
-        tmp = "%s.%d.%d.tmp" % (CHATLOG, os.getpid(), threading.get_ident())
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        # os.replace still fails with a transient WinError 5 when a READER holds
-        # the destination open - the phone polls /chat/history every ~8s, the
-        # watch every ~15s, and Defender/the indexer scan the file too. Ride it
-        # out with a short bounded retry (the same compensation events.py used
-        # before it moved to the WAL db); give up loudly rather than lose the
-        # tmp silently. Durable state is the goal, so a total failure removes
-        # the orphan tmp and re-raises for the caller's best-effort guard.
-        for _attempt in range(10):
-            try:
-                os.replace(tmp, CHATLOG)
-                break
-            except PermissionError:
-                if _attempt == 9:
-                    try:
-                        os.remove(tmp)
-                    except OSError:
-                        pass
-                    raise
-                time.sleep(0.05)
+    from spine.storage import db
+    db.chat_append(user, stamped)
     # THE EVENT, announced from the one place that can honestly announce it.
     #
     # Every surface reading this transcript used to discover a new line on a
@@ -806,13 +783,13 @@ def _append_log(user, entries):
     # single publisher of its cursor, so a waiting client is woken by the write
     # itself rather than by re-reading the file on a clock.
     #
-    # AFTER os.replace, never before: the rename is what makes the new line
-    # visible to a reader, so a cursor bumped earlier could wake a client that
-    # then reads the OLD file and concludes nothing changed - a lost event that
-    # would look exactly like the delay this replaces.
+    # AFTER the insert has committed, never before: the commit is what makes
+    # the new row visible to a reader, so a cursor bumped earlier could wake a
+    # client that then reads the OLD state and concludes nothing changed - a
+    # lost event that would look exactly like the delay this replaces.
     #
     # Best-effort and non-fatal, the same contract as every other notify/emit
-    # call site here: the durable state (the file) is already written, and a
+    # call site here: the durable state (the rows) is already written, and a
     # storage hiccup must never turn a persisted turn into a failed one. The
     # clients' reconnect path is the backstop.
     try:
@@ -1072,7 +1049,7 @@ def _maybe_compact(user):
     # last exchange into the next turn (told exactly once, the same
     # _pending_actions seam the action results use).
     try:
-        tail = [e for e in (_log().get(user) or []) if e.get("cls") in ("you", "bot")][-4:]
+        tail = [e for e in _entries(user) if e.get("cls") in ("you", "bot")][-4:]
         if tail:
             recap = " | ".join("%s: %s" % ("OWNER" if e.get("cls") == "you" else "DU",
                                            (e.get("text") or "")[:200].replace("\n", " "))
@@ -1107,7 +1084,7 @@ def history(user):
     if st:
         st = dict(st)
         st["plan_pct"] = _plan_share(st)
-    return {"messages": [_readable(m) for m in _log().get(user, [])],
+    return {"messages": [_readable(m) for m in _entries(user)],
             "session_id": _sessions().get(user),
             "stats": st}
 
@@ -1171,7 +1148,7 @@ def open_question(user):
     Note this covers only questions asked IN the chat (Henry's or the PM's). A
     mirrored CARD question belongs to that card and is answered through
     sessions.answer_question (see _route_to_card)."""
-    log = _log().get(user, [])
+    log = _entries(user)
     for i in range(len(log) - 1, -1, -1):
         m = log[i]
         if m.get("cls") != "bot" or not m.get("question"):

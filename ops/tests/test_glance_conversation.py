@@ -57,7 +57,6 @@ def main():
     # Henry conversation into a test.
     from cells.copilot.chat import copilot
     copilot.ROOT = tmp
-    copilot.CHATLOG = os.path.join(tmp, "copilot_log.json")
 
     db.init(role="tool")
     auth.create_user("glance-owner", "s4ndb0x-pw", "owner")

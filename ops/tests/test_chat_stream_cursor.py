@@ -48,14 +48,14 @@ def main():
     from cells.copilot.chat import copilot
 
     # --- sandbox the ONE global that reaches live data ------------------------
-    real_log = copilot.CHATLOG
-    real_before = None
-    if os.path.exists(real_log):
-        with open(real_log, "rb") as f:
-            real_before = f.read()
-
+    # The chat log is the `chat` table (state-into-db phase E): repoint the
+    # store. db.conn() itself refuses the live db from a test entry script,
+    # so a forgotten sandbox is a loud failure, not a silent write.
+    real_db = db.DBPATH
     tmpdir = tempfile.mkdtemp(prefix="hd-chatcursor-")
-    copilot.CHATLOG = os.path.join(tmpdir, "copilot_log.json")
+    db.DBPATH = os.path.join(tmpdir, "test.db")
+    db._local.c = None
+    db.init()
     try:
         # 1. the single writer publishes the cursor ---------------------------
         c0 = db.current_chat_version()
@@ -113,15 +113,13 @@ def main():
         ok(time.time() - t0 >= 0.4,
            "a caller level with both cursors blocks instead of spinning")
     finally:
-        copilot.CHATLOG = real_log
+        wrote = db.DBPATH
+        db.DBPATH = real_db
+        db._local.c = None
 
     # --- the sandbox held ----------------------------------------------------
-    if real_before is None:
-        ok(not os.path.exists(real_log),
-           "the live transcript was never created by this test")
-    else:
-        with open(real_log, "rb") as f:
-            ok(f.read() == real_before, "the live transcript is byte-identical after the test")
+    ok(wrote.startswith(tmpdir) and os.path.exists(wrote),
+       "every line went to the sandbox db (%s)" % wrote)
 
     print("")
     if FAILS:

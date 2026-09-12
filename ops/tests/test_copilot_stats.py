@@ -33,7 +33,6 @@ tmp = tempfile.mkdtemp(prefix="copilot_stats_")
 from spine.storage import db
 db.DBPATH = os.path.join(tmp, "test.db")
 db.init()
-c.CHATLOG = os.path.join(tmp, "copilot_log.json")
 
 # 1) first turn: summed result usage feeds the cumulative counters, the LAST
 #    assistant call's usage feeds the meter - they differ on purpose.

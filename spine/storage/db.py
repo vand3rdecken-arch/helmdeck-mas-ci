@@ -1474,6 +1474,85 @@ def pm_activity_tail(n=20):
     return [{"ts": ts, "kind": kind, "msg": msg, "card": track} for ts, kind, track, msg in reversed(rows)]
 
 
+@_migration(8, "chat-table")
+def _m8(c):
+    """Phase E: Henry's chat log was state/copilot_log.json - {account:
+    [entries]} rewritten IN FULL on every turn (read-modify-write under a
+    process lock, tmp+os.replace with a WinError-5 retry loop) and clipped to
+    the last 80 entries per account, so every conversation silently lost its
+    history. One row per entry, scoped by account, full history kept;
+    history() is a LIMIT query, not a rewrite."""
+    c.execute("""CREATE TABLE IF NOT EXISTS chat(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, account TEXT NOT NULL,
+        ts TEXT, date TEXT, cls TEXT, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS chat_account_seq ON chat(account, seq)")
+    if not _file_steps_allowed():
+        return
+    legacy = os.path.join(ROOT, "state", "copilot_log.json")
+    if os.path.exists(legacy):
+        doc = _read_json_file(legacy)
+        n = 0
+        if isinstance(doc, dict):
+            for account, entries in doc.items():
+                for e in entries or []:
+                    if isinstance(e, dict):
+                        _chat_insert(c, account, e)
+                        n += 1
+        _archive(legacy)
+        print("db: imported %d chat entries from copilot_log.json (archived)" % n)
+
+
+def _chat_insert(c, account, e):
+    c.execute("INSERT INTO chat(account,ts,date,cls,data) VALUES(?,?,?,?,?)",
+              (account, e.get("ts"), e.get("date"), e.get("cls"),
+               json.dumps(e, ensure_ascii=False)))
+
+
+def chat_append(account, entries):
+    """ONE transaction for the batch (a you/bot pair lands together or not
+    at all). Non-dict entries are skipped, as the file writer skipped them."""
+    with conn() as c:
+        for e in entries:
+            if isinstance(e, dict):
+                _chat_insert(c, account, e)
+
+
+def chat_tail(account, limit=80):
+    """The account's last `limit` entries, OLDEST first - the slice the
+    transcript renders. limit=None returns everything."""
+    if limit:
+        rows = conn().execute(
+            "SELECT data FROM chat WHERE account=? ORDER BY seq DESC LIMIT ?",
+            (account, limit)).fetchall()
+        rows = list(reversed(rows))
+    else:
+        rows = conn().execute(
+            "SELECT data FROM chat WHERE account=? ORDER BY seq", (account,)).fetchall()
+    out = []
+    for (d,) in rows:
+        try:
+            out.append(json.loads(d))
+        except ValueError:
+            continue
+    return out
+
+
+def chat_accounts():
+    return [r[0] for r in conn().execute("SELECT DISTINCT account FROM chat")]
+
+
+def chat_clear(account=None):
+    """Drop an account's transcript (account deletion), or every transcript
+    (account=None - test sandboxes). Not an audit store: the events table
+    is; this is the conversation itself."""
+    with conn() as c:
+        if account is None:
+            c.execute("DELETE FROM chat")
+        else:
+            c.execute("DELETE FROM chat WHERE account=?", (account,))
+    bump_chat()
+
+
 def schema_head():
     """The highest ledger version this code knows - what user_version must
     equal after init() on any install."""

@@ -39,7 +39,6 @@ events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
 from cells.copilot.chat import copilot
-copilot.CHATLOG = os.path.join(SANDBOX, "copilot_log.json")
 
 _fails = []
 

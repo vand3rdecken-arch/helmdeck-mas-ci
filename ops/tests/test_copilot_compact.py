@@ -26,9 +26,11 @@ def check(cond, msg):
 
 
 tmp = tempfile.mkdtemp(prefix="copilot_compact_")
-c.STATS = os.path.join(tmp, "copilot_stats.json")
-c.SESS = os.path.join(tmp, "copilot_sessions.json")
-c.CHATLOG = os.path.join(tmp, "copilot_log.json")
+# chat, stats and session pointers are db rows (state-into-db phases D/E):
+# sandbox the store
+from spine.storage import db
+db.DBPATH = os.path.join(tmp, "test.db")
+db.init()
 
 
 class _FakeStdout:
