@@ -35,7 +35,11 @@
     "",
     "THE PreToolUse HOOK BELOW (ops/tools/card_tool_guard.py) makes worktree",
     "confinement an EXPLICIT rule instead of an undocumented CLI default - see its",
-    "own docstring for the 2026-08-24 probe session that measured the gap."
+    "own docstring for the 2026-08-24 probe session that measured the gap.",
+    "Its path is $HELMDECK_GUARD (spawnenv.tool_path, the running daemon's copy),",
+    "NOT $CLAUDE_PROJECT_DIR: the CLI sets that to the session cwd, which is",
+    "daemon/ for Henry and a foreign folder for machine/client cards - the file",
+    "was not there, python exited 2 and EVERY tool call was blocked (2026-09-12)."
   ],
 
   "env": {
@@ -46,7 +50,7 @@
     "PreToolUse": [
       { "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
         "hooks": [ { "type": "command",
-                     "command": "py -3.12 \"$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py\"",
+                     "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
                      "timeout": 30 } ] }
     ]
   },
