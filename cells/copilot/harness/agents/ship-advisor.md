@@ -9,6 +9,13 @@ ask_protocol: false
 
 # Ship advisor
 
+> **Scope since 2026-09-12 (owner decree "ship als Karte"):** a LANDING no
+> longer escalates here. It files a `decide` ship card whose own brief
+> (`cells/engineer/harness/agents/ship-worker.md`) researches wide - GitHub
+> Actions runs, relay, git - decides none|ota|native, executes and verifies.
+> This brief remains for the CHAT `ship` verb only (Henry told to ship from
+> the board): decide kind, the harness spawns the ota|native card.
+
 You decide whether HelmDeck ships right now, and if so how. You are replacing a
 hash comparison, so the bar is not "produce an answer" - it is "produce an
 answer a hash could not have produced, and be able to say why".

@@ -757,34 +757,55 @@ def _repo_hook(t, kind, extra_env=None):
     return ok
 
 
+def _open_ship_card_for(t):
+    """The ship card that already covers this landing, or None. Two shapes
+    count: a ship card filed FOR this card (ship_origin) that is not done,
+    and ANY undecided/running `decide` ship card on the same repo - it reads
+    the tree fresh when it runs, so a newer landing is already inside its
+    evidence (the old escalation dedup, same reasoning)."""
+    repo = t.get("repo") or ""
+    for c in _load():
+        if not c.get("ship_kind") or c.get("lane") == "done":
+            continue
+        if c.get("ship_origin") == t.get("id"):
+            return c
+        if c.get("ship_kind") == "decide" and c.get("repo") == repo \
+                and c.get("lane") in ("backlog", "working"):
+            return c
+    return None
+
+
 def request_ship_decision(t, origin):
-    """Hand the SHIP DECISION to Henry instead of firing the deploy hook
-    (owner decree 2026-09-01: "not a process after done anymore but something
-    Henry needs to decide whether it makes sense" - measured cost of the old
-    reflex that same day: a mechanical post-accept ship, a manual build and a
-    daemon-restart eviction collided for hours, and no agent was anywhere in
-    the loop to notice or stop it).
+    """A landing files a SHIP CARD that decides for itself (owner decree
+    2026-09-12: "ship als Karte, damit es losgehen kann und selber Infos
+    sammeln und nachdenken").
 
-    This is the EMIT half only (the engineer cell reports facts, never
-    decides - the broker docstring's split): one escalation per landed
-    change, judged by Henry with the full system snapshot he already carries
-    (build locks, box load, live build processes - exactly the context the
-    collisions above needed). Henry answers with the `ship` verb
-    (kind none|ota|native); the broker executes ota/native through
-    _repo_hook with SHIP_KIND so ship.sh runs the DECISION, not the legacy
-    hash fallback (pays debt ship-decision-not-wired).
+    HISTORY, so nobody rebuilds the old shape: 2026-09-01 the post-accept
+    deploy reflex became a `ship-decision` escalation to Henry's one-shot
+    judgement turn, fed by ops/tools/ship_facts.py. That turn could only
+    weigh what ship_facts printed - phone channels - and on 2026-09-12 it
+    correctly said "nothing reaches a device" while the desktop-mac workflow
+    had been failing on GitHub billing for two days; nothing in its evidence
+    could say so, and a judgement turn cannot go and look. A CARD can: hands,
+    auto-mode permissions, gh/git/relay reach, as many turns as it needs. So
+    the emit half now files `dispatch.new_ship_task(kind="decide")` (brief:
+    cells/engineer/harness/agents/ship-worker.md, DECIDE -> EXECUTE ->
+    VERIFY, closes itself on 'SHIP: OK'/'SHIP: NONE'). Henry stays the
+    exception broker: a ship card that parks needs_you reaches him like any
+    stuck card. The chat-side `ship` verb (Henry told to ship from the board)
+    still spawns ota|native cards directly.
 
-    Facts are deliberately NOT pre-collected here: the advisor brief's own
-    rule is "decide at the moment of shipping, from facts read at that
-    moment", and Henry's judgement turn runs ops/tools/ship_facts.py itself,
-    fresh, minutes later when the decision actually happens.
+    Filed SYNCHRONOUSLY (so the dedup below sees it at once), dispatched on
+    its own thread (a ship can take twenty minutes; the origin card's accept
+    must not wait on it - and this is called from inside that accept).
 
-    DEDUP by (open ship-decision, same card): fast-track finishes a turn
-    every few minutes and each one used to deploy - under judgement, a still
-    -open decision already covers the newer landing, because Henry reads the
-    tree fresh when he gets to it. Returns the escalation id, or None when
-    nothing was emitted (no deploy hook configured = repo ships some other
-    way, or an open decision already pending)."""
+    DEDUP by _open_ship_card_for: fast-track finishes a turn every few
+    minutes and each one used to deploy - a still-open decide card already
+    covers the newer landing because it reads the tree fresh when it runs.
+    Returns the ship card id, or None when nothing was filed (no deploy hook
+    configured = repo ships some other way, or a card already pending). If
+    filing the card itself fails, falls back to the old escalation so the
+    landing is never silently unshipped."""
     from spine.storage import events
     from spine.registry import escalations
     st = events.settings()
@@ -798,32 +819,49 @@ def request_ship_decision(t, origin):
         # that genuinely ships some other way reads this note once per accept;
         # a broken settings read becomes visible the moment it costs something.
         log.log("note", "SHIP: kein deploy-Hook fuer repo %r (settings.repo_hooks)"
-                        " - keine Ship-Entscheidung emittiert (%s)."
+                        " - keine Ship-Karte angelegt (%s)."
                         % (t.get("repo") or "", origin))
         return None
     try:
-        if any(e.get("kind") == "ship-decision" and e.get("card") == t["id"]
-               for e in escalations.list_open()):
-            log.log("note", "SHIP: Entscheidung liegt bereits bei Henry (offen) - "
-                            "keine zweite Eskalation fuer diese Landung (%s)." % origin)
-            return None
+        cur = _open_ship_card_for(t)
     except Exception:
-        pass                            # a fold failure must not block the emit
-    eid = escalations.emit(
-        "ship-decision", card=t["id"],
-        detail=("Aenderung gelandet (%s, Karte %s). Entscheide, ob JETZT geshippt "
-                "wird - kein Automatismus mehr (Owner-Dekret 2026-09-01).\n"
-                "Brief: cells/copilot/harness/agents/ship-advisor.md. Evidenz IMMER frisch "
-                "holen: py -3.12 ops/tools/ship_facts.py\n"
-                "Antworte mit action \"ship\" und kind none|ota|native "
-                "(none = nichts zu shippen, kurz begruenden). Der Harness fuehrt "
-                "ota/native selbst ueber den Deploy-Hook aus (SHIP_KIND an "
-                "ship.sh, silence-bounded) - baue NIE selbst im Judgement-Turn, "
-                "ein nativer Build sprengt dessen Timeout."
-                % (origin, t["id"])))
-    log.log("note", "SHIP: Entscheidung an Henry uebergeben (%s) - kein "
-                    "automatischer Deploy mehr." % origin)
-    return eid
+        cur = None                       # a fold failure must not block the emit
+    if cur:
+        log.log("note", "SHIP: Ship-Karte %s ist bereits offen - keine zweite fuer "
+                        "diese Landung (%s)." % (cur.get("id"), origin))
+        return None
+    from cells.engineer.cards import dispatch
+    try:
+        card = dispatch.new_ship_task(t.get("repo") or "", "decide", actor="harness",
+                                      origin_card=t["id"], dispatch=False)
+    except Exception as e:
+        # the landing must never go quietly unshipped: the old escalation is
+        # the fallback, and it says WHY the card path did not open
+        eid = escalations.emit(
+            "ship-decision", card=t["id"],
+            detail=("Aenderung gelandet (%s, Karte %s), aber die Ship-Karte konnte "
+                    "nicht angelegt werden: %s. Entscheide selbst (action \"ship\", "
+                    "kind none|ota|native; Brief cells/copilot/harness/agents/"
+                    "ship-advisor.md)." % (origin, t["id"], str(e)[:200])))
+        log.log("note", "SHIP: Ship-Karte fehlgeschlagen (%s) - Entscheidung an Henry "
+                        "eskaliert (%s)." % (str(e)[:120], origin))
+        return eid
+    import threading
+    cid = card.get("id")
+
+    def _go():
+        try:
+            move_lane(cid, "working", actor="harness")
+        except Exception as e:                                   # noqa: BLE001
+            try:
+                ActionLog(card["run_dir"]).log(
+                    "note", "SHIP: Dispatch der Ship-Karte scheiterte: %s" % str(e)[:300])
+            except Exception:
+                pass
+    threading.Thread(target=_go, name="_ship-decide-%s" % cid, daemon=True).start()
+    log.log("note", "SHIP: Ship-Karte %s angelegt (%s) - recherchiert, entscheidet und "
+                    "shippt selbst; kein automatischer Deploy." % (cid, origin))
+    return cid
 
 
 from spine.registry import i18n as _i18n  # owner-facing prose only; the audit trail stays English

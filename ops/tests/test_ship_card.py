@@ -33,8 +33,17 @@ Run: py -3.12 ops/tests/test_ship_card.py
 import os, subprocess, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+import tempfile as _tf
+SANDBOX = _tf.mkdtemp(prefix="hd-ship-card-db-")
+from spine.storage import db as _db
+_db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events
+events.SET = os.path.join(SANDBOX, "settings.json")
+_db.init()
+from spine.ops import runs as _runs
+_runs.REC = os.path.join(SANDBOX, "runs"); os.makedirs(_runs.REC, exist_ok=True)
 from cells.engineer.cards import sessions
+sessions.REC = _runs.REC
 from cells.engineer.cards import lanemachine
 from cells.engineer.cards import dispatch
 from spine.agent import drivers
@@ -138,6 +147,17 @@ def fake_turn_crash(t, prompt, model=None, perm=None):
 dispatch._turn = sessions._turn = fake_turn_crash
 t3 = dispatch.new_ship_task(repo, "ota", actor="henry")
 check("no verdict line at all -> stays on working, not Done", t3.get("lane") == "working")
+
+# -- 4b) a DECIDE card that finds nothing to ship closes itself on SHIP: NONE --
+dispatch._turn = sessions._turn = lambda t, p, model=None, perm=None: (
+    "sid-none", "DECISION: none" + chr(10) + "WHY: docs only, desktop-mac run green." + chr(10) + "SHIP: NONE",
+    {"usage": {}, "models": [], "cost_usd": 0.0})
+t4 = dispatch.new_ship_task(repo, "decide", actor="harness", origin_card="c-land")
+check("decide card carries ship_kind=decide", t4.get("ship_kind") == "decide")
+check("decide card speaks the SHIP brief too", drivers._agent_for(t4) == drivers.SHIP_AGENT)
+check("SHIP: NONE self-closed the decide card to Done", t4.get("lane") == "done")
+t5 = dispatch.new_ship_task(repo, "decide", actor="harness", dispatch=False)
+check("dispatch=False files without starting a turn", t5.get("lane") != "done" and not t5.get("session_id"))
 
 # -- 5) kind is validated - dispatch never guesses --------------------------
 try:

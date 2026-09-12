@@ -548,7 +548,7 @@ def new_direct_task(repo, task, actor="owner", priority="medium", description=""
     return cur
 
 
-def new_ship_task(repo, kind, actor="henry", origin_card=None):
+def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True):
     """Owner decree 2026-09-09 (18:04 correction): a ship runs as its own
     visible board card - lane, timeline, steerable, self-correcting like any
     other card - instead of an invisible deploy-hook subprocess after an
@@ -566,13 +566,39 @@ def new_ship_task(repo, kind, actor="henry", origin_card=None):
     set BEFORE the first turn is dispatched (we call move_lane ourselves,
     after marking) so drivers._agent_for already sees it on that very first
     turn and speaks ship-worker.md, not machine-worker.md - a race that would
-    otherwise strand the card's first (and often only) turn on the wrong brief."""
-    if kind not in ("ota", "native"):
-        raise ValueError("new_ship_task: kind must be 'ota' or 'native', got %r" % kind)
-    task = ("Ship (%s). Diagnose, execute, verify - see your brief. End your "
-           "final reply with exactly the line 'SHIP: OK' or 'SHIP: FAILED'." % kind)
-    desc = "Ausgeloest von Henrys Ship-Entscheid (%s)%s." % (
-        kind, (" fuer Karte %s" % origin_card) if origin_card else "")
+    otherwise strand the card's first (and often only) turn on the wrong brief.
+
+    kind="decide" (owner decree 2026-09-12, "ship als Karte - damit es losgehen
+    kann und selber Infos sammeln und nachdenken"): the DECISION itself runs
+    inside this card. Until now a landing escalated to Henry's one-shot
+    judgement turn, which read exactly what ops/tools/ship_facts.py printed
+    (phone channels only) - it could not discover that the desktop-mac
+    workflow had been failing on GitHub billing for two days, because no
+    fact it was handed said so, and a judgement turn has neither the time
+    nor the brief to go looking. A card has hands, auto-mode permissions,
+    gh/git/relay reach and as many turns as it needs: it researches, decides
+    none|ota|native, executes, verifies, and closes itself ('SHIP: NONE' is
+    a deliberate non-ship and closes too). Henry stays what he is - the
+    exception broker for a card that parks needs_you.
+
+    dispatch=False returns the marked card WITHOUT starting its first turn
+    (lanemachine.request_ship_decision files synchronously for dedup, then
+    dispatches on its own thread so the origin card's accept never blocks on
+    a ship that may take twenty minutes)."""
+    if kind not in ("decide", "ota", "native"):
+        raise ValueError("new_ship_task: kind must be 'decide', 'ota' or 'native', got %r" % kind)
+    if kind == "decide":
+        task = ("Ship-Entscheidung + Ausfuehrung. Recherchiere selbst, entscheide "
+                "none|ota|native, fuehre aus, verifiziere - siehe Brief. Beende die "
+                "letzte Antwort mit genau einer Zeile 'SHIP: OK', 'SHIP: NONE' oder "
+                "'SHIP: FAILED'.")
+        desc = "Ausgeloest von einer Landung%s - entscheidet selbst, ob und wie geshippt wird." % (
+            (" (Karte %s)" % origin_card) if origin_card else "")
+    else:
+        task = ("Ship (%s). Diagnose, execute, verify - see your brief. End your "
+               "final reply with exactly the line 'SHIP: OK' or 'SHIP: FAILED'." % kind)
+        desc = "Ausgeloest von Henrys Ship-Entscheid (%s)%s." % (
+            kind, (" fuer Karte %s" % origin_card) if origin_card else "")
     t = new_direct_task(repo, task, actor=actor, priority="high",
                         description=desc, dispatch=False, driver="claude")
 
@@ -584,6 +610,8 @@ def new_ship_task(repo, kind, actor="henry", origin_card=None):
     from spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log(
         "note", "SHIP card filed (%s) - workplace is the live tree %s" % (kind, repo))
+    if not dispatch:
+        return cur
     return move_lane(cur["id"], "working", actor=actor)
 
 
@@ -657,7 +685,10 @@ def _maybe_ship_card_close(t, log):
     value, not its own now-stale `t`, or the lane flip is invisible to
     whoever called this."""
     reply = t.get("last_reply") or ""
-    if not re.search(r"^SHIP:\s*OK\s*$", reply, re.M):
+    # 'SHIP: NONE' (a decide card that researched and found nothing to ship,
+    # 2026-09-12) is as final as OK - the card's reply holds the why, and a
+    # deliberate non-ship left on the board as needs_you would read as stuck.
+    if not re.search(r"^SHIP:\s*(OK|NONE)\s*$", reply, re.M):
         return t
     try:
         r = move_lane(t["id"], "done", actor="ship-agent")

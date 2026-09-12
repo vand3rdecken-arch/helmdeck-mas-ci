@@ -92,6 +92,13 @@ BUS = []
 escalations._append = lambda rec: (BUS.append(dict(rec, ts=time.strftime("%Y-%m-%dT%H:%M:%S"))), BUS[-1])[1]
 escalations.records = lambda: list(BUS)
 lanemachine._gate = lambda t: (True, [])
+# 2026-09-12 (owner: "ship als Karte"): a landing files a DECIDE ship card;
+# record the filing instead of running a second card through the stubbed turn
+SHIPS = []
+dispatch.new_ship_task = lambda repo, kind, actor="henry", origin_card=None, dispatch=True: (
+    SHIPS.append((origin_card, kind, dispatch)) or
+    {"id": "ship-%d" % len(SHIPS), "ship_kind": kind, "ship_origin": origin_card,
+     "repo": repo, "lane": "backlog", "run_dir": tempfile.mkdtemp(prefix="hd-ship-")})
 lanemachine._merge_to_main = lambda t: (True, "merged", "ok")
 
 
@@ -114,7 +121,8 @@ tid = t["id"]
 cur = trackstore._db.track_get(tid)
 check("1. direct+fast_track card ran its first turn to needs_you", cur["status"] == "needs_you")
 check("1. FIRST turn autocommitted the edit (no steer needed)", git(repo, "ls-files", "new_file.txt")[1] != "")
-check("1. ship-decision escalation open after the FIRST turn", len(opens("ship-decision", tid)) == 1)
+check("1. a DECIDE ship card is filed after the FIRST turn (no escalation, no owner move)",
+      SHIPS == [(tid, "decide", False)] and not opens("ship-decision", tid))
 check("1. delivered-parked also open - Henry can land the card", len(opens("delivered-parked", tid)) == 1)
 
 # -- 2) plain direct card (no fast_track) parks -> delivered-parked -----------

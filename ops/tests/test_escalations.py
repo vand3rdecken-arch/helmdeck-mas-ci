@@ -166,14 +166,47 @@ def main():
         events.settings = lambda: {"repo_hooks": {tmp: {"deploy": "bash ops/deploy/ship.sh"}}}
         t9 = {"id": "c9", "repo": tmp, "run_dir": os.path.join(tmp, "run9"), "worktree": tmp}
         os.makedirs(t9["run_dir"], exist_ok=True)
-        assert lm.request_ship_decision(t9, "test") is not None
-        assert lm.request_ship_decision(t9, "test") is None, \
-            "an open ship-decision for the card must dedup the second emit"
-        events.settings = lambda: {"repo_hooks": {}}
-        t10 = dict(t9, id="c10")
-        assert lm.request_ship_decision(t10, "test") is None, \
-            "no deploy hook configured -> nothing to decide, no escalation"
-        print("PASS emit: request_ship_decision -> deduped per card, no-op without a hook")
+        # 2026-09-12 (owner: "ship als Karte"): a landing files a DECIDE ship
+        # card (synchronously, dedup-visible) and dispatches it on a thread;
+        # the escalation is only the fallback when filing the card fails.
+        filed, open_cards = [], []
+        def fake_ship(repo, kind, actor="henry", origin_card=None, dispatch=True):
+            assert kind == "decide" and dispatch is False and origin_card == "c9"
+            c = {"id": "ship-%d" % len(filed), "ship_kind": kind, "ship_origin": origin_card,
+                 "repo": repo, "lane": "backlog", "run_dir": t9["run_dir"]}
+            filed.append(c); open_cards.append(c); return c
+        _dispatch.new_ship_task = fake_ship
+        moved = []
+        real_move = lm.move_lane
+        lm.move_lane = lambda tid, lane, actor="owner", **k: moved.append((tid, lane))
+        real_open = lm._open_ship_card_for
+        lm._open_ship_card_for = lambda t: next((c for c in open_cards if c["ship_origin"] == t["id"]), None)
+        try:
+            r = lm.request_ship_decision(t9, "test")
+            assert r == "ship-0" and len(filed) == 1, "a landing files exactly one decide ship card"
+            import threading
+            for th in threading.enumerate():
+                if th.name.startswith("_ship-decide-"):
+                    th.join(5)
+            assert moved == [("ship-0", "working")], "the card is dispatched on its own thread (%r)" % moved
+            assert lm.request_ship_decision(t9, "test") is None,                 "an open ship card for the card must dedup the second landing"
+            assert len(filed) == 1
+            # filing fails -> the old escalation is the fallback, never silence
+            def boom(*a, **k): raise RuntimeError("no disk")
+            _dispatch.new_ship_task = boom
+            open_cards.clear()
+            eid = lm.request_ship_decision(t9, "test")
+            assert eid and any(e.get("kind") == "ship-decision" and e.get("card") == "c9"
+                               for e in esc.list_open()), "card failure falls back to a ship-decision escalation"
+            events.settings = lambda: {"repo_hooks": {}}
+            t10 = dict(t9, id="c10")
+            assert lm.request_ship_decision(t10, "test") is None,                 "no deploy hook configured -> nothing to decide, no card"
+        finally:
+            _dispatch.new_ship_task = real_new_ship_task
+            lm.move_lane = real_move
+            lm._open_ship_card_for = real_open
+        print("PASS emit: request_ship_decision -> decide ship card, deduped per card, "
+              "escalation fallback, no-op without a hook")
 
         print("ALL PASS")
     finally:
