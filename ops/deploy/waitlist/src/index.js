@@ -225,10 +225,10 @@ function page({ rel, joined, already, err, email }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck – ein Problem, ein Board, das ganze Team steuert die Agenten. Vom Handy.</title>
-<meta name="description" content="HelmDeck ist das Board für Teams, die ein Problem an Coding-Agenten geben. Karten wie in Jira, die Arbeit machen Agenten auf eurem Rechner – und jeder im Team steuert sie vom Handy: freigeben, Rückfragen beantworten, abnehmen. Rund um die Uhr, über Zeitzonen.">
-<meta property="og:title" content="HelmDeck – das ganze Team steuert die Agenten, vom Handy">
-<meta property="og:description" content="Ein Problem, ein Board, viele Steuernde. Wer Feierabend hat, übergibt. Das Problem steht nie. Android, iPhone, Windows, macOS.">
+<title>HelmDeck – Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.</title>
+<meta name="description" content="HelmDeck plant, verfolgt und erledigt eure Projekte an einem Ort – Teams und Agenten gemeinsam. Ein lokaler Operator auf eurem Rechner hat volle Kontrolle: recherchieren, testen, bauen, deployen. Ihr steuert vom Handy, von überall, jederzeit.">
+<meta property="og:title" content="HelmDeck – Teams und Agenten bauen zusammen, von überall">
+<meta property="og:description" content="Planung, Aufgaben und Umsetzung an einem Ort. Der lokale Operator erledigt, wofür ihr sonst am PC sitzen müsstet. Android, iPhone, Windows, macOS.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -429,9 +429,9 @@ footer a:hover{color:var(--ink-2)}
 </div>
 <main>
   <section class="hero" style="border-top:0; padding-top:1rem">
-    <p class="kicker" data-i="kicker">Für Teams, die ein Problem gemeinsam an Agenten geben</p>
-    <h1 data-i="h1">Ein Problem. Ein Board. Das ganze Team steuert – vom Handy, rund um die Uhr.</h1>
-    <p class="sub" data-i="sub">Karten wie in Jira, die Arbeit machen Coding-Agenten auf eurem Rechner. Freigeben, Rückfragen beantworten, abnehmen – das kann jetzt jeder im Team, von überall. Feierabend in Deutschland? Vietnam übernimmt. Das Problem steht nie.</p>
+    <p class="kicker" data-i="kicker">Teams und Agenten, ein Projekt</p>
+    <h1 data-i="h1">Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.</h1>
+    <p class="sub" data-i="sub">HelmDeck plant, verfolgt und erledigt eure Projekte an einem Ort – kein separates Tracking mehr. Ein lokaler Operator auf eurem Rechner hat volle Kontrolle: recherchieren, testen, bauen, deployen. Ihr gebt Aufgaben ab, für die ihr sonst am PC sitzen müsstet – und seid frei.</p>
     <div class="platforms" data-i-html="platforms">${platformsHtml("Desktop", "Handy", "Handgelenk")}</div>
     <div class="hero-actions">
       <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Herunterladen</a>
@@ -445,15 +445,15 @@ footer a:hover{color:var(--ink-2)}
     <div class="shots">
       <div class="shot phone">
         <figure><img src="${IMG_CHAT}" width="520" height="1125" alt="Henry-Chat auf dem Handy: ein Agent stellt eine Rückfrage mit zwei Optionen" loading="lazy"></figure>
-        <figcaption><b data-i="shot1H">22 Uhr, Rückfrage vom Agenten</b><p data-i="shot1P">Zwei Optionen, ein Tipp vom Sofa – der Agent baut weiter, morgen früh ist es gemergt. Kein Laptop, keine SSH-Session.</p></figcaption>
+        <figcaption><b data-i="shot1H">Rückfrage um 22 Uhr</b><p data-i="shot1P">Zwei Optionen, ein Tipp – der Agent macht weiter, morgen früh ist es gemergt. Kein Laptop, keine SSH-Session.</p></figcaption>
       </div>
       <div class="shot phone">
         <figure><img src="${IMG_BOARD}" width="520" height="1125" alt="HelmDeck Board auf dem Handy: Backlog, In Arbeit, eine Karte wartet auf Antwort" loading="lazy"></figure>
-        <figcaption><b data-i="shot2H">Übergabe über Zeitzonen</b><p data-i="shot2P">Berlin macht Schluss, Hanoi übernimmt. Das Board zeigt, wer woran ist und was auf wen wartet – dieselbe Sicht für alle.</p></figcaption>
+        <figcaption><b data-i="shot2H">Das Projekt von überall</b><p data-i="shot2P">Wer woran arbeitet, was auf wen wartet, was als Nächstes kommt – dieselbe Sicht für Team und Agenten, jederzeit.</p></figcaption>
       </div>
       <div class="shot">
         <figure><img src="${IMG_DESK}" width="1100" height="687" alt="HelmDeck Board am Desktop: Lanes Backlog, In Arbeit, Review mit Gate-Ergebnis" loading="lazy"></figure>
-        <figcaption><b data-i="shot3H">Einer installiert, alle steuern</b><p data-i="shot3P">Der Desktop läuft auf dem Rechner mit dem Code und lädt das Team ein. Am Rechner das ganze Bild: Lanes, Review, Gate vor dem Merge.</p></figcaption>
+        <figcaption><b data-i="shot3H">Volle Kontrolle am Rechner</b><p data-i="shot3P">Der Operator läuft hier und lädt das Team ein. Lanes, Review, Gate vor dem Merge – und jede Aufgabe, die sonst einen Menschen am PC bräuchte.</p></figcaption>
       </div>
     </div>
   </section>
@@ -461,15 +461,15 @@ footer a:hover{color:var(--ink-2)}
   <section id="why">
     <h2 data-i="whyTitle">Was ihr davon habt</h2>
     <div class="why">
-      <div><b data-i="why1H">Das Problem wird 24/7 bearbeitet.</b><p data-i="why1P">Nicht weil Agenten nie schlafen, sondern weil immer jemand steuern kann. Wer wach ist, gibt frei – der Agent arbeitet weiter.</p></div>
-      <div><b data-i="why2H">Ihr müsst nicht am PC sitzen.</b><p data-i="why2P">Mobile first: Rückfragen, Freigaben und Abnahmen vom Handy oder der Uhr. Auch für Leute, die nicht programmieren – wer eine Aufgabe beschreiben kann, kann sie steuern.</p></div>
-      <div><b data-i="why3H">Eure Maschine, euer Code.</b><p data-i="why3P">Kein Cloud-Backend, kein Fremd-Account. Jede Karte arbeitet in einem eigenen Worktree, ein Gate prüft vor dem Merge. Kollegen und Kunden sehen das Board, nie euer Dateisystem.</p></div>
+      <div><b data-i="why1H">Das Projekt ist immer erreichbar.</b><p data-i="why1P">Von überall, jederzeit: Fortschritt sehen, Rückfragen beantworten, freigeben. Teams und Agenten machen weiter, während ihr unterwegs seid.</p></div>
+      <div><b data-i="why2H">Alles, wofür ihr sonst am PC sitzen müsstet.</b><p data-i="why2P">Recherche, Tests, Builds, Deploys, Dateien, Bestellungen: der lokale Operator führt es auf eurem Rechner aus. Ihr steuert vom Handy oder der Uhr – auch ohne zu programmieren.</p></div>
+      <div><b data-i="why3H">Planung und Umsetzung in einem.</b><p data-i="why3P">Langfristige Pläne, Aufgaben und Projekte an einem Ort statt in drei Tools. Agenten arbeiten in eigenen Worktrees, ein Gate prüft vor dem Merge. Euer Rechner, euer Code – Kollegen und Kunden sehen das Board, nie euer Dateisystem.</p></div>
     </div>
     <h2 style="margin-top:2.4rem" data-i="stepsTitle">So fangt ihr an</h2>
     <div class="steps">
-      <div><b data-i="step1H">Einer installiert den Desktop</b><p data-i="step1P">Auf dem Rechner, auf dem euer Code liegt. Projekt anlegen, Claude Code verbinden.</p></div>
+      <div><b data-i="step1H">Einer installiert den Operator</b><p data-i="step1P">Auf dem Rechner, auf dem euer Projekt liegt. Projekt anlegen, Claude Code verbinden.</p></div>
       <div><b data-i="step2H">Handy koppeln, Team einladen</b><p data-i="step2P">QR-Code scannen, Einladungslink verschicken. Die anderen brauchen nur die App – keinen Zugang zum Rechner.</p></div>
-      <div><b data-i="step3H">Karte anlegen, weggehen</b><p data-i="step3P">Die erste Rückfrage kommt aufs Handy. Das Onboarding ist noch jung – wenn ihr hängt, <a href="mailto:${OWNER_EMAIL}">schreibt uns</a>, wir helfen persönlich.</p></div>
+      <div><b data-i="step3H">Aufgabe abgeben, frei sein</b><p data-i="step3P">Die erste Rückfrage kommt aufs Handy. Das Onboarding ist noch jung – wenn ihr hängt, <a href="mailto:${OWNER_EMAIL}">schreibt uns</a>, wir helfen persönlich.</p></div>
     </div>
     <div class="devices" data-i-html="devices">
       <span>Android</span><span>iPhone &amp; iPad <i>· TestFlight</i></span><span>Apple Watch</span><span>Wear OS</span><span>Windows</span><span>macOS</span><span>Web</span><span>Glasses <i>· bald</i></span>
@@ -478,7 +478,7 @@ footer a:hover{color:var(--ink-2)}
 
   <section id="downloads">
     <h2 data-i="dlTitle">Jetzt verfügbar</h2>
-    <p class="section-sub" data-i="dlSub">Einer im Team installiert den Desktop auf dem Rechner mit dem Code. Alle anderen brauchen nur die App fürs Handy. Keine Cloud, kein Account bei uns, keine Wartezeit.</p>
+    <p class="section-sub" data-i="dlSub">Einer im Team installiert den Operator auf dem Rechner mit dem Projekt. Alle anderen brauchen nur die App fürs Handy. Keine Cloud, kein Account bei uns, keine Wartezeit.</p>
     <div class="dl-grid">
       <div class="dl-card">
         <h3>Windows</h3>
@@ -518,7 +518,7 @@ footer a:hover{color:var(--ink-2)}
     </div>
     <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">Alle Downloads &amp; Prüfsummen auf GitHub</a></p>
     <div class="faq">
-      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i="faq1A">Ja. Die Agenten arbeiten auf dem Rechner, auf dem der HelmDeck-Desktop läuft. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Karten, nichts geht verloren.</div></details>
+      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren.</div></details>
       <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
       <details><summary data-i="faq3Q">Welche Agenten laufen darin?</summary><div data-i="faq3A">Heute Claude Code. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.</div></details>
     </div>
@@ -570,31 +570,31 @@ footer a:hover{color:var(--ink-2)}
 (function(){
   var I18N = {
     de:{
-      title:"HelmDeck – ein Problem, ein Board, das ganze Team steuert die Agenten. Vom Handy.",
+      title:"HelmDeck – Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.",
       navProof:"So sieht es aus", navDownloads:"Downloads", navWaitlist:"Glasses",
-      kicker:"Für Teams, die ein Problem gemeinsam an Agenten geben",
-      h1:"Ein Problem. Ein Board. Das ganze Team steuert – vom Handy, rund um die Uhr.",
+      kicker:"Teams und Agenten, ein Projekt",
+      h1:"Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.",
       platforms:'${platformsHtml("Desktop", "Handy", "Handgelenk")}',
-      sub:"Karten wie in Jira, die Arbeit machen Coding-Agenten auf eurem Rechner. Freigeben, Rückfragen beantworten, abnehmen – das kann jetzt jeder im Team, von überall. Feierabend in Deutschland? Vietnam übernimmt. Das Problem steht nie.",
+      sub:"HelmDeck plant, verfolgt und erledigt eure Projekte an einem Ort – kein separates Tracking mehr. Ein lokaler Operator auf eurem Rechner hat volle Kontrolle: recherchieren, testen, bauen, deployen. Ihr gebt Aufgaben ab, für die ihr sonst am PC sitzen müsstet – und seid frei.",
       heroCtaPrimary:"Herunterladen", heroCtaSecondary:"So sieht es aus",
       heroCtaAndroid:"Für Android laden", heroCtaIos:"Für iPhone laden (TestFlight)", heroCtaMac:"Für macOS laden", heroCtaWin:"Für Windows laden",
       proofTitle:"Drei Momente aus dem Alltag", proofSub:"Echte Screenshots aus der App, keine Mockups.",
-      shot1H:"22 Uhr, Rückfrage vom Agenten", shot1P:"Zwei Optionen, ein Tipp vom Sofa – der Agent baut weiter, morgen früh ist es gemergt. Kein Laptop, keine SSH-Session.",
-      shot2H:"Übergabe über Zeitzonen", shot2P:"Berlin macht Schluss, Hanoi übernimmt. Das Board zeigt, wer woran ist und was auf wen wartet – dieselbe Sicht für alle.",
-      shot3H:"Einer installiert, alle steuern", shot3P:"Der Desktop läuft auf dem Rechner mit dem Code und lädt das Team ein. Am Rechner das ganze Bild: Lanes, Review, Gate vor dem Merge.",
+      shot1H:"Rückfrage um 22 Uhr", shot1P:"Zwei Optionen, ein Tipp – der Agent macht weiter, morgen früh ist es gemergt. Kein Laptop, keine SSH-Session.",
+      shot2H:"Das Projekt von überall", shot2P:"Wer woran arbeitet, was auf wen wartet, was als Nächstes kommt – dieselbe Sicht für Team und Agenten, jederzeit.",
+      shot3H:"Volle Kontrolle am Rechner", shot3P:"Der Operator läuft hier und lädt das Team ein. Lanes, Review, Gate vor dem Merge – und jede Aufgabe, die sonst einen Menschen am PC bräuchte.",
       whyTitle:"Was ihr davon habt",
-      why1H:"Das Problem wird 24/7 bearbeitet.", why1P:"Nicht weil Agenten nie schlafen, sondern weil immer jemand steuern kann. Wer wach ist, gibt frei – der Agent arbeitet weiter.",
-      why2H:"Ihr müsst nicht am PC sitzen.", why2P:"Mobile first: Rückfragen, Freigaben und Abnahmen vom Handy oder der Uhr. Auch für Leute, die nicht programmieren – wer eine Aufgabe beschreiben kann, kann sie steuern.",
-      why3H:"Eure Maschine, euer Code.", why3P:"Kein Cloud-Backend, kein Fremd-Account. Jede Karte arbeitet in einem eigenen Worktree, ein Gate prüft vor dem Merge. Kollegen und Kunden sehen das Board, nie euer Dateisystem.",
+      why1H:"Das Projekt ist immer erreichbar.", why1P:"Von überall, jederzeit: Fortschritt sehen, Rückfragen beantworten, freigeben. Teams und Agenten machen weiter, während ihr unterwegs seid.",
+      why2H:"Alles, wofür ihr sonst am PC sitzen müsstet.", why2P:"Recherche, Tests, Builds, Deploys, Dateien, Bestellungen: der lokale Operator führt es auf eurem Rechner aus. Ihr steuert vom Handy oder der Uhr – auch ohne zu programmieren.",
+      why3H:"Planung und Umsetzung in einem.", why3P:"Langfristige Pläne, Aufgaben und Projekte an einem Ort statt in drei Tools. Agenten arbeiten in eigenen Worktrees, ein Gate prüft vor dem Merge. Euer Rechner, euer Code – Kollegen und Kunden sehen das Board, nie euer Dateisystem.",
       stepsTitle:"So fangt ihr an",
-      step1H:"Einer installiert den Desktop", step1P:"Auf dem Rechner, auf dem euer Code liegt. Projekt anlegen, Claude Code verbinden.",
+      step1H:"Einer installiert den Operator", step1P:"Auf dem Rechner, auf dem euer Projekt liegt. Projekt anlegen, Claude Code verbinden.",
       step2H:"Handy koppeln, Team einladen", step2P:"QR-Code scannen, Einladungslink verschicken. Die anderen brauchen nur die App – keinen Zugang zum Rechner.",
-      step3H:"Karte anlegen, weggehen", step3P:"Die erste Rückfrage kommt aufs Handy. Das Onboarding ist noch jung – wenn ihr hängt, schreibt uns, wir helfen persönlich.",
+      step3H:"Aufgabe abgeben, frei sein", step3P:"Die erste Rückfrage kommt aufs Handy. Das Onboarding ist noch jung – wenn ihr hängt, schreibt uns, wir helfen persönlich.",
       devices:'<span>Android</span><span>iPhone &amp; iPad <i>· TestFlight</i></span><span>Apple Watch</span><span>Wear OS</span><span>Windows</span><span>macOS</span><span>Web</span><span>Glasses <i>· bald</i></span>',
-      faq1Q:"Muss der Rechner an sein?", faq1A:"Ja. Die Agenten arbeiten auf dem Rechner, auf dem der HelmDeck-Desktop läuft. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Karten, nichts geht verloren.",
+      faq1Q:"Muss der Rechner an sein?", faq1A:"Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren.",
       faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:"Heute Claude Code. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.",
-      dlTitle:"Jetzt verfügbar", dlSub:"Einer im Team installiert den Desktop auf dem Rechner mit dem Code. Alle anderen brauchen nur die App fürs Handy. Keine Cloud, kein Account bei uns, keine Wartezeit.",
+      dlTitle:"Jetzt verfügbar", dlSub:"Einer im Team installiert den Operator auf dem Rechner mit dem Projekt. Alle anderen brauchen nur die App fürs Handy. Keine Cloud, kein Account bei uns, keine Wartezeit.",
       dlBtn:"Herunterladen",
       dlWinNote:"Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.",
@@ -618,31 +618,31 @@ footer a:hover{color:var(--ink-2)}
       privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       contact:"Kontakt", sending:"…", toggle:"EN" },
     en:{
-      title:"HelmDeck – one problem, one board, the whole team steers the agents. From a phone.",
+      title:"HelmDeck – teams and agents build together. Around the clock, from anywhere.",
       navProof:"See it", navDownloads:"Downloads", navWaitlist:"Glasses",
-      kicker:"For teams that hand one problem to agents together",
-      h1:"One problem. One board. The whole team steers – from a phone, around the clock.",
+      kicker:"Teams and agents, one project",
+      h1:"Teams and agents build together. Around the clock, from anywhere.",
       platforms:'${platformsHtml("Desktop", "Phone", "Wrist")}',
-      sub:"Cards like in Jira, the work is done by coding agents on your machine. Approving, answering questions, accepting results – now anyone on the team can do that, from anywhere. Germany clocks off? Vietnam takes over. The problem never stalls.",
+      sub:"HelmDeck plans, tracks and gets your projects done in one place – no separate tracking. A local operator on your machine has full control: research, test, build, deploy. Hand off the tasks that used to need you at a PC – and be free.",
       heroCtaPrimary:"Download", heroCtaSecondary:"See it in action",
       heroCtaAndroid:"Get it for Android", heroCtaIos:"Get it for iPhone (TestFlight)", heroCtaMac:"Get it for macOS", heroCtaWin:"Get it for Windows",
       proofTitle:"Three moments from a normal day", proofSub:"Real screenshots from the app, not mockups.",
-      shot1H:"10 pm, the agent has a question", shot1P:"Two options, one tap from the couch – the agent keeps building, it is merged by morning. No laptop, no SSH session.",
-      shot2H:"Handover across time zones", shot2P:"Berlin signs off, Hanoi takes over. The board shows who is on what and what is waiting on whom – the same view for everyone.",
-      shot3H:"One installs, everyone steers", shot3P:"The desktop runs on the machine with the code and invites the team. At the desk you get the full picture: lanes, review, the gate before the merge.",
+      shot1H:"A question at 10 pm", shot1P:"Two options, one tap – the agent carries on, it is merged by morning. No laptop, no SSH session.",
+      shot2H:"The project from anywhere", shot2P:"Who is on what, what is waiting on whom, what comes next – the same view for team and agents, any time.",
+      shot3H:"Full control at the machine", shot3P:"The operator runs here and invites the team. Lanes, review, the gate before the merge – and every task that used to need a human at the PC.",
       whyTitle:"What you get",
-      why1H:"The problem is worked 24/7.", why1P:"Not because agents never sleep, but because someone can always steer. Whoever is awake approves – the agent keeps going.",
-      why2H:"Nobody has to sit at the PC.", why2P:"Mobile first: questions, approvals and acceptance from a phone or a watch. Also for people who do not code – if you can describe a task, you can steer it.",
-      why3H:"Your machine, your code.", why3P:"No cloud backend, no third-party account. Every card works in its own worktree, a gate checks before the merge. Colleagues and clients see the board, never your file system.",
+      why1H:"The project is always reachable.", why1P:"From anywhere, any time: see progress, answer questions, approve. Team and agents keep going while you are away.",
+      why2H:"Everything that used to need you at a PC.", why2P:"Research, tests, builds, deploys, files, orders: the local operator runs it on your machine. You steer from a phone or a watch – no coding required.",
+      why3H:"Planning and doing in one place.", why3P:"Long-term plans, tasks and projects in one place instead of three tools. Agents work in their own worktrees, a gate checks before the merge. Your machine, your code – colleagues and clients see the board, never your file system.",
       stepsTitle:"How to start",
-      step1H:"One person installs the desktop", step1P:"On the machine where your code lives. Create the project, connect Claude Code.",
+      step1H:"One person installs the operator", step1P:"On the machine where your project lives. Create the project, connect Claude Code.",
       step2H:"Pair a phone, invite the team", step2P:"Scan the QR code, send the invite link. The others only need the app – no access to the machine.",
-      step3H:"Create a card, walk away", step3P:"The first question lands on your phone. Onboarding is still young – if you get stuck, write to us, we help in person.",
+      step3H:"Hand off a task, be free", step3P:"The first question lands on your phone. Onboarding is still young – if you get stuck, write to us, we help in person.",
       devices:'<span>Android</span><span>iPhone &amp; iPad <i>· TestFlight</i></span><span>Apple Watch</span><span>Wear OS</span><span>Windows</span><span>macOS</span><span>Web</span><span>Glasses <i>· soon</i></span>',
-      faq1Q:"Does the machine have to be on?", faq1A:"Yes. The agents work on the machine where the HelmDeck desktop runs. Phone and watch are remote control and display – if the machine sleeps, the cards wait, nothing is lost.",
+      faq1Q:"Does the machine have to be on?", faq1A:"Yes. The operator and the agents work on that machine. Phone and watch are remote control and display – if the machine sleeps, the tasks wait, nothing is lost.",
       faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results – per role. A client files cards and accepts results without ever seeing your file system or credentials.",
       faq3Q:"Which agents run inside?", faq3A:"Claude Code today. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.",
-      dlTitle:"Available now", dlSub:"One person on the team installs the desktop on the machine with the code. Everyone else only needs the phone app. No cloud, no account with us, no waiting.",
+      dlTitle:"Available now", dlSub:"One person on the team installs the operator on the machine with the project. Everyone else only needs the phone app. No cloud, no account with us, no waiting.",
       dlBtn:"Download",
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple – opens with no Gatekeeper warning.",
