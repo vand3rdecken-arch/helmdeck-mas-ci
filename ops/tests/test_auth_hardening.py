@@ -43,10 +43,9 @@ PW = "a-real-password-42"
 
 def audit_ops(events):
     rows = []
-    with open(events.EV, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                r = json.loads(line)
+    for r in events.read_events():          # the table is the record (phase H)
+        if True:
+            if True:
                 if r.get("kind") == "auth":
                     rows.append(r)
     return rows
@@ -60,7 +59,6 @@ def main():
     db.DBPATH = os.path.join(tmp, "test.db")
     db.init()          # login sessions are rows (state-into-db phase G)
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
@@ -139,7 +137,7 @@ def main():
     for secret in (tok, legacy, PW):
         ok(secret not in raw, "secret %s... absent" % secret[:12])
 
-    blob = open(events.EV, encoding="utf-8").read()
+    blob = json.dumps(events.read_events())
     for secret in (tok, legacy, PW):
         ok(secret not in blob, "secret %s... absent from the audit too" % secret[:12])
 

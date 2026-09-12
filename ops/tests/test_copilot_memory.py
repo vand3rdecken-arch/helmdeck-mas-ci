@@ -24,13 +24,7 @@ from spine.storage import db, events                                  # noqa: E4
 db.ROOT = _tmp
 db.DBPATH = os.path.join(_tmp, "test.db")
 db.init()
-# events.emit() write-throughs to db.event_insert regardless (sandboxed above),
-# but its own jsonl append uses events.EV, bound at events.py's OWN import of
-# daemon.paths.DAEMON_ROOT - a SEPARATE constant db.ROOT does not move (the
-# README's trap #4, the other direction: sandboxing only db still hits the
-# real events.jsonl unless EV moves too).
-events.EV = os.path.join(_tmp, "events.jsonl")
-
+# events.emit() writes the sandboxed events table (state-into-db phase H).
 from cells.copilot.chat import copilot_memory as m                    # noqa: E402
 import importlib.util as _ilu
 _spec = _ilu.spec_from_file_location(

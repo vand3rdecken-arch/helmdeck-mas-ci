@@ -279,7 +279,6 @@ def init(role="tool"):
     c.commit()
     _migrate()
     _apply_migrations()
-    _reconcile_events()
     if role == "daemon":
         _devalue_persisted_running()
 
@@ -421,38 +420,7 @@ def _migrate():
             print("db: imported %d tracks from tracks.json" % len(tracks))
         except Exception as e:
             print("db: tracks import failed:", e)
-    # events.jsonl is the ONE legacy file that comes back: events.emit() appends
-    # to it on every event while ALSO write-through inserting the same row here
-    # (events.py:175-191). The other three files are written once and stay gone.
-    #
-    # So this block used to duplicate the whole previous session on every boot:
-    # import (plain INSERT, no key to dedupe on) -> rename -> emit recreates the
-    # file -> next boot imports it all again. Every count over `events` was
-    # inflated, which is why the dashboard's cost figures read too high.
-    #
-    # Import is therefore what the docstring always said it was - a FIRST-START
-    # migration - and it only runs against an empty table. A populated table also
-    # means the file must stay put: it is the durable append-only record, not a
-    # leftover to be retired.
-    ej = os.path.join(ROOT, "events.jsonl")
-    if os.path.exists(ej) and c.execute("SELECT 1 FROM events LIMIT 1").fetchone() is None:
-        try:
-            n = 0
-            with open(ej, encoding="utf-8") as f, c:
-                for line in f:
-                    try:
-                        r = json.loads(line)
-                    except ValueError:
-                        continue
-                    c.execute("INSERT INTO events(ts,kind,track,data) VALUES(?,?,?,?)",
-                              (r.get("ts"), r.get("kind"), r.get("track"),
-                               json.dumps({k: v for k, v in r.items()
-                                           if k not in ("ts", "kind", "track")})))
-                    n += 1
-            _archive(ej)
-            print("db: imported %d events from events.jsonl" % n)
-        except Exception as e:
-            print("db: events import failed:", e)
+    # events.jsonl: imported by ledger step 11 (phase H), not here.
     pj = os.path.join(ROOT, "processes.json")
     if os.path.exists(pj):
         try:
@@ -1080,58 +1048,6 @@ def event_insert(row):
                    json.dumps(extra)))
     bump()
 
-
-def _reconcile_events():
-    """Boot-time healer: fold into the db any event that made it into
-    events.jsonl but whose write-through (events.emit's best-effort
-    db.event_insert, wrapped in try/except) was dropped - a disk hiccup, a WAL
-    lock timeout. Before `id` existed this was impossible to do safely: the
-    file and the table shared no key, so a naive re-import could only either
-    skip everything (miss real drops, the bug this closes) or duplicate
-    everything (the bug A4 fixed). INSERT OR IGNORE on a UNIQUE id makes
-    re-scanning safe, so this can now run on every boot rather than once.
-
-    Cheap by construction: a checkpoint file remembers how many BYTES of
-    events.jsonl were already reconciled, so a boot only scans what was
-    appended since the last one, not the whole history every time. A file
-    that shrank (rotated, truncated) resets the checkpoint to 0 rather than
-    skipping the difference."""
-    ej = os.path.join(ROOT, "events.jsonl")
-    if not os.path.exists(ej):
-        return
-    ckpt = ej + ".synced"
-    start = 0
-    if os.path.exists(ckpt):
-        try:
-            start = int(open(ckpt, encoding="utf-8").read().strip() or "0")
-        except ValueError:
-            start = 0
-    if start > os.path.getsize(ej):
-        start = 0
-    c = conn()
-    healed = 0
-    with open(ej, encoding="utf-8") as f:
-        f.seek(start)
-        for line in f:
-            try:
-                r = json.loads(line)
-            except ValueError:
-                continue
-            rid = r.get("id")
-            if not rid:
-                continue   # pre-id-era row - nothing to reconcile it against
-            extra = {k: v for k, v in r.items() if k not in ("ts", "kind", "track")}
-            cur = c.execute(
-                "INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
-                (rid, r.get("ts"), r.get("kind"), r.get("track"), json.dumps(extra)))
-            if cur.rowcount:
-                healed += 1
-        end = f.tell()
-    c.commit()
-    with open(ckpt, "w", encoding="utf-8") as f:
-        f.write(str(end))
-    if healed:
-        print("db: reconciled %d event(s) the write-through had dropped" % healed)
 
 def events_all():
     rows = conn().execute(
@@ -1854,6 +1770,45 @@ def devices_replace(rows):
         for r in rows:
             c.execute("INSERT INTO devices(id,account,data) VALUES(?,?,?)",
                       (r["id"], r.get("owner") or r.get("user") or "", json.dumps(r, ensure_ascii=False)))
+
+
+@_migration(11, "events-db-first")
+def _m11(c):
+    """Phase H (owner decision 2026-09-12): the events table is the record.
+    Import whatever the last events.jsonl still holds - INSERT OR IGNORE on
+    the UNIQUE id, so rows the write-through already stored are no-ops; rows
+    WITHOUT an id (pre-id era) are taken only into an EMPTY table (a first
+    start), because a populated table already imported them once and they
+    carry no key to dedupe on. Then archive the file and drop the reconcile
+    checkpoint; events.emit() writes the table first from now on."""
+    if not _file_steps_allowed():
+        return
+    ej = os.path.join(ROOT, "events.jsonl")
+    if os.path.exists(ej):
+        empty = c.execute("SELECT 1 FROM events LIMIT 1").fetchone() is None
+        n = 0
+        with open(ej, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if not r.get("id") and not empty:
+                    continue
+                extra = {k: v for k, v in r.items() if k not in ("ts", "kind", "track")}
+                cur = c.execute(
+                    "INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
+                    (r.get("id"), r.get("ts"), r.get("kind"), r.get("track"),
+                     json.dumps(extra)))
+                n += cur.rowcount
+        _archive(ej)
+        print("db: events db-first - %d row(s) the write-through had missed folded in, events.jsonl archived" % n)
+    ckpt = ej + ".synced"
+    if os.path.exists(ckpt):
+        try:
+            os.remove(ckpt)
+        except OSError:
+            pass
 
 
 def schema_head():

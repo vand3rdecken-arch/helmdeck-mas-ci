@@ -46,13 +46,11 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     db.init()
 
     def rows():
-        with open(events.EV, encoding="utf-8") as f:
-            return [json.loads(l) for l in f if l.strip()]
+        return events.read_events()          # the table is the record (phase H)
 
     # ------------------------------------------------------------------ 1 ---
     print("\nevery kind gets a real at_utc")
@@ -82,22 +80,18 @@ def main():
 
     # ------------------------------------------------------------------ 3 ---
     print("\na caller-supplied at_utc wins over the default")
-    events.EV = os.path.join(tmp, "events2.jsonl")
     fixed = "2020-01-01T00:00:00Z"
     events.emit("signature", "t-2", op="signed", at_utc=fixed)
-    with open(events.EV, encoding="utf-8") as f:
-        row = json.loads(f.readline())
+    row = [r for r in rows() if r.get("track") == "t-2"][-1]
     ok(row["at_utc"] == fixed, "explicit at_utc was NOT overwritten by the default")
 
     # ------------------------------------------------------------------ 4 ---
     print("\nauth._audit's at_utc now comes from emit() itself, and is real")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    events.EV = os.path.join(tmp, "events3.jsonl")
     before = time.gmtime()
     auth.create_user("duy", "a-real-password", "owner")
-    with open(events.EV, encoding="utf-8") as f:
-        auth_row = json.loads(f.readline())
+    auth_row = [r for r in rows() if r.get("kind") == "auth"][-1]
     ok(auth_row["kind"] == "auth" and auth_row["op"] == "user.create",
        "the auth event itself still fires")
     ok(auth_row.get("at_utc", "").endswith("Z"), "and carries at_utc")

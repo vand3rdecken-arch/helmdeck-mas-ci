@@ -43,7 +43,6 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
@@ -72,8 +71,8 @@ def main():
 
     events.emit("gate", "t-1", ok=True)
     events.emit("done", "t-1", mode="clean")
-    events_before = open(events.EV, encoding="utf-8").read()
-    ok(len(events_before.splitlines()) == 2, "fixture: 2 events written")
+    events_before = events.read_events()          # the table is the record (phase H)
+    ok(len(events_before) == 2, "fixture: 2 events written")
 
     def run(argv):
         old = sys.argv
@@ -94,8 +93,8 @@ def main():
 
     # ------------------------------------------------------------------ 2 ---
     print("\nevents are byte-for-byte untouched")
-    ok(open(events.EV, encoding="utf-8").read() == events_before,
-       "events.jsonl unchanged")
+    ok(events.read_events() == events_before,
+       "events rows unchanged")
     ok(db.conn().execute("SELECT count(*) FROM events").fetchone()[0] == 2,
        "events table unchanged")
 
@@ -104,7 +103,6 @@ def main():
     os.remove(gxp.LOCK)
     rc = run(["--yes"])
     ok(rc == 0, "exit 0")
-    ok(not os.path.exists(events.EV), "events.jsonl actually removed")
     ok(db.conn().execute("SELECT count(*) FROM events").fetchone()[0] == 0,
        "events table actually cleared")
     ok(os.path.isdir(os.path.join(tmp, "daemon", "backups")), "a backup WAS made this time")

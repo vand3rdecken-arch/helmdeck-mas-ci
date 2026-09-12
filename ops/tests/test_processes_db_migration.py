@@ -39,7 +39,6 @@ def main():
     # hard way: an earlier run of this exact test appended real lines to the
     # production events.jsonl before this sandbox line existed).
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
     # a SYNTHETIC legacy processes.json, shaped like the real one but with

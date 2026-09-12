@@ -54,7 +54,6 @@ def main():
     db.DBPATH = os.path.join(tmp, "test.db")
     db.init()          # login sessions are rows (state-into-db phase G)
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
@@ -74,11 +73,7 @@ def main():
     auth.login("ghost", "whatever")                                    # 9b
     auth.delete_user("bob", actor="owner")                             # 10
 
-    rows = []
-    with open(events.EV, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                rows.append(json.loads(line))
+    rows = events.read_events()          # the table is the record (phase H)
     auth_rows = [r for r in rows if r.get("kind") == "auth"]
     ops = [r["op"] for r in auth_rows]
     print("  events: %s" % ", ".join(ops))
@@ -119,7 +114,7 @@ def main():
        "token recorded as a 4-char tail, not in full")
 
     print("no secret may appear in the audit file")
-    blob = open(events.EV, encoding="utf-8").read()
+    blob = json.dumps(events.read_events())
     for secret, what in ((PW_OWNER, "owner password"),
                          (PW_BOB, "bob's first password"),
                          (PW_BOB_NEW, "bob's rotated password"),

@@ -69,7 +69,6 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth, signkeys
     auth.USERS = os.path.join(tmp, "users.json")
@@ -157,7 +156,7 @@ def main():
 
     # ------------------------------------------------------------------ 4 ---
     print("\ncross-witness: record and event name the tag")
-    rows = [json.loads(l) for l in open(events.EV, encoding="utf-8") if l.strip()]
+    rows = events.read_events()          # the table is the record (phase H)
     ev = [r2 for r2 in rows if r2.get("kind") == "signature" and r2.get("op") == "signed"][-1]
     ok(ev.get("tag") == tag and ev.get("tag_sha") == sig["git"]["tag_sha"],
        "the event carries tag + tag_sha")

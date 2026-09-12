@@ -22,7 +22,6 @@ SANDBOX = tempfile.mkdtemp(prefix="hd-e2e-cancel-")
 from spine.storage import db, events
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
-events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init(role="tool")                         # role=tool: no boot devaluation
 

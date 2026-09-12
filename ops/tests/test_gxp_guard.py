@@ -64,7 +64,6 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
@@ -222,11 +221,7 @@ def main():
         ok(r.get("gxp_refused"), "%s: refused with a reason" % label)
         ok(before == after == "review", "%s: lane unchanged" % label)
 
-    rows = []
-    with open(events.EV, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                rows.append(json.loads(line))
+    rows = events.read_events()          # the table is the record (phase H)
     refusals = [r for r in rows
                 if r.get("kind") == "gxp" and r.get("outcome") == "accept_refused"]
     ok(len(refusals) == 2, "both refusals audited (got %d)" % len(refusals))

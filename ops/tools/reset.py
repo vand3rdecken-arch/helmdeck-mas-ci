@@ -68,9 +68,7 @@ def clear_events():
     with db.conn() as c:
         c.execute("DELETE FROM events")
     db.bump()
-    ej = os.path.join(ROOT, "events.jsonl")
-    if os.path.exists(ej):
-        os.remove(ej)
+    # (events.jsonl no longer exists - the table is the record, phase H)
 
 
 def log_reset(bdir, removed, total, a):

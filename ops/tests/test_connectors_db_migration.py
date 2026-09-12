@@ -38,7 +38,6 @@ def main():
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
 
     # sandbox connectors.py's own directory globals too - CDIR/VDIR are NOT

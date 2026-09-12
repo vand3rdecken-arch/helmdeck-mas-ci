@@ -27,7 +27,6 @@ if _old_conn is not None:
 db.ROOT = _TMP
 db.DBPATH = os.path.join(_TMP, "helmdeck.db")
 events.SET = os.path.join(_TMP, "settings.json")
-events.EV = os.path.join(_TMP, "events.jsonl")
 db.init()
 assert db.DBPATH.startswith(_TMP), "REFUSING TO RUN: db not sandboxed"
 

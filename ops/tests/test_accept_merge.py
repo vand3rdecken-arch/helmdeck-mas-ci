@@ -196,7 +196,6 @@ def test_merge_event_signature_no_collision():
     # detail=). A field named 'kind' here collides with emit's positional `kind`
     # param and crashed EVERY accept (TypeError). Guard the exact call shape.
     from spine.storage import events, db
-    events.EV = os.path.join(tempfile.mkdtemp(), "events.jsonl")   # isolate the append
     # events.emit() ALSO write-throughs to db.event_insert(), which is hardcoded to
     # the real daemon/helmdeck.db and ignores events.EV entirely - without stubbing
     # it too, every run of this test wrote a fake "t-sig" merge row into production

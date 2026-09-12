@@ -12,7 +12,8 @@ the human question is utilization/headroom, not dollars."""
 import json, os, re, secrets, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
-EV = os.path.join(ROOT, "events.jsonl")
+# events.jsonl is gone (state-into-db phase H): the `events` table is the
+# record, ops/tools/export_events.py renders a file on demand.
 SET = os.path.join(ROOT, "settings.json")
 # Mirror of settings.relay.url ONLY (not a secret - the same public relay
 # domain the pairing QR/links already embed) for surfaces/desktop/updater.js,
@@ -308,19 +309,18 @@ def emit(kind, track, **fields):
            "ts": time.strftime("%Y-%m-%d %H:%M:%S"), "kind": kind, "track": track,
            "at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     row.update(fields)
-    with open(EV, "a", encoding="utf-8") as f:
-        f.write(json.dumps(row) + "\n")
-    # Write-through to the query path (db.events_all, what consecutive_gate_fails
-    # / consecutive_bounces / read_events actually read). db.event_insert had NO
-    # callers anywhere - events.jsonl only gets into sqlite via the ONE-TIME
-    # startup migration (db.init), so every event emitted after boot was
-    # invisible to every consumer of read_events(). Best-effort: the jsonl
-    # append above is the durable record regardless of db state.
-    try:
-        from spine.storage import db
-        db.event_insert(row)
-    except Exception:
-        pass
+    # THE RECORD (state-into-db phase H, owner decision 2026-09-12): the
+    # `events` table is the store of record, written FIRST and never
+    # best-effort - a failed insert RAISES, because an audit event that was
+    # silently dropped is the one failure mode a GxP trail cannot have. The
+    # file era (append to events.jsonl, then a write-through inside
+    # `except: pass`, then a boot-time reconcile to heal the drops) had two
+    # answers to "what happened" and nothing to tell them apart; ledger step
+    # 11 imported the last file and archived it. Auditors who need a file get
+    # one on demand: ops/tools/export_events.py. The table has no UPDATE/
+    # DELETE path (ops/tests/test_db_schema.py pins that).
+    from spine.storage import db
+    db.event_insert(row)
     return row
 
 def log(kind, msg):

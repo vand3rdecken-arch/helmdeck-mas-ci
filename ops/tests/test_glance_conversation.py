@@ -50,7 +50,6 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
-    events.EV = os.path.join(tmp, "events.jsonl")
     # copilot derives its own paths from __file__ - the transcript this surface
     # READS lives there, so an unsandboxed run would serve the owner's real
     # Henry conversation into a test.

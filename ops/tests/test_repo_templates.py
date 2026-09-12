@@ -47,7 +47,6 @@ def _sandbox(tmp):
     from spine.storage import db, events
     db.DBPATH = os.path.join(tmp, "test.db")
     events.SET = os.path.join(tmp, "settings.json")
-    events.EV = os.path.join(tmp, "events.jsonl")
     if hasattr(db, "_local") and getattr(db._local, "c", None) is not None:
         db._local.c = None
     for p in (db.DBPATH, events.SET, events.EV):

@@ -57,7 +57,6 @@ def _boot(tmp):
     # daemon/events.jsonl (the exact incident this whole decree's earlier
     # phases measured and fixed for db.ROOT; this is the same class of leak
     # for a module that isn't db.py).
-    events.EV = os.path.join(tmp, "events.jsonl")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.auth import policy

@@ -56,7 +56,6 @@ from spine.storage import db, events
 auth.USERS = os.path.join(SANDBOX, "users.json")
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
-events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 
 from cells.copilot.chat import copilot

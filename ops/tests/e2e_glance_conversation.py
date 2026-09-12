@@ -69,7 +69,6 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
-    events.EV = os.path.join(tmp, "events.jsonl")
     from cells.copilot.chat import copilot
     copilot.ROOT = tmp
 

@@ -29,7 +29,6 @@ SANDBOX = tempfile.mkdtemp(prefix="hd-pres-")
 from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 from spine.storage import events
-events.EV = os.path.join(SANDBOX, "events.jsonl")
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 

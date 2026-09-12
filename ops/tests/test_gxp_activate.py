@@ -53,7 +53,6 @@ def main():
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
     from spine.storage import events
-    events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")
