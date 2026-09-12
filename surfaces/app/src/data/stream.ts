@@ -48,3 +48,52 @@ export const useStreamCaps = create<StreamCaps>((set) => ({
 export function chatFallbackInterval(chatEvents: boolean | null): number | false {
   return chatEvents === true ? false : 8000;
 }
+
+/**
+ * CATCH-UP for the chat transcript - the missing half of the event stream.
+ *
+ * The wake-up (`c` moved on /stream/wait) and the data (GET /chat/history)
+ * are two separate requests, and the loop in _layout.tsx advances its cursor
+ * on the wake-up alone. So one failed refetch - a 20s relay timeout, a
+ * backgrounded socket, retry:1 exhausted - used to leave the transcript
+ * stuck: the cursor was consumed, no fallback poll runs against a daemon that
+ * pushes events, and nothing tried again until the NEXT chat write or an app
+ * restart (owner, 2026-09-12 22:06: "Antwort kam erst nach App-Neustart",
+ * same on the watch). The glasses never had this defect because /glance/chat
+ * returns the transcript INSIDE the hanging GET - wake and data are one
+ * request, so a failure leaves the cursor where it was.
+ *
+ * This is the phone's equivalent: refetch until React Query reports success,
+ * with capped backoff, single-flight (a second wake while one catch-up runs
+ * just marks it to go once more). Import cycle note: query.ts must not import
+ * this module, so the client is passed in.
+ */
+import type { QueryClient } from "@tanstack/react-query";
+
+let _inflight = false;
+let _again = false;
+
+export async function ensureChatFresh(qc: QueryClient): Promise<void> {
+  if (_inflight) { _again = true; return; }
+  _inflight = true;
+  try {
+    let delay = 3000;
+    // ~5 minutes of trying, then give up until the next wake (never forever:
+    // an unpaired or logged-out client must not hammer the relay).
+    for (let i = 0; i < 12; i++) {
+      _again = false;
+      await qc.refetchQueries({ queryKey: ["chatHistory"] });
+      const st = qc.getQueryState(["chatHistory"]);
+      // no observer/never fetched (chat not open) counts as fresh: the screen
+      // fetches on mount, and refetchQueries above is a no-op for it anyway.
+      if (!st || st.status !== "error") {
+        if (_again) { delay = 3000; continue; }
+        return;
+      }
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 30000);
+    }
+  } finally {
+    _inflight = false;
+  }
+}
