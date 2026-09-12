@@ -13,7 +13,10 @@ import hashlib, hmac, json, os, secrets, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 USERS = os.path.join(ROOT, "users.json")            # accounts stay at root - credentials
-SESS = os.path.join(ROOT, "state", "sessions.json")  # pure runtime bookkeeping
+# Login sessions are the `auth_sessions` table (state-into-db phase G; ledger
+# step 10 imported state/sessions.json). The list file was read on EVERY
+# request with a retry loop around Windows' os.replace window - a keyed row
+# needs neither the rewrite nor the retry.
 SESSION_TTL = 30 * 86400
 ROLES = ("owner", "operator", "client", "quality", "auditor")
 
@@ -364,9 +367,10 @@ def delete_user(name, actor=None):
         raise ValueError("cannot delete the last owner")
     gone = next((u for u in users if u["name"] == name), None)
     _save(USERS, [u for u in users if u["name"] != name])
-    # kill their sessions
-    sess = _load(SESS)
-    _save(SESS, [s for s in sess if s["user"] != name])
+    # kill their sessions (count them first - the audit row below says how many)
+    from spine.storage import db
+    sessions_killed = sum(1 for s in db.auth_sessions_all() if s["user"] == name)
+    db.auth_sessions_drop_account(name)
     # ...and their saved profile. The rows key on the NAME (accounts-boards-prd
     # phase 1, spine/storage/userconfig.py), so leaving them behind means a
     # LATER account created with the same name silently inherits a stranger's
@@ -392,7 +396,7 @@ def delete_user(name, actor=None):
     _audit("user.delete", actor, name,
            role=(gone or {}).get("role"),
            tokens_killed=len((gone or {}).get("tokens") or []),
-           sessions_killed=len([s for s in sess if s["user"] == name]),
+           sessions_killed=sessions_killed,
            config_rows_dropped=config_dropped,
            boards_dropped=boards_dropped,
            existed=gone is not None)
@@ -564,9 +568,8 @@ def login(name, password):
         return None
     _clear_failures(name)
     sid = secrets.token_urlsafe(32)
-    sess = [s for s in _load(SESS) if s["expires"] > time.time()]
-    sess.append({"sid": sid, "user": name, "expires": time.time() + SESSION_TTL})
-    _save(SESS, sess)
+    from spine.storage import db
+    db.auth_session_put(sid, name, time.time() + SESSION_TTL)
     _audit("login", name, name, role=u["role"])
     return sid
 
@@ -600,20 +603,18 @@ def verify_password(name, password):
 
 
 def logout(sid):
-    sess = _load(SESS)
-    who = next((s["user"] for s in sess if s["sid"] == sid), None)
-    _save(SESS, [s for s in sess if s["sid"] != sid])
+    from spine.storage import db
+    who = db.auth_session_delete(sid)
     _audit("logout", who, who, matched=who is not None)
 
 def resolve(sid=None, token=None):
     """Session cookie or bearer token -> the user dict (public part) or None."""
     name = None
     if sid:
-        now = time.time()
-        for s in _load(SESS):
-            if s["sid"] == sid and s["expires"] > now:
-                name = s["user"]
-                break
+        from spine.storage import db
+        hit = db.auth_session_get(sid)
+        if hit and hit[1] > time.time():
+            name = hit[0]
     if not name and token:
         th = _token_hash(token)
         for u in list_users():

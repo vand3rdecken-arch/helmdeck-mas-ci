@@ -58,13 +58,12 @@ def main():
     from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
+    db.init()          # login sessions are rows (state-into-db phase G)
     from spine.storage import events
     events.EV = os.path.join(tmp, "events.jsonl")
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
-
     real = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
     ok(auth.USERS != real, "sandboxed away from the real users.json")
 

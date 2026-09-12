@@ -19,7 +19,7 @@ What this pins down:
      a settings flag
   8. no code + registration closed -> 403 (the door is actually shut)
 
-Sandbox: auth.USERS/SESS, invites.INVITES, events.EV/SET, db.ROOT/DBPATH,
+Sandbox: auth.USERS, events.EV/SET, db.ROOT/DBPATH (sessions + invites are rows),
 policy.LIVE. users.json and the workspace db are live secrets/state - no test
 may go near the real ones (config-consolidation trap: patching events.SET
 alone still writes the LIVE db).
@@ -59,8 +59,6 @@ def main():
     policy.LIVE = os.path.join(tmp, "policy_live.json")
     from spine.auth import auth, invites
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
-    invites.INVITES = os.path.join(tmp, "invites.json")
     db.init(role="tool")
 
     real_users = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
@@ -148,11 +146,11 @@ def main():
            "a revoked code is refused, and the refusal names the reason")
 
         st, old = call("POST", "/invites", {"role": "client", "ttl_days": 1}, owner_hdr)
-        rows = json.load(open(invites.INVITES, encoding="utf-8"))
+        rows = invites._load()
         for row in rows:
             if row["code"] == old["code"]:
                 row["expires"] = "2000-01-01 00:00:00"
-        json.dump(rows, open(invites.INVITES, "w", encoding="utf-8"))
+        invites._save(rows)
         st, r = call("POST", "/auth/register",
                      {"name": "late", "password": PW, "invite": old["code"]})
         ok(st == 403 and "expired" in r.get("error", ""),
@@ -190,7 +188,7 @@ def main():
 
         # -------------------------------------------------------------- 7 ---
         print("\n7. /auth/state derives sign-up availability from live invitations")
-        for row in json.load(open(invites.INVITES, encoding="utf-8")):
+        for row in invites._load():
             if invites.state(row) == "open":
                 call("POST", "/invites/%s/revoke" % row["code"], {}, owner_hdr)
         st, state = call("GET", "/auth/state", None, owner_hdr)

@@ -128,7 +128,9 @@ print("3. every table declares its scope (data-model rule)")
 WORKSPACE_LEVEL = {"workspace_config", "policy_doc", "process_template", "connector_state",
                    "schema_migrations", "processes", "events", "sqlite_sequence", "projects",
                    # workspace-level records per the data model (card section 2.1)
-                   "pm_plans", "pm_activity", "runtime_doc"}
+                   "pm_plans", "pm_activity", "runtime_doc",
+                   # an invite is minted for a ROLE, not an account
+                   "invites"}
 SCOPE_COLS = {"account", "user", "owner", "project", "project_id", "track", "run_id"}
 for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
     if t in WORKSPACE_LEVEL:

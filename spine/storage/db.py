@@ -1729,6 +1729,133 @@ def timeline_since(run_id, after_seq=0):
     return out
 
 
+@_migration(10, "auth-sessions-invites-devices")
+def _m10(c):
+    """Phase G (auth records). Login sessions (state/sessions.json - a list
+    rewritten on every login/logout, read on EVERY request with a
+    PermissionError retry loop around Windows' os.replace window), invites
+    (state/invites.json) and registered devices (daemon/devices.json - hashed
+    push tokens that were not even git-ignored) are rows. Sessions are keyed
+    by sid and scoped by account; devices by id, scoped by account; invites
+    are workspace-level (a code is minted for a ROLE, not an account)."""
+    c.execute("""CREATE TABLE IF NOT EXISTS auth_sessions(
+        sid TEXT PRIMARY KEY, account TEXT NOT NULL, expires REAL NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS auth_sessions_account ON auth_sessions(account)")
+    c.execute("""CREATE TABLE IF NOT EXISTS invites(
+        code TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS devices(
+        id TEXT PRIMARY KEY, account TEXT NOT NULL, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS devices_account ON devices(account)")
+    if not _file_steps_allowed():
+        return
+    path = os.path.join(ROOT, "state", "sessions.json")
+    if os.path.exists(path):
+        rows = _read_json_file(path) or []
+        n = 0
+        for r in rows:
+            if isinstance(r, dict) and r.get("sid") and r.get("user"):
+                c.execute("INSERT OR REPLACE INTO auth_sessions(sid,account,expires) VALUES(?,?,?)",
+                          (r["sid"], r["user"], float(r.get("expires") or 0)))
+                n += 1
+        _archive(path)
+        print("db: imported %d login session(s) (archived)" % n)
+    path = os.path.join(ROOT, "state", "invites.json")
+    if os.path.exists(path):
+        rows = _read_json_file(path) or []
+        n = 0
+        for r in rows:
+            if isinstance(r, dict) and r.get("code"):
+                c.execute("INSERT OR REPLACE INTO invites(code,data) VALUES(?,?)",
+                          (r["code"], json.dumps(r, ensure_ascii=False)))
+                n += 1
+        _archive(path)
+        print("db: imported %d invite(s) (archived)" % n)
+    path = os.path.join(ROOT, "devices.json")
+    if os.path.exists(path):
+        rows = _read_json_file(path) or []
+        n = 0
+        for r in rows:
+            if isinstance(r, dict) and r.get("id"):
+                c.execute("INSERT OR REPLACE INTO devices(id,account,data) VALUES(?,?,?)",
+                          (r["id"], r.get("owner") or r.get("user") or "", json.dumps(r, ensure_ascii=False)))
+                n += 1
+        _archive(path)
+        print("db: imported %d device(s) (archived)" % n)
+
+
+# -- auth sessions ---------------------------------------------------------
+
+def auth_session_put(sid, account, expires):
+    """Mint a session; expired rows are purged in the same transaction (the
+    list writer used to filter them on every login)."""
+    import time as _t
+    with conn() as c:
+        c.execute("DELETE FROM auth_sessions WHERE expires<=?", (_t.time(),))
+        c.execute("INSERT OR REPLACE INTO auth_sessions(sid,account,expires) VALUES(?,?,?)",
+                  (sid, account, float(expires)))
+
+
+def auth_session_get(sid):
+    """(account, expires) or None."""
+    r = conn().execute("SELECT account,expires FROM auth_sessions WHERE sid=?", (sid,)).fetchone()
+    return (r[0], r[1]) if r else None
+
+
+def auth_session_delete(sid):
+    """The account the session belonged to, or None if there was none."""
+    with conn() as c:
+        r = c.execute("SELECT account FROM auth_sessions WHERE sid=?", (sid,)).fetchone()
+        c.execute("DELETE FROM auth_sessions WHERE sid=?", (sid,))
+    return r[0] if r else None
+
+
+def auth_sessions_drop_account(account):
+    with conn() as c:
+        c.execute("DELETE FROM auth_sessions WHERE account=?", (account,))
+
+
+def auth_sessions_all():
+    return [{"sid": sid, "user": acc, "expires": exp} for sid, acc, exp in
+            conn().execute("SELECT sid,account,expires FROM auth_sessions")]
+
+
+# -- list-shaped record tables (invites, devices): the modules keep their
+# load-all / save-all discipline; save-all is ONE transaction here.
+
+def _rows_all(table):
+    out = []
+    for (d,) in conn().execute("SELECT data FROM %s" % table):
+        try:
+            out.append(json.loads(d))
+        except ValueError:
+            continue
+    return out
+
+
+def invites_all():
+    return _rows_all("invites")
+
+
+def invites_replace(rows):
+    with conn() as c:
+        c.execute("DELETE FROM invites")
+        for r in rows:
+            c.execute("INSERT INTO invites(code,data) VALUES(?,?)",
+                      (r["code"], json.dumps(r, ensure_ascii=False)))
+
+
+def devices_all():
+    return _rows_all("devices")
+
+
+def devices_replace(rows):
+    with conn() as c:
+        c.execute("DELETE FROM devices")
+        for r in rows:
+            c.execute("INSERT INTO devices(id,account,data) VALUES(?,?,?)",
+                      (r["id"], r.get("owner") or r.get("user") or "", json.dumps(r, ensure_ascii=False)))
+
+
 def schema_head():
     """The highest ledger version this code knows - what user_version must
     equal after init() on any install."""

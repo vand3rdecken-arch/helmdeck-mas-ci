@@ -48,7 +48,6 @@ def main():
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     events.EV = os.path.join(tmp, "events.jsonl")

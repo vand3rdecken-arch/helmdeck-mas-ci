@@ -93,12 +93,9 @@ def main():
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     db.init()
 
     from spine.auth import devices
-    devices.DEVICES = os.path.join(tmp, "devices.json")
-
     from cells.engineer.cards import dispatch
     rec = os.path.join(tmp, "recordings")
     os.makedirs(rec, exist_ok=True)

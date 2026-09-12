@@ -93,7 +93,6 @@ def main():
     print("\nauth._audit's at_utc now comes from emit() itself, and is real")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     events.EV = os.path.join(tmp, "events3.jsonl")
     before = time.gmtime()
     auth.create_user("duy", "a-real-password", "owner")

@@ -74,7 +74,6 @@ def main():
     policy.LIVE = os.path.join(tmp, "policy_live.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     db.init(role="tool")
 
     real_users = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")

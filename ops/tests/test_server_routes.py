@@ -82,7 +82,6 @@ def main():
     db.DBPATH = os.path.join(tmp, "test.db")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     from spine.storage import events
     # events.SET only feeds the ONE-TIME settings.json->db migration since the
     # config consolidation (2026-09-03); the live workspace store is the

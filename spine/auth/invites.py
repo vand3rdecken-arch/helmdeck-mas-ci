@@ -35,7 +35,7 @@ import time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 
-INVITES = os.path.join(ROOT, "state", "invites.json")
+# (the invites file is gone - see _load; state-into-db phase G)
 
 # Excludes O/0 and I/1 - an invitation code has to survive being dictated over
 # the phone. Ported verbatim from the app's own genInviteCode (settings.tsx,
@@ -74,21 +74,15 @@ def _stamp(seconds_ahead):
 
 
 def _load():
-    if not os.path.exists(INVITES):
-        return []
-    try:
-        with open(INVITES, encoding="utf-8") as f:
-            return json.load(f)
-    except ValueError:
-        return []
+    # the `invites` table (state-into-db phase G; ledger step 10 imported
+    # state/invites.json) - same load-all/save-all discipline, one transaction
+    from spine.storage import db
+    return db.invites_all()
 
 
 def _save(rows):
-    os.makedirs(os.path.dirname(INVITES), exist_ok=True)
-    tmp = INVITES + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(rows, f, indent=2)
-    os.replace(tmp, INVITES)
+    from spine.storage import db
+    db.invites_replace(rows)
 
 
 def _audit(op, actor, code, **extra):

@@ -21,24 +21,19 @@ import time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 
-DEVICES = os.path.join(ROOT, "devices.json")
+# (the devices file is gone - see _load; state-into-db phase G)
 
 
 def _load():
-    if not os.path.exists(DEVICES):
-        return []
-    try:
-        with open(DEVICES, encoding="utf-8") as f:
-            return json.load(f)
-    except ValueError:
-        return []
+    # the `devices` table (state-into-db phase G; ledger step 10 imported
+    # daemon/devices.json, which held hashed push tokens outside .gitignore)
+    from spine.storage import db
+    return db.devices_all()
 
 
 def _save(devices):
-    tmp = DEVICES + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(devices, f, indent=2)
-    os.replace(tmp, DEVICES)
+    from spine.storage import db
+    db.devices_replace(devices)
 
 
 def register(owner_name, label, actor=None, billing_scope="external"):

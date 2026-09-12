@@ -44,7 +44,7 @@ from spine.auth import auth                     # noqa: E402
 from spine.storage import boards, db, events    # noqa: E402
 
 for label, path in (("db", db.DBPATH), ("settings", events.SET),
-                    ("users", auth.USERS), ("sessions", auth.SESS)):
+                    ("users", auth.USERS)):
     assert path.startswith(_SANDBOX), \
         "REFUSING TO RUN: %s points at %s, not the sandbox" % (label, path)
 

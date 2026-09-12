@@ -68,7 +68,6 @@ def main():
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     from spine.auth import gxp
     gxp.LOCK = os.path.join(tmp, "gxp.lock")
 

@@ -37,8 +37,6 @@ def main():
 
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
-
     auth.create_user("duy", "a-real-password", "owner")
 
     # ------------------------------------------------------------------ 1 ---

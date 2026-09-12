@@ -50,7 +50,6 @@ def main():
 
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
-    auth.SESS = os.path.join(tmp, "sessions.json")
     from spine.auth import policy
     policy.LIVE = os.path.join(tmp, "policy_live.json")
 
