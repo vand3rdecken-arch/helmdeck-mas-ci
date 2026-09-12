@@ -909,7 +909,11 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # last_reply. Scoped to goal-path cards only (a milestone's own `card`)
     # - a random unrelated card's Q&A is not the goal's ground truth, and
     # add_clarification's 12-slot cap would just get spent on noise.
-    if was_needs_you:
+    # actor == "daemon" is the harness talking to the card (a background-task
+    # hand-back, a compaction nudge) - not an owner answer, and it was filling
+    # the 12-slot clarification list with "[[helmdeck:background-done]]"
+    # boilerplate the planner then read as ground truth (measured 2026-09-12).
+    if was_needs_you and actor != "daemon" and not text.lstrip().startswith("[["):
         try:
             from cells.copilot.planning import pm
             plan = pm.latest_plan() or {}

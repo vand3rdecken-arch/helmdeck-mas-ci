@@ -215,29 +215,114 @@ from cells.copilot.planning.pm_triangle import (
     RECONCILE_PROMPT, reconcile_corner)
 
 
-def _ask(prompt, model=""):
+def _ask(prompt, model="", system="", hands=False, timeout=300):
+    """ONE model turn, JSON out.
+
+    hands=False (goal_check, consolidation, reconcile): the old shape - plan
+    mode, nothing to fetch, the whole prompt on stdin.
+
+    hands=True (brief, 2026-09-12 "planner-with-hands"): the ROLE goes in as
+    the system prompt (a stable prefix - the same bytes every run, so the
+    API's prompt cache can hit; volatile facts never ride in it), the turn
+    text on stdin, and the planner gets the pm.json settings layer: a
+    read-only allowlist (board_state.py --find/--card, henry_memory_get.py
+    find/get, git log) in permission-mode default, where anything NOT
+    allowlisted is silently denied in a headless -p (no prompt exists to
+    answer). That is the fetch-as-needed half: history and memory are pulled
+    by query when a claim needs them, never inlined. Measured 2026-09-12:
+    without it the planner asked for a Play account that eight finished
+    cards already documented.
+
+    Returns the parsed dict; the CLI's own accounting (num_turns, usage,
+    cost) rides along under `_meta` so the artifact can show what the turn
+    actually fetched and spent - the rating input, measured not assumed."""
     from cells.copilot.chat import copilot
     from spine.agent import drivers
+    from spine.registry import harness
     # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
     # args on a .cmd shim (see drivers._real_claude_exe).
-    argv = [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan"]
+    argv = [copilot.CLAUDE, "-p", "--output-format", "json",
+            "--permission-mode", "default" if hands else "plan"]
     if model:
         argv += ["--model", model]
+    if hands:
+        if system:
+            argv += ["--append-system-prompt-file", copilot._brief_file(system)]
+        argv += harness.cli_args("pm")
     cmd = drivers._cmd_line(argv)
+    env = None
+    if hands:
+        # The CLI's Bash/PowerShell tools inherit THIS process's PATH. Measured
+        # 2026-09-12 (stream-json): in a stripped environment `py` was
+        # "command not found" in Bash and "not recognized" in PowerShell, so
+        # every evidence call died and the planner fell back to guessing.
+        # Prepend the interpreter that runs the daemon and the Windows py
+        # launcher dir, so `py -3.12 ...` resolves wherever the daemon does.
+        import sys as _sys
+        env = dict(os.environ)
+        extra = [os.path.dirname(_sys.executable),
+                 os.environ.get("SystemRoot") or os.environ.get("WINDIR") or "C:\\Windows"]
+        env["PATH"] = os.pathsep.join(extra + [env.get("PATH", "")])
     p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
-    stdout, stderr = p.communicate(input=prompt, timeout=300)
+                         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env)
+    stdout, stderr = p.communicate(input=prompt, timeout=timeout)
     if not (stdout or "").strip():
         raise RuntimeError("pm: no model output: " + (stderr or "").strip()[:200])
     d = json.loads(stdout)
     txt = d.get("result", "")
+    meta = {"num_turns": d.get("num_turns"), "usage": d.get("usage"),
+            "cost_usd": d.get("total_cost_usd"), "duration_ms": d.get("duration_ms")}
     m = re.search(r"\{.*\}", txt, re.S)
-    if not m:
-        return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
+    out = None
+    if m:
+        try:
+            out = json.loads(m.group(0))
+        except ValueError:
+            out = None
+    if not isinstance(out, dict):
+        out = {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
+    out["_meta"] = meta
+    return out
+
+
+# -- evidence protocol: the MECHANICS of fetch-as-needed (code), the WHEN is
+# policy in pm.md. Relative paths because the planner's cwd is daemon/ - the
+# exact strings pm.json allowlists, so a differently-spelled call would die
+# silently in headless -p.
+EVIDENCE_TOOLS = (
+    "\n\nEVIDENCE TOOLS (run them with the PowerShell tool, read-only, pre-approved in exactly this form; your cwd is daemon/):\n"
+    "    py -3.12 ../ops/tools/board_state.py --find <term> [term ...]   # finished+live cards carrying ALL terms (outcome + reply)\n"
+    "    py -3.12 ../ops/tools/board_state.py --card <id-fragment>       # ONE card in full\n"
+    "    py -3.12 ../ops/tools/henry_memory_get.py find <term> [term ...] # Henry's memory notes carrying ALL terms, in full\n"
+    "    py -3.12 ../ops/tools/henry_memory_get.py get <name>             # one note by index name\n"
+    "    git log --oneline -n 30                                            # what actually shipped lately\n"
+    "Budget: at most 8 tool calls. Search BEFORE you assume or ask - the board below is the LIVE slice only; "
+    "%d finished/archived cards and the memory notes are behind these tools, and that is where the answer to "
+    "'has X already been done/decided' lives. Never Read a file path directly; never write anything."
+)
+
+
+def _memory_index():
+    """Henry's memory INDEX (names + one-liners, ~4k chars) - progressive
+    disclosure: the note itself is fetched with `find`/`get` only when it
+    turns out to matter. The same digest Henry's own turn carries."""
     try:
-        return json.loads(m.group(0))
-    except ValueError:
-        return {"summary": txt.strip()[:400], "milestones": [], "next": [], "risks": []}
+        from cells.copilot.chat import copilot_memory
+        return copilot_memory.digest()
+    except Exception:                                            # noqa: BLE001
+        return ""
+
+
+def _hidden_history_count():
+    """How many cards the LIVE snapshot hides (finished + archived) - the
+    number the planner is told to go fetch behind, so 'history exists' is a
+    measured fact in the prompt, not a hope."""
+    try:
+        from cells.engineer.cards import sessions
+        return sum(1 for t in sessions.list_tracks()
+                   if not t.get("example") and (t.get("archived") or t.get("lane") == "done"))
+    except Exception:                                            # noqa: BLE001
+        return 0
 
 
 def _write_artifact(out):
@@ -517,6 +602,82 @@ def duplicate_check_async():
     threading.Thread(target=run, daemon=True, name="pm-dup-check").start()
 
 
+def _dispose_questions(raw):
+    """(kept, evidence, dropped) from the planner's open_questions. Accepts
+    both shapes - a plain string (legacy) and {"question", "checked"} - and
+    KEEPS only questions that carry a non-empty `checked` trail (what was
+    searched: tools run, notes/cards read). A bare string or an empty
+    `checked` means the planner never looked, so it does not get to block
+    the Scope corner on it; it lands in `dropped` (artifact + activity line)
+    where the owner can still see what the planner wanted to know."""
+    kept, evidence, dropped = [], {}, []
+    for q in raw or []:
+        if isinstance(q, dict):
+            text = str(q.get("question") or "").strip()
+            checked = q.get("checked")
+            if isinstance(checked, (list, tuple)):
+                checked = "; ".join(str(c).strip() for c in checked if str(c).strip())
+            checked = str(checked or "").strip()
+        else:
+            text, checked = str(q or "").strip(), ""
+        if not text:
+            continue
+        if checked:
+            kept.append(text)
+            evidence[text] = checked[:400]
+        else:
+            dropped.append(text)
+    if dropped:
+        _activity("planned", "Frage(n) ohne Belegsuche verworfen: %s"
+                  % "; ".join(d[:80] for d in dropped[:3]))
+    return kept, evidence, dropped
+
+
+_STALE_Q_PLANS = 3
+
+
+def _recent_plans(n):
+    """The last n plan artifacts (oldest first), for measuring repetition.
+    Read from disk each time - no stored counter to drift."""
+    if not os.path.isdir(PLANS):
+        return []
+    days = sorted(f for f in os.listdir(PLANS) if f.startswith("plan-"))[-n:]
+    out = []
+    for f in days:
+        try:
+            with open(os.path.join(PLANS, f), encoding="utf-8") as fh:
+                out.append(json.load(fh))
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _stale_question_guard(questions, prev):
+    """A question the planner has now asked in >= _STALE_Q_PLANS consecutive
+    plans without an answer is not going to be answered by asking again
+    (measured: scope stayed blocked 12 days straight, 2026-09-01..12). Hand
+    it to Henry - he has the chat, the memory and the owner - as ONE open
+    exception (escalations dedupe by kind while it is open), instead of
+    letting the gate sit red in silence. The question stays in the plan; this
+    adds a route, it never removes the block."""
+    if not questions:
+        return
+    history = _recent_plans(_STALE_Q_PLANS)
+    if len(history) < _STALE_Q_PLANS:
+        return
+    for q in questions:
+        if all(any(_same_question(q, k) for k in (h.get("open_questions") or [])
+                   if isinstance(k, str)) for h in history):
+            _to_henry("pm-question-stale",
+                      "Der Planer stellt diese Frage seit %d Plaenen ohne Antwort - der Scope "
+                      "bleibt deshalb rot und nichts wird gestartet: \u201e%s\u201c\n"
+                      "Klaer sie: aus deinem Gedaechtnis/den Karten beantworten (dann als "
+                      "clarify_goal festhalten) oder den Owner EINMAL konkret mit Optionen fragen."
+                      % (_STALE_Q_PLANS, q),
+                      feed="Frage seit %d Plaenen offen - an Henry: %s" % (_STALE_Q_PLANS, q[:80]))
+            return
+
+
 def brief(goal=None, model=""):
     """The PM/CTO report: milestones, next actions, risks. ONE model turn
     (pm-lean-advisor, 2026-09-04: the old verify/repair/re-verify loop - up
@@ -536,18 +697,23 @@ def brief(goal=None, model=""):
     prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
     cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
                                           False, signals={"priority": "high"})
-    prompt = (_role()
-              + "\n\nGOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
-              + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
-              + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
-              + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(quota)
-              + "\n\nSYSTEM STATE (provisioned OUTSIDE the card lanes - derive scope from THIS too, "
-                "not just the cards):\n" + _system_state()
-              + _reconcile_block(prev)
-              + _clarifications_block()
-              + _memory(prev, econ)
-              + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot())
-    out = _ask(prompt, cli_model)
+    # SYSTEM = the role only (stable bytes, cacheable); TURN = every volatile
+    # fact, the memory INDEX and the evidence tools (planner-with-hands,
+    # 2026-09-12 - see _ask's docstring and EVIDENCE_TOOLS).
+    system = _role()
+    turn = ("GOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
+            + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
+            + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
+            + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(quota)
+            + "\n\nSYSTEM STATE (provisioned OUTSIDE the card lanes - derive scope from THIS too, "
+              "not just the cards):\n" + _system_state()
+            + _reconcile_block(prev)
+            + _clarifications_block()
+            + _memory(prev, econ)
+            + _memory_index()
+            + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot()
+            + EVIDENCE_TOOLS % _hidden_history_count())
+    out = _ask(turn, cli_model, system=system, hands=True, timeout=900)
 
     # Effort in CODE: the LLM judges est_turns per milestone; code sums the
     # REMAINING work (done + calendar_wait milestones cost nothing - a wait is
@@ -586,7 +752,16 @@ def brief(goal=None, model=""):
     # self-dedupe (the planner can still repeat itself in one turn) - the old
     # verifier-vs-planner merge is gone with the verifier, the utility stays
     # useful for this narrower job (ops/tests/test_pm_clarifications.py pins it).
-    out["open_questions"] = _merge_questions(out.get("open_questions"), [])
+    # QUESTION DISCIPLINE (code disposes, 2026-09-12): a question reaches the
+    # owner only with its evidence trail - what the planner searched and did
+    # not find. An unchecked question is dropped (kept visible in the
+    # artifact), and one the planner keeps asking plan after plan is handed
+    # to Henry instead of blocking the gate in silence for another day.
+    out["open_questions"], out["question_evidence"], out["dropped_questions"] = \
+        _dispose_questions(out.get("open_questions"))
+    out["open_questions"] = _merge_questions(out["open_questions"], [])
+    _stale_question_guard(out["open_questions"], prev)
+    out["evidence"] = {k: v for k, v in (out.pop("_meta", None) or {}).items() if v is not None}
     # pm.py PROPOSES (milestones, scope, questions); pm_triangle DISPOSES -
     # plan_status/triage/gate/eta are entirely CODE-derived from here on,
     # never re-graded by a second model pass. Scope is blocked exactly when

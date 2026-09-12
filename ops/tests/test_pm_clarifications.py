@@ -57,12 +57,15 @@ GOAL = "Play-Store-Launch der App"
 
 PLAN = {"goal": GOAL, "summary": "Launch vorbereiten.",
         "milestones": [{"name": "Closed Test aufsetzen", "est_turns": 8, "priority": "high"}],
-        "open_questions": [UNRESOLVED], "budget": {}}
+        # since 2026-09-12 (planner-with-hands) a question reaches the plan only
+        # WITH its evidence trail - a bare string is dropped by _dispose_questions
+        "open_questions": [{"question": UNRESOLVED, "checked": "memory find stichtag: nichts"}],
+        "budget": {}}
 
 prompts = []          # every prompt _ask saw
 
 
-def fake_ask(prompt, model=""):
+def fake_ask(prompt, model="", system="", hands=False, timeout=300):
     prompts.append(prompt)
     return json.loads(json.dumps(PLAN))
 
@@ -81,7 +84,7 @@ events.settings = lambda: _SET
 events.save_settings = lambda d: _SET.update(d)
 
 from cells.copilot.chat import copilot
-copilot._snapshot = lambda: "(kein Board)"
+copilot._snapshot = lambda full=False: "(kein Board)"
 
 
 def run_brief():

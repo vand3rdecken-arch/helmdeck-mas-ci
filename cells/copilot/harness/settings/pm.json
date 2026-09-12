@@ -1,0 +1,60 @@
+{
+  "$schema": "../../../../ops/harness/schema/settings.schema.json",
+  "//": [
+    "The PM PLANNER's own settings layer (2026-09-12, planner-with-hands).",
+    "Passed as `--settings <this file>` with `--setting-sources \"\"` - no",
+    "ambient layer, same reasoning as copilot.json (the repo's Stop hook would",
+    "block a turn that writes no code).",
+    "",
+    "WHY THE PLANNER HAS HANDS AT ALL: measured 2026-09-12 - the plan turn",
+    "used to run `--permission-mode plan` with NOTHING to fetch and only the",
+    "LIVE board inlined. 200 finished cards and 40 memory notes were invisible,",
+    "so it asked the owner whether a Google-Play account exists while eight",
+    "finished cards + a live card + memory note said the app is IN REVIEW, and",
+    "re-asked the timeline question three days after memory recorded it as",
+    "answered. Industry rule (Anthropic context engineering, Devin interactive",
+    "planning, Kambhampati LLM-Modulo): the planner VERIFIES its premises with",
+    "tools before it plans or asks; history is fetched by id/query, never",
+    "inlined. The allow list below is exactly those read-only fetch tools -",
+    "relative to cwd=daemon/, the same form copilot.json grants Henry.",
+    "",
+    "Nothing that writes, ships, spawns or leaves the repo: Write/Edit/Agent",
+    "denied, and the planner's answer is JSON the harness parses - a plan",
+    "PROPOSES, code disposes (pm_triangle).",
+    "",
+    "PowerShell entries (measured 2026-09-12, stream-json): the CLI's Bash tool",
+    "runs Git-Bash where `py` is NOT on PATH (exit 127), the model then retries",
+    "in the PowerShell tool, which needs its own allow rule or it dies with",
+    "'requires approval'. Both tools are therefore allowed for the same three",
+    "read-only commands, and EVIDENCE_TOOLS tells the planner to use PowerShell."
+  ],
+  "env": {
+    "HELMDECK_SURFACE": "pm"
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(py -3.12 ../ops/tools/board_state.py:*)",
+      "PowerShell(py -3.12 ../ops/tools/henry_memory_get.py:*)",
+      "PowerShell(git log:*)",
+      "Bash(py -3.12 ../ops/tools/board_state.py:*)",
+      "Bash(py -3.12 ../ops/tools/henry_memory_get.py:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Agent",
+      "Task",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Read(./daemon/settings.json)",
+      "Read(./daemon/users.json)",
+      "Read(./daemon/helmdeck.db)",
+      "Read(./daemon/copilot_log.json)",
+      "Read(./.env)",
+      "Read(./**/.env)"
+    ]
+  }
+}

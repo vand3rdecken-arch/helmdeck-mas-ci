@@ -48,7 +48,7 @@ AGENT_CELL = {
     "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot",
     "glass-brief": "copilot", "voice-style": "copilot", "wear-brief": "copilot",
 }
-SETTINGS_CELL = {"card": "engineer", "copilot": "copilot"}
+SETTINGS_CELL = {"card": "engineer", "copilot": "copilot", "pm": "copilot"}
 
 
 def _cell_agents_dir(cell):
