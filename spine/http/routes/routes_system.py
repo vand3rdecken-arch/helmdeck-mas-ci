@@ -109,6 +109,25 @@ def dashboard_data_get(self, user):
     return self._send(200, json.dumps(m))
 
 
+def admin_daemon_get(self, user):
+    """Settings > System > Daemon: derived status (spine/ops/daemonctl)."""
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from spine.ops import daemonctl
+    return self._send(200, json.dumps(daemonctl.status()))
+
+
+def admin_restart_post(self, user, body):
+    """The ONE restart verb (owner request 2026-09-12). Refuses while a card
+    turn is live unless body.force; fires the out-of-tree HelmDeckRestart
+    task. Henry's broker and the Settings button both call this."""
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from spine.ops import daemonctl
+    r = daemonctl.restart(force=bool((body or {}).get("force")), actor=user.get("name") or "owner")
+    return self._send(200 if r.get("ok") else 409, json.dumps(r))
+
+
 def presence_post(self, user, body):
     # Client heartbeat (Phase 2.1): who is here, is the app in the
     # foreground, and which card is on screen. Drives the 3-tier
@@ -305,12 +324,14 @@ def processes_sub_post(self, user, body, pid, step):
 
 
 GET_ROUTES = {
+    "/admin/daemon": admin_daemon_get,
     "/presence": presence_get,
     "/sessions/claude": sessions_claude_get,
     "/history": history_get,
     "/dashboard/data": dashboard_data_get,
 }
 POST_ROUTES = {
+    "/admin/restart": admin_restart_post,
     "/presence": presence_post,
     "/push/register": push_register_post,
     "/harness": harness_post,

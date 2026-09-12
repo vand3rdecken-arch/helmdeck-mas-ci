@@ -9,6 +9,13 @@ import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
 import type { BgTask } from "./types";
+export interface DaemonStatus {
+  pid: number; started: number; uptime_s: number; commit: string; repo_head: string;
+  stale: boolean; running_turns: string[]; restart_task: boolean; last_restart: string;
+}
+export interface DaemonRestart {
+  ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;
+}
 import type { Track, LaneMove, Metrics, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
   PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
   GxpState } from "./types";
@@ -977,6 +984,10 @@ export const api = {
   transcribe: (audioB64: string, lang?: string) =>
     req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(
       "POST", "/voice/transcribe", { audio: audioB64, lang }),
+  /** Settings > System > Daemon (spine/ops/daemonctl.status): derived, never a flag. */
+  daemonStatus: () => req<DaemonStatus>("GET", "/admin/daemon"),
+  /** The ONE restart verb: 409 + reason "turn_active" while a card turn is live unless forced. */
+  daemonRestart: (force = false) => req<DaemonRestart>("POST", "/admin/restart", { force }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
     /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
      *  descriptors, rendered by the same BackgroundTasks line a card uses. */

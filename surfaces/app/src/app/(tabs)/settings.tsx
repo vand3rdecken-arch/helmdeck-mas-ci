@@ -34,6 +34,7 @@ import { SchemaDoor, ScopeBadge, useSchema } from "@/ui/settings_schema_page";
 import { TeamInvite } from "@/ui/team_invite";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
+import { DaemonPanel } from "@/ui/daemon_panel";
 import { UpdatesPanel } from "@/ui/updates_info";
 import { useResponsive } from "@/ui/responsive";
 
@@ -919,6 +920,8 @@ export default function Settings() {
             onToggle={(b) => { setWsBackdrop(b); api.saveSettings({ appearance: { backdrop: b } }).then(invalidate).catch(fail); }} />
         </Panel>
       ) : null}
+      {/* Daemon health + the one restart button (owner request 2026-09-12) */}
+      {can(me, "settings.write") ? <DaemonPanel /> : null}
       <UsagePanel />
       {/* Business + machine knobs: schema-rendered since phase 4. This was a
           hand-built nine-field FormGrid with its own saveBusiness(). */}
