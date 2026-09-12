@@ -4854,7 +4854,7 @@ DEBT = [
     {
         "id": "state-into-db",
         "title": "Runtime records still written as files beside the db",
-        "status": "open",
+        "status": "paid",
         "what": "Audit 2026-09-12 (ops/docs/backlog/state-into-db): 60 MB of "
                 "records sit as files next to helmdeck.db - per-card timeline.jsonl "
                 "(54.6 MB/134 files) and actions.jsonl, escalations.jsonl (full "
@@ -4873,7 +4873,9 @@ DEBT = [
                         "the exportability decree is unverifiable.",
         "trigger": "any second account or project, any restore, any card with "
                    "a long transcript",
-        "fix": "SHIPPED 2026-09-12 (ec80a67..a0d8386): A ledger + scope columns + "
+        "fix": "PAID 2026-09-12 - every phase shipped, ledger head 12 applied on the "
+               "live daemon; see ops/docs/backlog/state-into-db. History: "
+               "SHIPPED 2026-09-12 (ec80a67..a0d8386): A ledger + scope columns + "
                "audit fixes + export/import; B planner scratch cwd + hd.py wrapper + "
                "loop_state leak detector; C escalations; D pm_plans/pm_activity/"
                "runtime_doc; E chat (full history); F runs/actions/timeline (57 MB); "

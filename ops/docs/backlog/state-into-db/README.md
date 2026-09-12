@@ -8,23 +8,27 @@ mentioned above."
 This card is the revised implementation plan (v2, scored below; v1 was the
 file inventory + phases only and is superseded, its inventory is section 3).
 
-**Status (2026-09-12, end of the first session):** shipped A, B, C, D, E, F,
-G-auth (sessions/invites/devices) and I - commits ec80a67 .. a0d8386, ledger
-head = 10, every file store of 60 MB is a table, the trigger is closed. OPEN:
-G-rest (`ops/harness/.versions/`, `.loop/workorder.md` + history,
-`checkpoints/<id>/settings.json`, `backups/reset-log.jsonl`) and H (events
-db-first - needs the owner's decision on the audit law). The running daemon
-applies ledger steps 1-10 on its next restart (one-time ~10 s for the
-recordings import).
+**Status (2026-09-12, COMPLETE):** every phase shipped - A, B, C, D, E, F,
+G (auth + harness versions + audit_ops + checkpoints' config + dead files),
+H (events db-first, owner decision) and I. Ledger head = 12, applied on the
+LIVE daemon (restarted twice, verified: user_version 12, every store
+imported, `daemon/` holds only the db, tracked data, certs, connector code,
+media and pid files). The seven baseline-broken tests are repaired.
 
-**Found on the way (not in the plan):** three tests had been `db.init()`-ing
+**Two reclassifications from the v1 inventory, on purpose:**
+- `.loop/workorder.md` (+ history) STAYS A FILE: it is a document the agent
+  edits with file tools and the hooks read - the same class as the briefs.
+  A db row would need a tool to edit it; nothing is gained.
+- checkpoints keep their DIRECTORY shape (debt order 32: half of one is a
+  copytree of connector code). What changed: the config half was DEAD - it
+  copied `daemon/settings.json`, gone since 2026-09-03 - and now snapshots
+  the config ROWS into `<checkpoint>/config.json` and restores them.
+
+**Found on the way (not in the plan):** four tests had been `db.init()`-ing
 the LIVE db for weeks (steer_replace, steer_folds_clarification,
-status_store) - the new live-db guard in `db.conn()` caught them. Six tests
-fail identically on the baseline and were left alone (background_continue,
-worktree_never_init, lane_visibility, remote_device, fasttrack_deploy_autofix,
-henry_privilege_gate: stale stubs).
-
----
+status_store, and test_harness reading settings() live) - the live-db guard
+in `db.conn()` caught every one. The events flip surfaced 110 rows the old
+best-effort write-through had silently dropped on this machine.
 
 ## 1. Audit of `daemon/helmdeck.db` as found (2026-09-12)
 
@@ -185,3 +189,11 @@ untouched by design); measurability 4 (the recordings import is measured at
 10.2 s and 78.5 MB, the cold fold at 48 ms, but the running daemon has not
 restarted yet, so the "zero untracked after a plan turn" criterion is proven
 by test, not yet observed live).
+
+**v4 (final, 4.9):** scope 5 (nothing left open; two items reclassified with
+the reason written down rather than moved for the sake of the table);
+measurability 5 (live daemon on head 12, `git status` clean after real
+planner and Henry turns, the leak detector in the loop state, the 110
+dropped events measured). The remaining 0.1: the "zero untracked after a
+plan turn" criterion is now observed live only for the turns that ran
+during this session, not over a full day.
