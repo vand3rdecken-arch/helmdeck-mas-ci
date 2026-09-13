@@ -1939,6 +1939,25 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         ctx_first = mu
             elif typ == "stream_event":
                 e = ev.get("event") or {}
+                # PHASE, from the API's own events, so the wait never reads as
+                # dead: Fable's thinking arrives REDACTED (no deltas), and a
+                # turn without tools showed "denkt nach 25s" and nothing else
+                # (owner 2026-09-13 17:11). message_start = the call is open
+                # (the prefill of a 150k context is what takes the seconds),
+                # a thinking block = reasoning, a text block = writing (the
+                # stream takes over from here, the status line yields).
+                if e.get("type") == "message_start":
+                    _u = ((e.get("message") or {}).get("usage") or {})
+                    _ctx = int(_u.get("input_tokens") or 0) + int(_u.get("cache_read_input_tokens") or 0) \
+                        + int(_u.get("cache_creation_input_tokens") or 0)
+                    livebuf.set_field(live_key, "status",
+                                      ("liest Kontext (%dk)" % (_ctx // 1000)) if _ctx else "Anfrage läuft")
+                elif e.get("type") == "content_block_start":
+                    _bt = ((e.get("content_block") or {}).get("type") or "")
+                    if _bt == "thinking":
+                        livebuf.set_field(live_key, "status", "überlegt")
+                    elif _bt == "text":
+                        livebuf.set_field(live_key, "status", "")
                 if e.get("type") == "content_block_delta":
                     dl = e.get("delta") or {}
                     if dl.get("type") == "text_delta":
