@@ -507,6 +507,7 @@ def run(cfg, t, prompt, by=None):
 # to ask.parse()'s regex, so prompt and parser must ship together.
 CARD_AGENT = "card-worker"
 MACHINE_AGENT = "machine-worker"
+BROWSER_GRANT = "mcp__helmdeck-browser__*"   # every worker: the real browser (see build_argv)
 SHIP_AGENT = "ship-worker"
 
 
@@ -573,7 +574,19 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     argv += harness.cli_args(agent)
     if cfg.get("model"):
         argv += ["--model", cfg["model"]]
-    for pat in cfg.get("allowed_tools") or []:
+    # EVERY worker may read the live web through the real browser
+    # (helmdeck-browser: navigate/read/find/click/type, self-registered by
+    # agentcli._builtin_mcp_servers, opens Chrome lazily on first use). A
+    # research step "20 laufende Vorstellungen sammeln" ran as a plain
+    # worktree card with no browser at all, asked the owner "how do I get X
+    # posts?", got "Use browser", and asked again (2026-09-13 18:12) - a
+    # worker without a browser cannot follow that answer. windows-mcp
+    # (mouse/keyboard) stays a machine-card grant.
+    tools = list(cfg.get("allowed_tools") or [])
+    if BROWSER_GRANT not in tools:
+        tools.append(BROWSER_GRANT)
+    cfg = dict(cfg, allowed_tools=tools)
+    for pat in tools:
         argv += ["--allowedTools", pat]
     # A grant pre-authorises tools; this REGISTERS the server that owns them,
     # because --setting-sources project drops the user layer it normally lives
