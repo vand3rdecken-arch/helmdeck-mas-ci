@@ -129,6 +129,92 @@ def _turn_lock(user):
         return _turn_locks.setdefault(user, threading.Lock())
 
 
+_keepalive_inflight = set()      # users whose warm process is mid-ping (status line)
+
+
+def _ping_process(p, timeout=120):
+    """The hidden systemcheck round-trip that refreshes the API's prompt
+    cache before it lapses. Extracted so the REACTIVE ping (below, fired on
+    /chat/history poll) and the PROACTIVE scheduler (_keepalive_loop) share
+    one implementation."""
+    p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
+                  "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
+    p.stdin.flush()
+    t0 = time.time()
+    for line in p.stdout:
+        if time.time() - t0 > timeout:
+            break
+        try:
+            if json.loads(line.strip() or "{}").get("type") == "result":
+                break
+        except ValueError:
+            continue
+
+
+_keepalive_started = False
+
+
+def _start_keepalive_loop():
+    """PROACTIVE cache refresh, so the reactive ping below never has to fire
+    on an ALREADY-LAPSED cache.
+
+    MEASURED 2026-09-13 (owner: "Henry still needs more than 30s to answer"):
+    the reactive path only pings when something polls /chat/history, and
+    _PREWARM_COOLDOWN=120s means at most once every 2 minutes even then. The
+    owner's real usage pattern - opening the chat every 6-7 minutes to check
+    on a long-running card - lands well past the API's ~300s prompt-cache TTL
+    every time, so EVERY ping was a guaranteed cache MISS: a full uncached
+    reprocess of the ~150k-token session, 30-99s in the real transcript
+    (one run even hit a transient api_error mid-ping, 99s). A real question
+    typed while that ping was mid-flight then queued behind it on the turn
+    lock, same class of bug as the compaction one (0520afd).
+
+    This loop wakes every 90s - inside the 240s/300s window with margin for
+    jitter and this thread's own scheduling slop - and pings whichever warm
+    process is cooling, BEFORE anything asks for an answer. A ping that lands
+    on a still-fresh cache is near-free (cache hit); the daemon pays that
+    small, predictable cost instead of the owner paying an unpredictable
+    30-99s one. Started once, from server.py's boot sequence."""
+    global _keepalive_started
+    if _keepalive_started:
+        return
+    _keepalive_started = True
+
+    def _loop():
+        while True:
+            time.sleep(90)
+            try:
+                user = owner_name()
+                if not user:
+                    continue
+                bkey = _skey(user)
+                lock = _turn_lock(user)
+                if not lock.acquire(blocking=False):
+                    continue          # a real turn (or the reactive ping) is running
+                try:
+                    with _persist_lock:
+                        ent = _persist.get(bkey)
+                        p = ent["p"] if ent and ent["p"].poll() is None else None
+                    if p is None:
+                        continue      # nothing warm to refresh - the next real turn spawns it
+                    now = time.time()
+                    if now - _last_touch_at.get(bkey, 0.0) <= _KEEPALIVE_AGE:
+                        continue      # still fresh
+                    if now - _last_turn_at.get(bkey, 0.0) >= _KEEPALIVE_MAX:
+                        continue      # idle too long - let it go cold, matches prewarm's own rule
+                    _keepalive_inflight.add(user)
+                    try:
+                        _ping_process(p)
+                    finally:
+                        _keepalive_inflight.discard(user)
+                    _last_touch_at[bkey] = time.time()
+                finally:
+                    lock.release()
+            except Exception:                                    # noqa: BLE001
+                pass                   # a missed refresh degrades to the reactive path, never crashes the daemon
+    threading.Thread(target=_loop, daemon=True, name="henry-keepalive").start()
+
+
 def prewarm(user, spoken=True):
     """Fire-and-forget: spawn the user's warm chat process AND run a hidden
     warmup turn on it. Called when voice mode OPENS (the greeting fetch) and
@@ -211,18 +297,11 @@ def prewarm(user, spoken=True):
                                             _sessions().get(bkey), base)
                     if not fresh:
                         return              # already warm AND cached
-                p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
-                              "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
-                p.stdin.flush()
-                t0 = time.time()
-                for line in p.stdout:
-                    if time.time() - t0 > 120:
-                        break
-                    try:
-                        if json.loads(line.strip() or "{}").get("type") == "result":
-                            break
-                    except ValueError:
-                        continue
+                _keepalive_inflight.add(user)
+                try:
+                    _ping_process(p)
+                finally:
+                    _keepalive_inflight.discard(user)
                 _last_touch_at[bkey] = time.time()
             finally:
                 lock.release()
@@ -1807,6 +1886,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         livebuf.set_field(live_key, "status",
                           "Verlauf wird gerade verdichtet - deine Nachricht ist eingereiht"
                           if user in _compacting else
+                          "Cache wird aufgefrischt - deine Nachricht ist eingereiht"
+                          if user in _keepalive_inflight else
                           "Wartet auf den laufenden Turn - deine Nachricht ist eingereiht")
         _lk.acquire()
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):

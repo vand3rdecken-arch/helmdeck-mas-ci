@@ -768,6 +768,15 @@ def serve(port=8140):
                 copilot.prewarm(owner, spoken=False)
         except Exception as e:                                   # noqa: BLE001
             print("PREWARM: skipped (%s)" % str(e)[:120], flush=True)
+        # PROACTIVE cache refresh (owner 2026-09-13: "Henry still needs more
+        # than 30s to answer") - see copilot._start_keepalive_loop's docstring
+        # for the measured 30-99s cost of letting the API's ~300s prompt-cache
+        # TTL lapse between checks.
+        try:
+            from cells.copilot.chat import copilot as _copilot
+            _copilot._start_keepalive_loop()
+        except Exception as e:                                   # noqa: BLE001
+            print("KEEPALIVE: not started (%s)" % str(e)[:120], flush=True)
     threading.Timer(3.0, _warm_henry).start()
     try:
         ThreadingHTTPServer((bind, port), H).serve_forever()
