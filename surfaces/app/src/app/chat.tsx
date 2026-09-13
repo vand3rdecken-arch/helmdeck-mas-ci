@@ -247,8 +247,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // has often already landed the answer - a hand-over snapshot then already
   // contains it and the held copy never releases, i.e. the answer shows twice
   // (owner 2026-09-13, "Nachricht kam zwei mal an").
-  const turnStartLen = useRef(0);
-  const serverLenRef = useRef(0);
+  // ...and IDENTITY, not position: /chat/history is a sliding window of 80
+  // rows, so once it is full the list never gets longer - a length-based
+  // release never fired and the held copy sat under the persisted answer
+  // (owner 2026-09-13 15:32, "Nachricht kommt immer noch doppelt").
+  const turnStartSeq = useRef(0);
+  const serverSeqRef = useRef(0);
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
   // the busy->false edge: a refetch that hadn't persisted the just-sent turn
@@ -276,7 +280,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // server transcript length at hand-over: the hold is released the moment
   // the transcript grows past it with something that is not the owner's own
   // echo, i.e. the daemon's copy of this very answer (or its error).
-  const [held, setHeld] = useState<{ text: string; len: number } | null>(null);   // len = turnStartLen at hand-over
+  const [held, setHeld] = useState<{ text: string; seq: number } | null>(null);   // seq = newest row when the turn began
   // A turn OBSERVED rather than sent: the daemon reports `running` on
   // /chat/live, so a screen that (re)mounts or resumes while Henry is still
   // working - or whose POST /chat died on the relay's 115s leg while the turn
@@ -327,7 +331,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     if (!busy) {
       // hand the stream over to `held` instead of dropping it (see `held`)
       setStream((cur) => {
-        if (cur.trim()) setHeld({ text: cur, len: turnStartLen.current });
+        if (cur.trim()) setHeld({ text: cur, seq: turnStartSeq.current });
         return "";
       });
       setThink(""); setLiveStatus(""); setLiveSteps([]);
@@ -438,14 +442,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // so once the user text's occurrence count exceeds this turn's baseline the
   // whole optimistic pair is redundant and the persisted version takes over.
   const server = data?.messages;
-  serverLenRef.current = (server ?? []).length;
+  const lastSeq = (list?: ChatMsg[]) => Math.max(0, ...(list ?? []).map((m) => m.seq ?? 0));
+  serverSeqRef.current = lastSeq(server);
   // Release the held stream once the daemon's own copy is on screen: any
-  // non-owner line that landed after the turn began IS that copy (or the
-  // turn's error line) - regardless of whether it arrived before or after
-  // busy flipped.
+  // non-owner row NEWER than the turn's start IS that copy (or the turn's
+  // error line) - regardless of whether it arrived before or after busy
+  // flipped. Fallback for a daemon without seq: the persisted text starts
+  // like the held one.
   useEffect(() => {
     if (!held || !server) return;
-    if (server.slice(held.len).some((m) => m.cls !== "user" && m.cls !== "you")) setHeld(null);
+    const head = held.text.trim().slice(0, 60);
+    const landed = server.some((m) => m.cls !== "user" && m.cls !== "you" &&
+      ((m.seq ?? 0) > held.seq || (!m.seq && head.length > 0 && (m.text ?? "").trim().startsWith(head))));
+    if (landed) setHeld(null);
   }, [server, held]);
   // OBSERVE a turn already running on the daemon (mount + every foreground
   // resume): /chat/live `running` is the one place that state is owned.
@@ -456,7 +465,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         const r = await api.chatLive();
         if (!alive || !r || r.running !== true || busyRef.current) return;
         derived.current = true;
-        turnStartLen.current = serverLenRef.current;
+        turnStartSeq.current = serverSeqRef.current;
         turn.current++;            // a late POST result of a dead screen cannot end this one
         setBusy(true);
       } catch { /* offline - the stream loop's reconnect is the catch-up */ }
@@ -541,7 +550,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
       + pending.filter((tn) => tn.key === q).length;
     setHeld(null);
-    turnStartLen.current = (server ?? []).length;
+    turnStartSeq.current = lastSeq(server);
     setPending((p) => [...p, {
       id, key: q, mid, baseline,
       // Where this bubble belongs: after everything the server had shown at the

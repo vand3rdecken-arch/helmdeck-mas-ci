@@ -1440,18 +1440,25 @@ def chat_tail(account, limit=80):
     transcript renders. limit=None returns everything."""
     if limit:
         rows = conn().execute(
-            "SELECT data FROM chat WHERE account=? ORDER BY seq DESC LIMIT ?",
+            "SELECT seq, data FROM chat WHERE account=? ORDER BY seq DESC LIMIT ?",
             (account, limit)).fetchall()
         rows = list(reversed(rows))
     else:
         rows = conn().execute(
-            "SELECT data FROM chat WHERE account=? ORDER BY seq", (account,)).fetchall()
+            "SELECT seq, data FROM chat WHERE account=? ORDER BY seq", (account,)).fetchall()
     out = []
-    for (d,) in rows:
+    for (seq, d) in rows:
         try:
-            out.append(json.loads(d))
+            e = json.loads(d)
         except ValueError:
             continue
+        # the row's IDENTITY rides along: this slice is a sliding WINDOW of
+        # `limit` rows, so "the list got longer" is not a signal a client can
+        # use once the window is full (owner 2026-09-13 15:32: the app's held
+        # streaming bubble never released and the answer showed twice).
+        if isinstance(e, dict) and "seq" not in e:
+            e["seq"] = seq
+        out.append(e)
     return out
 
 

@@ -220,6 +220,8 @@ export interface Step {
  *  an optimistic copy by IDENTITY instead of by comparing text — optional
  *  because older daemons, the watch and the glasses do not send one. */
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** the chat row's sequence number (db.chat_tail) - identity across the sliding 80-row window */
+  seq?: number;
   /** `cls: "card"` — the EVENT MIRROR (cells/copilot/card_mirror.py). A working
    *  card's question, result or blocker, folded into the Henry chat at event
    *  time so the owner has ONE inbox instead of one transcript per card.
