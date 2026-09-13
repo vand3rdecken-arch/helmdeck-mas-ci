@@ -1390,6 +1390,15 @@ def _live_key(user):
     return "copilot:" + (user or "u")
 
 
+def _steps_of(raw):
+    """The transient tool-step list stored as JSON in livebuf, or []."""
+    try:
+        v = json.loads(raw or "[]")
+        return v if isinstance(v, list) else []
+    except ValueError:
+        return []
+
+
 
 
 def live(user):
@@ -1417,6 +1426,9 @@ def live(user):
             # the tool action currently executing ("Bash: py -3.12 ..."), so the
             # UI can show WHAT is happening while prose and thinking are silent
             "status": _rd("status"),
+            # transient tool steps of the running turn (see the tool_use fold
+            # in chat()) - gone with livebuf.clear(), never in the chat log
+            "steps": _steps_of(_rd("steps")),
             "running": user in _running,
             "card": _running_card.get(user)}
 
@@ -1719,6 +1731,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     from spine.agent import livebuf
     live_key = _live_key(user)          # in-flight state (state-into-db phase I)
     livebuf.clear(live_key)
+    _live_steps = []          # transient tool steps of THIS turn (livebuf "steps")
     # Speech rides the SAME prose stream as the live text - one source, folded in
     # at event time below, never re-derived from the finished reply.
     from spine.media import voice_stream as _vstream
@@ -1844,6 +1857,23 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                      or _inp.get("query") or _inp.get("file_path") or "")
                         livebuf.set_field(live_key, "status", ("%s: %s" % (_b.get("name") or "tool",
                                                           _brief))[:200])
+                        # TRANSIENT TOOL STEPS (owner 2026-09-13: "zeigt tools im
+                        # chat damit man weiss dass Henry arbeitet, aber nicht im
+                        # chat behalten"): the same tool rows a worker card
+                        # renders, but they live ONLY in livebuf for the length
+                        # of the turn - livebuf.clear() at turn end drops them,
+                        # nothing is appended to the chat log.
+                        _live_steps.append({"id": _b.get("id") or "", "tool": _b.get("name") or "tool",
+                                            "label": _brief[:160], "status": "running"})
+                        livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
+            elif typ == "user":
+                # tool results close the matching transient step
+                for _b in ((ev.get("message") or {}).get("content") or []):
+                    if isinstance(_b, dict) and _b.get("type") == "tool_result":
+                        for _s in _live_steps:
+                            if _s["id"] == _b.get("tool_use_id"):
+                                _s["status"] = "failed" if _b.get("is_error") else "completed"
+                        livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly
                 # like drivers._on_event (see _fold_stats for why the result

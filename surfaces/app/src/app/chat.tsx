@@ -278,6 +278,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // silence sat exactly where his rigor lives. Paseo renders tool calls as
   // visible chips the moment they happen; this is that signal for the wait row.
   const [liveStatus, setLiveStatus] = useState("");
+  // Transient tool steps (owner 2026-09-13): visible while Henry works, so a
+  // 40s Bash round reads as work and not as a frozen spinner - rendered with
+  // the SAME tool row a worker card uses, and gone the moment the turn ends
+  // (they are never part of the persisted transcript).
+  const [liveSteps, setLiveSteps] = useState<NonNullable<Awaited<ReturnType<typeof api.chatLive>>["steps"]>>([]);
   // Voice mode rides THIS poll rather than opening its own. /chat/live is the one
   // place a running turn is observable, and a second poller would mean a second
   // cursor over the same chunks — two owners of one truth — plus double the relay
@@ -313,7 +318,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         if (cur.trim()) setHeld({ text: cur, len: turnStartLen.current });
         return "";
       });
-      setThink(""); setLiveStatus("");
+      setThink(""); setLiveStatus(""); setLiveSteps([]);
       derived.current = false;
       return;
     }
@@ -325,6 +330,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         if (alive && r) {
           setStream(r.text || ""); setThink(r.thinking || "");
           setLiveStatus(r.status || ""); takeClips(r);
+          if (Array.isArray(r.steps)) setLiveSteps(r.steps);
           // An observed turn has no POST to end it: the daemon saying
           // "not running" IS the end. Strictly `false` - an old daemon omits
           // the field, and undefined must not end anything.
@@ -807,11 +813,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 const s = msgs.map((m) => toStep(m, me?.name, tr));
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
+                if (busy) for (const st of liveSteps) s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
                 if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
                 else if (!busy && held) s.push({ role: "assistant", kind: "text", text: held.text, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
-          {busy && !stream.trim() ? <ThinkingIndicator preview={think.trim() || liveStatus} /> : null}
+          {busy && !stream.trim() ? <ThinkingIndicator preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
         </ChatScroll>
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>

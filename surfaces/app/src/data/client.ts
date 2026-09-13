@@ -1017,6 +1017,9 @@ export const api = {
      *  feed is per USER, so a card chat must check this before rendering the
      *  prose as its own (copilot._running_card). Absent on an old daemon. */
     card?: string | null;
+    /** Transient tool steps of the running turn - the rows a worker card shows,
+     *  but they exist only while the turn runs (never in /chat/history). */
+    steps?: { id?: string; tool: string; label: string; status: "running" | "completed" | "failed" }[];
     voice?: (VoiceClip & { turn?: number; seq: number; text?: string })[];
     voice_pending?: boolean;
   }>("GET", voiceFrom === undefined ? "/chat/live"
