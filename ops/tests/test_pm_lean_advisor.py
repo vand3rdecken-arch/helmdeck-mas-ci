@@ -5,8 +5,8 @@
 Under test:
   1. goal_check() runs ONE cheap-model turn (never brief()'s auto/strong tier)
      with the goal + ACTIVE card TITLES ONLY - no card body, no full snapshot.
-  2. _suggestion_due() fires once per signature, then cools down - the honest
-     "don't re-nag" a tapped answer with no accept/reject event can give.
+  2. goal_check runs ON REQUEST only (chat action, 2026-09-13) - no automatic
+     nagger after a goal edit / clarify_goal exists any more.
   3. duplicate_titles() is PURE CODE (zero _ask calls) and only pairs cards
      whose titles are a genuine near-duplicate (the same Jaccard machinery
      _same_question already pins), never two cards that merely share a topic.
@@ -21,6 +21,10 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp()
+
+from spine.storage import db
+db.DBPATH = os.path.join(SANDBOX, "test.db")   # loopstate lives in the db since state-into-db
+db.init()
 
 from cells.copilot.planning import pm
 from cells.copilot.planning import pm_state
@@ -79,27 +83,18 @@ check("Archivierte Altlast" not in seen_prompts[0], "archived cards are NOT in t
 check("Fertige Sache" not in seen_prompts[0], "done cards are NOT in the prompt")
 check(r.get("missing") == ["E2E-Smoke vor Release einrichten"], "missing list comes back")
 
-print("\n[2] goal_check_async asks once, then cools down")
-pm.goal_check_async(GOAL)
+print("\n[2] goal_check is ON REQUEST only (2026-09-13): no async nagger exists any more")
+check(not hasattr(pm, "goal_check_async"), "goal_check_async is gone - the owner asks, Henry answers")
+check(not asked, "goal_check itself never asks the owner (no _ask_owner call)")
 import time as _time
-for _ in range(20):
-    if asked:
-        break
-    _time.sleep(0.05)
-check(len(asked) == 1, "the owner was asked exactly once (%d)" % len(asked))
-check(asked[0]["options"] == ["Anlegen", "Bearbeiten", "Nein"], "the three tap options are present")
-asked.clear()
-pm.goal_check_async(GOAL)
-for _ in range(20):
-    _time.sleep(0.05)
-check(not asked, "the SAME gap is not re-asked inside the cooldown window")
+from cells.copilot.chat import copilot_actions as _ca
+src = open(_ca.__file__, encoding="utf-8").read()
+check('if kind == "goal_check":' in src, "chat action goal_check exists for the on-request path")
+check("goal_check_async" not in src, "clarify_goal no longer chains an automatic goal check")
 
 print("\n[3] duplicate_titles: pure code, near-duplicate titles pair up, real ones don't")
-# 3 _ask calls so far, not 2: [1]'s direct call, plus goal_check_async's TWO
-# calls in [2] - the cooldown gates the owner-facing ask, not the (cheap)
-# model turn itself, since whether a gap still exists can only be checked by
-# asking (see goal_check_async's own docstring). duplicate_titles below adds
-# NONE of its own - that's what this assertion is actually about.
+# duplicate_titles adds NO _ask call of its own - that's what this assertion
+# is actually about.
 before = len(seen_prompts)
 pm.duplicate_titles()
 check(len(seen_prompts) == before, "duplicate_titles made NO _ask calls at all (%d before, %d after)"

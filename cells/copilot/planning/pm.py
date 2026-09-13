@@ -523,10 +523,11 @@ def _merge_questions(open_qs, must_ask):
 # -- goal_check / duplicate-title check: SUGGEST, never judge -----------------
 # pm-lean-advisor phases 2+3 (2026-09-04). Two small, cheap-model (or zero-
 # model) checks that turn "the board vs the goal" into a TAP, not a document:
-# goal_check asks whether active cards serve the goal and what's missing;
-# the duplicate check needs no LLM at all. Both go through _ask_owner (the
-# SAME tap-with-options channel PM budget/quota warnings already use) and
-# both remember what they last asked, so a dismissed/ignored suggestion is
+# goal_check asks whether active cards serve the goal and what's missing
+# (since 2026-09-13 ONLY when the owner asks - see its docstring); the
+# duplicate check needs no LLM at all and still goes through _ask_owner (the
+# SAME tap-with-options channel PM budget/quota warnings already use),
+# remembering what it last asked, so a dismissed/ignored suggestion is
 # not re-asked within the cooldown window - UX rule 4 ("abgelehnt = gemerkt").
 # There is no separate accept/reject event to listen for (a tapped option
 # routes to HENRY as an ordinary chat message, not back into this module), so
@@ -571,8 +572,14 @@ def goal_check(goal=None):
     """ONE cheap turn (never the auto/strong model brief() uses): goal + active
     card TITLES ONLY in, a fits/missing list out - never a date, never a
     verdict on a card's WORTH (a title can mislead, see the Play-Store lesson
-    in pm-lean-advisor's README). A non-empty `missing` becomes a real,
-    tappable suggestion via _ask_owner; nothing here files a card by itself."""
+    in pm-lean-advisor's README). ON REQUEST ONLY (owner decree 2026-09-13):
+    the chat action "goal_check" runs this when the owner asks "was fehlt zum
+    Ziel?" and returns the list as Henry's answer. The former fire-and-forget
+    goal_check_async (after every clarify_goal / goal edit) is GONE: with
+    done+archived titles filtered out, the check could not know the Play
+    Store was long shipped, so it re-proposed "Publish to Play Store" under
+    a fresh wording every time the cooldown signature changed, and a tapped
+    "Nein" was never recorded anywhere. Nothing here files a card by itself."""
     from spine.agent import turnopts
     from cells.engineer.cards import sessions
     goal = (goal or get_goal() or "").strip()
@@ -590,34 +597,6 @@ def goal_check(goal=None):
     missing = [_clip_prose(str(x).strip(), 90) for x in (out.get("missing") or [])
               if isinstance(x, (str, int, float)) and str(x).strip()][:4]
     return {"fits": out.get("fits") or [], "missing": missing}
-
-
-def goal_check_async(goal=None):
-    """Fire-and-forget: the caller (a route, a chat action) never waits on
-    this - it is a background nudge, same discipline as _bg("pm:plan", ...)
-    in routes_system.py. The cooldown gates the OWNER-FACING ask, not the
-    turn itself: whether a gap still exists can only be known by checking,
-    and the world can have changed since the last check (a card filed by
-    hand, a goal edit) - a cheap haiku turn re-verifying that is the right
-    cost, re-nagging the owner about an answer he already saw is not."""
-    def run():
-        try:
-            r = goal_check(goal)
-            missing = r.get("missing") or []
-            if not missing:
-                return
-            sig = "goal:" + "|".join(sorted(m.casefold() for m in missing))
-            if not _suggestion_due(sig):
-                return
-            items = ", ".join(missing)
-            _ask_owner(
-                "Ziel geprüft: %d Karte(n) passen. Es fehlen: %s - anlegen?"
-                % (len(r.get("fits") or []), items),
-                ["Anlegen", "Bearbeiten", "Nein"],
-                header="Ziel-Abgleich")
-        except Exception as e:
-            print("pm: goal_check failed:", e)
-    threading.Thread(target=run, daemon=True, name="pm-goal-check").start()
 
 
 def _normalize_title(s):

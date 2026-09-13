@@ -45,11 +45,9 @@ def pm_config_post(self, user, body):
     if merged.get("autonomy") not in ("notify", "ask", "act"):
         merged["autonomy"] = "act"
     events.save_settings({"pm": merged})
-    if "goal" in body and (body.get("goal") or "").strip():
-        # pm-lean-advisor phase 2: a changed goal deserves a fast, cheap check
-        # against the board - fire-and-forget, this request never waits on it
-        # (UX rule 1, "kein Warte-Knopf").
-        pm.goal_check_async(body["goal"])
+    # No automatic goal check on a goal edit any more (2026-09-13): the
+    # title-only check kept re-proposing shipped work as "missing". The owner
+    # asks Henry ("was fehlt zum Ziel?") -> chat action goal_check.
     return self._send(200, json.dumps(pm._pm()))
 
 

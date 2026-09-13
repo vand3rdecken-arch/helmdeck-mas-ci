@@ -618,8 +618,10 @@ def _run_action(a, actor, role="operator"):
         # gleich" und dann minutenlang nichts, weil sein new_process hinter
         # einem Re-Plan wartete, der mit ihm nichts zu tun hat. bgthread (nicht
         # ein nackter Thread) traegt das Crash-Reporting: ein gestorbener
-        # Re-Plan wird eskaliert statt zu verschwinden. goal_check_async haengt
-        # bewusst HINTER dem Re-Plan, damit der Check den frischen Plan liest.
+        # Re-Plan wird eskaliert statt zu verschwinden. Der frueher hier
+        # angehaengte automatische Ziel-Abgleich ist seit 2026-09-13 weg
+        # (Owner: "Henry fragt dumme Fragen") - er laeuft nur noch auf
+        # Nachfrage ueber die Action goal_check.
         from spine.ops import bgthread
 
         def _replan():
@@ -627,9 +629,25 @@ def _run_action(a, actor, role="operator"):
                 pm.brief()
             except Exception as e:                           # noqa: BLE001
                 print("clarify_goal re-plan failed:", str(e)[:200])
-            pm.goal_check_async()
         bgthread.spawn("pm:replan", _replan)
         return "Notiert: „%s“ - Plan wird im Hintergrund neu gerechnet." % text[:150]
+    if kind == "goal_check":
+        # ON REQUEST ONLY (2026-09-13): the owner asked "was fehlt zum Ziel?".
+        # One cheap title-only turn, result returned as Henry's answer text -
+        # never an unprompted "Entscheidung noetig" card. Henry must weigh the
+        # list against what he knows (a shipped Play Store is not "missing"
+        # just because no ACTIVE card carries the words).
+        from cells.copilot.planning import pm
+        if not pm.get_goal():
+            return "goal_check: kein Ziel gesetzt"
+        r = pm.goal_check()
+        if r.get("error"):
+            return "goal_check fehlgeschlagen: " + r["error"]
+        fits = r.get("fits") or []
+        missing = r.get("missing") or []
+        return ("goal_check (nur Karten-TITEL geprueft, kein Karten-Inhalt, erledigte Karten nicht gesehen): "
+                "passen=%s; Vorschlaege fehlend=%s" % (json.dumps(fits, ensure_ascii=False),
+                                                       json.dumps(missing, ensure_ascii=False) if missing else "keine"))
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
