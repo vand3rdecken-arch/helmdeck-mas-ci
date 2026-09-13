@@ -742,10 +742,29 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
     # CLI honors /compact, so the probe must not learn from it (this is the
     # exact misread that latched _autocompact_supported=False board-wide on
     # 2026-08-30). Re-queue instead; the reconciler retries at idle.
+    # THE RUNTIME'S OWN VERDICT FIRST (Paseo: compact_boundary = compaction
+    # completed). The driver folds the system/compact_boundary frame into
+    # meta.compaction at event time; when it is there the compaction
+    # HAPPENED, whatever the interrupt flag or the meter say - measured
+    # 2026-09-13 (card 20260913-215533): the boundary landed at 22:59, the
+    # owner's waiting steer cut the still-open process at 23:07, and the
+    # interrupt branch below then logged "haengt - wird nachgeholt" about a
+    # compaction that had succeeded eight minutes earlier.
+    cm = (meta or {}).get("compaction") or {}
     interrupted = (tid in _compact_interrupted
                    or "cancelled" in (_out or "").lower()
                    or "compaction canceled" in (_out or "").lower())
     _compact_interrupted.discard(tid)
+    if cm:
+        _autocompact_supported = True
+        _mark_compact_pending(tid, False)
+        post = cm.get("post_tokens")
+        dur = cm.get("duration_ms")
+        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%sk (vorher ~%dk, %s) - Verlauf "
+                "verdichtet, es geht ohne Unterbrechung weiter."
+                % (round(post / 1000) if post else "?", round(before / 1000),
+                   ("%ds" % round(dur / 1000)) if dur else "Dauer unbekannt"))
+        return t
     if interrupted:
         _mark_compact_pending(tid, True)
         log.log("note", "AUTO-COMPACT unterbrochen - nichts gelernt, nichts verloren. "

@@ -1259,6 +1259,34 @@ class _ClaudeSession:
                 slot["ev"].set()
             return
         if typ == "system":
+            # COMPACTION FRAMES (Paseo claude/agent.ts: `status: compacting`
+            # sets this.compacting, `compact_boundary` is the completed
+            # compaction item + buildCompactionUsageEvent(postTokens)). The
+            # measured sequence after `/compact` (2026-09-13 probe): status
+            # {compacting} -> status {null} -> init -> compact_boundary
+            # {compact_metadata: pre_tokens, post_tokens, duration_ms} ->
+            # user (summary) -> result "" with zero usage. Folded at event
+            # time: the boundary is the turn's evidence that a compaction
+            # happened and how big the window is now - never re-derived by
+            # scanning the transcript afterwards (that remains the post-mortem
+            # fallback for a process that died before its frames arrived).
+            sub = ev.get("subtype")
+            if cur is not None and sub == "status":
+                if ev.get("status") == "compacting":
+                    cur["compacting"] = True
+            elif cur is not None and sub == "compact_boundary":
+                cm = _compact_metadata(ev)
+                cur["compaction"] = cm
+                cur["compacting"] = False
+                try:
+                    timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
+                        {"kind": "compaction", "event": "completed",
+                         "trigger": cm.get("trigger"), "pre_tokens": cm.get("pre_tokens"),
+                         "post_tokens": cm.get("post_tokens"),
+                         "ts": _time.strftime("%H:%M:%S", _time.localtime()),
+                         "ta": _time.time()})
+                except Exception:
+                    pass                 # dual-write only - never the turn
             sid = ev.get("session_id")
             if sid:
                 # resume-attachment evidence: a successful --resume ECHOES the
@@ -1282,11 +1310,23 @@ class _ClaudeSession:
             # 2026-08-10 18:35). Evidence, not timing: a REAL model turn always
             # carries usage (input_tokens > 0); a frame with zero usage, zero
             # text and no error carries nothing - drop it and keep waiting.
+            # EXCEPT after a compaction. Measured 2026-09-13 (probe against the
+            # real CLI, stream-json in/out): `/compact` ends with EXACTLY such
+            # a frame - result "", usage all zeros - preceded by the
+            # system/compact_boundary frame that carries the evidence. On the
+            # 197k card 20260913-215533 the compaction was resumed fresh (so
+            # first-turn-after-spawn held), its terminal frame was dropped
+            # here as a "dead leftover", and the harness waited out the full
+            # 600s steer bound on a process that had been done for 8 minutes.
+            # The boundary frame is what Paseo keys on (compact_boundary ->
+            # compaction completed); it makes this frame a legitimate end.
             u = ev.get("usage") or {}
             if (self._first_turn_after_spawn and self._spawn_resumed
                     and not ev.get("is_error")
                     and not str(ev.get("result") or "").strip()
-                    and not any(v for v in u.values() if isinstance(v, (int, float)))):
+                    and not any(v for v in u.values() if isinstance(v, (int, float)))
+                    and not (cur or {}).get("compaction")
+                    and not (cur or {}).get("compacting")):
                 if cur is not None:
                     cur["null_results"] = cur.get("null_results", 0) + 1
                 return
@@ -1479,6 +1519,13 @@ class _ClaudeSession:
                 # the LAST assistant call's usage = the real context size (the
                 # result event's usage sums every call of the turn - see _on_event)
                 "ctx_usage": cur.get("ctx_usage") or {}}
+        # a compaction that ran INSIDE this turn (system/compact_boundary seen
+        # by the pump): {trigger, pre_tokens, post_tokens, duration_ms}. The
+        # /compact turn has no assistant call of its own, so ctx_usage is empty
+        # for it - post_tokens is the truthful post-compaction context size
+        # (Paseo buildCompactionUsageEvent(postTokens)).
+        if cur.get("compaction"):
+            meta["compaction"] = cur["compaction"]
         # resume-attachment evidence for the FIRST turn after a --resume spawn:
         # sessions._finish_turn refuses to move the session pointer to a session
         # that demonstrably does NOT contain the conversation.
@@ -1493,6 +1540,32 @@ class _ClaudeSession:
 
 def _flush_cur(cur):
     livebuf.set_partial(cur["live_key"], "".join(cur["parts"]))
+
+
+def _compact_metadata(ev):
+    """The compaction facts off a system/compact_boundary frame, normalised to
+    snake_case. Paseo's readCompactionMetadata reads the same three spellings
+    (compact_metadata / compactMetadata / compactionMetadata) because the CLI
+    stream says `compact_metadata` (measured 2026-09-13) while the transcript
+    record says `compactMetadata`. Always returns a dict - an empty one still
+    means "a boundary frame arrived", which is the fact that matters."""
+    src = None
+    for k in ("compact_metadata", "compactMetadata", "compactionMetadata"):
+        if isinstance(ev.get(k), dict):
+            src = ev[k]
+            break
+    src = src or {}
+
+    def _num(*keys):
+        for k in keys:
+            v = src.get(k)
+            if isinstance(v, (int, float)):
+                return int(v)
+        return None
+    return {"trigger": "manual" if src.get("trigger") == "manual" else "auto",
+            "pre_tokens": _num("pre_tokens", "preTokens"),
+            "post_tokens": _num("post_tokens", "postTokens"),
+            "duration_ms": _num("duration_ms", "durationMs")}
 
 
 def _result_error(d):

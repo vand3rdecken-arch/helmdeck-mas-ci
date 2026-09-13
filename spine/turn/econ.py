@@ -53,6 +53,17 @@ def _record_econ(t, meta, external=False):
            + cu.get("cache_read_input_tokens", 0))
     if ctx:
         t["ctx_tokens"] = ctx
+    # A COMPACTION resets the meter to what the CLI itself measured after it
+    # (system/compact_boundary post_tokens, folded by the driver into
+    # meta.compaction - Paseo buildCompactionUsageEvent(postTokens)). The
+    # /compact turn carries no assistant call, so without this the meter kept
+    # the PRE-compaction figure (193k/97% on card 20260913-215533) until the
+    # next real turn - and _maybe_compact's shrink check read "nothing
+    # happened" off that stale number. post_tokens wins over ctx_usage here:
+    # it is measured strictly later within the same turn.
+    cm = meta.get("compaction") or {}
+    if isinstance(cm.get("post_tokens"), int) and cm["post_tokens"] > 0:
+        t["ctx_tokens"] = cm["post_tokens"]
     for m in meta.get("models") or []:
         if m not in t.setdefault("models", []):
             t["models"].append(m)
