@@ -11,8 +11,17 @@ flat conversation for quick questions, card tiles and roll-ups. The process
 (the PMBOK epic, cells/engineer/chains/processes.py) is the FOLDER: cards born
 from a process carry `process`/`process_title`, so the list can group them
 without a fourth object. Derived on every call from the runtime's own records,
-never cached as a stored flag (CLAUDE.md)."""
+never cached as a stored flag (CLAUDE.md).
+
+Titles: a process-born card's task text starts with the mode banner
+processes.py prepends ("HUMAN STEP (tracked only): ...", "PREPARE (draft only
+- ...): ..."), which is the WORKER's instruction, not a name the owner would
+say out loud (his first screenshot of the list, 2026-09-13 13:11). For those
+the STEP's own title is the name - matched through step["track"], the binding
+processes.accept_step writes."""
 import time
+
+ACTIVE_LANES = ("working", "review")
 
 
 def _epoch(s):
@@ -50,13 +59,16 @@ def threads(user, limit=200):
              "at": _epoch("%s %s:00" % (last.get("date") or "", last.get("ts") or ""))
              if last.get("ts") else 0.0}
 
-    procs = {}
+    procs, step_title = {}, {}
     for p in processes.list_processes():
         steps = p.get("steps") or []
-        procs[p["id"]] = {"id": p["id"], "title": (p.get("request") or "")[:60],
+        procs[p["id"]] = {"id": p["id"], "title": (p.get("request") or "").split("\n")[0][:70],
                           "status": p.get("status"),
                           "total": len(steps),
                           "done": sum(1 for s in steps if s.get("status") == "done" or s.get("done"))}
+        for s in steps:
+            if s.get("track") and s.get("title"):
+                step_title[s["track"]] = s["title"]
 
     rows = []
     for t in sessions.list_tracks():
@@ -68,10 +80,14 @@ def threads(user, limit=200):
         at = float(lm.get("ta") or 0.0) if lm else 0.0
         if not at:
             at = _epoch(t.get("updated") or t.get("created") or "")
+        lane = t.get("lane")
+        status = t.get("status")
         rows.append({
             "id": t["id"], "kind": "card",
-            "title": card_mirror.short_name(t),
-            "lane": t.get("lane"), "status": t.get("status"),
+            "title": step_title.get(t["id"]) or card_mirror.short_name(t),
+            "lane": lane, "status": status,
+            # what the owner must know at a glance - the card's own signals
+            "active": lane in ACTIVE_LANES or status == "needs_you",
             "process": t.get("process") or None,
             "process_title": t.get("process_title") or None,
             "preview": ((lm.get("text") if lm else "") or "")[:140].replace("\n", " "),
@@ -79,7 +95,7 @@ def threads(user, limit=200):
             "has_chat": lm is not None,
             "at": at,
         })
-    rows.sort(key=lambda r: r["at"], reverse=True)
+    rows.sort(key=lambda r: (not r["active"], -r["at"]))
     used = {r["process"] for r in rows if r.get("process")}
     return {"inbox": inbox,
             "threads": rows[:limit],

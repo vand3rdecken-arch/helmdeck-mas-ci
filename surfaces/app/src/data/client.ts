@@ -257,6 +257,7 @@ export interface ChatStats {
 export interface ChatThread {
   id: string; kind: "card"; title: string; lane?: string; status?: string;
   process?: string | null; process_title?: string | null;
+  active: boolean;   // runs or waits for the owner (lane working/review, status needs_you)
   preview: string; by?: "human" | "henry" | null; has_chat: boolean; at: number;
 }
 export interface ChatThreads {
