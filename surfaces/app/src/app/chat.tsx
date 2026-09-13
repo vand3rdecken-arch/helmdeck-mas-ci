@@ -98,6 +98,13 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     return { role: "assistant", kind: "card", cls: m.cls, card: m.card, label: m.cardName || m.card,
              text: m.text, ts: m.ts, by: "Henry", byKind: "henry" };
   }
+  // Any other action result ("accepted all steps of ... into cards", "moved
+  // x -> review") is plumbing, not Henry speaking: a quiet system line with a
+  // dot, the same row a card's lifecycle notes use - not a sender-less bubble
+  // (owner 2026-09-13 17:05).
+  if (m.cls === "act") {
+    return { role: "assistant", kind: "note", cls: m.cls, text: m.text, ts: m.ts };
+  }
   if (m.cls === "card") {
     const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
     return {
