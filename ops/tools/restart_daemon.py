@@ -34,9 +34,23 @@ def _load(name):
         return {}
 
 
+def _alive(pid, spawn):
+    """Only a pid that is (a) alive and (b) OUR spawn (proctable's pid-reuse
+    guard) counts. A stale entry - the process died without _forget_pid, as
+    happened 2026-09-13 18:45 (pid 16404 dead, restart waited 25 min on it) -
+    must not block a restart forever."""
+    try:
+        sys.path.insert(0, ROOT)
+        from spine.agent import proctable
+        return bool(proctable._is_ours(int(pid), spawn))
+    except Exception:                                    # noqa: BLE001
+        return True                                      # unknown = assume live (never kill on a guess)
+
+
 def busy():
     """(cards, chat_users) still running - both empty means safe."""
-    return list(_load("driver_pids.json").keys()), list(_load("chat_turns.json").keys())
+    cards = [p for p, spawn in _load("driver_pids.json").items() if _alive(p, spawn)]
+    return cards, list(_load("chat_turns.json").keys())
 
 
 def healthy():
