@@ -919,14 +919,30 @@ def _schedule_compact(user):
             # compaction goes ahead anyway (the overflow guard must not be
             # deferrable forever).
             _t0 = time.time()
-            while time.time() - _t0 < 1800:
+
+            def _quiet_for():
                 _mine = [v for k, v in list(_last_turn_at.items())
                          if k == _skey(user) or k.startswith(_skey(user) + "\x00")]
-                if time.time() - (max(_mine) if _mine else 0.0) >= 180:
-                    break
-                time.sleep(15)
+                return time.time() - (max(_mine) if _mine else 0.0)
+
             lk = _turn_lock(user)
-            lk.acquire()
+            while True:
+                while time.time() - _t0 < 1800 and _quiet_for() < 180:
+                    time.sleep(15)
+                lk.acquire()
+                # RE-CHECK UNDER THE LOCK. The lull was measured BEFORE
+                # acquire(), and acquire() blocks behind a running turn - so
+                # a lull that ended the moment the owner spoke still let the
+                # compaction start the instant his turn released the lock
+                # (measured 2026-09-13 11:25:08: reply out at 11:25:07,
+                # memory-save + /compact took the lock one second later, the
+                # owner's follow-up sat 3 minutes behind it). The lock proves
+                # nothing about quiet; only the clock does. Bounded by the
+                # same 30 min as the outer wait.
+                if _quiet_for() >= 180 or time.time() - _t0 >= 1800:
+                    break
+                lk.release()
+                time.sleep(15)
             try:
                 note = _maybe_compact(user)
             finally:
@@ -1717,7 +1733,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _cancelled.discard(user)
     # serialize with prewarm (and any concurrent send) on the shared process
     _lk = _turn_lock(user)
-    _lk.acquire()
+    if not _lk.acquire(blocking=False):
+        # SAY WHY the owner waits. A contended lock is either a running turn
+        # (his own steer, another device) or maintenance (memory-save +
+        # /compact, minutes). The app renders `status` under "denkt nach", so
+        # this is the difference between a dead spinner and a reason
+        # (owner 2026-09-13: "Kein Mensch kann so lange warten").
+        livebuf.set_field(live_key, "status",
+                          "Verlauf wird gerade verdichtet - deine Nachricht ist eingereiht"
+                          if user in _compacting else
+                          "Wartet auf den laufenden Turn - deine Nachricht ist eingereiht")
+        _lk.acquire()
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
     # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old

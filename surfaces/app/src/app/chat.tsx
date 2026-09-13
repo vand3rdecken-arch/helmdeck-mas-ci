@@ -228,6 +228,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   busyRef.current = busy;
+  // The server transcript length when the CURRENT turn began - the anchor the
+  // held stream is released against (see `held`). Captured at send/observe
+  // time, NOT at hand-over: the daemon appends the bot row and bumps the
+  // cursor BEFORE it answers the POST, so by the time busy flips the refetch
+  // has often already landed the answer - a hand-over snapshot then already
+  // contains it and the held copy never releases, i.e. the answer shows twice
+  // (owner 2026-09-13, "Nachricht kam zwei mal an").
+  const turnStartLen = useRef(0);
+  const serverLenRef = useRef(0);
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
   // the busy->false edge: a refetch that hadn't persisted the just-sent turn
@@ -255,7 +264,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // server transcript length at hand-over: the hold is released the moment
   // the transcript grows past it with something that is not the owner's own
   // echo, i.e. the daemon's copy of this very answer (or its error).
-  const [held, setHeld] = useState<{ text: string; len: number } | null>(null);
+  const [held, setHeld] = useState<{ text: string; len: number } | null>(null);   // len = turnStartLen at hand-over
   // A turn OBSERVED rather than sent: the daemon reports `running` on
   // /chat/live, so a screen that (re)mounts or resumes while Henry is still
   // working - or whose POST /chat died on the relay's 115s leg while the turn
@@ -301,7 +310,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     if (!busy) {
       // hand the stream over to `held` instead of dropping it (see `held`)
       setStream((cur) => {
-        if (cur.trim()) setHeld({ text: cur, len: (data?.messages ?? []).length });
+        if (cur.trim()) setHeld({ text: cur, len: turnStartLen.current });
         return "";
       });
       setThink(""); setLiveStatus("");
@@ -411,12 +420,14 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // so once the user text's occurrence count exceeds this turn's baseline the
   // whole optimistic pair is redundant and the persisted version takes over.
   const server = data?.messages;
-  // Release the held stream once the daemon's own copy is on screen: the
-  // transcript grew past the hand-over length and its tail is not the owner.
+  serverLenRef.current = (server ?? []).length;
+  // Release the held stream once the daemon's own copy is on screen: any
+  // non-owner line that landed after the turn began IS that copy (or the
+  // turn's error line) - regardless of whether it arrived before or after
+  // busy flipped.
   useEffect(() => {
     if (!held || !server) return;
-    const tail = server[server.length - 1];
-    if (server.length > held.len && tail && tail.cls !== "user" && tail.cls !== "you") setHeld(null);
+    if (server.slice(held.len).some((m) => m.cls !== "user" && m.cls !== "you")) setHeld(null);
   }, [server, held]);
   // OBSERVE a turn already running on the daemon (mount + every foreground
   // resume): /chat/live `running` is the one place that state is owned.
@@ -427,6 +438,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         const r = await api.chatLive();
         if (!alive || !r || r.running !== true || busyRef.current) return;
         derived.current = true;
+        turnStartLen.current = serverLenRef.current;
         turn.current++;            // a late POST result of a dead screen cannot end this one
         setBusy(true);
       } catch { /* offline - the stream loop's reconnect is the catch-up */ }
@@ -511,6 +523,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
       + pending.filter((tn) => tn.key === q).length;
     setHeld(null);
+    turnStartLen.current = (server ?? []).length;
     setPending((p) => [...p, {
       id, key: q, mid, baseline,
       // Where this bubble belongs: after everything the server had shown at the
