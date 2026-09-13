@@ -1324,6 +1324,32 @@ def say(text, cls="pm", card=None, extra=None):
 
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
+
+
+def _note_turn(user, on):
+    """daemon/state/chat_turns.json = {user: started_epoch} - the on-disk
+    witness of a RUNNING chat turn, written by the one owner of _running
+    (this module) at event time. driver_pids.json covers card workers; nothing
+    covered Henry's own turn, so a "no cards running, safe to restart" check
+    killed the owner's answer mid-tool (2026-09-13 17:01, "Conversation wieder
+    verloren"). ops/tools/restart_daemon.py waits on BOTH files."""
+    try:
+        path = os.path.join(ROOT, "state", "chat_turns.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cur = json.load(f) or {}
+        except (OSError, ValueError):
+            cur = {}
+        if on:
+            cur[user] = time.time()
+        else:
+            cur.pop(user, None)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cur, f)
+        os.replace(tmp, path)
+    except Exception:                                    # noqa: BLE001
+        pass                                             # a witness, never a gate on the turn
 # WHICH card the in-flight turn is scoped to (chat(card=...)), or None for a
 # board-chat turn. A satellite of _running with exactly the same lifetime -
 # set and cleared at the same two places, never derived from anything else.
@@ -1784,6 +1810,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
     _running[user] = p
+    _note_turn(user, True)
     _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     resume_echo, ctx_first = False, {}
@@ -1938,6 +1965,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     finally:
         _beat["done"] = True
         _running.pop(user, None)
+        _note_turn(user, False)
         _running_card.pop(user, None)
         if persistable and (user in _cancelled or p.poll() is not None):
             # a cancelled or dead process must not be reused - next turn

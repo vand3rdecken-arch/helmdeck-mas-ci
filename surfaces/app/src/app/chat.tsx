@@ -473,7 +473,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   useEffect(() => {
     if (!held || !server) return;
     const hasSeq = server.some((m) => typeof m.seq === "number");
-    const landed = hasSeq
+    // held.seq === 0 means the turn began against a daemon that did not stamp
+    // seq yet; if the rows carry seq NOW (a daemon restart in between), every
+    // row is "newer than 0" and the hold would release on nothing - so that
+    // edge falls back to the signature too (measured 2026-09-13 17:01).
+    const landed = hasSeq && held.seq > 0
       ? server.some((m) => m.cls !== "user" && m.cls !== "you" && (m.seq ?? 0) > held.seq)
       : sigOf(server) !== held.sig;
     if (landed) setHeld(null);
