@@ -2161,7 +2161,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                             {"kind": "note", "text": r, "byKind": "henry",
                              "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
                 else:
-                    _append_log(user, [{"cls": "act", "text": r} for r in done])
+                    # one entry per action, and the card it produced rides
+                    # along (copilot_actions._tag) so the app can draw a
+                    # thread tile instead of a sentence
+                    _append_log(user, [dict({"cls": "act", "text": r},
+                                            **({"card": a.get("_card"), "cardName": a.get("_card_name")}
+                                               if a.get("_card") else {}))
+                                       for a, r in zip(acts, done)])
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
     # feed the keepalive: a real turn IS the freshest cache there is
     _last_turn_at[skey] = _last_touch_at[skey] = time.time()

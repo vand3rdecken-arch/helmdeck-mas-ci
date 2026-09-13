@@ -254,6 +254,17 @@ export interface ChatStats {
   turns: number; cost: number; tokens_in: number; tokens_out: number;
   ctx_tokens?: number; ctx_window?: number; plan_pct?: number | null;
 }
+export interface ChatThread {
+  id: string; kind: "card"; title: string; lane?: string; status?: string;
+  process?: string | null; process_title?: string | null;
+  preview: string; by?: "human" | "henry" | null; has_chat: boolean; at: number;
+}
+export interface ChatThreads {
+  inbox: { id: "inbox"; kind: "inbox"; title: string; preview: string; at: number };
+  threads: ChatThread[];
+  processes: { id: string; title: string; status?: string; total: number; done: number }[];
+}
+
 // POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}
 // (or {error} on a rejection). Keep ChatMsg for /chat/history entries.
 export interface ChatReply { reply?: string; error?: string; cost?: number;
@@ -1007,6 +1018,10 @@ export const api = {
    *  no use for them. `voice_pending` is why the loop cannot simply stop when
    *  `running` goes false: the turn can be over while the last sentence is
    *  still rendering. */
+  // CONVERSATIONS = card threads + the inbox, grouped by process
+  // (cells/copilot/chat/threads.py). Derived by the daemon on every call from
+  // the cards' timelines - nothing stored, so nothing to keep in sync.
+  chatThreads: () => req<ChatThreads>("GET", "/chat/threads"),
   chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
     /** The tool action currently executing ("Bash: py ..."), so the wait shows

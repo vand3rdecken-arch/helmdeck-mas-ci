@@ -217,4 +217,16 @@ export const composer: Dict = {
   "palette.hint.sessions": { de: "Claude-Sessions", en: "Claude sessions" },
   "palette.hint.automation": { de: "Loop / Night-Shift", en: "Loop / night shift" },
   "palette.hint.new": { de: "Karte anlegen", en: "Create card" },
+  // conversations = card threads (ui/chat_threads.tsx)
+  "chat.threads": { de: "Unterhaltungen", en: "Conversations" },
+  "chat.threads.new": { de: "Neuer Thread", en: "New thread" },
+  "chat.threads.inbox": { de: "Henry · Inbox", en: "Henry · Inbox" },
+  "chat.threads.today": { de: "Heute", en: "Today" },
+  "chat.threads.yesterday": { de: "Gestern", en: "Yesterday" },
+  "chat.threads.week": { de: "Letzte 7 Tage", en: "Last 7 days" },
+  "chat.threads.older": { de: "Früher", en: "Earlier" },
+  "chat.threads.rollup": { de: "{done} von {total} fertig", en: "{done} of {total} done" },
+  "chat.threads.empty": { de: "Noch keine Threads. Sobald aus einer Anfrage eine Karte wird, erscheint sie hier.", en: "No threads yet. As soon as a request becomes a card, it shows up here." },
+  "chat.thread.open": { de: "Thread öffnen", en: "Open thread" },
+  "chat.thread.tile": { de: "Weiter im Thread dieser Karte", en: "Continues in this card's thread" },
 };

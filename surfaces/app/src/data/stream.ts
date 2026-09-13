@@ -83,6 +83,7 @@ export async function ensureChatFresh(qc: QueryClient): Promise<void> {
     for (let i = 0; i < 12; i++) {
       _again = false;
       await qc.refetchQueries({ queryKey: ["chatHistory"] });
+      void qc.invalidateQueries({ queryKey: ["chatThreads"] });   // previews/order follow the chat
       const st = qc.getQueryState(["chatHistory"]);
       // no observer/never fetched (chat not open) counts as fresh: the screen
       // fetches on mount, and refetchQueries above is a no-op for it anyway.

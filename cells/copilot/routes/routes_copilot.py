@@ -26,6 +26,15 @@ def chat_history_get(self, user):
     return self._send(200, json.dumps(copilot.history(user["name"])))
 
 
+def chat_threads_get(self, user):
+    """Conversations = card threads + the inbox, grouped by process
+    (cells/copilot/chat/threads.py). Same audience as the history."""
+    if user["role"] == "client":
+        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from cells.copilot.chat import threads
+    return self._send(200, json.dumps(threads.threads(user["name"])))
+
+
 def chat_live_get(self, user):
     # the board agent's STREAMING prose reply while a turn runs, so
     # the board chat streams like a card (one shared surface). Polled
@@ -337,6 +346,7 @@ def notify_speak_post(self, user, body):
 GET_ROUTES = {
     "/chat/history": chat_history_get,
     "/chat/live": chat_live_get,
+    "/chat/threads": chat_threads_get,
 }
 POST_ROUTES = {
     "/chat/cancel": chat_cancel_post,

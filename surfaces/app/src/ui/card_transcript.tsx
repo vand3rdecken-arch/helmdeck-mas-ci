@@ -3,6 +3,7 @@ import * as Clipboard from "expo-clipboard";
 import React, { memo, useEffect, useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { ASK_OPEN, stripAsk } from "@/data/ask";
+import { useRouter } from "expo-router";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
@@ -44,6 +45,7 @@ export interface TStep {
   byKind?: "human" | "henry" | "worker";
   to?: string;         // on a user step: the resolved recipient ("henry" | "worker")
   streaming?: boolean; detail?: ToolDetail;
+  card?: string;       // kind === "card": a thread tile - tap opens that card's chat
   todos?: { content: string; status: string }[];
 }
 
@@ -238,6 +240,27 @@ function UsageChip({ s, t, ctxWindow }: { s: TStep; t: ThemeTokens; ctxWindow?: 
         · ↓{tokK(s.tokIn)} ↑{tokK(s.tokOut)}{cached ? ` · Cache ${tokK(s.cacheRead)}` : ""}
       </Text>
     </View>
+  );
+}
+
+/** A THREAD TILE: Henry filed/steered a card from the inbox and the topic
+ *  continues in that card's own chat (owner decree 2026-09-13). The row is the
+ *  hand-over - tap and you are in the thread. */
+function CardTile({ s, t }: { s: TStep; t: ThemeTokens }) {
+  const tr = useT();
+  const router = useRouter();
+  return (
+    <Pressable onPress={() => s.card && router.push(`/card/${s.card}?tab=chat`)}
+      accessibilityLabel={tr("chat.thread.open")}
+      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 11, paddingVertical: 9,
+        borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 10, backgroundColor: pressed ? t.surface2 : t.surface1 })}>
+      <Ionicons name="chatbubbles-outline" size={16} color={t.accent} />
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600" }}>{s.label || s.card}</Text>
+        <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 11.5, marginTop: 1 }}>{tr("chat.thread.tile")}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={14} color={t.txtTertiary} />
+    </Pressable>
   );
 }
 
@@ -447,6 +470,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps
             </View>);
         }
         if (kind === "usage") return <UsageChip key={key} s={s} t={t} ctxWindow={ctxWindow} />;
+        if (kind === "card") return <CardTile key={key} s={s} t={t} />;
         if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;
         if (kind === "todos") return <Todos key={key} s={s} t={t} />;
         if (kind === "plan") return (

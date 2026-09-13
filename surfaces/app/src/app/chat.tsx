@@ -20,6 +20,7 @@ import { Composer, type Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
 import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
+import { ThreadList } from "@/ui/chat_threads";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import * as outbox from "@/data/outbox";
 import { ContextMeter } from "@/ui/context_meter";
@@ -91,6 +92,12 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // Henry would be a lie the owner acts on: he would read a card waiting on a
   // decision as Henry's advice, and keeping those two apart is the entire job
   // of the transcript's sender model.
+  // Henry filed/steered a card: the topic continues in that card's thread -
+  // draw the hand-over as a tile, not as a sentence about plumbing.
+  if (m.cls === "act" && m.card) {
+    return { role: "assistant", kind: "card", cls: m.cls, card: m.card, label: m.cardName || m.card,
+             text: m.text, ts: m.ts, by: "Henry", byKind: "henry" };
+  }
   if (m.cls === "card") {
     const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
     return {
@@ -226,6 +233,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     return () => usePresence.getState().setFocusedCard(null);
   }, []);
   const [busy, setBusy] = useState(false);
+  // phone: the conversation list is a full-screen sheet over the chat; on
+  // desktop it is a permanent sidebar (CopilotOverlay/ChatScreen), so the
+  // header button only exists on the narrow layout.
+  const [threadsOpen, setThreadsOpen] = useState(false);
+  const nav = useRouter();
   const busyRef = useRef(false);
   busyRef.current = busy;
   // The server transcript length when the CURRENT turn began - the anchor the
@@ -779,6 +791,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
+      {!wide ? (
+        <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
+                   style={{ marginLeft: 6 }}>
+          <Ionicons name="albums-outline" size={22} color={t.txtSecondary} />
+        </Pressable>
+      ) : null}
       {glassAvail && me?.role === "owner" ? (
         <Pressable onPress={toggleGlasses} hitSlop={10} style={{ marginLeft: "auto" }}
                    accessibilityLabel={tr("chat.glassesTalk")}>
@@ -796,6 +814,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top }}>
         {header}
         <Empty text={tr("chat.teamOnly")} />
+      </View>
+    );
+  }
+
+  if (threadsOpen && !wide) {
+    return (
+      <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
+        <ThreadList current="inbox" onClose={() => setThreadsOpen(false)}
+          onPick={(id) => { setThreadsOpen(false); if (id !== "inbox") nav.push(`/card/${id}?tab=chat`); }} />
       </View>
     );
   }
@@ -902,15 +929,23 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 export function CopilotOverlay() {
   const t = useTheme();
   const tr = useT();
+  const router = useRouter();
   const { wide } = useResponsive();
   const open = useCopilotPanel((s) => s.open);
   const hide = useCopilotPanel((s) => s.hide);
   if (!wide || !open) return null;
+  // Sidebar + chat, the desktop chat-app shape: the conversation list on the
+  // left is permanent, the inbox on the right; picking a thread leaves the
+  // panel for that card's chat tab.
   return (
     <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, flexDirection: "row", backgroundColor: "#00000073" }}>
       <Pressable style={{ flex: 1 }} onPress={hide} accessibilityLabel={tr("chat.close")} />
-      <View style={{ width: 540, maxWidth: "48%", ...(Platform.OS === "web" ? { boxShadow: "-8px 0 24px rgba(0,0,0,0.35)" } as any : {}) }}>
-        <ChatBody onClose={hide} wide />
+      <View style={{ width: 820, maxWidth: "72%", flexDirection: "row", ...(Platform.OS === "web" ? { boxShadow: "-8px 0 24px rgba(0,0,0,0.35)" } as any : {}) }}>
+        <View style={{ width: 280, borderLeftWidth: 1, borderColor: t.glassBorder }}>
+          <ThreadList current="inbox" embedded
+            onPick={(id) => { if (id !== "inbox") { hide(); router.push(`/card/${id}?tab=chat`); } }} />
+        </View>
+        <View style={{ flex: 1 }}><ChatBody onClose={hide} wide /></View>
       </View>
     </View>
   );
@@ -928,7 +963,12 @@ export default function ChatScreen() {
     return (
       <View style={{ flex: 1, flexDirection: "row", backgroundColor: "#00000073" }}>
         <Pressable style={{ flex: 1 }} onPress={() => router.back()} accessibilityLabel={tr("chat.close")} />
-        <View style={{ width: 540, maxWidth: "48%" }}><ChatBody onClose={() => router.back()} wide /></View>
+        <View style={{ width: 820, maxWidth: "72%", flexDirection: "row" }}>
+          <View style={{ width: 280 }}>
+            <ThreadList current="inbox" embedded onPick={(id) => { if (id !== "inbox") router.push(`/card/${id}?tab=chat`); }} />
+          </View>
+          <View style={{ flex: 1 }}><ChatBody onClose={() => router.back()} wide /></View>
+        </View>
       </View>
     );
   }

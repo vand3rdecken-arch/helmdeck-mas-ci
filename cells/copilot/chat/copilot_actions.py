@@ -230,6 +230,20 @@ def _note_overrides(repo, patch, actor):
         print("copilot: noting overrides for %s failed: %s" % (repo, e), flush=True)
 
 
+def _tag(a, t):
+    """Remember on the ACTION which card it produced/touched. The result is a
+    sentence (Henry reads it next turn); the chat needs the id to draw a tile
+    that opens the card's thread (threads.py) - parsing the sentence back
+    would be a heuristic, this is the record."""
+    try:
+        from cells.copilot.chat import card_mirror
+        a["_card"] = t["id"]
+        a["_card_name"] = card_mirror.short_name(t)
+    except Exception:                                    # noqa: BLE001
+        pass
+    return t
+
+
 def _run_action(a, actor, role="operator"):
     from cells.engineer.cards import sessions
     from cells.engineer.chains import processes
@@ -364,6 +378,7 @@ def _run_action(a, actor, role="operator"):
                 dispatch=a.get("dispatch", True) is not False)
         except RuntimeError as e:
             return "machine_task: %s" % e
+        _tag(a, t)
         return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
                 "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
     if kind == "direct_task":
@@ -393,6 +408,7 @@ def _run_action(a, actor, role="operator"):
                 fast_track=a.get("fast_track") is True)
         except RuntimeError as e:
             return "direct_task: %s" % e
+        _tag(a, t)
         return ("Direkt-Build gestartet (%s%s) - der Agent arbeitet OHNE Worktree direkt "
                 "im Baum %s. Kein Gate, kein Merge: was er ändert, ist sofort da."
                 % (t["id"], ", fast-track" if t.get("fast_track") else "",
@@ -412,6 +428,7 @@ def _run_action(a, actor, role="operator"):
                                value=a.get("value"), driver=a.get("driver", "claude"),
                                actor=actor, priority=a.get("priority", "medium"),
                                due=a.get("due", ""))
+        _tag(a, t)
         return "filed card %s (%s)" % (t["id"], t["lane"])
     if kind in ("move", "steer", "delete", "archive"):
         t = _find_card(a.get("card", ""))
@@ -455,6 +472,7 @@ def _run_action(a, actor, role="operator"):
         from spine.ops import bgthread
         bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
             t["id"], a["text"], actor=actor, source="board copilot"))
+        _tag(a, t)
         return "steer sent to %s (agent working in background)" % t["branch"]
     if kind == "follow_up":
         # The honest replacement for "schau ich mir gleich an" (board-copilot.md

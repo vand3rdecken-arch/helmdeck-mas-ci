@@ -375,6 +375,21 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
                       ctx_tokens: 62000, ctx_window: 200000, plan_pct: 0.35 } };
   }
 
+  if (path === "/chat/threads") {
+    // conversations = card threads (ui/chat_threads.tsx): the demo's own cards,
+    // two of them under the PM's process folder, the rest by recency
+    const at = (minsAgo: number) => Math.floor(Date.now() / 1000) - minsAgo * 60;
+    const th = (id: string, taskKey: string, lane: string, mins: number, process?: string) => ({
+      id, kind: "card", title: t(taskKey), lane, status: lane === "working" ? "running" : lane === "done" ? "accepted" : "queued",
+      process: process ?? null, process_title: process ? t("demo.project") : null,
+      preview: t("demo.chat.reply").slice(0, 90), by: "henry", has_chat: true, at: at(mins) });
+    return { inbox: { id: "inbox", kind: "inbox", title: "Henry", preview: t("demo.chat.reply").slice(0, 90), at: at(3) },
+             threads: [th("d2", "demo.c2.task", "working", 12, "p1"), th("d3", "demo.c3.task", "review", 40, "p1"),
+                       th("d1", "demo.c1.task", "done", 60 * 5), th("d4", "demo.c4.task", "done", 60 * 30),
+                       th("d5", "demo.c5.task", "backlog", 60 * 24 * 3), th("d6", "demo.c6.task", "backlog", 60 * 24 * 12)],
+             processes: [{ id: "p1", title: t("demo.project"), status: "running", total: 3, done: 1 }] };
+  }
+
   if (path === "/chat" && method === "POST") {
     chatLog = [...chatLog, { cls: "user", text: String(b.text ?? ""), ts: now() },
                { cls: "assistant", textKey: "demo.chat.reply", ts: now() }];
