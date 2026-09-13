@@ -125,6 +125,15 @@ export const settings: Dict = {
   "settings.savedTitle": { de: "Gespeichert", en: "Saved" },
   // Was hardcoded German on the hub's door list until phase 4.
   "settings.logout": { de: "Abmelden", en: "Sign out" },
+  "settings.deleteAccount": { de: "Konto löschen", en: "Delete account" },
+  "settings.deleteAccount.msg": {
+    de: "Das Konto {name} wird endgültig gelöscht: Anmeldungen, Geräte-Tokens, Profil und persönliche Boards. Bestätige mit deinem Passwort.",
+    en: "The account {name} is deleted permanently: sign-ins, device tokens, profile and personal boards. Confirm with your password." },
+  "settings.deleteAccount.confirm": { de: "Endgültig löschen", en: "Delete permanently" },
+  "settings.deleteAccount.wrongPw": { de: "Passwort stimmt nicht.", en: "Wrong password." },
+  "settings.deleteAccount.lastOwner": {
+    de: "Das ist der letzte Owner dieses Workspaces. Mach erst ein anderes Konto zum Owner.",
+    en: "This is the workspace's last owner. Make another account owner first." },
   "settings.saved.business": { de: "Business-Einstellungen.", en: "Business settings." },
   "settings.saved.policy": { de: "Policy & Aussehen.", en: "Policy & appearance." },
   "settings.saved.jira": { de: "Jira-Verbindung.", en: "Jira connection." },

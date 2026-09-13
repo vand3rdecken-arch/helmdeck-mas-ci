@@ -16,6 +16,7 @@ import { useLaneLabels } from "@/ui/board";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useCellEnabled } from "@/data/cells";
+import { useDemo } from "@/data/demo";
 import { clearProfileCache } from "@/data/profile";
 import { DOOR_IDS, type DoorId } from "@/data/settings_schema";
 import type { Me, UserRow } from "@/data/types";
@@ -266,6 +267,15 @@ export default function Settings() {
   // ---- self sign-up (door: team) ----
   const [regOpen, setRegOpen] = useState(false);
 
+  // ---- delete own account (hub root, every role) ----
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPw, setDelPw] = useState("");
+  const [delErr, setDelErr] = useState<string | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  // The sample board has no account behind it - the demo seam would answer {}
+  // and "delete" a person who does not exist, so the row is not offered there.
+  const demoActive = useDemo((s) => s.active);
+
   useEffect(() => {
     if (!s) return;
     const pol = s.policy ?? {};
@@ -430,6 +440,23 @@ export default function Settings() {
     useAuthGate.getState().reportAuthRequired();
   };
 
+  // The daemon deletes the account the token belongs to, after re-checking the
+  // password; on success this device is signed out exactly like logout().
+  async function deleteAccount() {
+    if (!delPw || delBusy) return;
+    setDelBusy(true); setDelErr(null);
+    try {
+      await api.deleteAccount(delPw);
+      setDelOpen(false); setDelPw("");
+      logout();
+    } catch (e) {
+      const m = String((e as Error).message);
+      setDelErr(m.includes("password not accepted") ? tr("settings.deleteAccount.wrongPw")
+        : m.includes("last owner") ? tr("settings.deleteAccount.lastOwner") : m);
+    }
+    finally { setDelBusy(false); }
+  }
+
   const goDoor = (d: DoorId) => { setDoor(d); router.setParams({ door: d }); };
   const goList = () => { setDoor(null); router.setParams({ door: undefined }); };
 
@@ -495,6 +522,25 @@ export default function Settings() {
             style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
             <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
           </Pressable>
+          {demoActive ? null : delOpen ? (
+            <Panel style={{ gap: 10 }}>
+              <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600" }}>{tr("settings.deleteAccount")}</Text>
+              <Text style={{ color: t.txtSecondary, fontSize: 13 }}>{tr("settings.deleteAccount.msg", { name: me?.name ?? "" })}</Text>
+              <TextInput value={delPw} onChangeText={(v) => { setDelPw(v); setDelErr(null); }}
+                placeholder={tr("sign.passwordPh")} placeholderTextColor={t.txtPlaceholder}
+                secureTextEntry autoCapitalize="none" onSubmitEditing={deleteAccount} style={field} />
+              {delErr ? <Text style={{ color: t.danger, fontSize: 13 }}>{delErr}</Text> : null}
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Btn kind="ghost" label={tr("ui.cancel")} onPress={() => { setDelOpen(false); setDelPw(""); setDelErr(null); }} />
+                <Btn kind="danger" label={tr("settings.deleteAccount.confirm")} onPress={deleteAccount} disabled={!delPw || delBusy} />
+              </View>
+            </Panel>
+          ) : (
+            <Pressable onPress={() => setDelOpen(true)}
+              style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
+              <Text style={{ color: t.danger, fontSize: 13 }}>{tr("settings.deleteAccount")}</Text>
+            </Pressable>
+          )}
           <DesktopUpdateBanner />
           <UpdatesPanel />
         </ScrollView>

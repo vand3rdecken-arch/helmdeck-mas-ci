@@ -156,6 +156,27 @@ def auth_logout(self, user, body):
     return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
 
 
+def auth_delete_account(self, user, body):
+    """Self-service account deletion (App Store guideline 5.1.1(v): an app that
+    lets people create an account must let them delete it IN the app). The
+    caller can only ever delete THEMSELVES - the name comes from the session,
+    never from the body - and must re-prove the password, the same re-auth
+    step signing uses, so a phone left unlocked cannot erase an account in one
+    tap. The removal itself is auth.delete_user, the one owner of accounts: it
+    already drops tokens, sessions, profile rows and personal boards, audits
+    the removal, and refuses to delete the last owner."""
+    from spine.auth import auth
+    if not user:
+        return self._send(401, json.dumps({"error": "auth required"}))
+    if not auth.verify_password(user["name"], body.get("password") or ""):
+        return self._send(401, json.dumps({"error": "password not accepted"}))
+    try:
+        auth.delete_user(user["name"], actor=user["name"])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send_cookie(200, json.dumps({"ok": True}), clear=True)
+
+
 GET_ROUTES = {
     "/auth/state": auth_state,
 }
@@ -164,4 +185,5 @@ POST_ROUTES = {
     "/auth/register": auth_register,
     "/auth/login": auth_login,
     "/auth/logout": auth_logout,
+    "/auth/delete-account": auth_delete_account,
 }

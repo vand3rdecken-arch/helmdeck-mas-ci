@@ -787,6 +787,11 @@ export const api = {
     req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/setup", { name, password, ...whoAmI() }, undefined, true),
   authRegister: (name: string, password: string, invite: string) =>
     req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/register", { name, password, invite, ...whoAmI() }, undefined, true),
+  // Deletes the SIGNED-IN account (routes_auth.py's auth_delete_account) after
+  // re-checking its password. skipAuthGate: a wrong password must surface as
+  // the daemon's message, not bounce the user to the login screen.
+  deleteAccount: (password: string) =>
+    req<{ ok: boolean; error?: string }>("POST", "/auth/delete-account", { password }, undefined, true),
 
   // Invitations (spine/auth/invites.py) - the ONE way a person joins this
   // workspace. The role is chosen HERE, when the invitation is created, and
