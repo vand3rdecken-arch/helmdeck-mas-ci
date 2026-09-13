@@ -1863,8 +1863,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         # renders, but they live ONLY in livebuf for the length
                         # of the turn - livebuf.clear() at turn end drops them,
                         # nothing is appended to the chat log.
+                        # `at` = the prose offset when the call happened, so the
+                        # app can interleave text and tool rows in TURN ORDER
+                        # (Paseo renders the timeline chronologically; without
+                        # this every tool row sat above the whole prose).
                         _live_steps.append({"id": _b.get("id") or "", "tool": _b.get("name") or "tool",
-                                            "label": _brief[:160], "status": "running"})
+                                            "label": _brief[:160], "status": "running",
+                                            "at": len(_strip_actions_live("".join(parts)))})
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
             elif typ == "user":
                 # tool results close the matching transient step
