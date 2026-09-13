@@ -163,6 +163,27 @@ check("read_relay_url strips + trims", desktop_update.read_relay_url(sp) == "htt
 check("read_relay_url None without settings",
       desktop_update.read_relay_url(os.path.join(TMP, "nope.json")) is None)
 
+# --- DEFAULT_FEED fallback: a fresh install (no relay paired yet) must not
+# stay OTA-dormant forever - it falls back to the public relay; a configured
+# relay still wins. Root cause of the "fresh installs get no updates" bug.
+check("DEFAULT_FEED is the public relay", desktop_update.DEFAULT_FEED == "https://relay.helmdeck.de")
+missing_feed = os.path.join(TMP, "relay_feed_missing.json")
+check("missing relay_feed.json falls back to DEFAULT_FEED",
+      (desktop_update.read_relay_url(missing_feed) or desktop_update.DEFAULT_FEED)
+      == "https://relay.helmdeck.de")
+empty_feed = os.path.join(TMP, "relay_feed_empty.json")
+with open(empty_feed, "w") as f:
+    json.dump({"url": ""}, f)
+check("empty relay_feed.json url falls back to DEFAULT_FEED",
+      (desktop_update.read_relay_url(empty_feed) or desktop_update.DEFAULT_FEED)
+      == "https://relay.helmdeck.de")
+set_feed = os.path.join(TMP, "relay_feed_set.json")
+with open(set_feed, "w") as f:
+    json.dump({"url": "https://relay.example/  "}, f)
+check("a paired relay wins over DEFAULT_FEED",
+      (desktop_update.read_relay_url(set_feed) or desktop_update.DEFAULT_FEED)
+      == "https://relay.example")
+
 # --- the JS engine (Electron side), when node is around -----------------------
 node = shutil.which("node") or (
     os.path.exists(r"C:\Program Files\nodejs\node.exe") and r"C:\Program Files\nodejs\node.exe")
@@ -180,6 +201,11 @@ if node:
         check("updater.js up-to-date after apply", out["upToDateAfterApply"])
         check("updater.js defers install when the quit revalidation can't reach the feed",
               out["deferredOnDeadFeed"])
+        ff = out["feedFallback"]
+        check("updater.js DEFAULT_FEED is the public relay", ff["defaultFeedIsHelmdeckRelay"])
+        check("updater.js missing relay_feed.json falls back to DEFAULT_FEED", ff["missingFileUsesDefault"])
+        check("updater.js empty relay_feed.json url falls back to DEFAULT_FEED", ff["emptyUrlUsesDefault"])
+        check("updater.js a paired relay wins over DEFAULT_FEED", ff["configuredUrlWinsOverDefault"])
 else:
     print("  skip  updater.js harness (node not found)")
 

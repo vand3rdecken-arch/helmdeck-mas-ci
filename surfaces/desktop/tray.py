@@ -228,9 +228,7 @@ def _packaged_appdist():
 
 def _update_once():
     """One silent cycle. Returns (status-text, retry-soon)."""
-    base = desktop_update.read_relay_url(RELAY_FEED)
-    if not base:
-        return "aus (kein Relay gekoppelt)", False
+    base = desktop_update.read_relay_url(RELAY_FEED) or desktop_update.DEFAULT_FEED
     target = _packaged_appdist()
     if not target:
         return "aus (keine Desktop-App installiert)", False
