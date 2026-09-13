@@ -82,7 +82,7 @@ const OWNER_EMAIL = "tienduyvo@googlemail.com";
 // as an enhancement for people who do have a handler.
 const TESTFLIGHT_REQUEST_URL =
   "mailto:" + OWNER_EMAIL +
-  "?subject=" + encodeURIComponent("HelmDeck iOS – TestFlight-Zugang") +
+  "?subject=" + encodeURIComponent("HelmDeck iOS: TestFlight-Zugang") +
   "&body=" + encodeURIComponent(
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
@@ -105,7 +105,7 @@ const TESTFLIGHT_JOIN_URL = "https://testflight.apple.com/join/tk6twUTh";
 // changes - do not claim a Play Store listing for it again.
 const WEAR_REQUEST_URL =
   "mailto:" + OWNER_EMAIL +
-  "?subject=" + encodeURIComponent("HelmDeck Wear OS – APK-Anfrage") +
+  "?subject=" + encodeURIComponent("HelmDeck Wear OS: APK-Anfrage") +
   "&body=" + encodeURIComponent(
     "Hi, ich möchte HelmDeck auf meiner Wear-OS-Uhr testen.\n\n" +
     "Uhren-Modell: \n"
@@ -198,6 +198,41 @@ function dlMeta(entry) {
 
 // --- page -----------------------------------------------------------------
 
+// --- devices row --------------------------------------------------------
+// Phone is THE device in the pitch; this row exists so a visitor can still
+// discover desktop, watch and glasses without them competing with the hero.
+const DEV_ICON_DESKTOP =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.6" stroke="currentColor" stroke-width="1.6"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const DEV_ICON_PHONE =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.2" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 18.3h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const DEV_ICON_WATCH =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M9.5 7.5V4.2h5V7.5M9.5 16.5v3.3h5v-3.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const DEV_ICON_GLASSES =
+  '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="7" cy="13" r="3.5" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="13" r="3.5" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 13h3M2.5 12l1.5-4h3M21.5 12L20 8h-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+
+function devicesHtml(t) {
+  const item = (icon, h, p, href) =>
+    `<${href ? 'a href="' + href + '"' : "div"} class="device">${icon}<span><b>${h}</b><i>${p}</i></span></${href ? "a" : "div"}>`;
+  return (
+    item(DEV_ICON_PHONE, t.devPhoneH, t.devPhoneP, "#downloads") +
+    item(DEV_ICON_DESKTOP, t.devDeskH, t.devDeskP, "#downloads") +
+    item(DEV_ICON_WATCH, t.devWatchH, t.devWatchP, "#downloads") +
+    item(DEV_ICON_GLASSES, t.devGlassH, t.devGlassP, "#waitlist")
+  );
+}
+const DEV_DE = {
+  devPhoneH: "Handy", devPhoneP: "Android, iPhone. Rückfragen, Freigaben, Umlenken.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. Hier läuft der Operator mit Claude Code.",
+  devWatchH: "Uhr", devWatchP: "Apple Watch, Wear OS. Ja oder Nein vom Handgelenk.",
+  devGlassH: "Brille", devGlassP: "Bald. Warteliste unten.",
+};
+const DEV_EN = {
+  devPhoneH: "Phone", devPhoneP: "Android, iPhone. Questions, approvals, redirects.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. This is where the operator runs Claude Code.",
+  devWatchH: "Watch", devWatchP: "Apple Watch, Wear OS. Yes or no from your wrist.",
+  devGlassH: "Glasses", devGlassP: "Soon. Waitlist below.",
+};
+
 // One waitlist block per product. Ids are suffixed so two blocks can live on
 // the same page; the JS below binds by form[data-product], never by fixed id.
 // i18n keys with a product suffix (consentCloud, privacyACloud) override the
@@ -206,7 +241,7 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
   const sfx = product === "cloud" ? "Cloud" : "";
   const id = (base) => base + "-" + product;
   return `      <div id="${id("joinbox")}" ${showSuccess ? "hidden" : ""}>
-        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein – wir melden uns, sobald es losgeht.</p>
+        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein. Wir melden uns, sobald es losgeht.</p>
         <form id="${id("f")}" data-product="${product}" action="/api/join" method="post" novalidate>
           <div class="field">
             <label class="hp" for="${id("email")}" data-i="label">E-Mail-Adresse</label>
@@ -219,7 +254,7 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
           <p class="err" id="${id("err")}" role="status" aria-live="polite">${err ? "Das sieht nicht nach einer gültigen E-Mail-Adresse aus." : ""}</p>
         </form>
         <p class="consent" data-i="consent${sfx}">${product === "cloud"
-          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet – oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
+          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
           : "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe."}</p>
       </div>
 
@@ -230,7 +265,7 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
         </svg>
         <div>
           <h2 id="${id("done-h")}" tabindex="-1" data-i="${already ? "doneAlreadyH" : "doneH"}" style="font-size:1.05rem">${already ? "Schon eingetragen." : "Du stehst auf der Liste."}</h2>
-          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "Diese Adresse steht bereits auf der Liste – alles gut." : "Wir melden uns einmalig, sobald es losgeht:"}</span> <b id="${id("done-mail")}">${safeEmail}</b></p>
+          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "Diese Adresse steht bereits auf der Liste. Alles gut." : "Wir melden uns einmalig, sobald es losgeht:"}</span> <b id="${id("done-mail")}">${safeEmail}</b></p>
         </div>
       </div>
 
@@ -264,9 +299,9 @@ function page({ rel, joined, already, err, email, product }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck – Claude Code fragt. Du antwortest vom Handy.</title>
+<title>HelmDeck: Claude Code fragt. Du antwortest vom Handy.</title>
 <meta name="description" content="HelmDeck ist eine App für dein Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage landet als Push auf dem Handy. Du antwortest, der Agent macht weiter. Kein Cloud-Account, kein Code verlässt deinen Rechner.">
-<meta property="og:title" content="HelmDeck – Claude Code fragt. Du antwortest vom Handy.">
+<meta property="og:title" content="HelmDeck: Claude Code fragt. Du antwortest vom Handy.">
 <meta property="og:description" content="Jede Rückfrage von Claude Code als Push auf dem Handy. Du antwortest, der Agent macht weiter. Der Rechner bleibt zu Hause, dein Code auch.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
@@ -337,6 +372,15 @@ h3{margin:0; font-size:1.08rem; font-weight:700}
 .quote p{margin:0 0 .5rem; font-size:1.02rem; line-height:1.55; color:var(--ink-2); text-wrap:pretty}
 .quote footer{font-size:.84rem; color:var(--ink-3)}
 .quote footer{text-align:left; padding:0}
+.devices-h{margin:2rem 0 .8rem; font-size:.82rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+.devices{display:grid; grid-template-columns:1fr; gap:.7rem}
+@media (min-width:46rem){.devices{grid-template-columns:1fr 1fr}}
+@media (min-width:64rem){.devices{grid-template-columns:repeat(4,1fr)}}
+.device{display:flex; align-items:flex-start; gap:.7rem; padding:.85rem .95rem; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--ink); text-decoration:none}
+a.device:hover{border-color:var(--border-strong)}
+.device svg{width:1.35rem; height:1.35rem; flex:none; margin-top:.1rem; color:var(--accent-hi)}
+.device b{display:block; font-size:.92rem}
+.device i{display:block; font-style:normal; font-size:.8rem; color:var(--ink-3); line-height:1.45}
 .shots.shots-2{grid-template-columns:1fr}
 @media (min-width:46rem){.shots.shots-2{grid-template-columns:17rem 1fr; align-items:start}}
 @media (min-width:64rem){.shots.shots-2{grid-template-columns:19rem 1fr}}
@@ -534,6 +578,8 @@ footer a:hover{color:var(--ink-2)}
       <div><b data-i="step2H">QR-Code mit dem Handy scannen</b><p data-i="step2P">Das Handy ist gekoppelt. Kein Account bei uns, keine Cloud dazwischen.</p></div>
       <div><b data-i="step3H">Erste Aufgabe schicken und weggehen</b><p data-i="step3P">Die erste Rückfrage kommt als Push. Wenn du hängst, <a href="mailto:${OWNER_EMAIL}">schreib uns</a>, wir helfen persönlich.</p></div>
     </div>
+    <h3 class="devices-h" data-i="devicesTitle">Läuft auf</h3>
+    <div class="devices" data-i-html="devices">${devicesHtml(DEV_DE)}</div>
   </section>
 
   <section id="downloads">
@@ -543,7 +589,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>Windows</h3>
         <p class="dl-meta">${dlMeta(win)}</p>
-        <p class="dl-note" data-i="dlWinNote">Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.</p>
+        <p class="dl-note" data-i="dlWinNote">Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn">Herunterladen</a>
         </div>
@@ -551,7 +597,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>macOS</h3>
         <p class="dl-meta">${dlMeta(macArm)}${macArm && macX64 ? " · " : ""}${macX64 ? "Intel " + dlMeta(macX64) : ""}</p>
-        <p class="dl-note" data-i="dlMacNote">Signiert &amp; von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.</p>
+        <p class="dl-note" data-i="dlMacNote">Signiert &amp; von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn">Apple Silicon herunterladen</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn">Intel herunterladen</a>
@@ -560,7 +606,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
         <p class="dl-meta" data-i="dlIosMeta">Öffentliche TestFlight-Beta · inkl. Apple Watch</p>
-        <p class="dl-note" data-i-html="dlIosNote">Ein Tipp auf den Link genügt – die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.</p>
+        <p class="dl-note" data-i-html="dlIosNote">Ein Tipp auf den Link genügt, die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn">TestFlight beitreten</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn">TestFlight-App laden</a>
@@ -569,7 +615,7 @@ footer a:hover{color:var(--ink-2)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i-html="dlAndroidNote">Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.</p>
+        <p class="dl-note" data-i-html="dlAndroidNote">Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Bei Google Play laden</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn">APK herunterladen</a>
@@ -578,15 +624,15 @@ footer a:hover{color:var(--ink-2)}
     </div>
     <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">Alle Downloads &amp; Prüfsummen auf GitHub</a></p>
     <div class="faq">
-      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i-html="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.</div></details>
-      <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
+      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i-html="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.</div></details>
+      <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
       <details><summary data-i="faq3Q">Welche Agenten laufen darin?</summary><div data-i-html="faq3A">Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.</div></details>
     </div>
   </section>
 
   <section class="waitlist" id="cloud">
     <h2 data-i="cloudTitle">HelmDeck Cloud</h2>
-    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy – ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
+    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
     <div class="wl-inner">
 ${wl("cloud")}
     </div>
@@ -605,7 +651,7 @@ ${wl("wearables")}
 (function(){
   var I18N = {
     de:{
-      title:"HelmDeck – Claude Code fragt. Du antwortest vom Handy.",
+      title:"HelmDeck: Claude Code fragt. Du antwortest vom Handy.",
       navProof:"Was es kann", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"Für alle, die Claude Code nutzen",
       h1:"Claude Code fragt. Du antwortest vom Handy.",
@@ -630,38 +676,39 @@ ${wl("wearables")}
       step1H:"Operator auf den Rechner", step1P:"Auf den Rechner mit dem Projekt. Claude Code verbinden. Zwei Minuten.",
       step2H:"QR-Code mit dem Handy scannen", step2P:"Das Handy ist gekoppelt. Kein Account bei uns, keine Cloud dazwischen.",
       step3H:"Erste Aufgabe schicken und weggehen", step3P:"Die erste Rückfrage kommt als Push. Wenn du hängst, schreib uns, wir helfen persönlich.",
-      faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
-      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
+      devicesTitle:"Läuft auf", devices:'${devicesHtml(DEV_DE)}',
+      faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
+      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.',
       dlTitle:"Jetzt verfügbar", dlSub:"Operator für Windows und macOS. App für Android und iPhone, die Uhr-App liegt im selben Paket. Kein Account bei uns, keine Wartezeit.",
       dlBtn:"Herunterladen",
-      dlWinNote:"Nicht code-signiert – Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
-      dlMacNote:"Signiert & von Apple notarisiert – öffnet ohne Gatekeeper-Warnung.",
+      dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
+      dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
       dlIosMeta:"Öffentliche TestFlight-Beta · inkl. Apple Watch",
-      dlIosNote:"Ein Tipp auf den Link genügt – die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.",
+      dlIosNote:"Ein Tipp auf den Link genügt, die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.",
       dlIosJoinBtn:"TestFlight beitreten", dlIosAppBtn:"TestFlight-App laden",
-      dlAndroidNote:'Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
+      dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       cloudTitle:"HelmDeck Cloud",
-      cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy – ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
-      consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet – oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
+      cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
+      consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
       privacyACloud:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck Cloud zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"Nach dem Handy: HelmDeck für Glasses. Trag dich ein, wir melden uns einmal, wenn es losgeht.",
-      lead:"Trag dich ein – wir melden uns, sobald es losgeht.",
+      lead:"Trag dich ein. Wir melden uns, sobald es losgeht.",
       label:"E-Mail-Adresse", ph:"du@example.com", cta:"Auf die Liste",
       consent:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Glasses startet. Kein Newsletter, keine Weitergabe.",
       doneH:"Du stehst auf der Liste.", doneP:"Wir melden uns einmalig, sobald es losgeht:",
-      doneAlreadyH:"Schon eingetragen.", doneAlreadyP:"Diese Adresse steht bereits auf der Liste – alles gut.",
+      doneAlreadyH:"Schon eingetragen.", doneAlreadyP:"Diese Adresse steht bereits auf der Liste. Alles gut.",
       errInvalid:"Das sieht nicht nach einer gültigen E-Mail-Adresse aus.",
-      errNet:"Gerade nicht erreichbar – bitte versuch es gleich nochmal.",
+      errNet:"Gerade nicht erreichbar. Bitte versuch es gleich nochmal.",
       privacyQ:"Was passiert mit deiner E-Mail?",
       privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       contact:"Kontakt", sending:"…", toggle:"EN" },
     en:{
-      title:"HelmDeck – Claude Code asks. You answer from your phone.",
+      title:"HelmDeck: Claude Code asks. You answer from your phone.",
       navProof:"What it does", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"For everyone who runs Claude Code",
       h1:"Claude Code asks. You answer from your phone.",
@@ -686,33 +733,34 @@ ${wl("wearables")}
       step1H:"Operator on the machine", step1P:"On the machine with the project. Connect Claude Code. Two minutes.",
       step2H:"Scan the QR code with your phone", step2P:"The phone is paired. No account with us, no cloud in between.",
       step3H:"Send the first task and walk away", step3P:"The first question arrives as a push. If you get stuck, write to us, we help in person.",
-      faq1Q:"Does the machine have to be on?", faq1A:'Yes. The operator and the agents work on that machine. Phone and watch are remote control and display – if the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.',
-      faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results – per role. A client files cards and accepts results without ever seeing your file system or credentials.",
+      devicesTitle:"Runs on", devices:'${devicesHtml(DEV_EN)}',
+      faq1Q:"Does the machine have to be on?", faq1A:'Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.',
+      faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.",
       faq3Q:"Which agents run inside?", faq3A:'Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.',
       dlTitle:"Available now", dlSub:"Operator for Windows and macOS. App for Android and iPhone, the watch app ships in the same package. No account with us, no waiting.",
       dlBtn:"Download",
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
-      dlMacNote:"Signed & notarized by Apple – opens with no Gatekeeper warning.",
+      dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
       dlIosMeta:"Public TestFlight beta · incl. Apple Watch",
-      dlIosNote:"One tap on the link is enough – the TestFlight app has to be installed. The Apple Watch app ships in the same package, no separate download. The App Store listing follows.",
+      dlIosNote:"One tap on the link is enough, the TestFlight app has to be installed. The Apple Watch app ships in the same package, no separate download. The App Store listing follows.",
       dlIosJoinBtn:"Join TestFlight", dlIosAppBtn:"Get the TestFlight app",
-      dlAndroidNote:'Straight from the Google Play Store – publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
+      dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       cloudTitle:"HelmDeck Cloud",
-      cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone – no PC of your own. Join if that's exactly what you need. We build it once enough people want it.",
-      consentCloud:"One entry, one email: we store your address only to notify you once when HelmDeck Cloud launches – or to ask you one question about your needs beforehand. No newsletter, no sharing.",
+      cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone, no PC of your own. Join if that's exactly what you need. We build it once enough people want it.",
+      consentCloud:"One entry, one email: we store your address only to notify you once when HelmDeck Cloud launches, or to ask you one question about your needs beforehand. No newsletter, no sharing.",
       privacyACloud:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck Cloud launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"After the phone: HelmDeck for Glasses. Join the list, we write once when it ships.",
-      lead:"Join the list – we'll reach out once it ships.",
+      lead:"Join the list. We'll reach out once it ships.",
       label:"Email address", ph:"you@example.com", cta:"Join the list",
       consent:"One entry, one email: we store your address only to notify you once when HelmDeck for Glasses launches. No newsletter, no sharing.",
       doneH:"You're on the list.", doneP:"We'll reach out once when it ships:",
-      doneAlreadyH:"Already signed up.", doneAlreadyP:"This address is already on the list – you're all set.",
+      doneAlreadyH:"Already signed up.", doneAlreadyP:"This address is already on the list. You're all set.",
       errInvalid:"That doesn't look like a valid email address.",
-      errNet:"Can't reach the server right now – please try again shortly.",
+      errNet:"Can't reach the server right now. Please try again shortly.",
       privacyQ:"What happens to your email?",
       privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
       contact:"Contact", sending:"…", toggle:"DE" }
