@@ -15,7 +15,7 @@ what still matters, and what stays under test here:
      repeat itself in one turn - _merge_questions(qs, []) catches that),
   3. the dedup primitives (_same_question/_merge_questions) still hold on
      their own, unit-tested directly - GRILLEN's clarification flow and any
-     future goal_check turn depend on these being right.
+     future planner turn depend on these being right.
 
 Self-sandboxing: pm's plan/loopstate files go to a temp dir, settings/economics/
 quota/snapshot are stubbed, and _ask (the LLM) is replaced by a scripted double -

@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Headless test: goal_check + duplicate_titles + the suggestion cooldown
+"""Headless test: duplicate_titles + the suggestion cooldown (goal_check struck)
 (ops/docs/backlog/pm-lean-advisor/README.md phases 2-3, 2026-09-04).
 
 Under test:
-  1. goal_check() runs ONE cheap-model turn (never brief()'s auto/strong tier)
-     with the goal + ACTIVE card TITLES ONLY - no card body, no full snapshot.
-  2. goal_check runs ON REQUEST only (chat action, 2026-09-13) - no automatic
-     nagger after a goal edit / clarify_goal exists any more.
-  3. duplicate_titles() is PURE CODE (zero _ask calls) and only pairs cards
+  1. goal_check is GONE (2026-09-13): the title-only check re-proposed shipped
+     work as missing; Henry sees the whole board and answers that himself.
+  2. duplicate_titles() is PURE CODE (zero _ask calls) and only pairs cards
      whose titles are a genuine near-duplicate (the same Jaccard machinery
      _same_question already pins), never two cards that merely share a topic.
 
@@ -73,24 +71,14 @@ pm._ask_owner = lambda text, options, header="", card=None, title="": asked.appe
     {"text": text, "options": options, "header": header, "card": card}) or True
 
 
-print("\n[1] goal_check: one cheap turn, titles only, no full snapshot")
-r = pm.goal_check(GOAL)
-check(len(seen_prompts) == 1, "exactly one _ask call")
-check(seen_models[0] in ("claude-haiku-4-5",), "resolved to the CHEAP model, not auto/strong (%r)" % seen_models[0])
-check(GOAL in seen_prompts[0], "prompt carries the goal")
-check("Play-Store-Release-Karte" in seen_prompts[0], "prompt carries an ACTIVE card title")
-check("Archivierte Altlast" not in seen_prompts[0], "archived cards are NOT in the prompt")
-check("Fertige Sache" not in seen_prompts[0], "done cards are NOT in the prompt")
-check(r.get("missing") == ["E2E-Smoke vor Release einrichten"], "missing list comes back")
-
-print("\n[2] goal_check is ON REQUEST only (2026-09-13): no async nagger exists any more")
-check(not hasattr(pm, "goal_check_async"), "goal_check_async is gone - the owner asks, Henry answers")
-check(not asked, "goal_check itself never asks the owner (no _ask_owner call)")
-import time as _time
+print("\n[1] goal_check is GONE (struck 2026-09-13): Henry answers 'was fehlt' himself")
+check(not hasattr(pm, "goal_check"), "no goal_check in pm")
+check(not hasattr(pm, "goal_check_async"), "no goal_check_async in pm")
 from cells.copilot.chat import copilot_actions as _ca
 src = open(_ca.__file__, encoding="utf-8").read()
-check('if kind == "goal_check":' in src, "chat action goal_check exists for the on-request path")
-check("goal_check_async" not in src, "clarify_goal no longer chains an automatic goal check")
+check('"goal_check"' not in src, "no goal_check chat action")
+check(not asked, "nothing asked the owner so far")
+import time as _time
 
 print("\n[3] duplicate_titles: pure code, near-duplicate titles pair up, real ones don't")
 # duplicate_titles adds NO _ask call of its own - that's what this assertion

@@ -219,7 +219,7 @@ from cells.copilot.planning.pm_triangle import (
 def _ask(prompt, model="", system="", hands=False, timeout=300):
     """ONE model turn, JSON out.
 
-    hands=False (goal_check, consolidation, reconcile): the old shape - plan
+    hands=False (consolidation, reconcile): the old shape - plan
     mode, nothing to fetch, the whole prompt on stdin.
 
     hands=True (brief, 2026-09-12 "planner-with-hands"): the ROLE goes in as
@@ -452,8 +452,7 @@ def _reconcile_block(prev):
 # in different words doesn't just read as noise - two "blocked" reasons for
 # one real ask. brief() self-dedupes its own list through this (the old
 # verifier used to be the second source merged in here; it is gone, but a
-# single planner turn can still repeat itself, and goal_check below runs a
-# second turn worth deduping against too).
+# single planner turn can still repeat itself).
 _Q_STOP = {
     # pure function words only, DE + EN. Quantifiers ("viele"), negations and
     # topic nouns deliberately stay: an over-eager stoplist collapses two
@@ -520,14 +519,15 @@ def _merge_questions(open_qs, must_ask):
     return out
 
 
-# -- goal_check / duplicate-title check: SUGGEST, never judge -----------------
-# pm-lean-advisor phases 2+3 (2026-09-04). Two small, cheap-model (or zero-
-# model) checks that turn "the board vs the goal" into a TAP, not a document:
-# goal_check asks whether active cards serve the goal and what's missing
-# (since 2026-09-13 ONLY when the owner asks - see its docstring); the
-# duplicate check needs no LLM at all and still goes through _ask_owner (the
-# SAME tap-with-options channel PM budget/quota warnings already use),
-# remembering what it last asked, so a dismissed/ignored suggestion is
+# -- duplicate-title check: SUGGEST, never judge -----------------------------
+# pm-lean-advisor phase 3 (2026-09-04). A zero-model check that turns "two
+# cards look the same" into a TAP, not a document. Its sibling goal_check
+# (haiku, active titles only) was STRUCK 2026-09-13: it could not see done
+# or archived cards, so it re-proposed shipped work ("Publish to Play Store")
+# as missing - and Henry, who sees the whole board, answers "was fehlt zum
+# Ziel?" better himself. The duplicate check goes through _ask_owner (the
+# SAME tap-with-options channel PM budget/quota warnings already use) and
+# remembers what it last asked, so a dismissed/ignored suggestion is
 # not re-asked within the cooldown window - UX rule 4 ("abgelehnt = gemerkt").
 # There is no separate accept/reject event to listen for (a tapped option
 # routes to HENRY as an ordinary chat message, not back into this module), so
@@ -552,51 +552,6 @@ def _suggestion_due(sig):
             seen.pop(k, None)
     _save_loopstate(st)
     return True
-
-
-_GOAL_CHECK_PROMPT = """Given a GOAL and the TITLES of the active cards already on the
-board (no other detail - card bodies are not yours to judge, a title alone can be
-wrong: a card may already carry an update you cannot see), answer two questions:
-
-1. Which of these titles clearly serve the goal? (by title, verbatim)
-2. What CONCRETE work is missing to reach the goal that no active title covers?
-   Each item a short, filable card TITLE (not a task description) - 0-4 items,
-   empty if nothing material is missing. When unsure whether a gap is real,
-   leave it out - a missed suggestion costs nothing, a wrong one costs trust.
-
-Reply with ONLY this JSON:
-{"fits": ["<title from the list>", ...], "missing": ["<short new card title>", ...]}"""
-
-
-def goal_check(goal=None):
-    """ONE cheap turn (never the auto/strong model brief() uses): goal + active
-    card TITLES ONLY in, a fits/missing list out - never a date, never a
-    verdict on a card's WORTH (a title can mislead, see the Play-Store lesson
-    in pm-lean-advisor's README). ON REQUEST ONLY (owner decree 2026-09-13):
-    the chat action "goal_check" runs this when the owner asks "was fehlt zum
-    Ziel?" and returns the list as Henry's answer. The former fire-and-forget
-    goal_check_async (after every clarify_goal / goal edit) is GONE: with
-    done+archived titles filtered out, the check could not know the Play
-    Store was long shipped, so it re-proposed "Publish to Play Store" under
-    a fresh wording every time the cooldown signature changed, and a tapped
-    "Nein" was never recorded anywhere. Nothing here files a card by itself."""
-    from spine.agent import turnopts
-    from cells.engineer.cards import sessions
-    goal = (goal or get_goal() or "").strip()
-    if not goal:
-        return {"fits": [], "missing": []}
-    titles = [t.get("task", "").strip() for t in sessions.list_tracks()
-              if not t.get("archived") and t.get("lane") != "done" and t.get("task")]
-    cli_model, _ = turnopts.resolve_model("haiku", "goal check", signals={"priority": "low"})
-    prompt = (_GOAL_CHECK_PROMPT + "\n\nGOAL:\n" + goal
-              + "\n\nACTIVE CARD TITLES:\n" + ("\n".join("- " + x for x in titles) or "(keine)"))
-    try:
-        out = _ask(prompt, cli_model)
-    except Exception as e:
-        return {"fits": [], "missing": [], "error": str(e)[:150]}
-    missing = [_clip_prose(str(x).strip(), 90) for x in (out.get("missing") or [])
-              if isinstance(x, (str, int, float)) and str(x).strip()][:4]
-    return {"fits": out.get("fits") or [], "missing": missing}
 
 
 def _normalize_title(s):
@@ -625,7 +580,7 @@ def duplicate_titles():
 
 
 def duplicate_check_async():
-    """Same shape as goal_check_async, but the check itself is free (no
+    """Fire-and-forget nudge; the check itself is free (no
     thread needed for the compute - only for _ask_owner's chat/push I/O, kept
     consistent with every other PM-speaks call)."""
     def run():

@@ -45,9 +45,8 @@ def pm_config_post(self, user, body):
     if merged.get("autonomy") not in ("notify", "ask", "act"):
         merged["autonomy"] = "act"
     events.save_settings({"pm": merged})
-    # No automatic goal check on a goal edit any more (2026-09-13): the
-    # title-only check kept re-proposing shipped work as "missing". The owner
-    # asks Henry ("was fehlt zum Ziel?") -> chat action goal_check.
+    # No goal check on a goal edit any more (struck 2026-09-13): the
+    # title-only check kept re-proposing shipped work as "missing".
     return self._send(200, json.dumps(pm._pm()))
 
 
