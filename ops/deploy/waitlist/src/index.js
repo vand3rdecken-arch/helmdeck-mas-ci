@@ -4,6 +4,8 @@
  * Routes
  *   GET  /            landing page: hero, downloads (live GitHub release assets),
  *                      Watch/Glasses waitlist (DE default, EN toggle; no-JS fallback via query params)
+ *   GET  /datenschutz  full DE/EN privacy policy (also /privacy)
+ *   GET  /impressum    DE/EN legal notice, Paragraph 5 DDG (also /imprint)
  *   POST /api/join    store an address in KV (idempotent per email)
  *   GET  /export.csv  owner-only CSV export (?token=... or Bearer, secret EXPORT_TOKEN)
  *   GET  /icon.svg    brand mark (also used as favicon)
@@ -68,6 +70,14 @@ const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 // no early-access badge - i.e. production, not a track.
 const PLAY_URL = "https://play.google.com/store/apps/details?id=app.helmdeck";
 const OWNER_EMAIL = "tienduyvo@googlemail.com";
+// Product analytics (PostHog EU cloud, project 248157) - same public,
+// write-only token as the app (surfaces/app/src/data/analytics.ts), update
+// both in lockstep if it ever rotates. Cookieless by construction, see the
+// init call in page(): persistence "memory" (no cookie, no localStorage id),
+// autocapture/session-recording/heatmaps/surveys all off, so this needs no
+// consent banner (ops/docs/marketing/gtm-messung-2026-09.md section 4).
+const POSTHOG_KEY = "phc_oda4H49MaYwqP2f64F8XkGuyxbsxACEeBYcb9JWhQ25D";
+const POSTHOG_HOST = "https://eu.i.posthog.com";
 // iOS: moving from INTERNAL to EXTERNAL TestFlight (owner decision 2026-09-02),
 // which is what finally produces a public join URL - external group "Public Beta"
 // (ASC app 6801637667) exists, the build still has to clear Apple Beta App Review.
@@ -273,9 +283,12 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
         <summary data-i="privacyQ">Was passiert mit deiner E-Mail?</summary>
         <div data-i-html="privacyA${sfx}">Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und
         ausschließlich verwendet, um dich einmalig über den Start von ${product === "cloud" ? "HelmDeck Cloud" : "HelmDeck für Watch/Glasses"} zu
-        informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf
-        dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
-        (Verantwortlicher: Tien Duy Vo).</div>
+        informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über
+        PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte.
+        Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern.
+        Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
+        (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung:
+        <a href="/datenschutz">/datenschutz</a>.</div>
       </details>`;
 }
 
@@ -468,6 +481,17 @@ footer{
 }
 footer a{color:var(--ink-3); text-decoration:none}
 footer a:hover{color:var(--ink-2)}
+.footer-btn{background:none; border:0; padding:0; margin:0; font:inherit; font-size:inherit; color:var(--ink-3); cursor:pointer; text-decoration:underline}
+.footer-btn:hover{color:var(--ink-2)}
+.cookiebar{
+  position:fixed; left:1rem; right:1rem; bottom:1rem; z-index:5; max-width:40rem; margin:0 auto;
+  display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding:1.1rem 1.3rem;
+  background:var(--layer); border:1px solid var(--border-strong); border-radius:14px;
+  box-shadow:0 20px 50px rgba(0,0,0,.45);
+}
+.cookiebar p{margin:0; font-size:.85rem; line-height:1.5; color:var(--ink-2); flex:1 1 18rem}
+.cookiebar-actions{display:flex; gap:.6rem; flex:none}
+@media (max-width:480px){.cookiebar-actions{width:100%}.cookiebar-actions .btn{flex:1 1 0}}
 /* proof strip: two phones + one desktop, real screenshots */
 .shots{display:grid; grid-template-columns:1fr; gap:1.2rem; margin-top:1.6rem}
 @media (min-width:46rem){.shots{grid-template-columns:1fr 1fr}}
@@ -591,7 +615,7 @@ footer a:hover{color:var(--ink-2)}
         <p class="dl-meta">${dlMeta(win)}</p>
         <p class="dl-note" data-i="dlWinNote">Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn">Herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn" data-cta="windows">Herunterladen</a>
         </div>
       </div>
       <div class="dl-card">
@@ -599,8 +623,8 @@ footer a:hover{color:var(--ink-2)}
         <p class="dl-meta">${dlMeta(macArm)}${macArm && macX64 ? " · " : ""}${macX64 ? "Intel " + dlMeta(macX64) : ""}</p>
         <p class="dl-note" data-i="dlMacNote">Signiert &amp; von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn">Apple Silicon herunterladen</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn">Intel herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Apple Silicon herunterladen</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Intel herunterladen</a>
         </div>
       </div>
       <div class="dl-card">
@@ -608,8 +632,8 @@ footer a:hover{color:var(--ink-2)}
         <p class="dl-meta" data-i="dlIosMeta">Öffentliche TestFlight-Beta · inkl. Apple Watch</p>
         <p class="dl-note" data-i-html="dlIosNote">Ein Tipp auf den Link genügt, die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn">TestFlight beitreten</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn">TestFlight-App laden</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn" data-cta="ios">TestFlight beitreten</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn" data-cta="ios">TestFlight-App laden</a>
         </div>
       </div>
       <div class="dl-card">
@@ -617,8 +641,8 @@ footer a:hover{color:var(--ink-2)}
         <p class="dl-meta">${dlMeta(android)}</p>
         <p class="dl-note" data-i-html="dlAndroidNote">Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn">Bei Google Play laden</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn">APK herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn" data-cta="android">Bei Google Play laden</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn" data-cta="android">APK herunterladen</a>
         </div>
       </div>
     </div>
@@ -646,9 +670,72 @@ ${wl("wearables")}
     </div>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""}</footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="/datenschutz" data-i="privacyLink">Datenschutz</a> · <a href="/impressum" data-i="imprintLink">Impressum</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie-Einstellungen</button></footer>
+
+<div class="cookiebar" id="cookiebar" role="dialog" aria-label="Cookie-Hinweis" hidden>
+  <p data-i-html="cookieMsg">Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a></p>
+  <div class="cookiebar-actions">
+    <button class="btn btn-ghost btn-sm" id="cookie-decline" type="button" data-i="cookieDecline">Ablehnen</button>
+    <button class="btn btn-primary btn-sm" id="cookie-accept" type="button" data-i="cookieAccept">Akzeptieren</button>
+  </div>
+</div>
 <script>
 (function(){
+  // Product analytics (PostHog EU cloud), consent-gated: nothing loads, no
+  // request to PostHog happens, until the visitor clicks "Akzeptieren" in
+  // the cookie banner below. Declining (or not deciding yet) means the
+  // array.js script is never even inserted - not just "events dropped".
+  // Once loaded, it stays cookieless by construction: persistence "memory"
+  // (no cookie, no localStorage id, a fresh anonymous id every reload),
+  // autocapture / session recording / heatmaps / surveys all off. See
+  // ops/docs/marketing/gtm-messung-2026-09.md section 4 and
+  // ops/docs/marketing/posthog-setup.md for the parts still open.
+  var posthogLoaded = false;
+  function loadPosthog(){
+    if (posthogLoaded) return;
+    posthogLoaded = true;
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init("${POSTHOG_KEY}", {
+      api_host: "${POSTHOG_HOST}",
+      persistence: "memory",
+      autocapture: false,
+      capture_pageview: false,
+      capture_pageleave: false,
+      disable_session_recording: true,
+      capture_heatmaps: false,
+      disable_surveys: true
+    });
+  }
+  // Every cap() call is a no-op before consent (posthog never loaded) and if
+  // PostHog ever fails to load - analytics must never break the page.
+  function cap(name, props){ try { if (posthogLoaded) posthog.capture(name, props); } catch(e){} }
+
+  // Cookie banner: shown until the visitor picks accept or decline, then
+  // remembered in one localStorage flag (hd_consent) so it does not come
+  // back on every visit. That single flag is the only thing this page ever
+  // stores before/without consent - see /datenschutz section 4.
+  var CONSENT_KEY = "hd_consent";
+  function getConsent(){ try { return localStorage.getItem(CONSENT_KEY); } catch(e){ return null; } }
+  function setConsent(v){ try { localStorage.setItem(CONSENT_KEY, v); } catch(e){} }
+  var cookiebar = document.getElementById("cookiebar");
+  function showBar(){ if (cookiebar) cookiebar.hidden = false; }
+  function hideBar(){ if (cookiebar) cookiebar.hidden = true; }
+  function applyConsent(v){
+    setConsent(v);
+    hideBar();
+    if (v === "granted") { loadPosthog(); cap("page_view"); }
+    else if (posthogLoaded) { try { posthog.opt_out_capturing(); } catch(e){} }
+  }
+  var existingConsent = getConsent();
+  if (existingConsent === "granted") { loadPosthog(); cap("page_view"); }
+  else if (existingConsent !== "declined") { showBar(); }
+  var cookieAccept = document.getElementById("cookie-accept");
+  var cookieDecline = document.getElementById("cookie-decline");
+  if (cookieAccept) cookieAccept.addEventListener("click", function(){ applyConsent("granted"); });
+  if (cookieDecline) cookieDecline.addEventListener("click", function(){ applyConsent("declined"); });
+  var cookieSettings = document.getElementById("cookie-settings");
+  if (cookieSettings) cookieSettings.addEventListener("click", showBar);
+
   var I18N = {
     de:{
       title:"HelmDeck: Claude Code fragt. Du antwortest vom Handy.",
@@ -694,7 +781,7 @@ ${wl("wearables")}
       cloudTitle:"HelmDeck Cloud",
       cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
       consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
-      privacyACloud:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck Cloud zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
+      privacyACloud:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck Cloud zu informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte. Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung: <a href="/datenschutz">/datenschutz</a>.',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"Nach dem Handy: HelmDeck für Glasses. Trag dich ein, wir melden uns einmal, wenn es losgeht.",
       lead:"Trag dich ein. Wir melden uns, sobald es losgeht.",
@@ -705,8 +792,12 @@ ${wl("wearables")}
       errInvalid:"Das sieht nicht nach einer gültigen E-Mail-Adresse aus.",
       errNet:"Gerade nicht erreichbar. Bitte versuch es gleich nochmal.",
       privacyQ:"Was passiert mit deiner E-Mail?",
-      privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
-      contact:"Kontakt", sending:"…", toggle:"EN" },
+      privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte. Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung: <a href="/datenschutz">/datenschutz</a>.',
+      contact:"Kontakt", privacyLink:"Datenschutz", imprintLink:"Impressum",
+      cookieSettings:"Cookie-Einstellungen",
+      cookieMsg:'Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a>',
+      cookieDecline:"Ablehnen", cookieAccept:"Akzeptieren",
+      sending:"…", toggle:"EN" },
     en:{
       title:"HelmDeck: Claude Code asks. You answer from your phone.",
       navProof:"What it does", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
@@ -751,7 +842,7 @@ ${wl("wearables")}
       cloudTitle:"HelmDeck Cloud",
       cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone, no PC of your own. Join if that's exactly what you need. We build it once enough people want it.",
       consentCloud:"One entry, one email: we store your address only to notify you once when HelmDeck Cloud launches, or to ask you one question about your needs beforehand. No newsletter, no sharing.",
-      privacyACloud:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck Cloud launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
+      privacyACloud:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck Cloud launching. The list is deleted afterwards. This site measures anonymously and cookielessly via PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties. This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo). Full privacy policy: <a href="/datenschutz">/datenschutz</a>.',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"After the phone: HelmDeck for Glasses. Join the list, we write once when it ships.",
       lead:"Join the list. We'll reach out once it ships.",
@@ -762,8 +853,12 @@ ${wl("wearables")}
       errInvalid:"That doesn't look like a valid email address.",
       errNet:"Can't reach the server right now. Please try again shortly.",
       privacyQ:"What happens to your email?",
-      privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
-      contact:"Contact", sending:"…", toggle:"DE" }
+      privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. This site measures anonymously and cookielessly via PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties. This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo). Full privacy policy: <a href="/datenschutz">/datenschutz</a>.',
+      contact:"Contact", privacyLink:"Privacy", imprintLink:"Imprint",
+      cookieSettings:"Cookie settings",
+      cookieMsg:'This site measures usage anonymously and without cookies via PostHog (EU, Frankfurt), but only with your consent. Nothing loads and nothing is measured before you accept. <a href="/datenschutz">More in the privacy policy.</a>',
+      cookieDecline:"Decline", cookieAccept:"Accept",
+      sending:"…", toggle:"DE" }
   };
   var lang = "de";
   try { lang = localStorage.getItem("hd_lang") || ((navigator.language||"de").slice(0,2)==="de" ? "de" : "en"); } catch(e){}
@@ -780,7 +875,66 @@ ${wl("wearables")}
     else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${TESTFLIGHT_JOIN_URL}"; }
     else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${dlHref(macArm)}"; }
     else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${dlHref(win)}"; }
-    if (key && href && href !== "#downloads") { a.setAttribute("data-i", key); a.textContent = I18N[lang][key]; a.href = href; if (/^https?:/.test(href)) { a.target = "_blank"; a.rel = "noopener noreferrer"; } }
+    if (key && href && href !== "#downloads") {
+      a.setAttribute("data-i", key); a.textContent = I18N[lang][key]; a.href = href;
+      if (/^https?:/.test(href)) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+      var ctaPlatform = { heroCtaAndroid:"android", heroCtaIos:"ios", heroCtaMac:"mac", heroCtaWin:"windows" }[key];
+      if (ctaPlatform) a.setAttribute("data-cta", ctaPlatform);
+    }
+  })();
+
+  // cta_click: every download/TestFlight button carries data-cta="<platform>",
+  // set server-side for the fixed download-grid buttons and above for hero-dl.
+  (function(){
+    var ctaEls = document.querySelectorAll("[data-cta]");
+    for (var ci = 0; ci < ctaEls.length; ci++) {
+      (function(el){
+        el.addEventListener("click", function(){ cap("cta_click", { platform: el.getAttribute("data-cta") }); });
+      })(ctaEls[ci]);
+    }
+  })();
+
+  // scroll_50: fires once, first time the visitor has scrolled halfway down
+  // the page (or the page is short enough that it's already true).
+  (function(){
+    var fired = false;
+    function onScroll(){
+      if (fired) return;
+      var doc = document.documentElement;
+      var scrolled = (window.pageYOffset || doc.scrollTop) + window.innerHeight;
+      var full = doc.scrollHeight;
+      if (full > 0 && scrolled / full >= 0.5) {
+        fired = true;
+        cap("scroll_50");
+        window.removeEventListener("scroll", onScroll);
+      }
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+  })();
+
+  // devices_section_view (optional signal): how far down the page visitors
+  // actually read.
+  (function(){
+    var el = document.querySelector(".devices");
+    if (!el || !window.IntersectionObserver) return;
+    var obs = new IntersectionObserver(function(entries){
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) { cap("devices_section_view"); obs.disconnect(); break; }
+      }
+    }, { threshold: 0.3 });
+    obs.observe(el);
+  })();
+
+  // external_link_click (optional signal): any target=_blank link not already
+  // covered by cta_click above (GitHub releases, feedback board, ...).
+  (function(){
+    var extLinks = document.querySelectorAll('a[target="_blank"]:not([data-cta])');
+    for (var ei = 0; ei < extLinks.length; ei++) {
+      (function(el){
+        el.addEventListener("click", function(){ cap("external_link_click", { href: el.getAttribute("href") }); });
+      })(extLinks[ei]);
+    }
   })();
 
   var langBtn = document.getElementById("lang");
@@ -800,6 +954,7 @@ ${wl("wearables")}
     lang = (lang === "de") ? "en" : "de";
     try { localStorage.setItem("hd_lang", lang); } catch(e){}
     apply();
+    cap("lang_toggle", { to: lang });
   });
   if (lang !== "de") apply(); else langBtn.textContent = "EN";
 
@@ -837,6 +992,10 @@ ${wl("wearables")}
     var input = document.getElementById("email-" + product);
     var errEl = document.getElementById("err-" + product);
     var go = document.getElementById("go-" + product);
+
+    // waitlist_form_start: fires once, on the first time the visitor
+    // actually focuses the field (not merely loading the section).
+    input.addEventListener("focus", function(){ cap("waitlist_form_start", { product: product }); }, { once: true });
 
     form.addEventListener("submit", function(ev){
       ev.preventDefault();
@@ -882,6 +1041,195 @@ ${wl("wearables")}
 </html>`;
 }
 
+// Standalone legal pages (/datenschutz, /impressum). Deliberately no <script>
+// and no PostHog on these two pages - a legal notice does not need its own
+// visit measured, and it keeps their CSP need at zero. DE first, EN below
+// the same #en anchor pattern as surfaces/relay/relay.py's PRIVACY_HTML (the
+// app's own privacy page), which this mirrors in structure and style so the
+// two surfaces read as one product rather than two different documents.
+const LEGAL_STYLE = `body{background:#0E0F10;color:#E4E6E6;font:16px/1.6 system-ui,sans-serif;
+max-width:720px;margin:0 auto;padding:40px 20px}h1{font-size:26px}h2{font-size:19px;
+margin-top:32px}h3{font-size:16px}a{color:#6CB2EC}hr{border:0;border-top:1px solid #222425;
+margin:40px 0}.muted{color:#959A9D}`;
+
+const DATENSCHUTZ_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>HelmDeck: Datenschutzerklärung / Privacy Policy</title>
+<style>${LEGAL_STYLE}</style>
+<h1>Datenschutzerklärung, HelmDeck (helmdeck.de)</h1>
+<p class=muted>Stand: 13. September 2026. <a href="#en">English version below</a></p>
+
+<h2>1. Verantwortlicher</h2>
+<p>Tien Duy Vo<br>
+Postanschrift: wird ergänzt<br>
+E-Mail: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+
+<h2>2. Hosting</h2>
+<p>Diese Seite läuft auf Cloudflare Workers (Cloudflare, Inc.). Cloudflare verarbeitet dabei
+technisch notwendige Server-Logs (unter anderem IP-Adresse, Zeitpunkt, aufgerufene Adresse), um
+die Seite auszuliefern und gegen Missbrauch abzusichern, und ist insofern Auftragsverarbeiter.
+Rechtsgrundlage ist das berechtigte Interesse an einem sicheren und stabilen Betrieb der Seite,
+Artikel 6 Absatz 1 Buchstabe f DSGVO.</p>
+
+<h2>3. Anonyme Reichweitenmessung (PostHog), nur mit deiner Einwilligung</h2>
+<p>Diese Seite kann anonym und cookielos messen, wie sie genutzt wird, über PostHog Inc., gehostet
+in der EU in Frankfurt am Main. Das läuft ausschließlich, wenn du im Cookie-Banner beim ersten
+Besuch auf „Akzeptieren" klickst: Vorher und ohne diese Zustimmung lädt diese Seite den
+PostHog-Code überhaupt nicht, es geht keine einzige Anfrage an PostHog, und es wird nichts
+gemessen. Rechtsgrundlage ist deine Einwilligung, Artikel 6 Absatz 1 Buchstabe a DSGVO. PostHog ist
+insofern Auftragsverarbeiter; der Stand des Auftragsverarbeitungsvertrags mit PostHog ist noch
+offen, siehe Abschnitt 7.</p>
+<p>Stimmst du zu, läuft die Messung technisch bedingt trotzdem cookielos weiter: Sie läuft
+ausschließlich im Arbeitsspeicher des Browsers (persistence memory). Es wird keine Kennung in
+einem Cookie oder im lokalen Speicher abgelegt; bei jedem neuen Laden der Seite entsteht eine neue,
+anonyme Kennung, die keiner Person zugeordnet werden kann. Aufzeichnung von Bildschirminhalten,
+Heatmaps, Umfragen und die automatische Erfassung aller Klicks sind abgeschaltet. Erfasst werden
+ausschließlich einzelne, benannte Ereignisse wie Seitenaufruf, Scrolltiefe, Klick auf einen
+Download oder Start des Wartelisten-Formulars, dazu die Herkunft eines Besuchs (utm_source,
+utm_medium, utm_campaign), sofern ein Link diese Angaben enthält.</p>
+<p>Deine IP-Adresse soll bei PostHog verworfen werden (Einstellung „Discard client IP data" im
+PostHog-Projekt). Der Stand dieser Einstellung ist noch nicht bestätigt, siehe Abschnitt 7. Die
+Speicherdauer bei PostHog richtet sich nach der Standard-Aufbewahrungsfrist des genutzten Plans;
+der genaue Wert ist noch nicht bestätigt, siehe Abschnitt 7.</p>
+<p>Widerruf: Über „Cookie-Einstellungen" im Fußbereich der Seite kannst du deine Entscheidung
+jederzeit ändern. Lehnst du dort ab, schaltet diese Seite die Messung sofort und dauerhaft ab
+(PostHog-Funktion opt_out_capturing); live geprüft am 13. September 2026, danach verlässt kein
+weiteres Ereignis mehr den Browser.</p>
+
+<h2>4. Lokale Speicherung ohne Einwilligung, technisch notwendig</h2>
+<p>Zwei kleine, rein technische Einträge im lokalen Speicher deines Browsers benötigen keine
+Einwilligung, weil sie ausschließlich deine eigene Bedienung dieser Seite merken und keine
+Wiedererkennung über verschiedene Seiten oder Sitzungen hinweg ermöglichen (Ausnahme nach Paragraph
+25 Absatz 2 Nummer 2 TDDDG):</p>
+<ul>
+<li><code>hd_lang</code>: deine gewählte Sprache (Deutsch oder Englisch), wird erst gesetzt, wenn
+du aktiv die Sprache umschaltest.</li>
+<li><code>hd_consent</code>: deine Entscheidung im Cookie-Banner (angenommen oder abgelehnt), damit
+der Banner dir nicht bei jedem Besuch erneut angezeigt wird.</li>
+</ul>
+<p>Beide Einträge kannst du jederzeit über die Browser-Einstellungen löschen; danach fragt diese
+Seite beim nächsten Besuch erneut.</p>
+
+<h2>5. Wartelisten-Formular</h2>
+<p>Wer sich für HelmDeck Cloud oder HelmDeck für Watch/Glasses einträgt, gibt eine E-Mail-Adresse
+an. Sie wird bei Cloudflare Workers KV gespeichert, zusammen mit Zeitpunkt und Produkt, und
+ausschließlich verwendet, um dich einmalig über den Start zu informieren. Danach wird die
+jeweilige Liste vollständig gelöscht. Es werden keine IP-Adresse und kein Nutzeragent
+gespeichert.</p>
+<p>Rechtsgrundlage ist deine Einwilligung durch das Absenden des Formulars, Artikel 6 Absatz 1
+Buchstabe a DSGVO. Du kannst die Einwilligung jederzeit für die Zukunft widerrufen und die
+Löschung deines Eintrags verlangen, formlos per E-Mail an
+<a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>.</p>
+
+<h2>6. Deine Rechte</h2>
+<p>Du hast das Recht auf Auskunft, Berichtigung, Löschung und Einschränkung der Verarbeitung
+deiner Daten, auf Datenübertragbarkeit sowie auf Widerspruch gegen eine Verarbeitung, die auf
+berechtigtem Interesse beruht, oder auf Widerruf einer Einwilligung. Wende dich dafür an die
+E-Mail-Adresse oben. Außerdem kannst du dich bei der für dich zuständigen
+Datenschutz-Aufsichtsbehörde beschweren.</p>
+
+<h2>7. Offene Punkte</h2>
+<p>Diese Erklärung wird ergänzt, sobald Folgendes feststeht: die Postanschrift des
+Verantwortlichen, der Status des Auftragsverarbeitungsvertrags mit PostHog, der Status der
+Einstellung „Discard client IP data" im PostHog-Projekt sowie die genaue Aufbewahrungsfrist im
+genutzten PostHog-Plan.</p>
+
+<hr>
+<h1 id=en>Privacy Policy, HelmDeck (helmdeck.de)</h1>
+<p class=muted>Last updated: September 13, 2026.</p>
+
+<h2>1. Controller</h2>
+<p>Tien Duy Vo<br>
+Postal address: to be added<br>
+Email: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+
+<h2>2. Hosting</h2>
+<p>This site runs on Cloudflare Workers (Cloudflare, Inc.). Cloudflare processes technically
+necessary server logs (including IP address, timestamp, requested path) to deliver the page and
+protect it against abuse, acting as a processor. Legal basis is the legitimate interest in a
+secure and stable service, Article 6(1)(f) GDPR.</p>
+
+<h2>3. Anonymous analytics (PostHog), only with your consent</h2>
+<p>This site can measure usage anonymously and without cookies, using PostHog Inc., hosted in the
+EU in Frankfurt. That only runs if you click "Accept" in the cookie banner on your first visit:
+before and without that consent, this site never loads the PostHog code at all, no request goes
+out to PostHog, and nothing is measured. Legal basis is your consent, Article 6(1)(a) GDPR. PostHog
+acts as a processor here; the status of the data processing agreement with PostHog is still open,
+see section 7.</p>
+<p>If you accept, measurement still stays cookieless by construction: it runs in the browser's
+memory only (persistence memory). No identifier is stored in a cookie or in local storage; every
+fresh page load gets a new, anonymous identifier that cannot be linked to a person. Session
+recording, heatmaps, surveys and automatic capture of every click are all turned off. Only a small
+set of named events is captured, such as a page view, scroll depth, a click on a download, or
+starting the waitlist form, together with the source of a visit (utm_source, utm_medium,
+utm_campaign) when a link carries that information.</p>
+<p>Your IP address is meant to be discarded by PostHog (the "Discard client IP data" project
+setting). Whether that setting is currently enabled has not yet been confirmed, see section 7.
+Retention at PostHog follows the plan's default retention period; the exact figure has not yet been
+confirmed, see section 7.</p>
+<p>Withdrawal: use "Cookie settings" in the footer to change your choice at any time. Declining
+there turns measurement off immediately and for good (PostHog's opt_out_capturing); verified live
+on September 13, 2026, after that no further event leaves the browser.</p>
+
+<h2>4. Local storage without consent, technically necessary</h2>
+<p>Two small, purely technical entries in your browser's local storage need no consent, because
+they only remember how you use this site yourself and enable no recognition across other sites or
+sessions (exempt under Section 25(2) No. 2 TDDDG):</p>
+<ul>
+<li><code>hd_lang</code>: your chosen language (German or English), only set once you actively
+switch it.</li>
+<li><code>hd_consent</code>: your choice in the cookie banner (accepted or declined), so the banner
+does not show again on every visit.</li>
+</ul>
+<p>You can delete both at any time through your browser settings; this site will then ask again on
+your next visit.</p>
+
+<h2>5. Waitlist form</h2>
+<p>Joining the HelmDeck Cloud or HelmDeck for Watch/Glasses waitlist requires an email address. It
+is stored in Cloudflare Workers KV together with a timestamp and the product, used solely to
+notify you once when it launches. The respective list is deleted in full afterwards. No IP address
+or user agent is stored.</p>
+<p>Legal basis is your consent given by submitting the form, Article 6(1)(a) GDPR. You can
+withdraw that consent for the future at any time and request deletion of your entry, informally by
+email to <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>.</p>
+
+<h2>6. Your rights</h2>
+<p>You have the right to access, rectification, erasure and restriction of processing of your
+data, to data portability, to object to processing based on legitimate interest, and to withdraw a
+consent. Contact the email address above for any of these. You can also file a complaint with the
+data protection authority responsible for you.</p>
+
+<h2>7. Open items</h2>
+<p>This policy will be completed once the following are settled: the controller's postal address,
+the status of the data processing agreement with PostHog, the status of the "Discard client IP
+data" setting in the PostHog project, and the exact retention period under the PostHog plan in
+use.</p>
+</html>`;
+
+const IMPRESSUM_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>HelmDeck: Impressum / Imprint</title>
+<style>${LEGAL_STYLE}</style>
+<h1>Impressum</h1>
+<p class=muted><a href="#en">English version below</a></p>
+<p>Angaben gemäß Paragraph 5 DDG (Digitale-Dienste-Gesetz, vormals TMG).</p>
+<p>Tien Duy Vo<br>
+Postanschrift: wird ergänzt<br>
+E-Mail: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+<p>Umsatzsteuer-Identifikationsnummer: entfällt oder wird ergänzt, sobald zutreffend.</p>
+<p>Diese Angaben sind unvollständig, solange die Postanschrift fehlt; sie wird ergänzt, sobald sie
+vorliegt.</p>
+<hr>
+<h1 id=en>Imprint</h1>
+<p>Provider information under Section 5 DDG (formerly TMG).</p>
+<p>Tien Duy Vo<br>
+Postal address: to be added<br>
+Email: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+<p>VAT ID: not applicable, or to be added once applicable.</p>
+<p>This notice is incomplete until the postal address is added; it will be added once
+available.</p>
+</html>`;
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -898,8 +1246,10 @@ function html(body, status = 200) {
       "content-security-policy":
         "default-src 'none'; base-uri 'none'; form-action 'self'; " +
         "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
-        "font-src https://fonts.gstatic.com; script-src 'unsafe-inline'; " +
-        "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+        "font-src https://fonts.gstatic.com; " +
+        "script-src 'unsafe-inline' https://eu-assets.i.posthog.com; " +
+        "connect-src 'self' https://eu.i.posthog.com; " +
+        "img-src 'self' data:; frame-ancestors 'none'",
     },
   });
 }
@@ -1007,6 +1357,8 @@ export default {
         product: PRODUCTS[url.searchParams.get("p")] ? url.searchParams.get("p") : "wearables",
       }));
     }
+    if ((p === "/datenschutz" || p === "/privacy") && req.method === "GET") return html(DATENSCHUTZ_HTML);
+    if ((p === "/impressum" || p === "/imprint") && req.method === "GET") return html(IMPRESSUM_HTML);
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);
     if (p === "/export.csv" && req.method === "GET") return handleExport(req, env);
     if (p === "/icon.svg" && req.method === "GET") {

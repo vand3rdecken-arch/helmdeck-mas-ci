@@ -4,7 +4,36 @@ A single Cloudflare Worker that serves the whole public site — hero, live
 download buttons for Windows/macOS/Android, the iOS TestFlight request, and
 the waitlist (now scoped to the not-yet-shipped **Watch & Glasses** line,
 since the app itself is downloadable directly). Storage in Workers KV. No
-framework, no build step, no tracking.
+framework, no build step.
+
+- **Analytics**: PostHog EU cloud (project 248157, same public token as the
+  app), consent-gated by a cookie banner (owner decision 2026-09-13: German
+  sites get a real banner instead of relying on the cookieless-so-no-banner
+  argument). Before a visitor clicks "Akzeptieren", the PostHog snippet is
+  never even loaded, not just muted, no request reaches PostHog at all.
+  Once accepted it is still cookieless by construction (`persistence:
+  "memory"` - no cookie, no persistent id) with autocapture, session
+  recording, heatmaps and surveys all off. The only local storage this page
+  ever writes is `hd_consent` (the banner choice) and `hd_lang` (language
+  toggle) - both functionally necessary, exempt under Section 25(2) No. 2
+  TDDDG. "Cookie-Einstellungen" / "Cookie settings" in the footer reopens the
+  banner to change the choice at any time; declining calls
+  `opt_out_capturing` if PostHog was already loaded. Verified live
+  2026-09-13 in real Chrome: default visit stores nothing and sends nothing,
+  decline persists silently forever, accept loads PostHog and the queued
+  page_view lands a few seconds later (PostHog's own remote-config round
+  trip before it flushes). Events, funnels and the UTM scheme are documented
+  in `ops/docs/marketing/gtm-messung-2026-09.md` (section 4) and
+  `ops/docs/marketing/utm-links.md`. CSP in `html()` allows exactly
+  `eu.i.posthog.com` (connect) and `eu-assets.i.posthog.com` (script),
+  nothing else.
+
+- **Legal pages**: `/datenschutz` (+ `/privacy`) and `/impressum`
+  (+ `/imprint`) are full, standalone DE/EN pages (no PostHog on them). Both
+  currently ship with a placeholder postal address (none is on file anywhere
+  in this repo) - see the "Offene Punkte" / "Open items" section on each
+  page and `ops/docs/marketing/posthog-setup.md` sections 4/5 for what still
+  needs the owner's PostHog UI access (Discard client IP, DPA).
 
 - **Live URL**: `https://helmdeck.de` — the custom domain is already attached
   to this Worker (proof: `curl https://helmdeck.de/health` answers
