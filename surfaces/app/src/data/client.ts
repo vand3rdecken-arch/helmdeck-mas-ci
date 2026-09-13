@@ -258,6 +258,8 @@ export interface ChatThread {
   id: string; kind: "card"; title: string; lane?: string; status?: string;
   process?: string | null; process_title?: string | null;
   active: boolean;   // runs or waits for the owner (lane working/review, status needs_you)
+  /** Paseo's sidebar buckets (agent-state-bucket.ts) + backlog: the list's sections. */
+  bucket: "needs_input" | "failed" | "attention" | "running" | "backlog" | "done";
   preview: string; by?: "human" | "henry" | null; has_chat: boolean; at: number;
 }
 export interface ChatThreads {

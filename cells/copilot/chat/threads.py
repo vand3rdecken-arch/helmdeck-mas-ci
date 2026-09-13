@@ -23,6 +23,27 @@ import time
 
 ACTIVE_LANES = ("working", "review")
 
+# Paseo's sidebar buckets (packages/protocol/src/agent-state-bucket.ts, display
+# order hooks/sidebar-status-view-model.ts): needs_input, failed, attention
+# ("Ready to review"), running ("Working"), done - plus `backlog`, which Paseo
+# has no equivalent for (a HelmDeck card can exist before anyone works on it).
+BUCKETS = ("needs_input", "failed", "attention", "running", "backlog", "done")
+
+
+def _bucket(t):
+    st, lane = t.get("status"), t.get("lane")
+    if st == "needs_you":
+        return "needs_input"
+    if st in ("bounced", "failed", "canceled"):
+        return "failed"
+    if lane == "review":
+        return "attention"
+    if lane == "working":
+        return "running"
+    if lane == "backlog":
+        return "backlog"
+    return "done"
+
 
 def _epoch(s):
     try:
@@ -88,6 +109,7 @@ def threads(user, limit=200):
             "lane": lane, "status": status,
             # what the owner must know at a glance - the card's own signals
             "active": lane in ACTIVE_LANES or status == "needs_you",
+            "bucket": _bucket(t),
             "process": t.get("process") or None,
             "process_title": t.get("process_title") or None,
             "preview": ((lm.get("text") if lm else "") or "")[:140].replace("\n", " "),

@@ -794,7 +794,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       {!wide ? (
         <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
                    style={{ marginLeft: 6 }}>
-          <Ionicons name="albums-outline" size={22} color={t.txtSecondary} />
+          <Ionicons name="menu" size={24} color={t.txtSecondary} />
         </Pressable>
       ) : null}
       {glassAvail && me?.role === "owner" ? (

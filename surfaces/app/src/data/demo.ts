@@ -383,6 +383,7 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       id, kind: "card", title: t(taskKey), lane, status: lane === "working" ? "running" : lane === "done" ? "accepted" : "queued",
       process: process ?? null, process_title: process ? t("demo.project") : null,
       active: lane === "working" || lane === "review",
+      bucket: lane === "working" ? "running" : lane === "review" ? "attention" : lane === "backlog" ? "backlog" : "done",
       preview: t("demo.chat.reply").slice(0, 90), by: "henry", has_chat: true, at: at(mins) });
     return { inbox: { id: "inbox", kind: "inbox", title: "Henry", preview: t("demo.chat.reply").slice(0, 90), at: at(3) },
              threads: [th("d2", "demo.c2.task", "working", 12, "p1"), th("d3", "demo.c3.task", "review", 40, "p1"),

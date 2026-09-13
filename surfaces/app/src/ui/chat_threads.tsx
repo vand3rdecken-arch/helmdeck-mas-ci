@@ -1,46 +1,78 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useState, type ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { api, type ChatThread, type ChatThreads } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
 /**
- * CONVERSATIONS, the way chat apps list them (Claude, Paseo, ChatGPT): one
- * row per thread, grouped - but the thread IS a card (owner decree
- * 2026-09-13: "es macht eine Conversation und eine Karte"). Nothing new is
- * stored: the daemon derives the list from the cards' own timelines and the
- * process (epic) each card belongs to (cells/copilot/chat/threads.py).
+ * CONVERSATIONS - a copy of Paseo's sidebar in STATUS grouping (owner rule
+ * 2026-09-13: "kopieren von Paseo und anderen etablierten Apps, nicht das Rad
+ * neu erfinden"). Read from packages/app/src/components/left-sidebar.tsx,
+ * sidebar-workspace-list.tsx, sidebar/sidebar-workspace-row-content.tsx and
+ * hooks/sidebar-status-view-model.ts:
  *
- * WHAT THE OWNER SEES, top to bottom (his verdict on the first cut, 13:11:
- * "grafisch schwer zu verdauen, sehr unübersichtlich" - 192 cards, every
- * folder open, worker banners as titles):
- *   - the INBOX (the flat board chat)
- *   - AKTIV: what runs or waits for him, wherever it lives - with a status
- *     word, never a bare dot
- *   - ORDNER: one collapsed card per process with its roll-up; open to see
- *     its threads. Finished folders hide behind one line.
- *   - ZULETZT: the last few threads by recency, the rest behind "mehr".
+ *   header rows      "+ New workspace" / "History"        -> "+ New thread" / "Henry · Inbox"
+ *   groups           needs_input, failed, attention ("Ready to review"),
+ *                    running ("Working"), done            -> same, plus "Planned" (backlog)
+ *   per group        20 rows, then a "Show more" row styled like a row
+ *   row              minHeight 36, leading 20px status slot, title base
+ *                    at opacity 0.76 (1.0 selected), meta line under it,
+ *                    trailing compact time-ago in extra-muted
+ *   status indicator needs_input = alert 12px warning; failed = 6px danger
+ *                    dot; running = animated ring; attention = 6px success
+ *                    dot; done = 6px dot at 0.3 opacity
  *
- * "New thread" opens the card composer: a new conversation is a new card.
+ * The thread IS a card (cells/copilot/chat/threads.py); the "project" of
+ * Paseo's meta line is our process (the PMBOK epic).
  */
 type Props = {
-  current?: string;                 // "inbox" or a card id - highlighted
+  current?: string;
   onPick: (id: string) => void;     // "inbox" | card id
-  onClose?: () => void;             // phone: the list is a full-screen sheet
-  embedded?: boolean;               // desktop sidebar: no close, compact header
+  onClose?: () => void;             // phone drawer: the X / back
+  embedded?: boolean;               // desktop sidebar
 };
 
-const RECENT_N = 8;
+const GROUP_ORDER: ChatThread["bucket"][] = ["needs_input", "failed", "attention", "running", "backlog", "done"];
+const INITIAL_VISIBLE_ITEMS = 20;   // Paseo: sidebar/use-limited-sidebar-group.ts
 
-function timeLabel(at: number, now: Date): string {
+/** Paseo utils/time.ts formatTimeAgo, compact: now / 45s / 5m / 2h / 3d / 15.01. */
+function timeAgo(at: number, nowS: number, nowLabel: string): string {
   if (!at) return "";
+  const s = Math.max(0, nowS - at);
+  if (s < 10) return nowLabel;
+  if (s < 60) return `${Math.floor(s)}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d`;
   const d = new Date(at * 1000);
-  if (d.toDateString() === now.toDateString())
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.`;
+}
+
+/** Paseo's StatusRing: a 9px ring rotating with a 900ms period. */
+function StatusRing({ color }: { color: string }) {
+  const spin = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: true }));
+    a.start();
+    return () => a.stop();
+  }, [spin]);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  return (
+    <Animated.View style={{ width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5, borderColor: color,
+      borderTopColor: "transparent", opacity: 0.9, transform: [{ rotate }] }} />
+  );
+}
+
+function StatusIndicator({ bucket, t }: { bucket: ChatThread["bucket"]; t: ReturnType<typeof useTheme> }) {
+  if (bucket === "needs_input") return <Ionicons name="alert-circle" size={12} color={t.warn} />;
+  if (bucket === "failed") return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.danger }} />;
+  if (bucket === "running") return <StatusRing color={t.accent} />;
+  if (bucket === "attention") return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.ok }} />;
+  if (bucket === "backlog") return <View style={{ width: 6, height: 6, borderRadius: 3, borderWidth: 1, borderColor: t.txtTertiary, opacity: 0.6 }} />;
+  return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.txtTertiary, opacity: 0.3 }} />;
 }
 
 export function ThreadList({ current, onPick, onClose, embedded }: Props) {
@@ -50,160 +82,84 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
   const { data, isLoading } = useQuery<ChatThreads>({
     queryKey: ["chatThreads"], queryFn: api.chatThreads, staleTime: 5000, refetchOnMount: "always",
   });
-  const [open, setOpen] = useState<Set<string>>(new Set());      // opened folders
-  const [showDone, setShowDone] = useState(false);
-  const [showAll, setShowAll] = useState(false);
-  const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  const now = new Date();
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const nowS = Math.floor(Date.now() / 1000);
 
-  const model = useMemo(() => {
+  const groups = useMemo(() => {
     const threads = data?.threads ?? [];
-    const procs = data?.processes ?? [];
-    const active = threads.filter((th) => th.active);
-    const byProc = new Map<string, ChatThread[]>();
-    const loose: ChatThread[] = [];
-    for (const th of threads) {
-      if (th.process) { const l = byProc.get(th.process) ?? []; l.push(th); byProc.set(th.process, l); }
-      else if (!th.active) loose.push(th);
-    }
-    const folders = [...byProc.entries()].map(([pid, items]) => {
-      const p = procs.find((x) => x.id === pid);
-      const done = !!p && p.total > 0 && p.done >= p.total;
-      return { id: pid, title: p?.title || items[0].process_title || pid, done,
-        sub: p ? tr("chat.threads.rollup", { done: p.done, total: p.total }) : "",
-        items: items.sort((a, b) => b.at - a.at), at: items[0]?.at ?? 0 };
-    }).sort((a, b) => b.at - a.at);
-    const recent = loose.filter((th) => th.has_chat).sort((a, b) => b.at - a.at);
-    return { active, openFolders: folders.filter((f) => !f.done), doneFolders: folders.filter((f) => f.done), recent };
-  }, [data, tr]);   // eslint-disable-line react-hooks/exhaustive-deps
+    return GROUP_ORDER
+      .map((b) => ({ key: b, title: tr("chat.threads." + b), items: threads.filter((th) => th.bucket === b) }))
+      .filter((g) => g.items.length > 0);
+  }, [data, tr]);
 
-  const statusOf = (th: ChatThread): { label: string; color: string } | null => {
-    if (th.status === "needs_you") return { label: tr("chat.threads.needsYou"), color: t.warn };
-    if (th.lane === "review") return { label: tr("chat.threads.review"), color: t.warn };
-    if (th.lane === "working") return { label: tr("chat.threads.running"), color: t.accent };
-    return null;
-  };
-
-  const Section = ({ title, right, onPress, children }: { title: string; right?: ReactNode; onPress?: () => void; children?: ReactNode }) => (
-    <View style={{ marginTop: 14 }}>
-      <Pressable onPress={onPress} disabled={!onPress}
-        style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingBottom: 6, gap: 6 }}>
-        <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase", flex: 1 }}>{title}</Text>
-        {right}
-      </Pressable>
-      {children}
-    </View>
+  // Paseo sidebar-header-row: minHeight 36, radius lg, icon + label
+  const HeaderRow = ({ icon, label, onPress, active, sub, trailing }: { icon: ComponentProps<typeof Ionicons>["name"]; label: string; onPress: () => void; active?: boolean; sub?: string; trailing?: string }) => (
+    <Pressable onPress={onPress} accessibilityLabel={label}
+      style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 8, paddingLeft: 8, paddingRight: 12, paddingVertical: 8,
+        borderRadius: 10, backgroundColor: active ? t.surface2 : pressed ? t.surface1 : "transparent" })}>
+      <View style={{ width: 20, alignItems: "center" }}><Ionicons name={icon} size={16} color={active ? t.txtPrimary : t.txtSecondary} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, fontWeight: "500" }}>{label}</Text>
+        {sub ? <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12 }}>{sub}</Text> : null}
+      </View>
+      {trailing ? <Text style={{ color: t.txtTertiary, fontSize: 12, opacity: 0.8 }}>{trailing}</Text> : null}
+    </Pressable>
   );
 
-  const Row = ({ th, indent }: { th: ChatThread; indent?: boolean }) => {
-    const active = current === th.id;
-    const st = statusOf(th);
+  // Paseo sidebar-workspace-row-content: 20px status slot, title 0.76, meta, trailing time
+  const Row = ({ th }: { th: ChatThread }) => {
+    const selected = current === th.id;
     return (
       <Pressable onPress={() => onPick(th.id)} accessibilityLabel={th.title}
-        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 10,
-          paddingLeft: indent ? 26 : 14, paddingRight: 14, paddingVertical: 10,
-          backgroundColor: active || pressed ? t.surface1 : "transparent" })}>
+        style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8, paddingRight: 12, paddingVertical: 8,
+          borderRadius: 10, backgroundColor: selected || pressed ? t.surface2 : "transparent" })}>
+        <View style={{ width: 20, alignItems: "center", justifyContent: "center" }}><StatusIndicator bucket={th.bucket} t={t} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: st ? "600" : "400" }}>{th.title}</Text>
-          {st ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
-              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: st.color }} />
-              <Text numberOfLines={1} style={{ color: st.color, fontSize: 12, fontWeight: "600" }}>{st.label}</Text>
-              {th.preview ? <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>· {th.preview}</Text> : null}
-            </View>
-          ) : th.preview ? (
-            <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12.5, marginTop: 2 }}>{th.preview}</Text>
+          <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, opacity: selected ? 1 : 0.76 }}>{th.title}</Text>
+          {th.process_title ? (
+            <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, lineHeight: 16 }}>{th.process_title}</Text>
           ) : null}
         </View>
-        <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{timeLabel(th.at, now)}</Text>
+        <Text style={{ color: t.txtTertiary, fontSize: 12, opacity: 0.8 }}>{timeAgo(th.at, nowS, tr("chat.threads.now"))}</Text>
       </Pressable>
     );
   };
-
-  const Folder = ({ f }: { f: { id: string; title: string; sub: string; items: ChatThread[]; done: boolean } }) => {
-    const isOpen = open.has(f.id);
-    return (
-      <View style={{ marginHorizontal: 10, marginBottom: 6, borderRadius: 12, backgroundColor: t.surface1, overflow: "hidden" }}>
-        <Pressable onPress={() => toggle(f.id)}
-          style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 11 }}>
-          <Ionicons name={isOpen ? "folder-open-outline" : "folder-outline"} size={17} color={f.done ? t.txtTertiary : t.accent} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14.5, fontWeight: "600" }}>{f.title}</Text>
-            <Text style={{ color: t.txtTertiary, fontSize: 12, marginTop: 2 }}>{f.sub}</Text>
-          </View>
-          <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={15} color={t.txtTertiary} />
-        </Pressable>
-        {isOpen ? (
-          <View style={{ borderTopWidth: 1, borderColor: t.borderSubtle, paddingVertical: 2 }}>
-            {f.items.map((th) => <Row key={th.id} th={th} indent />)}
-          </View>
-        ) : null}
-      </View>
-    );
-  };
-
-  const recentShown = showAll ? model.recent : model.recent.slice(0, RECENT_N);
-  const more = model.recent.length - recentShown.length;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
-        {onClose ? <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable> : null}
-        <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "700", flex: 1 }}>{tr("chat.threads")}</Text>
-        <Pressable onPress={() => router.push("/new")} hitSlop={10} accessibilityLabel={tr("chat.threads.new")}
-          style={{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: t.surface1 }}>
-          <Ionicons name="add" size={18} color={t.accent} />
-          {embedded ? null : <Text style={{ color: t.accent, fontSize: 13, fontWeight: "600" }}>{tr("chat.threads.new")}</Text>}
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingBottom: 28 }}>
-        <Pressable onPress={() => onPick("inbox")}
-          style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 12, marginHorizontal: 10, paddingHorizontal: 12, paddingVertical: 12,
-            borderRadius: 12, backgroundColor: current === "inbox" || pressed ? t.surface1 : "transparent" })}>
-          <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: t.surface1 }}>
-            <Ionicons name="sparkles" size={16} color={t.accent2} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600" }}>{tr("chat.threads.inbox")}</Text>
-            {data?.inbox?.preview ? <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12.5, marginTop: 2 }}>{data.inbox.preview}</Text> : null}
-          </View>
-          <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{timeLabel(data?.inbox?.at ?? 0, now)}</Text>
-        </Pressable>
+      {onClose ? (
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }}>{tr("chat.threads")}</Text>
+          <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={tr("chat.close")}><Ionicons name="close" size={22} color={t.txtSecondary} /></Pressable>
+        </View>
+      ) : <View style={{ height: 8 }} />}
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+        <HeaderRow icon="add" label={tr("chat.threads.new")} onPress={() => router.push("/new")} />
+        <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
+          sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
 
-        {isLoading && !data ? <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 14 }}>…</Text> : null}
-        {data && !model.active.length && !model.openFolders.length && !model.recent.length && !model.doneFolders.length
-          ? <Text style={{ color: t.txtTertiary, fontSize: 13, padding: 14, lineHeight: 18 }}>{tr("chat.threads.empty")}</Text> : null}
+        {isLoading && !data ? <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 16 }}>…</Text> : null}
+        {data && groups.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 13, padding: 16, lineHeight: 18 }}>{tr("chat.threads.empty")}</Text> : null}
 
-        {model.active.length ? (
-          <Section title={tr("chat.threads.active")}>
-            {model.active.map((th) => <Row key={th.id} th={th} />)}
-          </Section>
-        ) : null}
-
-        {model.openFolders.length || model.doneFolders.length ? (
-          <Section title={tr("chat.threads.folders")}>
-            {model.openFolders.map((f) => <Folder key={f.id} f={f} />)}
-            {model.doneFolders.length ? (
-              <Pressable onPress={() => setShowDone((v) => !v)}
-                style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8 }}>
-                <Ionicons name={showDone ? "chevron-up" : "chevron-forward"} size={13} color={t.txtTertiary} />
-                <Text style={{ color: t.txtSecondary, fontSize: 13 }}>{tr("chat.threads.doneFolders", { n: model.doneFolders.length })}</Text>
-              </Pressable>
-            ) : null}
-            {showDone ? model.doneFolders.map((f) => <Folder key={f.id} f={f} />) : null}
-          </Section>
-        ) : null}
-
-        {model.recent.length ? (
-          <Section title={tr("chat.threads.recent")}>
-            {recentShown.map((th) => <Row key={th.id} th={th} />)}
-            {more > 0 ? (
-              <Pressable onPress={() => setShowAll(true)} style={{ paddingHorizontal: 14, paddingVertical: 10 }}>
-                <Text style={{ color: t.accent, fontSize: 13, fontWeight: "600" }}>{tr("chat.threads.more", { n: more })}</Text>
-              </Pressable>
-            ) : null}
-          </Section>
-        ) : null}
+        {groups.map((g) => {
+          const open = expanded.has(g.key);
+          const shown = open ? g.items : g.items.slice(0, INITIAL_VISIBLE_ITEMS);
+          const hidden = g.items.length - shown.length;
+          return (
+            <View key={g.key} style={{ marginTop: 12 }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingBottom: 4 }}>{g.title}</Text>
+              {shown.map((th) => <Row key={th.id} th={th} />)}
+              {hidden > 0 || open ? (
+                <Pressable onPress={() => setExpanded((s) => { const n = new Set(s); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}
+                  style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8, paddingRight: 12, paddingVertical: 8,
+                    borderRadius: 10, backgroundColor: pressed ? t.surface1 : "transparent" })}>
+                  <View style={{ width: 20, alignItems: "center" }}><Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} /></View>
+                  <Text style={{ color: t.txtSecondary, fontSize: 14 }}>{open ? tr("chat.threads.less") : `${tr("chat.threads.more")} (${hidden})`}</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
       </ScrollView>
     </View>
   );
