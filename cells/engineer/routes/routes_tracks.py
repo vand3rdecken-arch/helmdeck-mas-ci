@@ -216,6 +216,12 @@ def tracks_new_post(self, user, body):
     driver = body.get("driver", "claude")
     if user["role"] == "client":
         driver = "claude"   # clients don't pick desktop-driving agents
+    # A card on an engine the daemon cannot run would only dispatch into a
+    # spawn failure - refuse at filing (spine/agent/engines.check_selectable).
+    from spine.agent import engines
+    bad = engines.check_selectable(driver)
+    if bad:
+        return self._send(400, json.dumps({"error": bad}))
     model = body.get("model", "")
     attachments = body.get("attachments")
     if lane == "backlog":   # filing a request is instant, no session

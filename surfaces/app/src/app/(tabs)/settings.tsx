@@ -26,6 +26,7 @@ import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { HenryChat } from "@/ui/henry_chat";
 import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
+import { EnginesSection } from "@/ui/engines_section";
 import { UsagePanel } from "@/ui/dash_panels";
 // import { HarnessSection } from "@/ui/harness_section";  // commented out with its render below
 // import { GxpActivate } from "@/ui/gxp_activate";  // commented out with the door render below
@@ -591,6 +592,12 @@ export default function Settings() {
   if (door === "automation") {
     return (
       <DoorFrame title={doorLabel} onBack={leaveDoor} wide={wide} context={doorContext}>
+        {/* Engines - Paseo's Settings > Providers list (screens/settings/
+            providers-section.tsx): one row per engine with live status and an
+            enable switch, tap for diagnostic + executable/env override. */}
+        <Panel>
+          <EnginesSection />
+        </Panel>
         {pmEnabled ? (
           <Panel>
             <SectionLabel text={tr("pm.title")} />

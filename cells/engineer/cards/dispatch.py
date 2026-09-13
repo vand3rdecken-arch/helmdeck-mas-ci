@@ -453,7 +453,8 @@ def new_machine_task(cwd, task, actor="owner", priority="medium", description=""
         raise RuntimeError("machine tasks are switched off (policy.machine.enabled=false)")
     # a machine task with a driver that lacks windows-mcp is toolless by
     # construction; fall back to claude-desktop rather than silently strand it.
-    dcfg = (events.settings().get("drivers") or {}).get(driver) or {}
+    from spine.agent import engines
+    dcfg = engines.config(driver) or {}
     if "mcp__windows-mcp__*" not in (dcfg.get("allowed_tools") or []):
         driver = "claude-desktop"
     cwd = os.path.abspath(os.path.expandvars(os.path.expanduser(cwd or os.path.expanduser("~"))))

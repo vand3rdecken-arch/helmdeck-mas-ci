@@ -99,7 +99,8 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
                 tt.setdefault("dev_port", port)
             t = _mutate(t["id"], _claim) or t
     name = t.get("driver") or "claude"
-    cfg = events.settings().get("drivers", {}).get(name) or {"type": "claude"}
+    from spine.agent import engines
+    cfg = engines.config(name) or {"type": "claude"}
     model = model or t.get("model")      # card's chosen model (from New Request) unless overridden
     # NO turn may fall through to the CLI's global default. Only steer()'s
     # composer path used to resolve "auto"; every harness-initiated turn

@@ -16,7 +16,7 @@ export interface DaemonStatus {
 export interface DaemonRestart {
   ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;
 }
-import type { Track, LaneMove, Metrics, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
+import type { Track, LaneMove, Metrics, EngineEntry, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
   PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
   GxpState } from "./types";
 import type { VoiceClip } from "./voice";
@@ -808,6 +808,7 @@ export const api = {
   // board / cards
   tracks: () => req<Track[]>("GET", "/tracks"),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
+  engines: (refresh = false) => req<{ engines: EngineEntry[] }>("GET", "/engines" + (refresh ? "?refresh=1" : "")),
   usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
   // MY OWN profile rows (accounts-boards-prd phase 1). PUT, not POST: the

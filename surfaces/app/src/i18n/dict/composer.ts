@@ -161,7 +161,13 @@ export const composer: Dict = {
   "new.value": { de: "wert (€)", en: "value (€)" },
   "new.client": { de: "kunde", en: "customer" },
   "new.clientPlaceholder": { de: "Kunde", en: "Customer" },
-  "new.driver": { de: "driver", en: "driver" },
+  "new.driver": { de: "agent", en: "agent" },
+  // engine picker states (GET /engines): a CLI that is not on this machine
+  // stays visible but cannot be picked; a driver that never ran a real turn
+  // through HelmDeck says so instead of pretending.
+  "new.engineMissing": { de: "nicht installiert", en: "not installed" },
+  "new.engineUntested": { de: "ungetestet", en: "untested" },
+  "new.engineRefresh": { de: "neu prüfen", en: "re-check" },
   "new.model": { de: "modell", en: "model" },
   "new.adopt": { de: "Übernehmen", en: "Adopt" },
 

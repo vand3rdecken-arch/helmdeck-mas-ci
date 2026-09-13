@@ -549,6 +549,9 @@ function claudeTask(claude, prompt, cwd, mode = "plan", timeoutMs = 180000) {
  *  (spine/agent/*_driver.py, owner decree 2026-08-24, "test accounts later")
  *  - fetching a binary is not the same claim as its driver working, so this
  *  only gets a CLI onto PATH, never auto-picks a card onto that driver.
+ *  Once it IS on PATH the daemon's engine snapshot (spine/agent/engines.py,
+ *  GET /engines) sees it and the New-Request picker offers it, marked
+ *  "untested" until its driver has run a real turn.
  *  Best-effort per engine, NEVER blocks `done`.
  *
  *  Three different install strategies, one per ENGINES tier (see its own

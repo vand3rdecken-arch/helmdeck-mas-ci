@@ -119,10 +119,10 @@ def update_track(tid, patch, actor="owner"):
     invariants no caller should be able to skip."""
     from spine.storage import events
     if "driver" in patch and patch["driver"] is not None:
-        valid = set((events.settings().get("drivers") or {}).keys())
-        if patch["driver"] not in valid:
-            raise ValueError("unknown driver '%s' - choices: %s"
-                              % (patch["driver"], ", ".join(sorted(valid)) or "(none configured)"))
+        from spine.agent import engines
+        bad = engines.check_selectable(patch["driver"])
+        if bad:
+            raise ValueError(bad)
         from spine.agent import drivers
         # inflight: a QUEUED turn already resolved nothing yet, but it will read
         # the card's driver when it spawns - swapping it underneath is the same

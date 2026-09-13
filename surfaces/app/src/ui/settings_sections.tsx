@@ -58,19 +58,26 @@ export function Toggle({ label, value, onChange }: { label: string; value: boole
 }
 
 /** A row of selectable pills; multi-select toggles, single-select replaces. */
-export function ChipPick({ options, selected, onToggle, single, labelFor }:
+export function ChipPick({ options, selected, onToggle, single, labelFor, disabledFor, hintFor }:
   { options: readonly string[]; selected: string[]; onToggle: (v: string) => void; single?: boolean;
-    labelFor?: (v: string) => string }) {
+    labelFor?: (v: string) => string;
+    /** a chip that stays visible but cannot be picked (e.g. an engine whose CLI is missing) */
+    disabledFor?: (v: string) => boolean;
+    /** small second line under the label (state, version, reason) */
+    hintFor?: (v: string) => string | undefined }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
       {options.map((o) => {
         const on = single ? selected[0] === o : selected.includes(o);
+        const off = disabledFor ? disabledFor(o) : false;
+        const hint = hintFor ? hintFor(o) : undefined;
         return (
-          <Pressable key={o} onPress={() => onToggle(o)}
+          <Pressable key={o} onPress={() => onToggle(o)} disabled={off}
             style={{ backgroundColor: on ? t.accent + "29" : t.surface2, borderColor: on ? t.accent + "80" : t.borderSubtle,
-              borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
+              borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, opacity: off ? 0.45 : 1 }}>
             <Text style={{ color: on ? t.accent : t.txtSecondary, fontSize: 12.5, fontWeight: on ? "600" : "500" }}>{labelFor ? labelFor(o) : o}</Text>
+            {hint ? <Text style={{ color: t.txtTertiary, fontSize: 10.5 }}>{hint}</Text> : null}
           </Pressable>
         );
       })}

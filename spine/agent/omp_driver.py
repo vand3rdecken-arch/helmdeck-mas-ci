@@ -128,7 +128,7 @@ def _env(cfg):
 def build_argv(cfg, worktree, run_dir, brief=None):
     """THE assembly point for an omp argv - one owner, mirrors drivers.
     build_argv's role for claude."""
-    argv = [OMP, "--mode", "rpc-ui", "--cwd", worktree,
+    argv = [cfg.get("exe") or OMP, "--mode", "rpc-ui", "--cwd", worktree,
             "--session", os.path.join(run_dir, "omp_session"),
             "--auto-approve"]
     if cfg.get("model"):

@@ -332,6 +332,16 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (path === "/me") return ME;
   if (path === "/dashboard/data") return metrics();
   if (path === "/models") return [{ id: "claude-opus-4-8", label: "Opus 4.8" }];
+  // GET /engines (spine/agent/engines.py): the picker on /new. A realistic
+  // spread - the daemon's engine, one extra installed, the rest missing.
+  if (path === "/engines") return { engines: [
+    { id: "claude", label: "Claude Code", type: "claude", status: "ready", version: "2.1.268 (Claude Code)", error: "", verified: true, configured: true, enabled: true, config: {} },
+    { id: "claude-desktop", label: "Claude Code (Desktop)", type: "claude", status: "ready", version: "2.1.268 (Claude Code)", error: "", verified: true, configured: true, enabled: true, config: {} },
+    { id: "omp", label: "OMP", type: "omp", status: "ready", version: "omp/16.1.10", error: "", verified: true, configured: false, enabled: true, config: {} },
+    { id: "codex", label: "Codex", type: "codex", status: "ready", version: "codex-cli 0.42.0", error: "", verified: false, configured: false, enabled: true, config: {} },
+    { id: "opencode", label: "OpenCode", type: "opencode", status: "unavailable", version: "", error: "not installed (`opencode` not on PATH)", verified: false, configured: false, enabled: true, config: {} },
+    { id: "pi", label: "Pi", type: "pi", status: "unavailable", version: "", error: "not installed (`pi` not on PATH)", verified: false, configured: false, enabled: true, config: {} },
+  ] };
   if (path === "/escalations") return [
     { id: "aborted-by-restart-1", ts: "2026-08-21T04:19:07", kind: "aborted-by-restart",
       card: "20260816-193639-proc-20260816-s3", detail: "apk build (npm ci + gradle)",

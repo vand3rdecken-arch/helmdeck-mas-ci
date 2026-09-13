@@ -174,6 +174,18 @@ export interface PlanCalibration {
   tokens_per_pct: number; source: "measured" | "configured"; window: string;
   used_pct?: number | null; observed_tokens?: number | null; resets_at?: string;
 }
+/** One row of GET /engines (spine/agent/engines.py): a driver a card may
+ *  carry, with its CLI probed live. `status` is derived at probe time,
+ *  `verified` says whether HelmDeck's driver for it has ever run a real turn. */
+export interface EngineEntry {
+  id: string; label: string; type: string;
+  status: "ready" | "unavailable"; version: string; error: string;
+  verified: boolean; configured: boolean; exe?: string;
+  /** settings toggle (Paseo's provider switch): off = hidden from the picker, refused at filing */
+  enabled: boolean;
+  /** the editable settings row - send it back WHOLE on save (one-level merge) */
+  config: { exe?: string; env?: Record<string, string>; enabled?: boolean };
+}
 export interface Metrics {
   settings?: {
     currency: string; value_per_card: number; default_repo: string;

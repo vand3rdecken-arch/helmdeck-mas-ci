@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -81,9 +81,26 @@ export default function NewCard() {
 
   const field = fieldStyle(t);
   const { wide } = useResponsive();
-  // The app already knows the configured drivers via metrics.settings.drivers
-  // (same source the web modal uses). Selector when present, text input otherwise.
-  const drivers = Object.keys(metrics?.settings?.drivers ?? {});
+  // Engines come from GET /engines (spine/agent/engines.py), the Paseo
+  // provider-snapshot shape: every driver a card may carry, each CLI probed
+  // live. Used to be the KEYS of settings.drivers - which only ever named
+  // claude and claude-desktop, so an installed Codex/OMP/OpenCode never
+  // showed up here and the daemon refused it as unknown. A missing CLI stays
+  // visible but disabled with the reason; an unverified driver says so.
+  const { data: engineData, refetch: refetchEngines, isFetching: enginesFetching } =
+    useQuery({ queryKey: ["engines"], queryFn: () => api.engines(), staleTime: 60_000 });
+  // switched-off engines stay out of the picker (they are refused at filing
+  // anyway); they are managed in Settings > Agents & autonomy
+  const engines = (engineData?.engines ?? []).filter((e) => e.enabled);
+  const drivers = engines.map((e) => e.id);
+  const engineOf = (id: string) => engines.find((e) => e.id === id);
+  // Default = the first READY engine (claude on any box that got past
+  // onboarding). Only fills an empty pick, never overrides a user's choice.
+  useEffect(() => {
+    if (driver || engines.length === 0) return;
+    const first = engines.find((e) => e.status === "ready");
+    if (first) setDriver(first.id);
+  }, [engines, driver]);
 
   // Close the form DETERMINISTICALLY on success. router.back() is a no-op when
   // /new was reached without back-history (common on desktop), which left the
@@ -234,9 +251,28 @@ export default function NewCard() {
             </View>
           </View>
           <View style={{ height: 10 }} />
-          <Caption text={tr("new.driver")} />
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Caption text={tr("new.driver")} />
+            {drivers.length > 0 ? (
+              <Pressable onPress={() => { void refetchEngines(); }} disabled={enginesFetching} hitSlop={8}>
+                <Text style={{ color: t.accent, fontSize: 11.5, opacity: enginesFetching ? 0.5 : 1 }}>
+                  {tr("new.engineRefresh")}
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
           {drivers.length > 0 ? (
-            <ChipPick options={drivers} selected={[driver]} onToggle={setDriver} single />
+            <ChipPick options={drivers} selected={[driver]} onToggle={setDriver} single
+              labelFor={(id) => engineOf(id)?.label ?? id}
+              disabledFor={(id) => engineOf(id)?.status !== "ready"}
+              hintFor={(id) => {
+                const e = engineOf(id);
+                if (!e) return undefined;
+                if (e.status !== "ready") return tr("new.engineMissing");
+                // `claude --version` answers "2.1.268 (Claude Code)" - the label
+                // already says that, so the hint keeps only the number
+                return e.verified ? (e.version.replace(/\s*\(.*\)\s*$/, "") || undefined) : tr("new.engineUntested");
+              }} />
           ) : (
             <TextInput value={driver} onChangeText={setDriver} autoCapitalize="none" placeholder="claude"
               placeholderTextColor={t.txtPlaceholder} style={field} />

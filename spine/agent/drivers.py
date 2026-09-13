@@ -777,8 +777,12 @@ class _ClaudeSession:
         # ops/harness/agents/*.md, and it costs one stat() when nothing changed.
         self.brief = harness.brief(self.agent)
         # ONE builder, shared with /harness's spawn preview - see build_argv.
+        # settings.drivers[<id>].exe = the executable override the engine
+        # settings editor writes (spine/agent/engines.py); every native
+        # driver honours the same key in its own build_argv.
         argv = build_argv(self.agent, self.cfg, self.brief,
-                          self.session_id, self.adopted_source)
+                          self.session_id, self.adopted_source,
+                          exe=self.cfg.get("exe"))
         # SPAWN FORENSICS: audit whether this worker resumes or starts fresh.
         # A card once answered with a fresh mind despite a valid session_id and
         # a CLI-verified resumable transcript ("Voellig falscher Kontext") - and

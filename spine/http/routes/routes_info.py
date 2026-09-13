@@ -150,7 +150,19 @@ def escalations_get(self, user):
     return self._send(200, json.dumps(escalations.list_all(), ensure_ascii=False))
 
 
+def engines_get(self, user):
+    # Engine snapshot (spine/agent/engines.py - the Paseo provider-snapshot
+    # shape): every driver a card may carry, with its CLI probed live.
+    # ?refresh=1 re-probes (the user just installed something).
+    from spine.agent import engines
+    q = parse_qs(urlparse(self.path).query)
+    refresh = (q.get("refresh") or ["0"])[0] in ("1", "true")
+    return self._send(200, json.dumps({"engines": engines.snapshot(refresh=refresh)},
+                                      ensure_ascii=False))
+
+
 GET_ROUTES = {
+    "/engines": engines_get,
     "/debt": debt_get,
     "/charter": charter_get,
     "/loop/map": loop_map_get,
