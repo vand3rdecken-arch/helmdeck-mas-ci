@@ -1039,7 +1039,9 @@ export const api = {
     card?: string | null;
     /** Transient tool steps of the running turn - the rows a worker card shows,
      *  but they exist only while the turn runs (never in /chat/history). */
-    steps?: { id?: string; tool: string; label: string; status: "running" | "completed" | "failed";
+    steps?: { id?: string; tool: string; label: string; text?: string; status: "running" | "completed" | "failed";
+      /** worker-step parity: structured input (diff / content / full command) and the output */
+      detail?: import("@/ui/card_transcript").ToolDetail | null; result?: string; ta?: number;
       /** prose offset (chars of `text`) when the call happened - interleaving key */
       at?: number }[];
     voice?: (VoiceClip & { turn?: number; seq: number; text?: string })[];

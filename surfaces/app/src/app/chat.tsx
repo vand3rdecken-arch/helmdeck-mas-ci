@@ -877,7 +877,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                   };
                   for (const st of ordered) {
                     if (typeof st.at === "number" && st.at > cur) { pushText(stream.slice(cur, st.at), false); cur = Math.min(st.at, stream.length); }
-                    s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
+                    s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, text: st.text, detail: st.detail ?? undefined, result: st.result, ta: st.ta,
+                             status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
                   }
                   pushText(stream.slice(cur), true);
                 }

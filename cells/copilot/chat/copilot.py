@@ -1867,17 +1867,35 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         # app can interleave text and tool rows in TURN ORDER
                         # (Paseo renders the timeline chronologically; without
                         # this every tool row sat above the whole prose).
+                        # SAME SHAPE AS A WORKER STEP (claude_transcript_fmt):
+                        # label = human verb ("Befehl"), text = one-line subject,
+                        # detail = structured input (diff / written content /
+                        # the full command), result = the tool's output once
+                        # it lands. The owner's 16:55 screenshot showed the raw
+                        # command as a clipped bold title with nothing to
+                        # expand - Paseo's chip is verb + summary, tap for the
+                        # full input and output.
+                        from spine.agent import claude_transcript_fmt as _fmt
+                        _lbl, _sub = _fmt._tool_label(_b.get("name"), _inp)
+                        _det = _fmt._tool_detail(_b.get("name"), _inp)
+                        if _det is None and (_b.get("name") in ("Bash", "PowerShell", "Shell")) and _inp.get("command"):
+                            _det = {"type": "command", "command": str(_inp.get("command"))[:8000]}
                         _live_steps.append({"id": _b.get("id") or "", "tool": _b.get("name") or "tool",
-                                            "label": _brief[:160], "status": "running",
+                                            "label": _lbl, "text": (_sub or "")[:160], "detail": _det,
+                                            "status": "running", "ta": time.time(),
                                             "at": len(_strip_actions_live("".join(parts)))})
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
             elif typ == "user":
                 # tool results close the matching transient step
                 for _b in ((ev.get("message") or {}).get("content") or []):
                     if isinstance(_b, dict) and _b.get("type") == "tool_result":
+                        _rc = _b.get("content")
+                        if isinstance(_rc, list):
+                            _rc = "\n".join(str(x.get("text") or "") for x in _rc if isinstance(x, dict))
                         for _s in _live_steps:
                             if _s["id"] == _b.get("tool_use_id"):
                                 _s["status"] = "failed" if _b.get("is_error") else "completed"
+                                _s["result"] = str(_rc or "")[:4000]
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly

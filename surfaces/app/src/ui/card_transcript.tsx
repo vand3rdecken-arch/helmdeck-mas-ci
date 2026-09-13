@@ -13,8 +13,9 @@ const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "mon
 
 // Rich transcript step — matches daemon/claude_sessions.read_transcript() output.
 export interface ToolDetail {
-  type: "edit" | "multiedit" | "write";
+  type: "edit" | "multiedit" | "write" | "command";
   file?: string; old?: string; new?: string; content?: string;
+  command?: string;   // type "command": the full shell input (the row shows only its summary)
   edits?: { old: string; new: string }[];
 }
 // The clean state models (Phase 3, Paseo parity):
@@ -182,6 +183,11 @@ function ToolDetailView({ d, t }: { d: ToolDetail; t: ThemeTokens }) {
       {d.type === "edit" ? <DiffHunk oldText={d.old || ""} newText={d.new || ""} t={t} /> : null}
       {d.type === "multiedit" ? (d.edits || []).map((e, i) => <DiffHunk key={i} oldText={e.old} newText={e.new} t={t} />) : null}
       {d.type === "write" ? <DiffHunk oldText="" newText={d.content || ""} t={t} /> : null}
+      {d.type === "command" && d.command ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: t.canvas, borderRadius: 6 }}>
+          <Text selectable style={{ color: t.txtSecondary, fontFamily: MONO, fontSize: 11.5, lineHeight: 16, padding: 8 }}>{d.command}</Text>
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
