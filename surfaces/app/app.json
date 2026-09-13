@@ -92,16 +92,23 @@
         "expo-camera",
         {
           "cameraPermission": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
-          "microphonePermission": false,
+          "microphonePermission": "HelmDeck nutzt das Mikrofon nur, wenn du eine Nachricht an deine Agenten diktierst.",
           "recordAudioAndroid": false
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": false,
+          "microphonePermission": "HelmDeck nutzt das Mikrofon nur, wenn du eine Nachricht an deine Agenten diktierst.",
           "recordAudioAndroid": false,
           "enableBackgroundPlayback": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "HelmDeck nutzt das Mikrofon nur, wenn du eine Nachricht an deine Agenten diktierst.",
+          "speechRecognitionPermission": "HelmDeck wandelt deine diktierte Nachricht per Spracherkennung in Text um."
         }
       ]
     ],

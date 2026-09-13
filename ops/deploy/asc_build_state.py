@@ -17,6 +17,7 @@ minutes), and prints the processing state per build. Exit 0 = VALID,
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -73,6 +74,23 @@ def builds():
     return out
 
 
+def failed_uploads():
+    """Uploads Apple refused before they ever became a build (e.g. 90683, a
+    missing Info.plist purpose string). Those never show up in /v1/builds, so
+    polling builds alone waits blind for something that will never appear."""
+    d = _get("/v1/apps/%s/buildUploads?limit=5" % APP_ID)
+    out = []
+    for u in d.get("data", []):
+        a = u["attributes"]
+        st = a.get("state") or {}
+        if st.get("state") == "FAILED":
+            out.append((a.get("cfBundleShortVersionString"), a.get("cfBundleVersion"),
+                        [e.get("code", "") + " " + " ".join(re.findall(r"NS\w+UsageDescription", e.get("description") or ""))
+                         + " " + (e.get("description") or "")[:160]
+                         for e in st.get("errors", [])]))
+    return out
+
+
 def show(rows):
     if not rows:
         print("builds=0  (Apple has not surfaced the upload yet)")
@@ -95,6 +113,20 @@ if __name__ == "__main__":
             print("err: %s" % ex)
             rows = []
         show(rows)
+        try:
+            bad_up = failed_uploads()
+        except Exception as ex:
+            print("buildUploads err: %s" % ex)
+            bad_up = []
+        newest = max((int(r["version"]) for r in rows if (r["version"] or "").isdigit()), default=0)
+        bad_up = [u for u in bad_up if (u[1] or "").isdigit() and int(u[1]) > newest]
+        if bad_up:
+            for ver, num, errs in bad_up:
+                print("UPLOAD FAILED %s (%s):" % (ver, num))
+                for e in errs:
+                    print("  " + e)
+            print("RESULT=UPLOAD_FAILED")
+            sys.exit(1)
         states = [r["state"] for r in rows]
         if not wait:
             break
