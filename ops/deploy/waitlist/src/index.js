@@ -34,6 +34,11 @@ import { ICON_SVG } from "./logo.js";
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
+// Each waitlist is its own KV key space so the export can tell them apart and
+// one address may sit on both. "wearables" keeps the historical "email:" prefix
+// so nothing already stored moves.
+const PRODUCTS = { wearables: "email:", cloud: "cloud:" };
+
 // Owner-picked Userjot board (matches surfaces/app/src/data/feedback.ts) - update both
 // in lockstep if the board URL ever changes.
 //
@@ -213,9 +218,63 @@ function dlMeta(entry) {
 
 // --- page -----------------------------------------------------------------
 
-function page({ rel, joined, already, err, email }) {
+// One waitlist block per product. Ids are suffixed so two blocks can live on
+// the same page; the JS below binds by form[data-product], never by fixed id.
+// i18n keys with a product suffix (consentCloud, privacyACloud) override the
+// shared ones - the client-side apply() resolves them the same way.
+function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
+  const sfx = product === "cloud" ? "Cloud" : "";
+  const id = (base) => base + "-" + product;
+  return `      <div id="${id("joinbox")}" ${showSuccess ? "hidden" : ""}>
+        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein – wir melden uns, sobald es losgeht.</p>
+        <form id="${id("f")}" data-product="${product}" action="/api/join" method="post" novalidate>
+          <div class="field">
+            <label class="hp" for="${id("email")}" data-i="label">E-Mail-Adresse</label>
+            <input id="${id("email")}" name="email" type="email" required maxlength="254"
+                   placeholder="du@example.com" autocomplete="email" spellcheck="false" data-i-ph="ph">
+            <input type="hidden" name="product" value="${product}">
+            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+          </div>
+          <button class="btn btn-primary" id="${id("go")}" type="submit" data-i="cta">Auf die Liste</button>
+          <p class="err" id="${id("err")}" role="status" aria-live="polite">${err ? "Das sieht nicht nach einer gültigen E-Mail-Adresse aus." : ""}</p>
+        </form>
+        <p class="consent" data-i="consent${sfx}">${product === "cloud"
+          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet – oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
+          : "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe."}</p>
+      </div>
+
+      <div class="success" id="${id("done")}" ${showSuccess ? "" : "hidden"}>
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="11" stroke="#5CB572" stroke-width="1.6"/>
+          <path d="M7.4 12.4l3 3 6-6.4" stroke="#5CB572" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h2 id="${id("done-h")}" tabindex="-1" data-i="${already ? "doneAlreadyH" : "doneH"}" style="font-size:1.05rem">${already ? "Schon eingetragen." : "Du stehst auf der Liste."}</h2>
+          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "Diese Adresse steht bereits auf der Liste – alles gut." : "Wir melden uns einmalig, sobald es losgeht:"}</span> <b id="${id("done-mail")}">${safeEmail}</b></p>
+        </div>
+      </div>
+
+      <details>
+        <summary data-i="privacyQ">Was passiert mit deiner E-Mail?</summary>
+        <div data-i-html="privacyA${sfx}">Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und
+        ausschließlich verwendet, um dich einmalig über den Start von ${product === "cloud" ? "HelmDeck Cloud" : "HelmDeck für Watch/Glasses"} zu
+        informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf
+        dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
+        (Verantwortlicher: Tien Duy Vo).</div>
+      </details>`;
+}
+
+function page({ rel, joined, already, err, email, product }) {
   const showSuccess = joined || already;
   const safeEmail = escapeHtml(email || "");
+  // Two independent lists share one form template. Only the block the visitor
+  // actually posted to flips into its success state (no-JS path carries ?p=).
+  const wl = (prod) => waitlistBlock({
+    product: prod, safeEmail,
+    showSuccess: showSuccess && product === prod,
+    already: already && product === prod,
+    err: err && product === prod,
+  });
   const win = rel.ok ? rel.windows : null;
   const macArm = rel.ok ? rel.macArm : null;
   const macX64 = rel.ok ? rel.macX64 : null;
@@ -422,6 +481,7 @@ footer a:hover{color:var(--ink-2)}
     <div class="topnav">
       <a href="#proof" data-i="navProof">So sieht es aus</a>
       <a href="#downloads" data-i="navDownloads">Downloads</a>
+      <a href="#cloud" data-i="navCloud">Cloud</a>
       <a href="#waitlist" data-i="navWaitlist">Glasses</a>
     </div>
     <button class="lang" id="lang" type="button" aria-label="Switch language">EN</button>
@@ -518,9 +578,17 @@ footer a:hover{color:var(--ink-2)}
     </div>
     <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">Alle Downloads &amp; Prüfsummen auf GitHub</a></p>
     <div class="faq">
-      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren.</div></details>
+      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i-html="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.</div></details>
       <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
       <details><summary data-i="faq3Q">Welche Agenten laufen darin?</summary><div data-i="faq3A">Heute Claude Code. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.</div></details>
+    </div>
+  </section>
+
+  <section class="waitlist" id="cloud">
+    <h2 data-i="cloudTitle">HelmDeck Cloud</h2>
+    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy – ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
+    <div class="wl-inner">
+${wl("cloud")}
     </div>
   </section>
 
@@ -528,40 +596,7 @@ footer a:hover{color:var(--ink-2)}
     <h2 data-i="waitlistTitle">HelmDeck Glasses</h2>
     <p class="section-sub" data-i="waitlistSub">Das Steuer auf der Nase: HelmDeck für Glasses ist als Nächstes dran – Watch (Wear OS &amp; Apple Watch) läuft bereits, siehe oben.</p>
     <div class="wl-inner">
-      <div id="joinbox" ${showSuccess ? "hidden" : ""}>
-        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein – wir melden uns, sobald es losgeht.</p>
-        <form id="f" action="/api/join" method="post" novalidate>
-          <div class="field">
-            <label class="hp" for="email" data-i="label">E-Mail-Adresse</label>
-            <input id="email" name="email" type="email" required maxlength="254"
-                   placeholder="du@example.com" autocomplete="email" spellcheck="false" data-i-ph="ph">
-            <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-          </div>
-          <button class="btn btn-primary" id="go" type="submit" data-i="cta">Auf die Liste</button>
-          <p class="err" id="err" role="status" aria-live="polite">${err ? "Das sieht nicht nach einer gültigen E-Mail-Adresse aus." : ""}</p>
-        </form>
-        <p class="consent" data-i="consent">Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe.</p>
-      </div>
-
-      <div class="success" id="done" ${showSuccess ? "" : "hidden"}>
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="11" stroke="#5CB572" stroke-width="1.6"/>
-          <path d="M7.4 12.4l3 3 6-6.4" stroke="#5CB572" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <div>
-          <h2 id="done-h" tabindex="-1" data-i="${already ? "doneAlreadyH" : "doneH"}" style="font-size:1.05rem">${already ? "Schon eingetragen." : "Du stehst auf der Liste."}</h2>
-          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "Diese Adresse steht bereits auf der Liste – alles gut." : "Wir melden uns einmalig, sobald es losgeht:"}</span> <b id="done-mail">${safeEmail}</b></p>
-        </div>
-      </div>
-
-      <details>
-        <summary data-i="privacyQ">Was passiert mit deiner E-Mail?</summary>
-        <div data-i-html="privacyA">Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und
-        ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Watch/Glasses zu
-        informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf
-        dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
-        (Verantwortlicher: Tien Duy Vo).</div>
-      </details>
+${wl("wearables")}
     </div>
   </section>
 </main>
@@ -571,7 +606,7 @@ footer a:hover{color:var(--ink-2)}
   var I18N = {
     de:{
       title:"HelmDeck – Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.",
-      navProof:"So sieht es aus", navDownloads:"Downloads", navWaitlist:"Glasses",
+      navProof:"So sieht es aus", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"Teams und Agenten, ein Projekt",
       h1:"Teams und Agenten bauen zusammen. Rund um die Uhr, von überall.",
       platforms:'${platformsHtml("Desktop", "Handy", "Handgelenk")}',
@@ -591,7 +626,7 @@ footer a:hover{color:var(--ink-2)}
       step2H:"Handy koppeln, Team einladen", step2P:"QR-Code scannen, Einladungslink verschicken. Die anderen brauchen nur die App – keinen Zugang zum Rechner.",
       step3H:"Aufgabe abgeben, frei sein", step3P:"Die erste Rückfrage kommt aufs Handy. Das Onboarding ist noch jung – wenn ihr hängt, schreibt uns, wir helfen persönlich.",
       devices:'<span>Android</span><span>iPhone &amp; iPad <i>· TestFlight</i></span><span>Apple Watch</span><span>Wear OS</span><span>Windows</span><span>macOS</span><span>Web</span><span>Glasses <i>· bald</i></span>',
-      faq1Q:"Muss der Rechner an sein?", faq1A:"Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren.",
+      faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige – schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
       faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse – je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:"Heute Claude Code. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.",
       dlTitle:"Jetzt verfügbar", dlSub:"Einer im Team installiert den Operator auf dem Rechner mit dem Projekt. Alle anderen brauchen nur die App fürs Handy. Keine Cloud, kein Account bei uns, keine Wartezeit.",
@@ -605,6 +640,10 @@ footer a:hover{color:var(--ink-2)}
       dlAndroidNote:'Direkt aus dem Google Play Store – öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
+      cloudTitle:"HelmDeck Cloud",
+      cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy – ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
+      consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet – oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
+      privacyACloud:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck Cloud zu informieren. Danach wird die Liste gelöscht. Keine Weitergabe an Dritte, kein Tracking auf dieser Seite. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo).',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"Das Steuer auf der Nase: HelmDeck für Glasses ist als Nächstes dran – Watch (Wear OS & Apple Watch) läuft bereits, siehe oben.",
       lead:"Trag dich ein – wir melden uns, sobald es losgeht.",
@@ -619,7 +658,7 @@ footer a:hover{color:var(--ink-2)}
       contact:"Kontakt", sending:"…", toggle:"EN" },
     en:{
       title:"HelmDeck – teams and agents build together. Around the clock, from anywhere.",
-      navProof:"See it", navDownloads:"Downloads", navWaitlist:"Glasses",
+      navProof:"See it", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"Teams and agents, one project",
       h1:"Teams and agents build together. Around the clock, from anywhere.",
       platforms:'${platformsHtml("Desktop", "Phone", "Wrist")}',
@@ -639,7 +678,7 @@ footer a:hover{color:var(--ink-2)}
       step2H:"Pair a phone, invite the team", step2P:"Scan the QR code, send the invite link. The others only need the app – no access to the machine.",
       step3H:"Hand off a task, be free", step3P:"The first question lands on your phone. Onboarding is still young – if you get stuck, write to us, we help in person.",
       devices:'<span>Android</span><span>iPhone &amp; iPad <i>· TestFlight</i></span><span>Apple Watch</span><span>Wear OS</span><span>Windows</span><span>macOS</span><span>Web</span><span>Glasses <i>· soon</i></span>',
-      faq1Q:"Does the machine have to be on?", faq1A:"Yes. The operator and the agents work on that machine. Phone and watch are remote control and display – if the machine sleeps, the tasks wait, nothing is lost.",
+      faq1Q:"Does the machine have to be on?", faq1A:'Yes. The operator and the agents work on that machine. Phone and watch are remote control and display – if the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.',
       faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results – per role. A client files cards and accepts results without ever seeing your file system or credentials.",
       faq3Q:"Which agents run inside?", faq3A:"Claude Code today. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.",
       dlTitle:"Available now", dlSub:"One person on the team installs the operator on the machine with the project. Everyone else only needs the phone app. No cloud, no account with us, no waiting.",
@@ -653,6 +692,10 @@ footer a:hover{color:var(--ink-2)}
       dlAndroidNote:'Straight from the Google Play Store – publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
+      cloudTitle:"HelmDeck Cloud",
+      cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone – no PC of your own. Join if that's exactly what you need. We build it once enough people want it.",
+      consentCloud:"One entry, one email: we store your address only to notify you once when HelmDeck Cloud launches – or to ask you one question about your needs beforehand. No newsletter, no sharing.",
+      privacyACloud:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck Cloud launching. The list is deleted afterwards. No third-party sharing, no tracking on this page. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo).',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"The helm on your face: HelmDeck for Glasses is next – Watch (Wear OS & Apple Watch) already ships, see above.",
       lead:"Join the list – we'll reach out once it ships.",
@@ -729,50 +772,54 @@ footer a:hover{color:var(--ink-2)}
     }
   });
 
-  var form = document.getElementById("f");
-  var input = document.getElementById("email");
-  var errEl = document.getElementById("err");
-  var go = document.getElementById("go");
   var EMAIL_RE = /^[^\\s@]{1,64}@[^\\s@]{1,190}\\.[^\\s@.]{2,24}$/;
+  var forms = document.querySelectorAll("form[data-product]");
+  for (var fi = 0; fi < forms.length; fi++) bindForm(forms[fi]);
 
-  form.addEventListener("submit", function(ev){
-    ev.preventDefault();
-    var t = I18N[lang];
-    var email = (input.value || "").trim();
-    if (!EMAIL_RE.test(email)){
-      form.classList.add("invalid");
-      errEl.textContent = t.errInvalid;
-      input.focus();
-      return;
-    }
-    form.classList.remove("invalid");
-    errEl.textContent = "";
-    go.disabled = true;
-    var ctaText = go.textContent;
-    go.textContent = t.sending;
-    fetch("/api/join", {
-      method:"POST",
-      headers:{ "content-type":"application/json" },
-      body: JSON.stringify({ email: email, lang: lang, company: form.company.value || "" })
-    }).then(function(r){ return r.json(); }).then(function(res){
-      if (!res.ok){ throw new Error(res.error || "invalid"); }
-      document.getElementById("done-mail").textContent = email;
-      var h = document.getElementById("done-h");
-      h.setAttribute("data-i", res.already ? "doneAlreadyH" : "doneH");
-      var pSpan = document.querySelector("#done p span");
-      pSpan.setAttribute("data-i", res.already ? "doneAlreadyP" : "doneP");
-      apply();
-      document.getElementById("joinbox").hidden = true;
-      document.getElementById("done").hidden = false;
-      h.focus();
-    }).catch(function(e){
-      form.classList.add("invalid");
-      errEl.textContent = (e && e.message === "invalid_email") ? t.errInvalid : t.errNet;
-    }).finally(function(){
-      go.disabled = false;
-      go.textContent = I18N[lang].cta;
+  function bindForm(form){
+    var product = form.getAttribute("data-product");
+    var input = document.getElementById("email-" + product);
+    var errEl = document.getElementById("err-" + product);
+    var go = document.getElementById("go-" + product);
+
+    form.addEventListener("submit", function(ev){
+      ev.preventDefault();
+      var t = I18N[lang];
+      var email = (input.value || "").trim();
+      if (!EMAIL_RE.test(email)){
+        form.classList.add("invalid");
+        errEl.textContent = t.errInvalid;
+        input.focus();
+        return;
+      }
+      form.classList.remove("invalid");
+      errEl.textContent = "";
+      go.disabled = true;
+      go.textContent = t.sending;
+      fetch("/api/join", {
+        method:"POST",
+        headers:{ "content-type":"application/json" },
+        body: JSON.stringify({ email: email, lang: lang, product: product, company: form.company.value || "" })
+      }).then(function(r){ return r.json(); }).then(function(res){
+        if (!res.ok){ throw new Error(res.error || "invalid"); }
+        document.getElementById("done-mail-" + product).textContent = email;
+        var h = document.getElementById("done-h-" + product);
+        h.setAttribute("data-i", res.already ? "doneAlreadyH" : "doneH");
+        var pSpan = document.querySelector("#done-" + product + " p span");
+        pSpan.setAttribute("data-i", res.already ? "doneAlreadyP" : "doneP");
+        apply();
+        document.getElementById("joinbox-" + product).hidden = true;
+        document.getElementById("done-" + product).hidden = false;
+        h.focus();
+      }).catch(function(e){
+        form.classList.add("invalid");
+        errEl.textContent = (e && e.message === "invalid_email") ? t.errInvalid : t.errNet;
+      }).finally(function(){
+        go.disabled = false;
+        go.textContent = I18N[lang].cta;
+      });
     });
-  });
+  }
 })();
 </script>
 </body>
@@ -809,25 +856,31 @@ function json(obj, status = 200) {
 }
 
 async function handleJoin(req, env) {
-  let email = "", lang = "de", honeypot = "", wantsHtml = false;
+  let email = "", lang = "de", honeypot = "", product = "", wantsHtml = false;
   const ct = req.headers.get("content-type") || "";
   if (ct.includes("application/json")) {
     const body = await req.json().catch(() => ({}));
     email = String(body.email || "");
     lang = body.lang === "en" ? "en" : "de";
     honeypot = String(body.company || "");
+    product = String(body.product || "");
   } else {
     const form = await req.formData().catch(() => null);
     if (form) {
       email = String(form.get("email") || "");
       honeypot = String(form.get("company") || "");
+      product = String(form.get("product") || "");
     }
     wantsHtml = true; // no-JS form post
   }
   email = email.trim();
+  // Unknown/missing product falls back to the original list so old clients
+  // (cached page, no hidden field) keep landing where they always did.
+  if (!PRODUCTS[product]) product = "wearables";
+  const prefix = PRODUCTS[product];
 
   const redirect = (qs) =>
-    new Response(null, { status: 303, headers: { location: "/?" + qs } });
+    new Response(null, { status: 303, headers: { location: "/?" + qs + "&p=" + product } });
 
   if (honeypot) {
     // Bot filled the invisible field: pretend success, store nothing.
@@ -837,12 +890,11 @@ async function handleJoin(req, env) {
     return wantsHtml ? redirect("err=1") : json({ ok: false, error: "invalid_email" }, 400);
   }
 
-  const key = "email:" + email.toLowerCase();
+  const key = prefix + email.toLowerCase();
   const existing = await env.WAITLIST.get(key);
   const already = existing !== null;
   if (!already) {
     const ts = new Date().toISOString();
-    const product = "wearables";
     await env.WAITLIST.put(key, JSON.stringify({ email, ts, lang, product }), {
       metadata: { ts, lang, product },
     });
@@ -859,15 +911,17 @@ async function handleExport(req, env) {
     return json({ ok: false, error: "unauthorized" }, 401);
   }
   const rows = [["email", "joined_at", "lang", "product"]];
-  let cursor;
-  do {
-    const page = await env.WAITLIST.list({ prefix: "email:", cursor, limit: 1000 });
-    for (const k of page.keys) {
-      const meta = k.metadata || {};
-      rows.push([k.name.slice(6), meta.ts || "", meta.lang || "", meta.product || ""]);
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+  for (const [product, prefix] of Object.entries(PRODUCTS)) {
+    let cursor;
+    do {
+      const page = await env.WAITLIST.list({ prefix, cursor, limit: 1000 });
+      for (const k of page.keys) {
+        const meta = k.metadata || {};
+        rows.push([k.name.slice(prefix.length), meta.ts || "", meta.lang || "", meta.product || product]);
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  }
   // BOM so Excel opens the UTF-8 CSV with umlauts intact
   const csv = "﻿" + rows
     .map((r) => r.map((f) => '"' + String(f).replace(/"/g, '""') + '"').join(","))
@@ -894,6 +948,7 @@ export default {
         already: url.searchParams.get("already") === "1",
         err: url.searchParams.get("err") === "1",
         email: url.searchParams.get("e") || "",
+        product: PRODUCTS[url.searchParams.get("p")] ? url.searchParams.get("p") : "wearables",
       }));
     }
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);

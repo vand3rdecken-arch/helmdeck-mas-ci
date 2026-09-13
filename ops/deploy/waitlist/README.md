@@ -47,11 +47,17 @@ framework, no build step, no tracking.
   (or need a separate API token with `Zone:DNS:Edit`). Do not waste time looking
   for a CLI path; there isn't one with the current credential.
 
-- **Storage**: KV namespace `WAITLIST` (id in `wrangler.jsonc`), key
-  `email:<lowercased>`, value + metadata `{email, ts, lang, product}`.
-  `product` is always `"wearables"` — the sole thing this waitlist now
-  collects for. First signup wins; duplicates are acknowledged but never
-  overwrite the original timestamp. No IP or user agent is stored.
+- **Storage**: KV namespace `WAITLIST` (id in `wrangler.jsonc`). Two
+  independent lists, one key space each (table `PRODUCTS` in `src/index.js`):
+  `email:<lowercased>` = **wearables** (Watch/Glasses, the historical list),
+  `cloud:<lowercased>` = **cloud** (hosted operator, added 2026-09-13 as a
+  demand probe - the owner reads the count, not the addresses, to decide
+  whether a no-own-PC path is worth building). Value + metadata
+  `{email, ts, lang, product}`. One address may sit on both lists. A POST
+  without a known `product` lands on wearables so cached old pages keep
+  working. First signup wins per list; duplicates are acknowledged but never
+  overwrite the original timestamp. No IP or user agent is stored. The CSV
+  export walks both prefixes; filter the `product` column.
 
 ## Owner: viewing the addresses
 
