@@ -420,6 +420,7 @@ def _persist_get(skey, cli_model, sid, system):
         argv += ["--resume", sid]
     argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
+    argv += _lean_mcp_args()
     from spine.agent.drivers import _cmd_line
     from spine.agent.spawnenv import tool_path
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
@@ -428,6 +429,20 @@ def _persist_get(skey, cli_model, sid, system):
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     return p, True
+
+
+def _lean_mcp_args():
+    """THE LEAN CHAT (owner decree 2026-09-13: "CLI moeglichst schlank und
+    schnell starten, bei mehr Rechten groesserer Prozess"): Henry's chat port
+    loads NO MCP servers. cli_args already drops the user settings layer
+    (windows-mcp, helmdeck-browser never load), but the claude.ai connectors
+    (Gmail, Atlassian) still attached on every cold start - measured: init
+    3.1s with them, 2.6s without, and Atlassian sat on "needs-auth" every
+    time. Everything that needs the PC, the browser or mail goes through the
+    `hands` verb (cells/copilot/chat/hands.py) or a card, which carry the
+    full bridge. --strict-mcp-config makes the empty file the ONLY source."""
+    return ["--strict-mcp-config", "--mcp-config",
+            os.path.join(_REPO_ROOT, "cells", "copilot", "harness", "settings", "mcp-none.json")]
 
 
 def henry_pmode(project=""):
@@ -1148,6 +1163,11 @@ def history(user):
         followups = henry_broker.followup_tasks()
     except Exception:                                        # noqa: BLE001
         followups = {}          # a broken fold must never take the chat down
+    try:
+        from cells.copilot.chat import hands
+        followups.update(hands.tasks())     # Henry's hands sub-agents, same BgTask shape
+    except Exception:                                        # noqa: BLE001
+        pass
     return {"messages": [_readable(m) for m in _entries(user)],
             "session_id": _sessions().get(user),
             "stats": st,
@@ -1518,6 +1538,7 @@ def build_argv(cli_model, sid, system):
     from spine.registry import harness
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
+    argv += _lean_mcp_args()
     if cli_model:              # whitelist only - no arbitrary model ids from the client
         argv += ["--model", cli_model]
     if sid:

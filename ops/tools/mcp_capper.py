@@ -42,6 +42,15 @@ def _truncate(obj, cap):
     if isinstance(obj, list):
         return [_truncate(x, cap) for x in obj]
     if isinstance(obj, dict):
+        # BINARY BLOCKS PASS UNTOUCHED. An MCP image/audio block carries its
+        # payload as base64 in `data`; cutting it at the cap and appending the
+        # marker makes it invalid base64, and the CLI then rejects the WHOLE
+        # tool result ("malformed result ... Invalid Base64 string at
+        # content[1].data" - measured 2026-09-13 17:57, a windows-mcp
+        # screenshot through this capper). The cap exists to keep TEXT from
+        # flooding the model; a screenshot is what the model was asked for.
+        if obj.get("type") in ("image", "audio") and isinstance(obj.get("data"), str):
+            return obj
         return {k: _truncate(v, cap) for k, v in obj.items()}
     return obj
 
