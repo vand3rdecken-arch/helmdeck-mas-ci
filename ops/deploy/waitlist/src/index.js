@@ -264,7 +264,7 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
           <p class="err" id="${id("err")}" role="status" aria-live="polite">${err ? "Das sieht nicht nach einer gültigen E-Mail-Adresse aus." : ""}</p>
         </form>
         <p class="consent" data-i="consent${sfx}">${product === "cloud"
-          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
+          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um zu sehen, wer eine gehostete Variante brauchen würde, und um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
           : "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe."}</p>
       </div>
 
@@ -590,7 +590,7 @@ footer a:hover{color:var(--ink-2)}
       </div>
       <div class="shot">
         <figure><img src="${IMG_DESK}" width="1100" height="687" alt="HelmDeck Board am Desktop: Lanes Backlog, In Arbeit, Review mit Gate-Ergebnis" loading="lazy"></figure>
-        <figcaption><b data-i="shot2H">Auch fürs Team</b><p data-i="shot2P">Kollegen und Kunden bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.</p></figcaption>
+        <figcaption><b data-i="shot2H">Auch fürs Team</b><p data-i="shot2P">Kollegen und Auftraggeber bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.</p></figcaption>
       </div>
     </div>
   </section>
@@ -649,14 +649,14 @@ footer a:hover{color:var(--ink-2)}
     <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">Alle Downloads &amp; Prüfsummen auf GitHub</a></p>
     <div class="faq">
       <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i-html="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.</div></details>
-      <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
+      <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
       <details><summary data-i="faq3Q">Welche Agenten laufen darin?</summary><div data-i-html="faq3A">Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.</div></details>
     </div>
   </section>
 
   <section class="waitlist" id="cloud">
     <h2 data-i="cloudTitle">HelmDeck Cloud</h2>
-    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
+    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Das hier ist reine Interessensmessung, ohne Zusage und ohne Termin. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
     <div class="wl-inner">
 ${wl("cloud")}
     </div>
@@ -670,7 +670,7 @@ ${wl("wearables")}
     </div>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="/datenschutz" data-i="privacyLink">Datenschutz</a> · <a href="/impressum" data-i="imprintLink">Impressum</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie-Einstellungen</button></footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="/datenschutz" data-i="privacyLink">Datenschutz</a> · <a href="/impressum" data-i="imprintLink">Kontakt</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie-Einstellungen</button></footer>
 
 <div class="cookiebar" id="cookiebar" role="dialog" aria-label="Cookie-Hinweis" hidden>
   <p data-i-html="cookieMsg">Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a></p>
@@ -758,14 +758,14 @@ ${wl("wearables")}
       proofSub:"In Jira schreibst du ein Ticket, dann gehst du zu Claude Code und erklärst es nochmal. Wenn er fertig ist, gehst du zurück und setzt das Ticket auf „Done“. Drei Orte, eine Aufgabe.",
       proofSub2:"In HelmDeck ist die Karte die Aufgabe. Du schreibst sie, der Agent bekommt sie, die Karte zeigt Fortschritt, Rückfragen und Diff. Du nimmst ab, die Karte ist fertig. Ein Ort.",
       shot1H:"Das Board auf dem Handy", shot1P:"Eine Karte läuft, eine wartet auf dich. Echte Screenshots, keine Mockups.",
-      shot2H:"Auch fürs Team", shot2P:"Kollegen und Kunden bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.",
+      shot2H:"Auch fürs Team", shot2P:"Kollegen und Auftraggeber bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.",
       stepsTitle:"So fängst du an",
       step1H:"Operator auf den Rechner", step1P:"Auf den Rechner mit dem Projekt. Claude Code verbinden. Zwei Minuten.",
       step2H:"QR-Code mit dem Handy scannen", step2P:"Das Handy ist gekoppelt. Kein Account bei uns, keine Cloud dazwischen.",
       step3H:"Erste Aufgabe schicken und weggehen", step3P:"Die erste Rückfrage kommt als Push. Wenn du hängst, schreib uns, wir helfen persönlich.",
       devicesTitle:"Läuft auf", devices:'${devicesHtml(DEV_DE)}',
       faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
-      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Kunde reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
+      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.',
       dlTitle:"Jetzt verfügbar", dlSub:"Operator für Windows und macOS. App für Android und iPhone, die Uhr-App liegt im selben Paket. Kein Account bei uns, keine Wartezeit.",
       dlBtn:"Herunterladen",
@@ -779,8 +779,8 @@ ${wl("wearables")}
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       cloudTitle:"HelmDeck Cloud",
-      cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
-      consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
+      cloudSub:"Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Das hier ist reine Interessensmessung, ohne Zusage und ohne Termin. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.",
+      consentCloud:"Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um zu sehen, wer eine gehostete Variante brauchen würde, und um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe.",
       privacyACloud:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck Cloud zu informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte. Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung: <a href="/datenschutz">/datenschutz</a>.',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"Nach dem Handy: HelmDeck für Glasses. Trag dich ein, wir melden uns einmal, wenn es losgeht.",
@@ -793,7 +793,7 @@ ${wl("wearables")}
       errNet:"Gerade nicht erreichbar. Bitte versuch es gleich nochmal.",
       privacyQ:"Was passiert mit deiner E-Mail?",
       privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte. Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung: <a href="/datenschutz">/datenschutz</a>.',
-      contact:"Kontakt", privacyLink:"Datenschutz", imprintLink:"Impressum",
+      contact:"Kontakt", privacyLink:"Datenschutz", imprintLink:"Kontakt",
       cookieSettings:"Cookie-Einstellungen",
       cookieMsg:'Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a>',
       cookieDecline:"Ablehnen", cookieAccept:"Akzeptieren",
@@ -840,8 +840,8 @@ ${wl("wearables")}
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       cloudTitle:"HelmDeck Cloud",
-      cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone, no PC of your own. Join if that's exactly what you need. We build it once enough people want it.",
-      consentCloud:"One entry, one email: we store your address only to notify you once when HelmDeck Cloud launches, or to ask you one question about your needs beforehand. No newsletter, no sharing.",
+      cloudSub:"No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone, no PC of your own. This is a pure interest measurement, with no commitment and no timeline. Join if that's exactly what you need. We build it once enough people want it.",
+      consentCloud:"One entry, one email: we store your address only to see who would need a hosted variant, and to notify you once when HelmDeck Cloud launches, or to ask you one question about your needs beforehand. No newsletter, no sharing.",
       privacyACloud:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck Cloud launching. The list is deleted afterwards. This site measures anonymously and cookielessly via PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties. This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo). Full privacy policy: <a href="/datenschutz">/datenschutz</a>.',
       waitlistTitle:"HelmDeck Glasses",
       waitlistSub:"After the phone: HelmDeck for Glasses. Join the list, we write once when it ships.",
@@ -854,7 +854,7 @@ ${wl("wearables")}
       errNet:"Can't reach the server right now. Please try again shortly.",
       privacyQ:"What happens to your email?",
       privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. This site measures anonymously and cookielessly via PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties. This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo). Full privacy policy: <a href="/datenschutz">/datenschutz</a>.',
-      contact:"Contact", privacyLink:"Privacy", imprintLink:"Imprint",
+      contact:"Contact", privacyLink:"Privacy", imprintLink:"Contact",
       cookieSettings:"Cookie settings",
       cookieMsg:'This site measures usage anonymously and without cookies via PostHog (EU, Frankfurt), but only with your consent. Nothing loads and nothing is measured before you accept. <a href="/datenschutz">More in the privacy policy.</a>',
       cookieDecline:"Decline", cookieAccept:"Accept",
@@ -1061,7 +1061,6 @@ const DATENSCHUTZ_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
 
 <h2>1. Verantwortlicher</h2>
 <p>Tien Duy Vo<br>
-Postanschrift: wird ergänzt<br>
 E-Mail: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
 
 <h2>2. Hosting</h2>
@@ -1089,7 +1088,7 @@ Download oder Start des Wartelisten-Formulars, dazu die Herkunft eines Besuchs (
 utm_medium, utm_campaign), sofern ein Link diese Angaben enthält.</p>
 <p>Deine IP-Adresse soll bei PostHog verworfen werden (Einstellung „Discard client IP data" im
 PostHog-Projekt). Der Stand dieser Einstellung ist noch nicht bestätigt, siehe Abschnitt 7. Die
-Speicherdauer bei PostHog richtet sich nach der Standard-Aufbewahrungsfrist des genutzten Plans;
+Speicherdauer bei PostHog richtet sich nach der Standard-Aufbewahrungsfrist des genutzten Tarifs;
 der genaue Wert ist noch nicht bestätigt, siehe Abschnitt 7.</p>
 <p>Widerruf: Über „Cookie-Einstellungen" im Fußbereich der Seite kannst du deine Entscheidung
 jederzeit ändern. Lehnst du dort ab, schaltet diese Seite die Messung sofort und dauerhaft ab
@@ -1111,11 +1110,12 @@ der Banner dir nicht bei jedem Besuch erneut angezeigt wird.</li>
 Seite beim nächsten Besuch erneut.</p>
 
 <h2>5. Wartelisten-Formular</h2>
-<p>Wer sich für HelmDeck Cloud oder HelmDeck für Watch/Glasses einträgt, gibt eine E-Mail-Adresse
-an. Sie wird bei Cloudflare Workers KV gespeichert, zusammen mit Zeitpunkt und Produkt, und
-ausschließlich verwendet, um dich einmalig über den Start zu informieren. Danach wird die
-jeweilige Liste vollständig gelöscht. Es werden keine IP-Adresse und kein Nutzeragent
-gespeichert.</p>
+<p>Zweck: Interessensmessung für ein privates Projekt. Wer sich für HelmDeck Cloud oder HelmDeck
+für Watch/Glasses einträgt, gibt eine E-Mail-Adresse an. Sie wird bei Cloudflare Workers KV
+gespeichert, zusammen mit Zeitpunkt und Produkt, und ausschließlich verwendet, um zu sehen, wie
+viele Menschen die jeweilige Variante brauchen würden, und um dich einmalig über den Start zu
+informieren. Danach wird die jeweilige Liste vollständig gelöscht. Es werden keine IP-Adresse und
+kein Nutzeragent gespeichert.</p>
 <p>Rechtsgrundlage ist deine Einwilligung durch das Absenden des Formulars, Artikel 6 Absatz 1
 Buchstabe a DSGVO. Du kannst die Einwilligung jederzeit für die Zukunft widerrufen und die
 Löschung deines Eintrags verlangen, formlos per E-Mail an
@@ -1129,10 +1129,9 @@ E-Mail-Adresse oben. Außerdem kannst du dich bei der für dich zuständigen
 Datenschutz-Aufsichtsbehörde beschweren.</p>
 
 <h2>7. Offene Punkte</h2>
-<p>Diese Erklärung wird ergänzt, sobald Folgendes feststeht: die Postanschrift des
-Verantwortlichen, der Status des Auftragsverarbeitungsvertrags mit PostHog, der Status der
-Einstellung „Discard client IP data" im PostHog-Projekt sowie die genaue Aufbewahrungsfrist im
-genutzten PostHog-Plan.</p>
+<p>Diese Erklärung wird ergänzt, sobald Folgendes feststeht: der Status des
+Auftragsverarbeitungsvertrags mit PostHog, der Status der Einstellung „Discard client IP data" im
+PostHog-Projekt sowie die genaue Aufbewahrungsfrist im genutzten PostHog-Tarif.</p>
 
 <hr>
 <h1 id=en>Privacy Policy, HelmDeck (helmdeck.de)</h1>
@@ -1140,7 +1139,6 @@ genutzten PostHog-Plan.</p>
 
 <h2>1. Controller</h2>
 <p>Tien Duy Vo<br>
-Postal address: to be added<br>
 Email: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
 
 <h2>2. Hosting</h2>
@@ -1165,7 +1163,7 @@ starting the waitlist form, together with the source of a visit (utm_source, utm
 utm_campaign) when a link carries that information.</p>
 <p>Your IP address is meant to be discarded by PostHog (the "Discard client IP data" project
 setting). Whether that setting is currently enabled has not yet been confirmed, see section 7.
-Retention at PostHog follows the plan's default retention period; the exact figure has not yet been
+Retention at PostHog follows the tier's default retention period; the exact figure has not yet been
 confirmed, see section 7.</p>
 <p>Withdrawal: use "Cookie settings" in the footer to change your choice at any time. Declining
 there turns measurement off immediately and for good (PostHog's opt_out_capturing); verified live
@@ -1185,10 +1183,11 @@ does not show again on every visit.</li>
 your next visit.</p>
 
 <h2>5. Waitlist form</h2>
-<p>Joining the HelmDeck Cloud or HelmDeck for Watch/Glasses waitlist requires an email address. It
-is stored in Cloudflare Workers KV together with a timestamp and the product, used solely to
-notify you once when it launches. The respective list is deleted in full afterwards. No IP address
-or user agent is stored.</p>
+<p>Purpose: interest measurement for a private project. Joining the HelmDeck Cloud or HelmDeck for
+Watch/Glasses waitlist requires an email address. It is stored in Cloudflare Workers KV together
+with a timestamp and the product, used solely to see how many people would need the respective
+variant, and to notify you once when it launches. The respective list is deleted in full
+afterwards. No IP address or user agent is stored.</p>
 <p>Legal basis is your consent given by submitting the form, Article 6(1)(a) GDPR. You can
 withdraw that consent for the future at any time and request deletion of your entry, informally by
 email to <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>.</p>
@@ -1200,34 +1199,25 @@ consent. Contact the email address above for any of these. You can also file a c
 data protection authority responsible for you.</p>
 
 <h2>7. Open items</h2>
-<p>This policy will be completed once the following are settled: the controller's postal address,
-the status of the data processing agreement with PostHog, the status of the "Discard client IP
-data" setting in the PostHog project, and the exact retention period under the PostHog plan in
-use.</p>
+<p>This policy will be completed once the following are settled: the status of the data
+processing agreement with PostHog, the status of the "Discard client IP data" setting in the
+PostHog project, and the exact retention period under the PostHog tier in use.</p>
 </html>`;
 
 const IMPRESSUM_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>HelmDeck: Impressum / Imprint</title>
+<title>HelmDeck: Kontakt / Contact</title>
 <style>${LEGAL_STYLE}</style>
-<h1>Impressum</h1>
+<h1>Kontakt</h1>
 <p class=muted><a href="#en">English version below</a></p>
-<p>Angaben gemäß Paragraph 5 DDG (Digitale-Dienste-Gesetz, vormals TMG).</p>
 <p>Tien Duy Vo<br>
-Postanschrift: wird ergänzt<br>
 E-Mail: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
-<p>Umsatzsteuer-Identifikationsnummer: entfällt oder wird ergänzt, sobald zutreffend.</p>
-<p>Diese Angaben sind unvollständig, solange die Postanschrift fehlt; sie wird ergänzt, sobald sie
-vorliegt.</p>
+<p>HelmDeck ist ein privates Hobby- und Research-Projekt von Tien Duy Vo.</p>
 <hr>
-<h1 id=en>Imprint</h1>
-<p>Provider information under Section 5 DDG (formerly TMG).</p>
+<h1 id=en>Contact</h1>
 <p>Tien Duy Vo<br>
-Postal address: to be added<br>
 Email: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
-<p>VAT ID: not applicable, or to be added once applicable.</p>
-<p>This notice is incomplete until the postal address is added; it will be added once
-available.</p>
+<p>HelmDeck is a private hobby and research project by Tien Duy Vo.</p>
 </html>`;
 
 function escapeHtml(s) {
