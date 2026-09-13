@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """PM budget/quota math - extracted from pm.py. Code-computed, plan-aware
 budget verdict (Max: subscription usage windows w/ pacing; API: € vs cap)
-+ pace/eta helpers + the quota-notice text builders (_fmt_when/_usage_flag_text/
-_goal_budget_text) and the two hard gates (_quota_floor/_triage_green). Pure
++ pace/eta helpers + the quota-notice text builders (_fmt_when/_goal_budget_text)
+and the two hard gates (_quota_floor/_triage_green). Pure
 over the econ dict + usage.snapshot(); pm.py re-imports the names. Not
 monkeypatched.
 """
@@ -21,19 +21,9 @@ def _fmt_when(iso):
         return iso or "?"
 
 
-def _usage_flag_text(f):
-    used = f.get("usedPct"); elapsed = f.get("elapsed_pct"); proj = f.get("projected_pct")
-    parts = ["⚠ Quota-Warnung: Wochenlimit zu %s%% verbraucht, aber erst %s%% der "
-             "Woche vorbei." % (round(used), round(elapsed))]
-    if proj is not None:
-        parts.append("Bei diesem Tempo landest du bei ~%s%% zum Reset." % round(proj))
-    if f.get("exhaust_before_reset") and f.get("exhaust_at"):
-        parts.append("Das Wochenlimit ist dann ~%s erschöpft — also VOR dem Reset am %s."
-                     % (_fmt_when(f["exhaust_at"]), _fmt_when(f.get("resetsAt"))))
-    parts.append("Vorschlag: Auto-Dispatch drosseln oder Routine-Karten auf ein günstigeres "
-                 "Modell setzen, damit das Kontingent bis zum Reset reicht. Sag Bescheid, "
-                 "dann passe ich die Policy an.")
-    return " ".join(parts)
+# _usage_flag_text was removed 2026-09-13 along with its only caller,
+# pm.py's _usage_checkin (see that removal's comment - superseded by
+# _triangle_watch's own Budget corner, same underlying signal).
 
 
 def _quota_floor():

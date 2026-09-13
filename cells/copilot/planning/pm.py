@@ -204,7 +204,7 @@ def _system_state():
 
 
 from cells.copilot.planning.pm_budget import (_pace, _days, _quota_signal, _budget_assess, _fmt_when,
-                       _usage_flag_text, _quota_floor, _goal_budget_text, _triage_green)
+                       _quota_floor, _goal_budget_text, _triage_green)
 from cells.copilot.planning.pm_state import touch, _loopstate, _save_loopstate, _today, _in_window, _board_idle
 
 
@@ -1060,34 +1060,15 @@ def _launch_checkin(pm, st):
 
 
 
-def _usage_checkin(st):
-    """Proactive quota pacing: flag when the weekly Claude window burns ahead of pace
-    (e.g. 40% by Wednesday, projected over 100% before the Saturday reset). Once per
-    weekly window (keyed on its reset), so it's a heads-up, not a nag - the live usage
-    meter carries the running numbers.
-
-    TO HENRY, not to the owner (owner decree 2026-08-30). Managing AI usage is
-    the FIRST bullet of Henry's own mandate ("Turns, Quota, Kosten. Verschwende
-    sie nicht"), and he can act on it - throttle dispatch, move routine cards to
-    a cheaper model, hold non-goal work. The owner's chat version was a chain of
-    four projections ending in "sag Bescheid, dann passe ich die Policy an": a
-    number wall whose only ask was permission for something the harness is
-    already allowed to do. The live numbers stay one tap away in the usage
-    meter, which is the surface built for them."""
-    try:
-        from spine.ops import usage
-        flag = usage.weekly_pacing_flag()
-    except Exception:
-        return
-    if not flag:
-        return
-    if st.get("usage_flagged_reset") == (flag.get("resetsAt") or ""):
-        return
-    st["usage_flagged_reset"] = flag.get("resetsAt") or ""
-    _save_loopstate(st)
-    _to_henry("quota-pacing", _usage_flag_text(flag),
-              feed="Wochenkontingent laeuft voraus (%s%% bei %s%% der Woche) - an Henry"
-                   % (round(flag.get("usedPct") or 0), round(flag.get("elapsed_pct") or 0)))
+# _usage_checkin (the standalone quota-pacing notice to Henry) was REMOVED
+# 2026-09-13: it had no caller in _tick() - never wired in after extraction -
+# and _triangle_watch's own "Budget" corner already reads the SAME
+# usage.weekly_pacing_flag() and reports it to Henry as part of the triangle
+# escalation. Wiring the orphan back in would not have closed a gap, it would
+# have doubled the same signal into two separate Henry escalations from one
+# underlying number - exactly the kind of fan-out that turned today's single
+# 86%-used reading into a false "at_risk" owner ask AND a false "erschöpft"
+# triangle corner (see _stakeholder_update / _triangle_watch, same commit).
 
 
 def _clip_prose(text, n):
@@ -1211,7 +1192,12 @@ def _triangle_watch(st):
         bf = usage.weekly_pacing_flag()
     except Exception:
         bf = None
-    if bf:
+    if bf and bf.get("exhaust_before_reset"):
+        # weekly_pacing_flag() also fires on used_pct >= 85 alone (see
+        # spine/ops/usage.py pacing()) with no claim about the reset time -
+        # only say "erschöpft" when that is what's actually projected
+        # (measured 2026-09-13: 86% used, 2.8h to reset, proj 87.5% - flagged
+        # but NOT exhausting, "vor dem Reset erschöpft" would have been a lie).
         corners.append("Budget: Wochenkontingent voraus (projiziert ~%s%%, vor dem Reset erschöpft)"
                        % round(bf.get("projected_pct") or 0))
     # TIMELINE + SCOPE — from the goal's process (epic)

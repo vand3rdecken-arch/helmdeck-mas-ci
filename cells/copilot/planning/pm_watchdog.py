@@ -6,8 +6,8 @@ PMBOK cost control in code, deliberately NOT LLM-judged (a judge call per
 tick would itself be spend, and a budget overrun needs no judgement, only
 arithmetic). The 843/226M-token card ran three DAYS with the owner actively
 steering and not one ping: every existing guard is either presence-gated
-(_board_idle) or watches the WEEK (_usage_checkin) - nothing watched ONE
-card's burn.
+(_board_idle) or watches the WEEK (pm.py's _triangle_watch Budget corner) -
+nothing watched ONE card's burn.
 
 Owner-decreed units: thresholds are ABSOLUTE shares of the REAL budget,
 never shadow-euros (on a Max plan € is a foreign currency - ai_billing), and
@@ -107,7 +107,7 @@ def _cost_watch(st, tracks):
     overrun needs no judgement, only arithmetic). The 843/226M-token card ran
     three DAYS with the owner actively steering and not one ping: every
     existing guard is either presence-gated (_board_idle) or watches the WEEK
-    (_usage_checkin) - nothing watched ONE card's burn.
+    (pm.py's _triangle_watch Budget corner) - nothing watched ONE card's burn.
 
     Owner-decreed units: thresholds are ABSOLUTE shares of the REAL budget,
     never shadow-euros (on a Max plan € is a foreign currency - ai_billing),
