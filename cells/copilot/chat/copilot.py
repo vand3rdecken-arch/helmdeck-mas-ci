@@ -947,6 +947,11 @@ def _schedule_compact(user):
                 note = _maybe_compact(user)
             finally:
                 lk.release()
+            # The compaction dropped the warm port (_persist_drop). Respawn it
+            # NOW, in the lull, not on the clock of the owner's next question:
+            # a cold spawn is ~4-6s to the first model output on this box
+            # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
+            prewarm(user, spoken=False)
             if note:
                 _append_log(user, [{"cls": "error", "text": note,
                                     "ts": time.strftime("%H:%M")}])

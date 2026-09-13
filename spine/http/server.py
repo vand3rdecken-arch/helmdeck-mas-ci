@@ -755,6 +755,20 @@ def serve(port=8140):
                   "(ops/tools/make_tls_cert.py) or remove them to serve http again." % e,
                   flush=True)
     print("HelmDeck review server on http://localhost:%d  (APK pulls /runs, /live.jpg)" % port)
+    # WARM HENRY AT BOOT. Every daemon (re)start drops his persistent chat
+    # port, and the owner's next question then paid the cold spawn: 4-6s to
+    # the first model output on this box (measured 2026-09-13, init 2.6-4.1s)
+    # on top of the model. Fire-and-forget, best-effort, same prewarm the
+    # chat screen triggers on open - just earlier, while nobody is waiting.
+    def _warm_henry():
+        try:
+            from cells.copilot.chat import copilot
+            owner = copilot.owner_name()
+            if owner:
+                copilot.prewarm(owner, spoken=False)
+        except Exception as e:                                   # noqa: BLE001
+            print("PREWARM: skipped (%s)" % str(e)[:120], flush=True)
+    threading.Timer(3.0, _warm_henry).start()
     try:
         ThreadingHTTPServer((bind, port), H).serve_forever()
     finally:
