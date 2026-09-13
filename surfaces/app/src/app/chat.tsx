@@ -253,6 +253,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // (owner 2026-09-13 15:32, "Nachricht kommt immer noch doppelt").
   const turnStartSeq = useRef(0);
   const serverSeqRef = useRef(0);
+  const turnStartSig = useRef("");
+  const serverSigRef = useRef("");
   // Optimistic turns layered OVER the server transcript, never merged into one
   // mutable list. The old shape (setMsgs(data.messages) whenever !busy) raced
   // the busy->false edge: a refetch that hadn't persisted the just-sent turn
@@ -280,7 +282,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // server transcript length at hand-over: the hold is released the moment
   // the transcript grows past it with something that is not the owner's own
   // echo, i.e. the daemon's copy of this very answer (or its error).
-  const [held, setHeld] = useState<{ text: string; seq: number } | null>(null);   // seq = newest row when the turn began
+  const [held, setHeld] = useState<{ text: string; seq: number; sig: string } | null>(null);   // newest row when the turn began: seq, or its signature
   // A turn OBSERVED rather than sent: the daemon reports `running` on
   // /chat/live, so a screen that (re)mounts or resumes while Henry is still
   // working - or whose POST /chat died on the relay's 115s leg while the turn
@@ -331,7 +333,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     if (!busy) {
       // hand the stream over to `held` instead of dropping it (see `held`)
       setStream((cur) => {
-        if (cur.trim()) setHeld({ text: cur, seq: turnStartSeq.current });
+        if (cur.trim()) setHeld({ text: cur, seq: turnStartSeq.current, sig: turnStartSig.current });
         return "";
       });
       setThink(""); setLiveStatus(""); setLiveSteps([]);
@@ -443,7 +445,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // whole optimistic pair is redundant and the persisted version takes over.
   const server = data?.messages;
   const lastSeq = (list?: ChatMsg[]) => Math.max(0, ...(list ?? []).map((m) => m.seq ?? 0));
+  // signature of the newest NON-owner row - the identity fallback for a
+  // daemon that does not stamp seq (measured 2026-09-13 16:19: the stream
+  // said "Probe läuft.", the persisted reply was "OK", a text-prefix
+  // fallback never matched and the held copy stayed)
+  const sigOf = (list?: ChatMsg[]) => {
+    for (let i = (list ?? []).length - 1; i >= 0; i--) {
+      const m = (list as ChatMsg[])[i];
+      if (m.cls !== "user" && m.cls !== "you") return `${m.cls}|${m.ts ?? ""}|${(m.text ?? "").slice(0, 80)}`;
+    }
+    return "";
+  };
   serverSeqRef.current = lastSeq(server);
+  serverSigRef.current = sigOf(server);
   // Release the held stream once the daemon's own copy is on screen: any
   // non-owner row NEWER than the turn's start IS that copy (or the turn's
   // error line) - regardless of whether it arrived before or after busy
@@ -451,11 +465,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // like the held one.
   useEffect(() => {
     if (!held || !server) return;
-    const head = held.text.trim().slice(0, 60);
-    const landed = server.some((m) => m.cls !== "user" && m.cls !== "you" &&
-      ((m.seq ?? 0) > held.seq || (!m.seq && head.length > 0 && (m.text ?? "").trim().startsWith(head))));
+    const hasSeq = server.some((m) => typeof m.seq === "number");
+    const landed = hasSeq
+      ? server.some((m) => m.cls !== "user" && m.cls !== "you" && (m.seq ?? 0) > held.seq)
+      : sigOf(server) !== held.sig;
     if (landed) setHeld(null);
-  }, [server, held]);
+  }, [server, held]);   // eslint-disable-line react-hooks/exhaustive-deps
   // OBSERVE a turn already running on the daemon (mount + every foreground
   // resume): /chat/live `running` is the one place that state is owned.
   useEffect(() => {
@@ -466,6 +481,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         if (!alive || !r || r.running !== true || busyRef.current) return;
         derived.current = true;
         turnStartSeq.current = serverSeqRef.current;
+        turnStartSig.current = serverSigRef.current;
         turn.current++;            // a late POST result of a dead screen cannot end this one
         setBusy(true);
       } catch { /* offline - the stream loop's reconnect is the catch-up */ }
@@ -551,6 +567,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       + pending.filter((tn) => tn.key === q).length;
     setHeld(null);
     turnStartSeq.current = lastSeq(server);
+    turnStartSig.current = sigOf(server);
     setPending((p) => [...p, {
       id, key: q, mid, baseline,
       // Where this bubble belongs: after everything the server had shown at the
@@ -849,8 +866,21 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 const s = msgs.map((m) => toStep(m, me?.name, tr));
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
-                if (busy) for (const st of liveSteps) s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
-                if (busy && stream.trim()) s.push({ role: "assistant", kind: "text", text: stream, streaming: true, by: "Henry", byKind: "henry" });
+                if (busy) {
+                  // TURN ORDER, like Paseo's timeline: prose up to the call,
+                  // the tool row, more prose ... the tail streams. Steps from
+                  // an older daemon carry no `at` and sort to the front.
+                  const ordered = [...liveSteps].sort((a, b) => (a.at ?? -1) - (b.at ?? -1));
+                  let cur = 0;
+                  const pushText = (txt: string, streaming: boolean) => {
+                    if (txt.trim()) s.push({ role: "assistant", kind: "text", text: txt, streaming, by: "Henry", byKind: "henry" });
+                  };
+                  for (const st of ordered) {
+                    if (typeof st.at === "number" && st.at > cur) { pushText(stream.slice(cur, st.at), false); cur = Math.min(st.at, stream.length); }
+                    s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
+                  }
+                  pushText(stream.slice(cur), true);
+                }
                 else if (!busy && held) s.push({ role: "assistant", kind: "text", text: held.text, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
