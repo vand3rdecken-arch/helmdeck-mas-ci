@@ -1304,7 +1304,15 @@ def _stakeholder_update(st):
     est, eta, pace = budget.get("est_turns_to_goal"), budget.get("eta_days"), budget.get("pace_turns_per_day")
     pacing = (weekly or {}).get("pacing") or {}
     used = (weekly or {}).get("usedPct") or 0
-    verdict = "at_risk" if pacing.get("flag") else ("tight" if used >= 80 else "on_track")
+    # at_risk MUST mean what the owner-facing sentence says ("leer vor dem
+    # Reset"): usage.pacing's `flag` also fires on used_pct >= 85 alone, with
+    # hours left irrelevant - measured 2026-09-13, 86% used but only 2.8h to
+    # go and the projection UNDER 100%, still flagged, still asked "Nicht-
+    # Ziel-Arbeit zurückstellen?" for a slip that was never going to happen.
+    # exhaust_before_reset is the actual claim; used>=85 alone is "tight",
+    # same bucket as the 80% rung right below it.
+    verdict = ("at_risk" if pacing.get("exhaust_before_reset")
+               else ("tight" if used >= 80 else "on_track"))
     risk_key = (weekly or {}).get("resetsAt") or ""
     risk_new = verdict == "at_risk" and st.get("stakeholder_risk") != risk_key
     if st.get("stakeholder_day") == _today() and not risk_new:
