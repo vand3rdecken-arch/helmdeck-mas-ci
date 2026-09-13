@@ -474,6 +474,19 @@ def _run_action(a, actor, role="operator"):
             t["id"], a["text"], actor=actor, source="board copilot"))
         _tag(a, t)
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "hands":
+        # Henry's hands: a one-shot sub-agent with the machine tools, no card
+        # (cells/copilot/chat/hands.py). The result comes back into Henry's
+        # NEXT turn and into the owner's transcript as an act row.
+        task = (a.get("task") or "").strip()
+        if not task:
+            return "hands: keine Aufgabe angegeben."
+        from cells.copilot.chat import hands, copilot
+        hid = hands.spawn(actor, task, copilot._skey(actor, a.get("card")),
+                          card=a.get("card") or None, why=(a.get("why") or "")[:200])
+        a["_hands"] = hid
+        return ("Hände gestartet (%s): %s - das Ergebnis kommt in deinen naechsten Turn "
+                "und in den Chat, sobald es da ist." % (hid, task.splitlines()[0][:90]))
     if kind == "follow_up":
         # The honest replacement for "schau ich mir gleich an" (board-copilot.md
         # forbids that prose now - it promised a check nothing ever performs,

@@ -45,7 +45,7 @@ SETTINGS = os.path.join(HARNESS, "settings")
 # ops/harness/ - they are not any one cell's policy.
 AGENT_CELL = {
     "card-worker": "engineer", "machine-worker": "engineer", "ship-worker": "engineer",
-    "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot",
+    "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot", "hands": "copilot",
     "glass-brief": "copilot", "voice-style": "copilot", "wear-brief": "copilot",
 }
 SETTINGS_CELL = {"card": "engineer", "copilot": "copilot", "pm": "copilot"}

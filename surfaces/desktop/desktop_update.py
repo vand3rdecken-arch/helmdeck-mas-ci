@@ -49,6 +49,12 @@ MARKER_NAME = ".hd-update.json"   # the applied/staged manifest, written LAST
 CHANNEL = "desktop"
 SHELL_PORT = 3300                 # the Electron shell's local UI server
 
+# Mirrors updater.js's DEFAULT_FEED: a fresh install has no relay pairing yet
+# (relay_feed.json missing/empty), so read_relay_url() returns None - fall
+# back to the public relay rather than sitting dormant forever. A paired
+# relay (read_relay_url() non-None) always takes precedence.
+DEFAULT_FEED = "https://relay.helmdeck.de"
+
 
 def norm_rel(rel):
     """Manifest paths are attacker-shaped input to the filesystem writes below:

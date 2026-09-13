@@ -27,6 +27,13 @@ const MANIFEST_NAME = "desktop.json";
 const MARKER_NAME = ".hd-update.json";
 const CHANNEL = "desktop";
 
+// A fresh install has never been paired to a relay, so relay_feed.json is
+// missing/empty and readRelayUrl() returns null - that used to mean "OTA
+// dormant forever" even though the public relay is right there and already
+// serves this exact channel. main.js falls back to this when readRelayUrl
+// comes back empty; a configured relay (readRelayUrl non-null) always wins.
+const DEFAULT_FEED = "https://relay.helmdeck.de";
+
 // Manifest paths become filesystem writes - refuse traversal/absolute/drive.
 function normRel(rel) {
   const s = path.posix.normalize(String(rel || "").replace(/\\/g, "/"));
@@ -41,7 +48,7 @@ function normRel(rel) {
 // which silently orphaned this reader for months - "no relay configured"
 // forever, even on an install with a live pairing, because this dependency-
 // free Node code has no way to query the db the way settings() now does.
-// Without a feed the updater stays dormant (Paseo's "not available in dev" case).
+// Returns null when unpaired/unwritten - callers fall back to DEFAULT_FEED.
 function readRelayUrl(feedPath) {
   try {
     const url = String(JSON.parse(fs.readFileSync(feedPath, "utf8")).url || "").trim().replace(/\/+$/, "");
@@ -252,7 +259,7 @@ function createUpdater({ feedBase, appDistDir, log, notify }) {
 
 module.exports = {
   CHECK_INTERVAL_MS, PENDING_RECHECK_MS, UPDATE_QUIT_DEADLINE_MS,
-  MANIFEST_NAME, MARKER_NAME, CHANNEL,
+  MANIFEST_NAME, MARKER_NAME, CHANNEL, DEFAULT_FEED,
   normRel, readRelayUrl, fetchManifest, readMarker, installedId, checkFeed,
   stage, verifyStaged, applyStaged, createUpdater,
 };

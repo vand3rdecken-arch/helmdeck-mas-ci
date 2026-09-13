@@ -420,6 +420,7 @@ def _persist_get(skey, cli_model, sid, system):
         argv += ["--resume", sid]
     argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
+    argv += _lean_mcp_args()
     from spine.agent.drivers import _cmd_line
     from spine.agent.spawnenv import tool_path
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
@@ -428,6 +429,20 @@ def _persist_get(skey, cli_model, sid, system):
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     return p, True
+
+
+def _lean_mcp_args():
+    """THE LEAN CHAT (owner decree 2026-09-13: "CLI moeglichst schlank und
+    schnell starten, bei mehr Rechten groesserer Prozess"): Henry's chat port
+    loads NO MCP servers. cli_args already drops the user settings layer
+    (windows-mcp, helmdeck-browser never load), but the claude.ai connectors
+    (Gmail, Atlassian) still attached on every cold start - measured: init
+    3.1s with them, 2.6s without, and Atlassian sat on "needs-auth" every
+    time. Everything that needs the PC, the browser or mail goes through the
+    `hands` verb (cells/copilot/chat/hands.py) or a card, which carry the
+    full bridge. --strict-mcp-config makes the empty file the ONLY source."""
+    return ["--strict-mcp-config", "--mcp-config",
+            os.path.join(_REPO_ROOT, "cells", "copilot", "harness", "settings", "mcp-none.json")]
 
 
 def henry_pmode(project=""):
@@ -947,6 +962,11 @@ def _schedule_compact(user):
                 note = _maybe_compact(user)
             finally:
                 lk.release()
+            # The compaction dropped the warm port (_persist_drop). Respawn it
+            # NOW, in the lull, not on the clock of the owner's next question:
+            # a cold spawn is ~4-6s to the first model output on this box
+            # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
+            prewarm(user, spoken=False)
             if note:
                 _append_log(user, [{"cls": "error", "text": note,
                                     "ts": time.strftime("%H:%M")}])
@@ -1143,6 +1163,11 @@ def history(user):
         followups = henry_broker.followup_tasks()
     except Exception:                                        # noqa: BLE001
         followups = {}          # a broken fold must never take the chat down
+    try:
+        from cells.copilot.chat import hands
+        followups.update(hands.tasks())     # Henry's hands sub-agents, same BgTask shape
+    except Exception:                                        # noqa: BLE001
+        pass
     return {"messages": [_readable(m) for m in _entries(user)],
             "session_id": _sessions().get(user),
             "stats": st,
@@ -1324,6 +1349,32 @@ def say(text, cls="pm", card=None, extra=None):
 
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
+
+
+def _note_turn(user, on):
+    """daemon/state/chat_turns.json = {user: started_epoch} - the on-disk
+    witness of a RUNNING chat turn, written by the one owner of _running
+    (this module) at event time. driver_pids.json covers card workers; nothing
+    covered Henry's own turn, so a "no cards running, safe to restart" check
+    killed the owner's answer mid-tool (2026-09-13 17:01, "Conversation wieder
+    verloren"). ops/tools/restart_daemon.py waits on BOTH files."""
+    try:
+        path = os.path.join(ROOT, "state", "chat_turns.json")
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cur = json.load(f) or {}
+        except (OSError, ValueError):
+            cur = {}
+        if on:
+            cur[user] = time.time()
+        else:
+            cur.pop(user, None)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cur, f)
+        os.replace(tmp, path)
+    except Exception:                                    # noqa: BLE001
+        pass                                             # a witness, never a gate on the turn
 # WHICH card the in-flight turn is scoped to (chat(card=...)), or None for a
 # board-chat turn. A satellite of _running with exactly the same lifetime -
 # set and cleared at the same two places, never derived from anything else.
@@ -1487,6 +1538,7 @@ def build_argv(cli_model, sid, system):
     from spine.registry import harness
     argv = [CLAUDE, "-p", "--output-format", "stream-json",
             "--include-partial-messages", "--verbose", "--permission-mode", henry_pmode()]
+    argv += _lean_mcp_args()
     if cli_model:              # whitelist only - no arbitrary model ids from the client
         argv += ["--model", cli_model]
     if sid:
@@ -1784,6 +1836,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
     _running[user] = p
+    _note_turn(user, True)
     _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     resume_echo, ctx_first = False, {}
@@ -1867,17 +1920,35 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         # app can interleave text and tool rows in TURN ORDER
                         # (Paseo renders the timeline chronologically; without
                         # this every tool row sat above the whole prose).
+                        # SAME SHAPE AS A WORKER STEP (claude_transcript_fmt):
+                        # label = human verb ("Befehl"), text = one-line subject,
+                        # detail = structured input (diff / written content /
+                        # the full command), result = the tool's output once
+                        # it lands. The owner's 16:55 screenshot showed the raw
+                        # command as a clipped bold title with nothing to
+                        # expand - Paseo's chip is verb + summary, tap for the
+                        # full input and output.
+                        from spine.agent import claude_transcript_fmt as _fmt
+                        _lbl, _sub = _fmt._tool_label(_b.get("name"), _inp)
+                        _det = _fmt._tool_detail(_b.get("name"), _inp)
+                        if _det is None and (_b.get("name") in ("Bash", "PowerShell", "Shell")) and _inp.get("command"):
+                            _det = {"type": "command", "command": str(_inp.get("command"))[:8000]}
                         _live_steps.append({"id": _b.get("id") or "", "tool": _b.get("name") or "tool",
-                                            "label": _brief[:160], "status": "running",
+                                            "label": _lbl, "text": (_sub or "")[:160], "detail": _det,
+                                            "status": "running", "ta": time.time(),
                                             "at": len(_strip_actions_live("".join(parts)))})
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
             elif typ == "user":
                 # tool results close the matching transient step
                 for _b in ((ev.get("message") or {}).get("content") or []):
                     if isinstance(_b, dict) and _b.get("type") == "tool_result":
+                        _rc = _b.get("content")
+                        if isinstance(_rc, list):
+                            _rc = "\n".join(str(x.get("text") or "") for x in _rc if isinstance(x, dict))
                         for _s in _live_steps:
                             if _s["id"] == _b.get("tool_use_id"):
                                 _s["status"] = "failed" if _b.get("is_error") else "completed"
+                                _s["result"] = str(_rc or "")[:4000]
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
                 # each full assistant message carries the usage of ITS OWN API
                 # call - keep the last one as the context-meter source, exactly
@@ -1894,6 +1965,25 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         ctx_first = mu
             elif typ == "stream_event":
                 e = ev.get("event") or {}
+                # PHASE, from the API's own events, so the wait never reads as
+                # dead: Fable's thinking arrives REDACTED (no deltas), and a
+                # turn without tools showed "denkt nach 25s" and nothing else
+                # (owner 2026-09-13 17:11). message_start = the call is open
+                # (the prefill of a 150k context is what takes the seconds),
+                # a thinking block = reasoning, a text block = writing (the
+                # stream takes over from here, the status line yields).
+                if e.get("type") == "message_start":
+                    _u = ((e.get("message") or {}).get("usage") or {})
+                    _ctx = int(_u.get("input_tokens") or 0) + int(_u.get("cache_read_input_tokens") or 0) \
+                        + int(_u.get("cache_creation_input_tokens") or 0)
+                    livebuf.set_field(live_key, "status",
+                                      ("liest Kontext (%dk)" % (_ctx // 1000)) if _ctx else "Anfrage läuft")
+                elif e.get("type") == "content_block_start":
+                    _bt = ((e.get("content_block") or {}).get("type") or "")
+                    if _bt == "thinking":
+                        livebuf.set_field(live_key, "status", "überlegt")
+                    elif _bt == "text":
+                        livebuf.set_field(live_key, "status", "")
                 if e.get("type") == "content_block_delta":
                     dl = e.get("delta") or {}
                     if dl.get("type") == "text_delta":
@@ -1920,6 +2010,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     finally:
         _beat["done"] = True
         _running.pop(user, None)
+        _note_turn(user, False)
         _running_card.pop(user, None)
         if persistable and (user in _cancelled or p.poll() is not None):
             # a cancelled or dead process must not be reused - next turn

@@ -98,6 +98,13 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     return { role: "assistant", kind: "card", cls: m.cls, card: m.card, label: m.cardName || m.card,
              text: m.text, ts: m.ts, by: "Henry", byKind: "henry" };
   }
+  // Any other action result ("accepted all steps of ... into cards", "moved
+  // x -> review") is plumbing, not Henry speaking: a quiet system line with a
+  // dot, the same row a card's lifecycle notes use - not a sender-less bubble
+  // (owner 2026-09-13 17:05).
+  if (m.cls === "act") {
+    return { role: "assistant", kind: "note", cls: m.cls, text: m.text, ts: m.ts };
+  }
   if (m.cls === "card") {
     const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
     return {
@@ -466,7 +473,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   useEffect(() => {
     if (!held || !server) return;
     const hasSeq = server.some((m) => typeof m.seq === "number");
-    const landed = hasSeq
+    // held.seq === 0 means the turn began against a daemon that did not stamp
+    // seq yet; if the rows carry seq NOW (a daemon restart in between), every
+    // row is "newer than 0" and the hold would release on nothing - so that
+    // edge falls back to the signature too (measured 2026-09-13 17:01).
+    const landed = hasSeq && held.seq > 0
       ? server.some((m) => m.cls !== "user" && m.cls !== "you" && (m.seq ?? 0) > held.seq)
       : sigOf(server) !== held.sig;
     if (landed) setHeld(null);
@@ -877,7 +888,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                   };
                   for (const st of ordered) {
                     if (typeof st.at === "number" && st.at > cur) { pushText(stream.slice(cur, st.at), false); cur = Math.min(st.at, stream.length); }
-                    s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
+                    s.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, text: st.text, detail: st.detail ?? undefined, result: st.result, ta: st.ta,
+                             status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
                   }
                   pushText(stream.slice(cur), true);
                 }

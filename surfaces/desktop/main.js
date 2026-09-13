@@ -115,14 +115,15 @@ const isMas = process.mas === true;
 
 let updater = null;
 if (app.isPackaged && !isMas) {
-  const { createUpdater, readRelayUrl } = require("./updater");
-  const feedBase = readRelayUrl(path.join(daemonDir, "relay_feed.json"));
-  if (feedBase) {
-    updater = createUpdater({
-      log, feedBase, appDistDir,
-      notify: (status) => sendToWindow("js-update:changed", status),
-    });
-  } else log("update", "no relay configured - desktop OTA dormant\n");
+  const { createUpdater, readRelayUrl, DEFAULT_FEED } = require("./updater");
+  // A fresh install has no relay pairing yet (relay_feed.json missing/empty),
+  // so readRelayUrl() returns null - fall back to the public relay rather
+  // than sitting dormant forever; a paired relay always takes precedence.
+  const feedBase = readRelayUrl(path.join(daemonDir, "relay_feed.json")) || DEFAULT_FEED;
+  updater = createUpdater({
+    log, feedBase, appDistDir,
+    notify: (status) => sendToWindow("js-update:changed", status),
+  });
 }
 ipcMain.handle("js-update:get", () => (updater ? updater.getStatus() : { state: "current", version: null, message: null }));
 // The staged bundle is already downloaded + sha256-verified (updater.js
