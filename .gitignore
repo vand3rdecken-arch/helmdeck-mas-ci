@@ -225,6 +225,14 @@ surfaces/app/modules/livemic/android/libs/
 # pathspecs). Ignored because `git add -A` swept one into a commit, 2026-08-29.
 .git-commit-msg.tmp
 
+# Scratch clone a ship/publish step makes at repo root when it mirrors to the
+# public MAS-CI remote (helmdeck-mas-ci) - found sitting at root, 449MB, quiet
+# (2026-09-13), not made by any script under a name this repo owns, so left in
+# place rather than deleted (CLAUDE.md: look at the target before deleting).
+# Ignored so the build loop's clean-tree check stops flagging someone else's
+# scratch directory as unstaged work.
+.publish-tmp-mas/
+
 # Scratch from the local verification tools: the classes
 # ops/tests/wear_chat_rows.py compiles, the AAR an API check unpacks, and the
 # judging screenshots ops/tests/e2e_chat_scroll.py writes. All reproducible,
