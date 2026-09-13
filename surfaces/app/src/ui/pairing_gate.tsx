@@ -14,20 +14,19 @@
 // button silently did nothing and the camera permission prompt never fired -
 // measured live: the owner only ever saw the OS permission dialog once
 // already paired and inside the real app (where the Stack exists). Embedding
-// the same CameraView + useCameraPermissions logic here, and finishing with
+// the shared QrScanner (ui/qr_scanner.tsx) here, and finishing with
 // the SAME applyPairing()+api.me() round trip the paste-code path already
 // uses (not a route replace), sidesteps needing a navigator entirely.
-import { useRef, useState } from "react";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { AuthRequired, api } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { useT } from "@/i18n";
+import { QrScanner } from "@/ui/qr_scanner";
 import { fieldStyle } from "@/ui/settings_sections";
 import { useTheme } from "@/theme";
 
@@ -63,7 +62,7 @@ export function PairingGate() {
   }
 
   if (scanning) {
-    return <InlineScanner onCode={(code) => { setScanning(false); submit(code); }} onCancel={() => setScanning(false)} />;
+    return <QrScanner onCode={(code) => { setScanning(false); submit(code); }} onCancel={() => setScanning(false)} />;
   }
 
   return (
@@ -100,63 +99,6 @@ export function PairingGate() {
           style={{ alignItems: "center", paddingVertical: 10 }}>
           <Text style={{ color: t.accent, fontSize: 13.5, fontWeight: "600" }}>{tr("demo.cta")}</Text>
         </Pressable>
-      </View>
-    </View>
-  );
-}
-
-/** Same camera/permission/QR-decode logic as app/scan.tsx, inlined so it can
- *  render with no navigator mounted. Hands the raw pairing code to the
- *  caller instead of pushing to /pair. */
-function InlineScanner({ onCode, onCancel }: { onCode: (code: string) => void; onCancel: () => void }) {
-  const t = useTheme();
-  const tr = useT();
-  const insets = useSafeAreaInsets();
-  const [perm, requestPerm] = useCameraPermissions();
-  const handled = useRef(false);
-
-  function onScan({ data }: { data: string }) {
-    if (handled.current || !data) return;
-    handled.current = true;
-    let code = data.trim();
-    const m = /[?&]c=([^&\s]+)/.exec(code);   // …/pair?c=CODE -> CODE; else raw payload
-    if (m) code = decodeURIComponent(m[1]);
-    onCode(code);
-  }
-
-  if (!perm) {
-    return <View style={{ flex: 1, backgroundColor: "#000" }} />;
-  }
-  if (!perm.granted) {
-    return (
-      <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
-        <Ionicons name="camera-outline" size={40} color={t.txtSecondary} />
-        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("scan.permTitle")}</Text>
-        <Text style={{ color: t.txtSecondary, fontSize: 13, textAlign: "center", lineHeight: 19 }}>
-          {tr("scan.permBody")}
-        </Text>
-        <Pressable onPress={requestPerm} style={{ backgroundColor: t.accent, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 }}>
-          <Text style={{ color: "#fff", fontWeight: "700" }}>{tr("scan.allow")}</Text>
-        </Pressable>
-        <Pressable onPress={onCancel} hitSlop={8}><Text style={{ color: t.txtTertiary }}>{tr("ui.cancel")}</Text></Pressable>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flex: 1, backgroundColor: "#000" }}>
-      <CameraView style={{ flex: 1 }} facing="back"
-        barcodeScannerSettings={{ barcodeTypes: ["qr"] }} onBarcodeScanned={onScan} />
-      <View style={{ position: "absolute", top: insets.top + 8, left: 12, zIndex: 10 }}>
-        <Pressable onPress={onCancel} hitSlop={10}
-          style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#0009", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 }}>
-          <Ionicons name="chevron-back" size={20} color="#fff" />
-          <Text style={{ color: "#fff", fontWeight: "600" }}>{tr("ui.back")}</Text>
-        </Pressable>
-      </View>
-      <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>
-        <View style={{ width: 240, height: 240, borderWidth: 3, borderColor: "#fff", borderRadius: 20, opacity: 0.85 }} />
-        <Text style={{ color: "#fff", marginTop: 16, fontSize: 14, fontWeight: "600" }}>{tr("scan.hint")}</Text>
       </View>
     </View>
   );

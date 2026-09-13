@@ -563,7 +563,13 @@ export const screens: Dict = {
     de: "HelmDeck braucht die Kamera nur, um den Pairing-QR vom Desktop zu lesen.",
     en: "HelmDeck only needs the camera to read the pairing QR from your desktop.",
   },
-  "scan.allow": { de: "Kamera erlauben", en: "Allow camera" },
+  "scan.continue": { de: "Weiter", en: "Continue" },
+  "scan.deniedTitle": { de: "Kein Kamerazugriff", en: "No camera access" },
+  "scan.deniedBody": {
+    de: "Der Kamerazugriff ist ausgeschaltet. Du kannst ihn in den Einstellungen für HelmDeck einschalten oder den Pairing-Code einfügen.",
+    en: "Camera access is turned off. You can turn it on in the settings for HelmDeck or paste the pairing code instead.",
+  },
+  "scan.openSettings": { de: "Einstellungen öffnen", en: "Open Settings" },
   "scan.hint": { de: "Pairing-QR vom Desktop scannen", en: "Scan the pairing QR from your desktop" },
 
   // ---- app & OTA updates --------------------------------------------------
