@@ -138,7 +138,7 @@ function DoorFrame({ title, onBack, wide, context, children }: {
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
       <ScreenHeader title={title} onBack={onBack} />
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 60, width: "100%",
+      <ScrollView contentContainerStyle={{ padding: 12, gap: 10, paddingBottom: 60 + insets.bottom, width: "100%",
         maxWidth: wide ? 1100 : undefined, alignSelf: "center" }}>{children}</ScrollView>
       <HenryChat context={context} />
     </View>
