@@ -302,7 +302,8 @@ def test_mcp_server_end_to_end_over_stdio():
         p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         p.stdin.flush()
         tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
-        check(tools == ["navigate", "read", "find", "click", "type"], "tools/list = the five verbs, in order")
+        check(tools == ["navigate", "read", "find", "click", "type", "close"],
+              "tools/list = the five verbs + close, in order")
 
         url = _file_url("<html><body><p>hello e2e</p><button id=b>Go</button></body></html>")
         out, err, rpcerr = call("navigate", url=url)
@@ -319,6 +320,12 @@ def test_mcp_server_end_to_end_over_stdio():
               "a miss surfaces as a shaped 'error: ...' string in bounded time, not a hang")
         check(len(out) <= browsercap.MAX_ACTION_CHARS + len(browsercap._TRUNC) + 10,
               "the MCP-level error stays capped too")
+        out, err, _ = call("close")
+        check(out == "ok: tab closed", "close() releases the card's tab: %r" % out)
+        out, err, _ = call("close")
+        check(out == "ok: no tab open", "close() twice is harmless: %r" % out)
+        out, err, _ = call("navigate", url=url)
+        check(out.startswith("ok:"), "the next verb after close() opens a fresh tab: %r" % out[:120])
     finally:
         try:
             p.stdin.close()

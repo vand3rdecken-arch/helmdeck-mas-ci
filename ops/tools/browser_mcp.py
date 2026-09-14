@@ -167,6 +167,25 @@ def type(selector: str, text: str) -> str:
     return _shaped(do)
 
 
+@mcp.tool()
+def close() -> str:
+    """Close this card's own browser tab. Call it when you are DONE with the
+    browser and nothing on that page still has to stay open (the owner is not
+    about to look at it or finish a login there). Leave it open while a later
+    step still needs the page. Logins survive either way (they live in the
+    Chrome profile, not the tab), and the next verb opens a fresh tab. Other
+    cards' tabs are never touched. The tab is also closed automatically when
+    the session ends."""
+    def shut():
+        global _browser
+        if _browser is None:
+            return "ok: no tab open"
+        b, _browser = _browser, None
+        b.close()
+        return "ok: tab closed"
+    return _shaped(shut)
+
+
 def _close():
     """Close the browser ON ITS OWNER THREAD, then retire the thread."""
     global _browser
