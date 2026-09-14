@@ -93,7 +93,12 @@ def threads(user, limit=200):
 
     rows = []
     for t in sessions.list_tracks():
-        if t.get("archived"):
+        # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
+        # research runs as a real card underneath (dispatch.new_ship_task,
+        # lanemachine.request_ship_decision) but must never become a thread/
+        # process row the owner did not ask for - see that function's
+        # docstring for the full history.
+        if t.get("archived") or t.get("board_hidden"):
             continue
         run_dir = t.get("run_dir") or ""
         steps = timeline_store.read(run_dir) if run_dir else []

@@ -464,6 +464,13 @@ def card_event(track, status):
     ended on a typed question reports "question" so the owner learns there is a
     decision waiting (with the question itself as the body) instead of the
     generic "card finished"."""
+    if (track or {}).get("board_hidden"):
+        # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
+        # research card has no board row - mirroring its turns into the chat
+        # inbox or pushing its status to the phone would announce a "card"
+        # the owner was never shown exists. dispatch._ship_note_origin /
+        # _ship_stuck_escalate carry its outcome onto the ORIGIN card instead.
+        return
     from spine.registry import i18n
     # THE EVENT MIRROR (owner decree 2026-08-29) runs FIRST and unconditionally.
     # Everything below this line decides whether to BUZZ; this decides whether

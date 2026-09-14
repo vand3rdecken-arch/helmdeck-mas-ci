@@ -22,6 +22,10 @@ Pins:
   5. Accepting a ship card does NOT re-trigger request_ship_decision - the
      recursion _accept_machine's guard exists to prevent (card -> escalation
      -> Henry -> another card -> forever).
+  6. board_hidden (2026-09-14): a decide card filed this way still runs the
+     same DECIDE->EXECUTE->VERIFY card mechanics, but its verdict lands on
+     the ORIGIN card's ActionLog (no board row of its own to read it on),
+     and a stuck one escalates to Henry - dedup'd, not once per retry.
 
 Self-sandboxing: fake DB, patched settings/emit/notify, stubbed turn driver,
 a temp git repo - nothing touches the real board or spawns a real agent
@@ -158,6 +162,50 @@ check("decide card speaks the SHIP brief too", drivers._agent_for(t4) == drivers
 check("SHIP: NONE self-closed the decide card to Done", t4.get("lane") == "done")
 t5 = dispatch.new_ship_task(repo, "decide", actor="harness", dispatch=False)
 check("dispatch=False files without starting a turn", t5.get("lane") != "done" and not t5.get("session_id"))
+
+# -- 4b-2) board_hidden (owner decree 2026-09-14, third iteration): the ------
+# -- decide-card mechanics above are UNCHANGED - what stops is the board ----
+# -- row. lanemachine.request_ship_decision now files this way; the outcome -
+# -- must land on the ORIGIN card's own ActionLog instead -------------------
+from spine.ops.actionlog import ActionLog, read_timeline
+from spine.registry import escalations
+from spine.turn.blockers import blocker
+
+origin_rd = os.path.join(tmp, "origin-run"); os.makedirs(origin_rd, exist_ok=True)
+trackstore._db.track_put({"id": "c-hidden-origin", "repo": repo, "run_dir": origin_rd,
+                          "task": "landing", "lane": "working", "status": "needs_you"})
+
+dispatch._turn = sessions._turn = lambda t, p, model=None, perm=None: (
+    "sid-hidden-none", "DECISION: none\nWHY: docs only.\nSHIP: NONE",
+    {"usage": {}, "models": [], "cost_usd": 0.0})
+t8 = dispatch.new_ship_task(repo, "decide", actor="harness", origin_card="c-hidden-origin",
+                            board_hidden=True)
+check("board_hidden decide card still self-closes on SHIP: NONE", t8.get("lane") == "done")
+origin_notes = [r.get("detail") or "" for r in read_timeline(origin_rd)]
+check("the verdict lands on the ORIGIN card's ActionLog (no board row of its own)",
+     any("SHIP: NONE" in n for n in origin_notes))
+
+def _ship_decision_opens():
+    return [e for e in escalations.list_open()
+            if e.get("kind") == "ship-decision" and e.get("card") == "c-hidden-origin"]
+
+dispatch._turn = sessions._turn = lambda t, p, model=None, perm=None: (
+    "sid-hidden-failed", "Execute: build failed.\nSHIP: FAILED",
+    {"usage": {}, "models": [], "cost_usd": 0.0})
+before = len(_ship_decision_opens())
+t9 = dispatch.new_ship_task(repo, "decide", actor="harness", origin_card="c-hidden-origin",
+                            board_hidden=True)
+check("board_hidden + no OK/NONE verdict stays put, same as a visible card would",
+     t9.get("lane") == "working" and t9.get("status") == "needs_you")
+check("a stuck board_hidden ship escalates to Henry, targeted at the ORIGIN card, "
+     "exactly once", len(_ship_decision_opens()) == before + 1)
+check("blocker() never surfaces a board_hidden card as needs_you on any surface "
+     "(glance/watch/board all read this one derivation)", blocker(t9) is None)
+
+# a retry with the same still-failing outcome must not page Henry a second time
+dispatch._maybe_ship_card_close(t9, ActionLog(t9["run_dir"]))
+check("dedup: re-closing the same stuck card does not escalate twice",
+     len(_ship_decision_opens()) == before + 1)
 
 # -- 4c) the project's ship process rides in the task text (config, not brief) --
 from spine.storage import projectconfig as _pc

@@ -51,7 +51,11 @@ def blocker(t):
     WORK, not his decision - it belongs on a board, and putting it here would
     bury the six cards that really are stuck under fifty that merely wait."""
     t = t or {}
-    if t.get("archived"):
+    if t.get("archived") or t.get("board_hidden"):
+        # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
+        # research card has no board row on any surface - a stuck one is
+        # Henry's exception to pick up (dispatch._ship_stuck_escalate), not
+        # the owner's "needs_you" queue on the glasses/watch/board.
         return None
     s = t.get("status")
     if s == "submitted":

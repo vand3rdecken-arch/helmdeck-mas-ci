@@ -776,11 +776,12 @@ def _open_ship_card_for(t):
 
 
 def request_ship_decision(t, origin):
-    """A landing files a SHIP CARD that decides for itself (owner decree
-    2026-09-12: "ship als Karte, damit es losgehen kann und selber Infos
-    sammeln und nachdenken").
+    """A landing files a SHIP-DECIDE research turn that decides for itself
+    (owner decree 2026-09-12: "ship als Karte, damit es losgehen kann und
+    selber Infos sammeln und nachdenken") - since 2026-09-14, WITHOUT its own
+    board row (third iteration below).
 
-    HISTORY, so nobody rebuilds the old shape: 2026-09-01 the post-accept
+    HISTORY, so nobody rebuilds an old shape: 2026-09-01 the post-accept
     deploy reflex became a `ship-decision` escalation to Henry's one-shot
     judgement turn, fed by ops/tools/ship_facts.py. That turn could only
     weigh what ship_facts printed - phone channels - and on 2026-09-12 it
@@ -788,12 +789,28 @@ def request_ship_decision(t, origin):
     had been failing on GitHub billing for two days; nothing in its evidence
     could say so, and a judgement turn cannot go and look. A CARD can: hands,
     auto-mode permissions, gh/git/relay reach, as many turns as it needs. So
-    the emit half now files `dispatch.new_ship_task(kind="decide")` (brief:
-    cells/engineer/harness/agents/ship-worker.md, DECIDE -> EXECUTE ->
-    VERIFY, closes itself on 'SHIP: OK'/'SHIP: NONE'). Henry stays the
-    exception broker: a ship card that parks needs_you reaches him like any
-    stuck card. The chat-side `ship` verb (Henry told to ship from the board)
-    still spawns ota|native cards directly.
+    2026-09-12 made the emit half file `dispatch.new_ship_task(kind="decide")`
+    as a normal VISIBLE board card (brief: cells/engineer/harness/agents/
+    ship-worker.md, DECIDE -> EXECUTE -> VERIFY, closes itself on
+    'SHIP: OK'/'SHIP: NONE').
+
+    THIRD ITERATION (owner decree 2026-09-14): the research depth from
+    2026-09-12 stays - same brief, same hands, same tools, same "as many
+    turns as it needs" - but "Ship-Entscheidung + Ausfuehrung" must stop
+    being its own visible card/process; a landing deciding how to ship
+    itself is not a new unit of work the owner asked for. So the card below
+    is filed `board_hidden=True`: threads.py and routes_tracks.py both skip
+    it, so it never becomes a board row or a process-list entry, but it is
+    still a real card underneath - worktree-free hands, its own session,
+    steerable, dedup'd exactly as before. What changes with no board row:
+    dispatch.py's `_maybe_ship_card_close` writes the outcome onto the
+    ORIGIN card's ActionLog instead of the (now invisible) ship card's own
+    timeline, and a stuck (no-verdict) card escalates to Henry explicitly
+    instead of relying on a needs_you row someone can see - see
+    dispatch._ship_note_origin / _ship_stuck_escalate. Henry is still the
+    exception broker either way. The chat-side `ship` verb (Henry told to
+    ship from the board) is UNCHANGED: it still spawns a normal, visible
+    ota|native card - the owner asked for that ship, so it stays a card.
 
     Filed SYNCHRONOUSLY (so the dedup below sees it at once), dispatched on
     its own thread (a ship can take twenty minutes; the origin card's accept
@@ -801,11 +818,12 @@ def request_ship_decision(t, origin):
 
     DEDUP by _open_ship_card_for: fast-track finishes a turn every few
     minutes and each one used to deploy - a still-open decide card already
-    covers the newer landing because it reads the tree fresh when it runs.
-    Returns the ship card id, or None when nothing was filed (no deploy hook
-    configured = repo ships some other way, or a card already pending). If
-    filing the card itself fails, falls back to the old escalation so the
-    landing is never silently unshipped."""
+    covers the newer landing because it reads the tree fresh when it runs
+    (board_hidden does not change this - the scan reads the raw store, not
+    a board listing). Returns the ship card id, or None when nothing was
+    filed (no deploy hook configured = repo ships some other way, or a card
+    already pending). If filing the card itself fails, falls back to the
+    old escalation so the landing is never silently unshipped."""
     from spine.storage import events
     from spine.registry import escalations
     st = events.settings()
@@ -833,7 +851,8 @@ def request_ship_decision(t, origin):
     from cells.engineer.cards import dispatch
     try:
         card = dispatch.new_ship_task(t.get("repo") or "", "decide", actor="harness",
-                                      origin_card=t["id"], dispatch=False)
+                                      origin_card=t["id"], dispatch=False,
+                                      board_hidden=True)
     except Exception as e:
         # the landing must never go quietly unshipped: the old escalation is
         # the fallback, and it says WHY the card path did not open
@@ -859,8 +878,9 @@ def request_ship_decision(t, origin):
             except Exception:
                 pass
     threading.Thread(target=_go, name="_ship-decide-%s" % cid, daemon=True).start()
-    log.log("note", "SHIP: Ship-Karte %s angelegt (%s) - recherchiert, entscheidet und "
-                    "shippt selbst; kein automatischer Deploy." % (cid, origin))
+    log.log("note", "SHIP: Recherche %s angestossen (%s, kein Board-Eintrag) - recherchiert, "
+                    "entscheidet und shippt selbst; kein automatischer Deploy."
+                    % (cid, origin))
     return cid
 
 

@@ -37,7 +37,9 @@ def tracks_list_get(self, user):
     from spine.auth import auth
     # present(): stored 'running' is never believed on the way OUT -
     # only a live turn (drivers.turn_active) may render a spinner.
-    ts = [sessions.present(t) for t in sessions.list_tracks()]
+    # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
+    # research card - see lanemachine.request_ship_decision's docstring.
+    ts = [sessions.present(t) for t in sessions.list_tracks() if not t.get("board_hidden")]
     ts = [t for t in ts if auth.owns_card(user, t)]   # clients: own cards only
     return self._send(200, json.dumps(ts))
 
