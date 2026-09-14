@@ -58,16 +58,27 @@ else
   TARGET="$SSH_USER@$RELAY_HOST"
 fi
 
-NO_BUILD=0; CHANNEL=""
+NO_BUILD=0; CHANNEL=""; RUNTIME=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) NO_BUILD=1 ;;
     --channel)  CHANNEL="${2:-}"; shift ;;
+    # --runtime X: publish THIS bundle for a STRANDED runtimeVersion X - an APK
+    # still on X after app.json moved on (e.g. an iOS-only version bump). Only
+    # valid when that platform's native is unchanged since X. Lands in the
+    # channel dir "rt-X"; the relay serves it to a phone asking for X
+    # (surfaces/relay/relay.py, manifest route). Android only - no desktop leg.
+    --runtime)  RUNTIME="${2:-}"; shift ;;
     *) echo "unknown arg: $1"; exit 2 ;;
   esac
   shift
 done
 case "$CHANNEL" in production) CHANNEL="" ;; *[!A-Za-z0-9._-]*) echo "bad channel name"; exit 2 ;; esac
+if [ -n "$RUNTIME" ]; then
+  case "$RUNTIME" in *[!0-9.]*) echo "bad runtime"; exit 2 ;; esac
+  [ -n "$CHANNEL" ] && { echo "--runtime and --channel are exclusive"; exit 2; }
+  CHANNEL="rt-$RUNTIME"
+fi
 
 if [ "$NO_BUILD" != "1" ]; then
   echo "==> expo export (android)"
@@ -81,7 +92,7 @@ fi
 # is expo.version). The relay reads this marker to VALIDATE the client's
 # expo-runtime-version instead of echoing it back - without it the crash-loop
 # protection never fires (see relay.py _bundle_rtv). Packed with the export.
-RTV="$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)"
+RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)}"
 [ -n "$RTV" ] && { printf '%s' "$RTV" > surfaces/app/dist-ota/runtimeVersion; echo "==> bundle runtimeVersion marker: $RTV"; }
 
 if [ "$RELAY_LOCAL" = "1" ]; then
@@ -118,7 +129,7 @@ fi
 echo "==> verify live manifest"
 # runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
 # it (don't hardcode) or the verify HEAD mismatches after a native version bump.
-RTV="$(py -3.12 -c 'import json;print(json.load(open("surfaces/app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)"
+RTV="${RUNTIME:-$(py -3.12 -c 'import json;print(json.load(open("surfaces/app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)}"
 # `|| true`: this is a COSMETIC preview for the human/log, not a functional
 # check - under `set -o pipefail`, curl legitimately gets SIGPIPE'd ("(23)
 # Failed writing body") the instant `head -c` closes the pipe after its byte
@@ -180,7 +191,9 @@ REMOTE
   curl -s -m20 "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN" | head -c 200 || true
   echo
 }
-if ! desktop_publish; then
+if [ -n "$RUNTIME" ]; then
+  echo "==> --runtime $RUNTIME: android-only stranded-runtime publish, desktop untouched"
+elif ! desktop_publish; then
   echo "!!! DESKTOP OTA PUBLISH FAILED - the phone update above is live, but the"
   echo "!!! desktop stays on its old bundle until the next successful publish."
 fi

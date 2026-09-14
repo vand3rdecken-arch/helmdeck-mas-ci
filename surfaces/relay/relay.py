@@ -492,7 +492,21 @@ class H(BaseHTTPRequestHandler):
             # true rtv in the manifest. No marker (legacy bundle) -> serve as before.
             real = _bundle_rtv(base_dir)
             if real and real != rtv:
-                return self._send(404, json.dumps({"error": "no update for this runtimeVersion"}))
+                # A STRANDED RUNTIME: the production bundle moved on (app.json
+                # bumped for an iOS resubmission, 2026-09-13 18:20) while the
+                # owner's Android APK stayed on the old runtimeVersion - and
+                # from that moment every OTA silently 404'd for his phone,
+                # including fixes he was waiting for. When native is unchanged
+                # for that platform, the SAME JS is still valid for the old
+                # runtime, so push_update.sh --runtime <old> publishes it into
+                # the channel dir "rt-<old>" (a normal channel, so the asset
+                # URLs and _channel_dir need nothing new). Served only when
+                # the requested runtime matches that dir's own marker.
+                alt_dir, alt_ch = _channel_dir("rt-" + rtv)
+                if alt_ch and _bundle_rtv(alt_dir) == rtv:
+                    base_dir, channel, real = alt_dir, alt_ch, rtv
+                else:
+                    return self._send(404, json.dumps({"error": "no update for this runtimeVersion"}))
             man = _build_manifest(platform, "https://" + host, real or rtv, base_dir, channel)
             if not man:
                 return self._send(404, json.dumps({"error": "no update available"}))
