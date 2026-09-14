@@ -40,6 +40,7 @@ is what makes that sentence true. It keeps its own registry (`_last`) keyed by
 notify._dedup_key so the two channels agree on what "the same news" means
 without sharing the state that decides delivery.
 """
+import re
 import threading
 
 from spine.comms import notice as _notice
@@ -59,25 +60,65 @@ KIND_CLOSED = "closed"         # the card is GONE (deleted/archived) - nothing b
 # module docstring for why `done`/`bounced`/`background` are not here).
 REASONS = {"question": KIND_QUESTION, "needs_you": KIND_RESULT}
 
-# A card's closing reply is mirrored WHOLE. There is deliberately NO length
-# constant here, and the one that stood in its place (RESULT_MAX = 400) was
-# removed on an owner decision (2026-08-30) taken against measured data.
+# A card's closing reply is mirrored as a PLAIN-LANGUAGE DISTILLATION, not the
+# raw text - reworked 2026-09-14 (owner correction 18:40) from the whole-reply
+# rule this comment used to state. History, because the reasoning changed
+# twice and a future reader needs both turns to trust the current one:
 #
-# Its premise was: "this is an inbox entry, not the document - the full text is
-# one tap away in the card transcript." That premise holds for a DISPATCHED
-# worker card, which has its own conversation the owner opens. It does not hold
-# for a card the owner started FROM THIS CHAT: there the Henry chat IS the
-# card's conversation and there is no second place to tap to. Measured on the
-# owner's own log the day it was removed: 10 of 10 clipped mirror lines were
-# exactly those cards, each losing ~3.600-4.300 characters - including the
-# answer to the question he had asked in that same chat minutes earlier.
+# 2026-08-30: a length cap here (RESULT_MAX = 400) was REMOVED against
+# measured data. Its premise was "this is an inbox entry, not the document -
+# the full text is one tap away in the card transcript", which held for a
+# DISPATCHED worker card but not for one the owner started FROM THIS CHAT:
+# there the Henry chat WAS the card's only conversation. Measured that day: 10
+# of 10 clipped mirror lines were exactly those cards, each losing ~3.600-4.300
+# characters - including the answer to a question asked in that same chat
+# minutes earlier. So the reply went out WHOLE, unclipped, for six weeks.
 #
-# "Whole" is not "unbounded": the reply is already capped where it is actually
-# stored (turnrunner.REPLY_MAX, 6000), and the transcript folds a long message
-# behind card_transcript.tsx's "mehr anzeigen" toggle instead of throwing it
-# away. A cap here was a FOURTH answer to "how long may a line be", on the one
-# surface that can scroll - see spine/comms/notice.short's docstring for which
-# channels legitimately have a length budget.
+# 2026-09-14: the owner complained again - not about length this time, but
+# that a raw agent reply ("DELIVERED - surfaces/app/src/app/(tabs)/settings
+# .tsx: ...") is too technical for the inbox, and that it printed ALONGSIDE a
+# second board-chat line for the very same completed unit of work
+# (dispatch._accept_machine's now-removed say.machineAccepted echo - see that
+# call site). Both complaints share one fix, and the 2026-08-30 premise that
+# blocked it is gone: since the "Threads = Karten" rework (2026-09-13, GET
+# /chat/threads + chat_threads.tsx) EVERY card - including one started from
+# this very chat - has its own thread/tile with the full turn transcript
+# (verified 2026-09-14: threads.py's only exclusion is `archived`, and even an
+# archived card stays reachable via the board's Archived scope; the raw text
+# was never solely dependent on this mirror anyway - the driver's own pump
+# folds every step into spine/agent/timeline_store, untouched by REPLY_MAX,
+# independently of what this file prints). So the inbox line can finally do
+# its actual job - say what happened, plainly - and point at the card for the
+# rest, instead of being the one and only copy of the truth.
+#
+# The distillation reuses spine.turn.outcomes.extract_outcome (the SAME "1-2
+# line result sentence" already trusted for an accepted card's stored
+# `outcome`, read by Henry's own planning snapshot) rather than a new length
+# rule of its own - a hard character cut is deliberately NOT the primary
+# mechanism (that was the 2026-08-30 mistake's shape, just at a different
+# number); extract_outcome's own 240-char bound is reached only as a rare
+# safety net, word-boundary-safe, not the point of this change.
+
+# The technical tokens extract_outcome has no reason to strip (Henry's own
+# planning snapshot reads that field and NEEDS the file it touched), but the
+# owner's inbox does not: a bare "surfaces/app/src/app/(tabs)/settings.tsx:"
+# in the middle of a sentence is exactly the "Roh-...Dateipfade/Commit-Hashes"
+# the 2026-09-14 correction named. `?!https?://` keeps a real link intact - a
+# path needs at least one '/' AND a dotted extension, which a URL's host part
+# never has, so this only ever matches something that looks like a repo path.
+_PATH_RE = re.compile(r"\b(?!https?://)[\w.\-]+(?:/[\w.\-()]+)+\.\w{1,5}\b:?")
+_HASH_RE = re.compile(r"\b[0-9a-f]{7,40}\b")   # git hashes are lowercase hex
+
+
+def _declutter(text):
+    """The chat-only cleanup pass: strip inline paths/hashes, collapse the
+    whitespace their removal leaves behind. Never touches the stored
+    `last_reply`/`outcome` - only the copy this module is about to print."""
+    t = _HASH_RE.sub("", _PATH_RE.sub("", text or ""))
+    return " ".join(t.split())
+
+
+POINTER = "Details in der Karte."
 
 _last = {}
 _lock = threading.Lock()
@@ -168,11 +209,17 @@ def mirror(track, status):
             q = track.get("question") or {}
             text = ask.summary(q) or ""
         else:
-            # KIND_RESULT: the card's own closing words, WHOLE (see the note
-            # where RESULT_MAX used to live). `last_reply` is already the
-            # ask-block-stripped reply _finish_turn persisted, so a raw
-            # <helmdeck-ask> can never leak into the inbox.
-            text = (track.get("last_reply") or "").strip()
+            # KIND_RESULT: a PLAIN-LANGUAGE DISTILLATION of the card's closing
+            # words (see the module docstring for why this stopped being the
+            # raw reply). `last_reply` is already the ask-block-stripped reply
+            # _finish_turn persisted, so a raw <helmdeck-ask> can never leak
+            # into the inbox - extract_outcome/`_declutter` only ever shorten
+            # and declutter it further, never expose more than it already had.
+            from spine.turn import outcomes
+            raw = (track.get("last_reply") or "").strip()
+            text = _declutter(outcomes.extract_outcome(raw) or raw)
+            if text:
+                text += "\n\n" + POINTER
         if not text:
             return False
         from spine.comms import notify

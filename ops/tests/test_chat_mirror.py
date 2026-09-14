@@ -144,20 +144,45 @@ check(len(cards()) == 1,
       "a silent transition does not consume the dedup key - the next real "
       "message under the same key still prints")
 
-# a long reply reaches the chat WHOLE (owner decision 2026-08-30, replacing the
-# clip this block used to pin). The mirror has no length budget of its own: the
-# chat scrolls and folds, and on a card the owner started FROM the chat there is
-# no second copy to tap through to - the clip destroyed the only one he had a
-# route to. Measured that day: 10 of 10 clipped mirror lines were such cards.
+# a reply is DISTILLED for the chat, not mirrored whole any more (owner
+# correction 2026-09-14, reworking the 2026-08-30 decision this block used to
+# pin - see the module docstring for both turns of that story). The property
+# 2026-08-30 actually protected - an answer given IN THIS CHAT must never be
+# LOST - still holds: it is the STORED last_reply that is authoritative (the
+# card's own thread reads THAT, via the Threads rework's timeline, not this
+# mirror's text), and this function only ever READS the track, never writes
+# it - so a long or technical reply is still fully there, just not re-typed
+# whole into the inbox line.
 reset()
-long_reply = "wort " * 400
-notify.card_event(card(last_reply=long_reply), "needs_you")
-txt = cards()[0]["text"] if cards() else ""
-check(txt == long_reply.strip(),
-      "an over-long result is mirrored WHOLE - no clip and no ' …' marker")
+t_long = card(last_reply="wort " * 400)
+notify.card_event(t_long, "needs_you")
+cs = cards()
+txt = cs[0]["text"] if cs else ""
+check(txt != t_long["last_reply"].strip(),
+      "an over-long result is no longer mirrored whole")
+check(card_mirror.POINTER in txt,
+      "...and the shortened line always names where the rest lives")
+check(t_long["last_reply"] == "wort " * 400,
+      "the mirror never mutates the track's own stored reply - the full "
+      "answer a question got in this chat is still exactly there")
 check(not hasattr(card_mirror, "RESULT_MAX"),
-      "the cap is GONE, not merely raised - a dormant constant is the next "
-      "agent's invitation to reintroduce the clip")
+      "no revived bare length-cap constant - the distillation goes through "
+      "spine.turn.outcomes.extract_outcome, not a cap of this module's own")
+
+# the concrete owner complaint (screenshot 2026-09-14): a raw DELIVERED line
+# with an inline file path and the standard hand-off boilerplate is exactly
+# the shape the inbox must no longer show.
+reset()
+technical_reply = ("DELIVERED - surfaces/app/src/app/(tabs)/settings.tsx: "
+                   "folded Abmelden into the owner's own member row.\n\n"
+                   "Ready for Review - move the card to Review; accepting it deploys.")
+notify.card_event(card(last_reply=technical_reply), "needs_you")
+txt = cards()[0]["text"] if cards() else ""
+check("settings.tsx" not in txt and "DELIVERED" not in txt,
+      "the file path and the DELIVERED anchor are stripped from the inbox line")
+check("Ready for Review" not in txt,
+      "so is the hand-off boilerplate - the owner already knows accepting deploys")
+check("folded Abmelden" in txt, "the actual plain-language result survives")
 
 # -- 3. THE CORE PROPERTY: suppressed push, written inbox ---------------------
 for decision, why in (("silent", "the owner is looking at that very card"),
@@ -426,6 +451,27 @@ check((req.body or {}).get("error") == "no such card", "the reply still errors -
 check(any(m.get("card") == "ghost" and m.get("kind") == card_mirror.KIND_CLOSED for m in logged()),
       "but a card-bound CLOSED entry is folded in, so the next history poll "
       "releases the ghost target instead of dead-ending on every send")
+
+# -- 10. accepting a card never prints a SECOND message for the SAME event ---
+# Owner correction 2026-09-14 18:40: for a machine/direct card, needs_you's
+# KIND_RESULT (the card's own result) used to be followed by a separate
+# dispatch._accept_machine "abgenommen und geschlossen (Maschinen-Aufgabe)"
+# board-chat line at Done - two messages for one completed unit of work. That
+# echo is deleted (dispatch.py, _accept_machine's "done" branch); exercised
+# here through the REAL move_lane/_accept_machine path, not a stub, because a
+# stubbed accept could never have caught a duplicate emitted BY that path.
+reset()
+MACH = card(tid="c-mach", machine=True, run_dir=SANDBOX, repo=SANDBOX,
+           branch=sessions.MACHINE_BRANCH, worktree=SANDBOX,
+           last_reply="DELIVERED: Autostart-Task angelegt.")
+_db.track_put(MACH)
+notify.card_event(MACH, "needs_you")
+check(len(cards()) == 1, "needs_you still writes its one RESULT line")
+out = sessions.move_lane("c-mach", "done", actor="owner")
+check(out.get("status") == "accepted" and out.get("lane") == "done",
+      "the accept itself still goes through")
+check(len(cards()) == 1,
+      "...but Done adds NO second board-chat line for the same card action")
 
 print()
 if _fails:

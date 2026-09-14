@@ -1199,7 +1199,16 @@ def _accept_machine(t, lane, actor, log):
         # already the answer to "should this ship").
         from cells.engineer.cards.lanemachine import request_ship_decision
         request_ship_decision(t, "direct-accept")
-    _say_card(t, _i18n.t("say.machineAccepted"))
+    # NO _say_card echo here (owner correction 2026-09-14 18:40: "doppelt
+    # gemoppelt"). needs_you already put the card's own result - now a plain-
+    # language distillation, card_mirror.mirror's KIND_RESULT - in this same
+    # Henry chat; a machine/direct card has no branch to gate or merge, so
+    # this "done" transition has literally nothing left to add beyond "it was
+    # accepted", which the owner already knows (he is either the one who just
+    # clicked accept, or an automated accept still reaches him via the
+    # push.done notification below). The card's own ActionLog note ("->
+    # verschoben nach Done von <actor>", written at the top of _move_lane) and
+    # the board's own Done column remain the record of the acceptance itself.
     from spine.comms import notify
     notify.card_event(t, "done")
     try:
