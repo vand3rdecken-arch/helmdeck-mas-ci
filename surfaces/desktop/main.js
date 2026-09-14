@@ -145,6 +145,19 @@ const nativeUpdater = createNativeUpdater({
 ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());
 ipcMain.on("native-update:install", () => nativeUpdater.quitAndInstall());
 
+// The repo-path step (repo_type_picker.tsx) was a bare free-text field with
+// no way to browse for a folder - owner report 2026-09-14, screenshot of the
+// onboarding "Woran arbeitest du?" step. `win` may still be null this early
+// (the setup screen can call this before createWindow ever runs), so the
+// dialog falls back to unparented rather than throwing on a null owner.
+ipcMain.handle("native:pick-folder", async () => {
+  const owner = win && !win.isDestroyed() ? win : undefined;
+  const r = await (owner
+    ? dialog.showOpenDialog(owner, { properties: ["openDirectory"] })
+    : dialog.showOpenDialog({ properties: ["openDirectory"] }));
+  return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+});
+
 // find a working Python 3: probe candidates with `--version` and use the first
 // that runs, so we don't depend on `py` alone being on PATH.
 //

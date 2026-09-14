@@ -444,6 +444,7 @@ export const screens: Dict = {
     en: "HelmDeck does not know any repo yet. Enter a path below.",
   },
   "repo.pathPlaceholder": { de: "C:\\Pfad\\zum\\Repo", en: "C:\\path\\to\\repo" },
+  "repo.chooseFolder": { de: "Ordner wählen", en: "Choose folder" },
   "repo.pickType": { de: "Repo-Typ", en: "Repo type" },
   "repo.pipeline": { de: "So läuft dieses Repo", en: "How this repo runs" },
   // repo.intro promises "Feintuning geht danach über den Chat" - this is the

@@ -7,6 +7,8 @@ import { api, type RepoTemplates, type RepoView } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 
+import { getFolderPicker } from "./folder_picker";
+
 /**
  * THE repo-type question - one component, rendered in two places.
  *
@@ -47,6 +49,10 @@ export function RepoTypePicker({
   const [err, setErr] = useState("");
 
   const setRepo = (v: string) => { setRepoState(v); onRepoChange?.(v); };
+
+  // Desktop-only (Electron preload bridge, see folder_picker.ts) - null on
+  // phone/web/Mac, where the free-text field stays the only way in.
+  const folderPicker = getFolderPicker();
 
   // Land on the repo that still needs a decision. A repo with no type is the
   // only thing here that is actually outstanding, so preferring it over "the
@@ -120,11 +126,24 @@ export function RepoTypePicker({
         ) : (
           <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("repo.none")}</Text>
         )}
-        <TextInput value={repo} onChangeText={(v) => { setRepo(v); setErr(""); }}
-          autoCapitalize="none" autoCorrect={false} placeholder={tr("repo.pathPlaceholder")}
-          placeholderTextColor={t.txtTertiary}
-          style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
-            borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, color: t.txtPrimary, fontSize: 12.5 }} />
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput value={repo} onChangeText={(v) => { setRepo(v); setErr(""); }}
+            autoCapitalize="none" autoCorrect={false} placeholder={tr("repo.pathPlaceholder")}
+            placeholderTextColor={t.txtTertiary}
+            style={{ flex: 1, backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
+              borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, color: t.txtPrimary, fontSize: 12.5 }} />
+          {folderPicker ? (
+            <Pressable testID="repo-pick-folder" accessibilityLabel={tr("repo.chooseFolder")}
+              onPress={async () => {
+                const picked = await folderPicker();
+                if (picked) { setRepo(picked); setErr(""); }
+              }}
+              style={{ backgroundColor: t.surface1, borderColor: t.glassBorder, borderWidth: 1,
+                borderRadius: 10, paddingHorizontal: 11, justifyContent: "center", alignItems: "center" }}>
+              <Ionicons name="folder-open-outline" size={18} color={t.txtPrimary} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       {/* ---- the one question ---- */}

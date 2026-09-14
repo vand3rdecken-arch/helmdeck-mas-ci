@@ -12,5 +12,8 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["prompt_fallback.ts", "__prompt_fallback_selftest__.ts"]
+  "include": [
+    "prompt_fallback.ts", "__prompt_fallback_selftest__.ts",
+    "folder_picker.ts", "__folder_picker_selftest__.ts"
+  ]
 }
