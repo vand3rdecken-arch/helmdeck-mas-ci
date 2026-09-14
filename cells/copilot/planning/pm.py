@@ -1192,12 +1192,15 @@ def _triangle_watch(st):
         bf = usage.weekly_pacing_flag()
     except Exception:
         bf = None
-    if bf and bf.get("exhaust_before_reset"):
-        # weekly_pacing_flag() also fires on used_pct >= 85 alone (see
-        # spine/ops/usage.py pacing()) with no claim about the reset time -
-        # only say "erschöpft" when that is what's actually projected
-        # (measured 2026-09-13: 86% used, 2.8h to reset, proj 87.5% - flagged
-        # but NOT exhausting, "vor dem Reset erschöpft" would have been a lie).
+    if bf and bf.get("reset_risk"):
+        # weekly_pacing_flag() also fires on used_pct >= 85 alone, or on a
+        # bare exhaust_before_reset with NO noise buffer (see spine/ops/
+        # usage.py pacing() - reset_risk is the one field that carries
+        # both: proj >= 105% AND exhaust_before_reset). Two measured false
+        # positives if read loosely: 2026-09-13 86% used/2.8h to reset/proj
+        # 87.5% (used>=85 alone), and 2026-09-14 06% into a FRESH window
+        # with proj 100.7% - exhaust_before_reset was True on pure noise,
+        # no buffer. Only reset_risk means "vor dem Reset erschöpft" is true.
         corners.append("Budget: Wochenkontingent voraus (projiziert ~%s%%, vor dem Reset erschöpft)"
                        % round(bf.get("projected_pct") or 0))
     # TIMELINE + SCOPE — from the goal's process (epic)
@@ -1292,12 +1295,15 @@ def _stakeholder_update(st):
     used = (weekly or {}).get("usedPct") or 0
     # at_risk MUST mean what the owner-facing sentence says ("leer vor dem
     # Reset"): usage.pacing's `flag` also fires on used_pct >= 85 alone, with
-    # hours left irrelevant - measured 2026-09-13, 86% used but only 2.8h to
-    # go and the projection UNDER 100%, still flagged, still asked "Nicht-
-    # Ziel-Arbeit zurückstellen?" for a slip that was never going to happen.
-    # exhaust_before_reset is the actual claim; used>=85 alone is "tight",
+    # hours left irrelevant (measured 2026-09-13, 86% used/2.8h to reset/proj
+    # UNDER 100% - still asked "Nicht-Ziel-Arbeit zurückstellen?" for a slip
+    # that was never going to happen). Nor is bare exhaust_before_reset safe:
+    # it has NO noise buffer (measured 2026-09-14, 6% into a FRESH window -
+    # 6% used, proj 100.7% on pure noise - exhaust_before_reset True on
+    # nothing). reset_risk is the one field with BOTH proj >= 105% and
+    # exhaust_before_reset - the actual claim; anything less is "tight",
     # same bucket as the 80% rung right below it.
-    verdict = ("at_risk" if pacing.get("exhaust_before_reset")
+    verdict = ("at_risk" if pacing.get("reset_risk")
                else ("tight" if used >= 80 else "on_track"))
     risk_key = (weekly or {}).get("resetsAt") or ""
     risk_new = verdict == "at_risk" and st.get("stakeholder_risk") != risk_key

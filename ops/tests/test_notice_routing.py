@@ -144,23 +144,36 @@ def reset():
 reset()
 FLAG[0] = {"usedPct": 90, "elapsed_pct": 60, "projected_pct": 150,
            "resetsAt": "2026-08-30T22:00:00Z", "exhaust_before_reset": True,
-           "exhaust_at": "2026-08-30T20:00:00Z", "flag": True}
+           "exhaust_at": "2026-08-30T20:00:00Z", "reset_risk": True, "flag": True}
 pm._triangle_watch({})
 check("triangle tilt goes to Henry", len(HENRY) == 1 and HENRY[0]["kind"] == "triangle-tilt")
 check("triangle tilt never reaches the chat", not CHAT and not ASKS)
 
-# -- the false quota flag: high usedPct alone must NOT tilt the triangle ------
+# -- the false quota flag #1: high usedPct alone must NOT tilt the triangle --
 # Measured 2026-09-13: usage.pacing()'s `flag` also fires on usedPct >= 85
 # ALONE, with no claim about running out before reset - 86% used, 2.8h left,
 # projected 87.5%, still flagged. _triangle_watch used to report that as
-# "Budget: ... vor dem Reset erschöpft", which was false. Only a genuine
-# exhaust_before_reset may light the Budget corner.
+# "Budget: ... vor dem Reset erschöpft", which was false.
 reset()
 FLAG[0] = {"usedPct": 86, "elapsed_pct": 98.3, "projected_pct": 87.5,
            "resetsAt": "2026-09-13T20:00:00Z", "exhaust_before_reset": False,
-           "exhaust_at": None, "flag": True}
+           "exhaust_at": None, "reset_risk": False, "flag": True}
 pm._triangle_watch({})
 check("a bare high-usedPct flag does NOT tilt the triangle's Budget corner",
+      not HENRY and not CHAT and not ASKS)
+
+# -- the false quota flag #2: noise early in a FRESH window --------------------
+# Measured 2026-09-14, 07:58: window reset 12h earlier (6% used, 6% elapsed),
+# projection 100.7% on pure noise. exhaust_before_reset was True (it has NO
+# buffer - see usage.py) even though reset_risk (which needs proj >= 105%
+# too) was correctly False. The first fix (gating on exhaust_before_reset)
+# still asked here; only reset_risk is safe.
+reset()
+FLAG[0] = {"usedPct": 6, "elapsed_pct": 6, "projected_pct": 100.7,
+           "resetsAt": "2026-09-20T20:00:00Z", "exhaust_before_reset": True,
+           "exhaust_at": "2026-09-20T18:47:00Z", "reset_risk": False, "flag": False}
+pm._triangle_watch({})
+check("noise-level overrun early in a fresh window does NOT tilt the triangle",
       not HENRY and not CHAT and not ASKS)
 
 # -- the plan gate: the fix is the harness's own move -------------------------
@@ -190,6 +203,7 @@ SNAP[0] = {"status": "ok", "windows": [{"id": "weekly", "usedPct": 90,
                                         "resetsAt": "2026-08-30T22:00:00Z",
                                         "pacing": {"projected_pct": 150, "flag": True,
                                                    "exhaust_before_reset": True,
+                                                   "reset_risk": True,
                                                    "exhaust_at": "2026-08-30T20:00:00Z"}}]}
 pm._stakeholder_update({})
 check("at risk ASKS the owner instead of reporting at him", len(ASKS) == 1 and not CHAT)
@@ -200,19 +214,38 @@ check("the at-risk ask obeys the length law untouched",
 check("the full report still reaches the dashboard",
       any("Ziel vs. Budget" in f["msg"] for f in FEED))
 
-# high usedPct but NOT exhausting before reset -> dashboard only, never asked.
-# Measured 2026-09-13: pacing's `flag` fires on usedPct >= 85 alone; before
-# this fix, 86% used with 2.8h left and a projection UNDER 100% still asked
-# "Nicht-Ziel-Arbeit zurückstellen?" for a slip that was never going to
-# happen. That bucket is "tight" (same as usedPct >= 80), not "at_risk".
+# false positive #1: high usedPct but NOT exhausting before reset -> dashboard
+# only, never asked. Measured 2026-09-13: pacing's `flag` fires on usedPct
+# >= 85 alone; before this fix, 86% used with 2.8h left and a projection
+# UNDER 100% still asked "Nicht-Ziel-Arbeit zurückstellen?" for a slip that
+# was never going to happen. That bucket is "tight" (same as usedPct >= 80).
 reset()
 SNAP[0] = {"status": "ok", "windows": [{"id": "weekly", "usedPct": 86,
                                         "resetsAt": "2026-09-13T20:00:00Z",
                                         "pacing": {"projected_pct": 87.5, "flag": True,
                                                    "exhaust_before_reset": False,
+                                                   "reset_risk": False,
                                                    "exhaust_at": None}}]}
 pm._stakeholder_update({})
 check("high usedPct alone does NOT ask the owner", not ASKS and not CHAT)
+check("it still reaches the dashboard as a status line",
+      any("Ziel vs. Budget" in f["msg"] for f in FEED))
+
+# false positive #2: noise early in a FRESH window -> dashboard only. Measured
+# 2026-09-14, 07:58: 12h into a window that reset the evening before (6%
+# used, 6% elapsed), proj 100.7% on pure noise. exhaust_before_reset was True
+# (no buffer) even though reset_risk (proj >= 105% required too) was
+# correctly False - the FIRST fix (gating on exhaust_before_reset alone)
+# still asked here; this is the regression that fix caused.
+reset()
+SNAP[0] = {"status": "ok", "windows": [{"id": "weekly", "usedPct": 6,
+                                        "resetsAt": "2026-09-20T20:00:00Z",
+                                        "pacing": {"projected_pct": 100.7, "flag": False,
+                                                   "exhaust_before_reset": True,
+                                                   "reset_risk": False,
+                                                   "exhaust_at": "2026-09-20T18:47:00Z"}}]}
+pm._stakeholder_update({})
+check("noise-level overrun early in a fresh window does NOT ask the owner", not ASKS and not CHAT)
 check("it still reaches the dashboard as a status line",
       any("Ziel vs. Budget" in f["msg"] for f in FEED))
 

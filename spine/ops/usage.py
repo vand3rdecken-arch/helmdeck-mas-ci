@@ -129,12 +129,21 @@ def pacing(used_pct, resets_at, window_sec=WEEK_SEC, now=None):
         exhaust_ts = start + frac_100 * window_sec
     hours_left = max(0.0, (reset_ts - now) / 3600.0)
     exhaust_before_reset = exhaust_ts is not None and exhaust_ts < reset_ts - 3600
-    # Flag on the PROJECTION, not the ahead-delta: if the current burn rate lands the
-    # window over its limit before it resets (proj >= 105% with a buffer to avoid noise
-    # on borderline pace), the wall is coming - say so now. Or if it's already nearly
-    # spent regardless of pace.
-    ahead_flag = (proj is not None and proj >= 105.0 and exhaust_before_reset) \
-        or used_pct >= 85.0
+    # reset_risk = the ONE claim "genuinely going to run out before the reset,
+    # not just noise": proj >= 105% (the same buffer ahead_flag always had -
+    # early in a window a handful of tokens can swing proj from 95% to 101%
+    # on almost nothing) AND exhaust_before_reset. exhaust_before_reset ALONE
+    # has no such buffer - measured 2026-09-14, 06:00 into a fresh window
+    # (6% used, 6% elapsed): proj 100.7%, exhaust_before_reset True, but this
+    # is noise, not a real trend, and used_pct is nowhere near 85 either.
+    # Every "will you actually run out" claim (an owner ask, an "erschöpft"
+    # escalation) must read THIS, never exhaust_before_reset by itself.
+    reset_risk = proj is not None and proj >= 105.0 and exhaust_before_reset
+    # Flag stays the separate, WEAKER "spend is hot" signal used for the
+    # conservative-dispatch throttle (_quota_floor) - fires on reset_risk OR
+    # merely used_pct >= 85 regardless of time left. Never read this as "will
+    # run out before reset" - that claim is reset_risk, not flag.
+    ahead_flag = reset_risk or used_pct >= 85.0
     return {
         "elapsed_pct": round(expected, 1),
         "ahead_pct": round(ahead, 1),
@@ -142,6 +151,7 @@ def pacing(used_pct, resets_at, window_sec=WEEK_SEC, now=None):
         "exhaust_at": datetime.fromtimestamp(exhaust_ts, timezone.utc).isoformat() if exhaust_ts else None,
         "reset_hours_left": round(hours_left, 1),
         "exhaust_before_reset": bool(exhaust_before_reset),
+        "reset_risk": bool(reset_risk),
         "flag": bool(ahead_flag),
     }
 
