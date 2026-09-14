@@ -1956,13 +1956,16 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     if m.get("cls") == "card":
                         return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
                     return {"pm": "System/Broker", "act": "Aktion", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
-                chat_since = ("IM CHAT SEIT DEINER LETZTEN ANTWORT (der Owner hat diese Zeilen "
-                              "gesehen; seine Nachricht bezieht sich oft auf die LETZTE davon):\n- "
-                              + "\n- ".join("[%s] %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
-                                             for m in _seen[-8:]) + "\n\n")
+                # In ORDER, and placed right before the owner's line below -
+                # that is where he read them (owner 2026-09-14: "meine Frage
+                # kam direkt darunter, der Kontext stand direkt drueber").
+                chat_since = ("\n\nCHAT-VERLAUF DIREKT VOR DIESER NACHRICHT (in Reihenfolge, so hat der "
+                              "Owner es gelesen - 'es'/'das' meint meist die letzte Zeile):\n"
+                              + "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
+                                          for m in _seen[-8:]))
         except Exception:                                    # noqa: BLE001
             chat_since = ""
-    turn = (action_report + chat_since + snapshot_block + focus
+    turn = (action_report + snapshot_block + focus + chat_since
             + "\n\nUSER (%s): %s" % (user, body)
             + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
               "den Owner - was du siehst oder was du pruefst -, DANN der erste "
