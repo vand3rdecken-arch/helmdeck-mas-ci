@@ -93,6 +93,16 @@ else
   # runner and fails the build. Being explicit turns that into a clean unsigned
   # build instead - the state every first CI run is in.
   export CSC_IDENTITY_AUTO_DISCOVERY=false
+  # A repo secret that doesn't exist still arrives here as CSC_LINK="" (GitHub
+  # Actions sets the env var, just empty) - not unset. electron-builder's own
+  # getCscLink() explicitly treats "" as a DELIBERATE value ("allow to specify
+  # as empty string"), so it skips the `cscLink == null` no-signing path and
+  # calls importCertificate(""), which resolves the empty path to the CURRENT
+  # DIR (path.resolve(cwd, "") === cwd) and crashes with "<desktop dir> not a
+  # file" - measured on the public MAS-CI mirror (no MAC_CSC_LINK secret there)
+  # 2026-09-13. unset, not just "don't use", so electron-builder's own env read
+  # sees it as absent same as this branch's own condition already treated it.
+  unset CSC_LINK CSC_KEY_PASSWORD
   echo "==> signing: OFF (no CSC_LINK/CSC_NAME) - UNSIGNED build"
   echo "    Gatekeeper will quarantine it; the auto-updater (Squirrel.Mac needs"
   echo "    a valid signature) will NOT be able to apply updates to this build."
