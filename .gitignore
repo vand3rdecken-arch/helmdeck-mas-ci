@@ -230,8 +230,9 @@ surfaces/app/modules/livemic/android/libs/
 # (2026-09-13), not made by any script under a name this repo owns, so left in
 # place rather than deleted (CLAUDE.md: look at the target before deleting).
 # Ignored so the build loop's clean-tree check stops flagging someone else's
-# scratch directory as unstaged work.
-.publish-tmp-mas/
+# scratch directory as unstaged work. Globbed (not a fixed name) because the
+# next run showed up as .publish-tmp-masci/ - same source, different suffix.
+.publish-tmp-mas*/
 
 # Scratch from the local verification tools: the classes
 # ops/tests/wear_chat_rows.py compiles, the AAR an API check unpacks, and the
