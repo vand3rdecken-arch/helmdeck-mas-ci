@@ -7,9 +7,12 @@
 // own request layer (client.ts) authenticates with a Bearer token, not a
 // cookie. Styled like surfaces/app/src/ui/onboard.tsx (same canvas/centered-card
 // look, same button/skip conventions) so it reads as part of the same app.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable,
+  ScrollView, Text, TextInput, TouchableWithoutFeedback, View,
+} from "react-native";
 
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
@@ -42,6 +45,8 @@ export function LoginScreen() {
   const [invite, setInvite] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
+  const inviteRef = useRef<TextInput>(null);
 
   useEffect(() => {
     api.authState()
@@ -86,52 +91,62 @@ export function LoginScreen() {
   };
 
   const title = tr(mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount" : "login.signIn");
+  const showsInvite = mode === "up" && !noCodeNeeded;
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
-      <View style={{ width: "100%", maxWidth: 420, gap: 14 }}>
-        <View style={{ gap: 6 }}>
-          <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
-          {mode === "setup" ? (
-            <Hint text={tr("login.setupHint")} />
-          ) : null}
-        </View>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: t.canvas }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 28 }}
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={{ width: "100%", maxWidth: 420, gap: 14 }}>
+            <View style={{ gap: 6 }}>
+              <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
+              {mode === "setup" ? (
+                <Hint text={tr("login.setupHint")} />
+              ) : null}
+            </View>
 
-        {mode !== "setup" ? (
-          <View style={{ flexDirection: "row", gap: 16 }}>
-            <Pressable onPress={() => setMode("in")}>
-              <Text style={{ color: mode === "in" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.signIn")}</Text>
-            </Pressable>
-            {canSignUp ? (
-              <Pressable onPress={() => setMode("up")}>
-                <Text style={{ color: mode === "up" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.createAccount")}</Text>
-              </Pressable>
+            {mode !== "setup" ? (
+              <View style={{ flexDirection: "row", gap: 16 }}>
+                <Pressable onPress={() => setMode("in")}>
+                  <Text style={{ color: mode === "in" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.signIn")}</Text>
+                </Pressable>
+                {canSignUp ? (
+                  <Pressable onPress={() => setMode("up")}>
+                    <Text style={{ color: mode === "up" ? t.accent : t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.createAccount")}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             ) : null}
+
+            <TextInput placeholder={tr("login.user")} placeholderTextColor={t.txtTertiary} autoCapitalize="none"
+              autoCorrect={false} autoFocus value={name} onChangeText={setName} style={field}
+              returnKeyType="next" onSubmitEditing={() => passwordRef.current?.focus()} />
+            <TextInput ref={passwordRef} placeholder={tr(mode === "in" ? "login.password" : "login.passwordNew")} placeholderTextColor={t.txtTertiary}
+              secureTextEntry value={password} onChangeText={setPassword} style={field}
+              returnKeyType={showsInvite ? "next" : "go"}
+              onSubmitEditing={() => (showsInvite ? inviteRef.current?.focus() : submit())} />
+            {showsInvite ? (
+              <TextInput ref={inviteRef} placeholder={tr("login.invite")} placeholderTextColor={t.txtTertiary}
+                autoCapitalize="characters" autoCorrect={false}
+                value={invite} onChangeText={(v) => setInvite(v.toUpperCase())} style={field}
+                returnKeyType="go" onSubmitEditing={submit} />
+            ) : null}
+
+            {err ? <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text> : null}
+
+            <Pressable onPress={submit} disabled={busy || !name.trim() || !password}
+              style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+                backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 14, opacity: !name.trim() || !password ? 0.6 : 1 }}>
+              {busy ? <ActivityIndicator color="#fff" /> : null}
+              <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
+                {tr(mode === "setup" ? "login.setupSubmit" : mode === "up" ? "login.createAccount" : "login.signIn")}
+              </Text>
+            </Pressable>
           </View>
-        ) : null}
-
-        <TextInput placeholder={tr("login.user")} placeholderTextColor={t.txtTertiary} autoCapitalize="none"
-          autoCorrect={false} autoFocus value={name} onChangeText={setName} style={field} />
-        <TextInput placeholder={tr(mode === "in" ? "login.password" : "login.passwordNew")} placeholderTextColor={t.txtTertiary}
-          secureTextEntry value={password} onChangeText={setPassword} style={field}
-          onSubmitEditing={submit} />
-        {mode === "up" && !noCodeNeeded ? (
-          <TextInput placeholder={tr("login.invite")} placeholderTextColor={t.txtTertiary}
-            autoCapitalize="characters" autoCorrect={false}
-            value={invite} onChangeText={(v) => setInvite(v.toUpperCase())} style={field} />
-        ) : null}
-
-        {err ? <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text> : null}
-
-        <Pressable onPress={submit} disabled={busy || !name.trim() || !password}
-          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-            backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 14, opacity: !name.trim() || !password ? 0.6 : 1 }}>
-          {busy ? <ActivityIndicator color="#fff" /> : null}
-          <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
-            {tr(mode === "setup" ? "login.setupSubmit" : mode === "up" ? "login.createAccount" : "login.signIn")}
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+        </TouchableWithoutFeedback>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
