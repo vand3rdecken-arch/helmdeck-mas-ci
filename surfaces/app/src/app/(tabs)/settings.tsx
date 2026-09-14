@@ -774,6 +774,11 @@ export default function Settings() {
                   <Pressable onPress={() => changeRole(u)}>
                     <Chip text={tr(`team.role.${u.role}`)} dot={u.role === "owner" ? t.accent : u.role === "operator" ? t.human : t.txtTertiary} />
                   </Pressable>
+                  {u.name === me?.name ? (
+                    <Pressable onPress={logout} style={{ paddingHorizontal: 6, paddingVertical: 3 }}>
+                      <Text style={{ color: t.danger, fontSize: 11.5, fontWeight: "600" }}>{tr("settings.logout")}</Text>
+                    </Pressable>
+                  ) : null}
                   <Ionicons name={open ? "chevron-up" : "chevron-down"} size={15} color={t.txtTertiary} />
                 </Pressable>
                 {open ? (
@@ -938,10 +943,6 @@ export default function Settings() {
           <Hint text={tr("settings.reg.hint")} />
           <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={saveRegOpen} />
         </Panel>
-        <Pressable onPress={logout}
-          style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
-          <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
-        </Pressable>
         <SchemaDoor door="team" schema={schema} />
         {inviteOpen ? (
           <TeamInvite onClose={() => setInviteOpen(false)}
