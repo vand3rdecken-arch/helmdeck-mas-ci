@@ -260,6 +260,7 @@ def chat_post(self, user, body):
         if (vm if vm is not None else "haiku"):
             model_source = "voice"
         model = (vm if vm is not None else "haiku") or model
+    turn_ok = False      # flips only when the TURN returned; a failed response write is not a failed turn
     try:
         out = copilot.chat(
             user["name"], text, role=user["role"], model=model,
@@ -284,6 +285,7 @@ def chat_post(self, user, body):
             # spoken turns get the hard brevity overlay - a minute of options
             # read aloud is not an answer (owner report 2026-08-21)
             extra_system=copilot.voice_style() if want_voice else "")
+        turn_ok = True
         # VOICE MODE (phone). The client asks per-request rather than
         # by a server setting, because it is the client that knows
         # whether the owner is looking at the screen or driving. Only
@@ -309,14 +311,22 @@ def chat_post(self, user, body):
         # if the turn actually succeeded and it was `self._send` that raised
         # (a client that hung up): fail() refuses to drop a settled claim.
         chat_dedupe.fail(mine)
-        # A failed turn must be VISIBLE in the transcript on every device: the
+        # A failed TURN must be VISIBLE in the transcript on every device: the
         # POST's error lands in the app's optimistic turn, which the user-row
         # echo has usually retired by then - i.e. nowhere (2026-09-14 12:45).
-        try:
-            copilot._append_log(user["name"], [{"cls": "error", "ts": time.strftime("%H:%M"),
-                                                "text": "Henry hat nicht geantwortet: %s" % str(e)[:200]}])
-        except Exception:                                    # noqa: BLE001
-            pass
+        # But ONLY a failed turn: when the turn returned and it was the
+        # response WRITE that raised (WinError 10053 - the phone's POST had
+        # been cut by Cloudflare's ~100s cap long before a 237s turn ended,
+        # 2026-09-14 14:05), the answer is already persisted and the app
+        # reads it from the history. That case is a log line, not a row.
+        if turn_ok:
+            print("chat_post: turn ok, response write failed (client gone): %s" % str(e)[:120], flush=True)
+        else:
+            try:
+                copilot._append_log(user["name"], [{"cls": "error", "ts": time.strftime("%H:%M"),
+                                                    "text": "Henry hat nicht geantwortet: %s" % str(e)[:200]}])
+            except Exception:                                # noqa: BLE001
+                pass
         return self._send(500, json.dumps({"error": str(e)[:300]}))
 
 
