@@ -14,6 +14,7 @@ TWO DEVICE SLOTS, both fed by the same call (W2d, 2026-08-28):
 recipients() re-checks both against the pinned set at send time, so unpairing
 a device silences it without a second bookkeeping step.
 """
+import re as _re
 import json, urllib.request
 
 # -- FCM, Signal-style: Google transports only ciphertext ------------------
@@ -158,6 +159,13 @@ def recipients(s):
     explicit_tokens = {((d or {}).get("token") or "").strip()
                        for _p, d in (push.get("devices") or {}).items()
                        if _p in pinned}
+    # An FCM registration token is 140+ chars. A 64-hex value here is an APNs
+    # device token (the iOS build registers through the same legacy path,
+    # 2026-09-14 13:08) - FCM answers 400 Bad Request to it on every push.
+    # iOS needs its own APNs leg; until then it is skipped, not spammed.
+    if phone_tok and _re.fullmatch(r"[0-9a-fA-F]{64}", phone_tok):
+        print("notify: legacy push token is an APNs device token (64 hex) - FCM would 400 it, skipped")
+        phone_tok = ""
     if phone_tok and phone_pub and phone_pub in pinned and phone_tok not in explicit_tokens:
         out.append(("phone", phone_tok, phone_pub))
     # Additional devices (the watch, W2d) register under their OWN pubkey and

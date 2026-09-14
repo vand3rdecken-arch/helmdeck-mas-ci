@@ -643,7 +643,8 @@ class H(BaseHTTPRequestHandler):
             if not data.get("cipher") or not data.get("pub"):
                 return self._send(400, json.dumps({"error": "pub + cipher required"}))
             fid = uuid.uuid4().hex
-            frame = {"id": fid, "pub": data["pub"], "cipher": data["cipher"]}
+            frame = {"id": fid, "pub": data["pub"], "cipher": data["cipher"],
+                     "t": time.time()}     # queued-at: the bridge logs how long it waited
             evt = threading.Event()
             slot = {"evt": evt, "resp": None}
             with room["cv"]:

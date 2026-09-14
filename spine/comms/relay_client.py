@@ -321,6 +321,18 @@ def _serve_one(relay, room, sk_b64, port, frame):
     from spine.comms import e2ee
     fid = frame.get("id")
     pub = frame.get("pub", "")
+    # HOW LONG did this request sit in the relay before we pulled it? A phone
+    # aborts a long-poll at 35s and a normal request at 20s; the Cloudflare
+    # log then shows "stream canceled by remote" (owner 2026-09-14 13:19,
+    # 13:21) - and nothing on our side said whether the wait was the relay
+    # queue, the bridge, or the daemon. Logged only when it matters.
+    try:
+        _age = time.time() - float(frame.get("t") or 0) if frame.get("t") else 0.0
+        if _age > 5:
+            from spine.storage import events
+            events.log("relay", "frame waited %.1fs in the relay queue before the bridge pulled it" % _age)
+    except Exception:                                    # noqa: BLE001
+        pass
     ok, reason = _admit(pub)
     if not ok:
         # Refused (not pinned, window closed/expired). Say so instead of
@@ -345,7 +357,15 @@ def _serve_one(relay, room, sk_b64, port, frame):
         inner = json.loads(e2ee.open_b64(frame["cipher"], sk, peer))
     except Exception:
         return               # undecryptable / tampered - ignore
+    _t_local = time.time()
     resp = _local(port, inner)
+    try:
+        _dt = time.time() - _t_local
+        if _dt > 20 and not str(inner.get("path", "")).startswith(("/stream/wait", "/chat")):
+            from spine.storage import events
+            events.log("relay", "daemon took %.1fs to answer %s" % (_dt, str(inner.get("path", ""))[:60]))
+    except Exception:                                    # noqa: BLE001
+        pass
     try:
         cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
     except Exception:

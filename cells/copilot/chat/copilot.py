@@ -190,7 +190,7 @@ def _start_keepalive_loop():
 
     def _loop():
         while True:
-            time.sleep(90)
+            time.sleep(60)
             try:
                 user = owner_name()
                 if not user:
@@ -206,7 +206,11 @@ def _start_keepalive_loop():
                     if p is None:
                         continue      # nothing warm to refresh - the next real turn spawns it
                     now = time.time()
-                    if now - _last_touch_at.get(bkey, 0.0) <= _KEEPALIVE_AGE:
+                    # 200s, not _KEEPALIVE_AGE (240): with a 60s wake the ping
+                    # lands at 200-260s, always inside the ~300s TTL. At
+                    # 240-330s some pings landed on an expired cache and cost
+                    # 30-99s while holding the turn lock.
+                    if now - _last_touch_at.get(bkey, 0.0) <= 200.0:
                         continue      # still fresh
                     if now - _last_turn_at.get(bkey, 0.0) >= _KEEPALIVE_MAX:
                         continue      # idle too long - let it go cold, matches prewarm's own rule
@@ -1737,6 +1741,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     must keep getting the one-shot `voice:true` clip instead, or an app that is
     one OTA behind would go silent (see spine/media/voice_stream.py)."""
     from spine.agent import turnopts
+    # PHASE CLOCK for this turn - the one record that says WHERE a slow turn
+    # spent its time (owner 2026-09-14 13:20: the CLI got the message 90s after
+    # the daemon had it, and nothing in the transcript said why). Printed at
+    # the end as one line, and the waits are shown in /chat/live meanwhile.
+    _tt = {"recv": time.time()}
     # ONE conversation per (user, card): a card-scoped Henry chat resumes its
     # OWN session, not the eternal board one. Board chat keeps the bare user
     # key, so the existing session survives untouched. See _skey.
@@ -1964,6 +1973,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                           if user in _keepalive_inflight else
                           "Wartet auf den laufenden Turn - deine Nachricht ist eingereiht")
         _lk.acquire()
+    _tt["lock"] = time.time()
+    livebuf.set_field(live_key, "status", "bereitet den Turn vor")
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
     # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old
@@ -2032,6 +2043,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 p.stdin.write(json.dumps({"type": "user",
                                           "message": {"role": "user", "content": prompt}}) + "\n")
                 p.stdin.flush()
+                _tt["write"] = time.time()
+                livebuf.set_field(live_key, "status", "wartet auf Henrys Prozess")
             except Exception:
                 # warm process died since the health check - respawn ONCE fresh
                 _persist_drop(skey)
@@ -2049,6 +2062,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             line = line.strip()
             _beat["t"] = time.time()
             _beat["n"] += 1
+            if _beat["n"] == 1:
+                _tt["first"] = time.time()
             if not line:
                 continue
             try:
@@ -2182,6 +2197,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 pass
     finally:
         _beat["done"] = True
+        try:
+            _r, _l, _w, _f = (_tt.get("recv"), _tt.get("lock"), _tt.get("write"), _tt.get("first"))
+            print("copilot turn %s: lock-wait %.1fs prep %.1fs first-event %.1fs total %.1fs%s" % (
+                user, (_l - _r) if _l else -1, (_w - _l) if (_w and _l) else -1,
+                (_f - _w) if (_f and _w) else -1, time.time() - _r,
+                " HUNG" if _beat.get("hung") else ""), flush=True)
+        except Exception:                                    # noqa: BLE001
+            pass
         _running.pop(user, None)
         _note_turn(user, False)
         _running_card.pop(user, None)
