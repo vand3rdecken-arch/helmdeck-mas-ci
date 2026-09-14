@@ -186,26 +186,41 @@ class AgentBrowser:
         self.attached = attach
         self._cap = None
         self._pw = sync_playwright().start()
-        if attach:
-            # STANDARD: dock onto the real, persistent HelmDeck Chrome.
-            ensure_chrome(port)
-            self._browser = self._pw.chromium.connect_over_cdp("http://127.0.0.1:%d" % port)
-            ctx = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-            self._ctx = ctx
-            self.page = ctx.new_page()        # our own tab; leave the owner's tabs alone
-            # the real browser is visible, so the SCREEN recording is the evidence
-            self._cap = wincap.start(run_dir)
-            self.log.log("note", "attached to HelmDeck Chrome (CDP :%d)" % port)
-        else:
-            # FALLBACK: a blank sandbox context with Playwright's native webm.
-            self._browser = self._pw.chromium.launch(channel="msedge", headless=headless)
-            self._ctx = self._browser.new_context(
-                record_video_dir=run_dir, record_video_size={"width": 1280, "height": 720},
-                viewport={"width": 1280, "height": 720})
-            self.page = self._ctx.new_page()
-        # fails-fast (see DEFAULT_ACTION_TIMEOUT_MS): a selector miss should
-        # cost seconds, not Playwright's 30s default eating the turn.
-        self.page.set_default_timeout(DEFAULT_ACTION_TIMEOUT_MS)
+        try:
+            if attach:
+                # STANDARD: dock onto the real, persistent HelmDeck Chrome.
+                ensure_chrome(port)
+                self._browser = self._pw.chromium.connect_over_cdp("http://127.0.0.1:%d" % port)
+                ctx = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
+                self._ctx = ctx
+                self.page = ctx.new_page()        # our own tab; leave the owner's tabs alone
+                # the real browser is visible, so the SCREEN recording is the evidence
+                self._cap = wincap.start(run_dir)
+                self.log.log("note", "attached to HelmDeck Chrome (CDP :%d)" % port)
+            else:
+                # FALLBACK: a blank sandbox context with Playwright's native webm.
+                self._browser = self._pw.chromium.launch(channel="msedge", headless=headless)
+                self._ctx = self._browser.new_context(
+                    record_video_dir=run_dir, record_video_size={"width": 1280, "height": 720},
+                    viewport={"width": 1280, "height": 720})
+                self.page = self._ctx.new_page()
+            # fails-fast (see DEFAULT_ACTION_TIMEOUT_MS): a selector miss should
+            # cost seconds, not Playwright's 30s default eating the turn.
+            self.page.set_default_timeout(DEFAULT_ACTION_TIMEOUT_MS)
+        except BaseException:
+            # A half-finished attach (e.g. connect_over_cdp timing out) must
+            # not leave self._pw's driver alive: on the MCP server, __init__
+            # runs on ONE long-lived owner thread reused for every later
+            # call (ops/tools/browser_mcp.py THE THREAD RULE) - a leaked
+            # sync-Playwright context on that thread poisons every
+            # subsequent AgentBrowser() on it with Playwright's "Sync API
+            # inside the asyncio loop" guard, permanently, until the process
+            # restarts. Stopping it here is the only chance to fail clean.
+            try:
+                self._pw.stop()
+            except Exception:
+                pass
+            raise
 
     # -- the audited verbs ------------------------------------------------
     def goto(self, url):
