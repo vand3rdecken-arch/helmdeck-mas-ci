@@ -169,7 +169,18 @@ def _save(path, data):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    os.replace(tmp, path)
+    # Same Windows exclusive-lock window _load() already retries through
+    # (see its comment) - os.replace hits it too (measured 2026-09-14: a
+    # signup lost its invitation to a bare "Access is denied ...
+    # users.json.tmp -> users.json"). Retry the write side the same way.
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.02 * (attempt + 1))
 
 # -- audit ---------------------------------------------------------------
 

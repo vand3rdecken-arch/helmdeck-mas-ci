@@ -77,7 +77,16 @@ def _load():
     # the `invites` table (state-into-db phase G; ledger step 10 imported
     # state/invites.json) - same load-all/save-all discipline, one transaction
     from spine.storage import db
-    return db.invites_all()
+    rows = db.invites_all()
+    # Every comparison below (claim/peek/revoke/release) normalizes its input
+    # with .strip().upper() - a row whose OWN code was ever stored otherwise
+    # (migrate_legacy used to save the legacy code verbatim, e.g. "join-swarm")
+    # can never match, silently, forever. Normalize on read rather than
+    # trusting every writer to have done it, so old rows self-heal too.
+    for r in rows:
+        if r.get("code"):
+            r["code"] = r["code"].strip().upper()
+    return rows
 
 
 def _save(rows):
@@ -252,7 +261,7 @@ def migrate_legacy(actor="system"):
     except Exception:
         return False
     reg = events.settings().get("registration") or {}
-    code = (reg.get("invite_code") or "").strip()
+    code = (reg.get("invite_code") or "").strip().upper()
     if not code:
         return False
     role = reg.get("default_role") or "client"
