@@ -1,6 +1,6 @@
 {
   "name": "helmdeck-desktop",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "private": true,
   "description": "HelmDeck desktop app (Electron wrapper) - runs the daemon + UI as one program (Windows, macOS)",
   "main": "main.js",
