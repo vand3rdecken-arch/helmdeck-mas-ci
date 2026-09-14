@@ -2237,6 +2237,28 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                             "status": "running", "ta": time.time(),
                                             "at": len(_strip_actions_live("".join(parts)))})
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
+                # each full assistant message carries the usage of ITS OWN API
+                # call - keep the last one as the context-meter source, exactly
+                # like drivers._on_event (see _fold_stats for why the result
+                # event's summed usage must not feed the meter).
+                #
+                # MUST STAY IN THIS `assistant` BRANCH. 74ac95d (2026-09-13)
+                # inserted the `user` branch below BETWEEN the tool_use fold
+                # and this block, so this ran only for `user` events - which
+                # carry no usage. ctx_tokens froze at 151k (the value right
+                # after the last compaction), the stay-fast mark (168k) never
+                # fired again, and the session grew to ~740k tokens PER API
+                # ROUND: a 24-round turn read 15M cached tokens (owner
+                # 2026-09-14 21:xx: "warum liest Henry jedes Mal 500-750k").
+                mu = (ev.get("message") or {}).get("usage")
+                if isinstance(mu, dict) and mu:
+                    ctx_usage = mu
+                    # the FIRST call's usage is the resume-continuity witness
+                    # (sessions.resume_detached): a real continuation carries
+                    # >= the prior context; a silent fresh start carries only
+                    # the brief.
+                    if not ctx_first:
+                        ctx_first = mu
             elif typ == "user":
                 # tool results close the matching transient step
                 for _b in ((ev.get("message") or {}).get("content") or []):
@@ -2249,19 +2271,6 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                 _s["status"] = "failed" if _b.get("is_error") else "completed"
                                 _s["result"] = str(_rc or "")[:4000]
                         livebuf.set_field(live_key, "steps", json.dumps(_live_steps[-12:]))
-                # each full assistant message carries the usage of ITS OWN API
-                # call - keep the last one as the context-meter source, exactly
-                # like drivers._on_event (see _fold_stats for why the result
-                # event's summed usage must not feed the meter).
-                mu = (ev.get("message") or {}).get("usage")
-                if isinstance(mu, dict) and mu:
-                    ctx_usage = mu
-                    # the FIRST call's usage is the resume-continuity witness
-                    # (sessions.resume_detached): a real continuation carries
-                    # >= the prior context; a silent fresh start carries only
-                    # the brief.
-                    if not ctx_first:
-                        ctx_first = mu
             elif typ == "stream_event":
                 e = ev.get("event") or {}
                 # PHASE, from the API's own events, so the wait never reads as
