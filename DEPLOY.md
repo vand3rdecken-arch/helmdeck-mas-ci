@@ -826,6 +826,10 @@ clean log. Artifact:
 Prerequisite done first: `app.json → ios.runtimeVersion` set to a fixed literal,
 decoupled from the shared `expo.version` `ship.sh` bumps for Android (§5 R5 in
 `ops/docs/ios-requirements.md`, "vor dem ersten iOS-Build umsetzen").
+**REVERTED 2026-09-14:** that literal pinned every iOS build (incl. TestFlight
+1.0.49 (9)) to runtime `1.0.5`, which no OTA ever served - and push_update.sh
+exported android only. iOS now follows the global `appVersion` policy and
+push_update.sh publishes + verifies both platforms (non-200 = red ship).
 
 **Still requires a human Apple ID + 2FA** (these ignore the API key —
 `AppStoreApi.js` routes them through `ensureUserAuthenticatedAsync`):

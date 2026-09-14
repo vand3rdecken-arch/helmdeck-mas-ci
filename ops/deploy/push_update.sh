@@ -80,11 +80,20 @@ if [ -n "$RUNTIME" ]; then
   CHANNEL="rt-$RUNTIME"
 fi
 
+# Phone platforms this publish serves. BOTH land in the one dist-ota export
+# (metadata.json fileMetadata.<platform>, which relay.py picks per the client's
+# expo-platform header). Until 2026-09-14 this was android only - no iOS bundle
+# was ever published, every iPhone got 404. A --runtime publish stays android
+# only (the stranded-APK case it was built for).
+OTA_PLATFORMS="android ios"
+[ -n "$RUNTIME" ] && OTA_PLATFORMS="android"
+
 if [ "$NO_BUILD" != "1" ]; then
-  echo "==> expo export (android)"
+  echo "==> expo export ($OTA_PLATFORMS)"
   # export to a SEPARATE dir, not surfaces/app/dist: surfaces/app/dist is the WEB build the Electron
-  # desktop serves - clobbering it with the android bundle 404s the desktop.
-  ( cd surfaces/app && rm -rf dist-ota && npx expo export --platform android --output-dir dist-ota ) || exit 1
+  # desktop serves - clobbering it with the phone bundles 404s the desktop.
+  PLAT_ARGS=(); for p in $OTA_PLATFORMS; do PLAT_ARGS+=(--platform "$p"); done
+  ( cd surfaces/app && rm -rf dist-ota && npx expo export "${PLAT_ARGS[@]}" --output-dir dist-ota ) || exit 1
 fi
 [ -f surfaces/app/dist-ota/metadata.json ] || { echo "no surfaces/app/dist-ota/metadata.json - run without --no-build"; exit 1; }
 
@@ -130,18 +139,18 @@ echo "==> verify live manifest"
 # runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
 # it (don't hardcode) or the verify HEAD mismatches after a native version bump.
 RTV="${RUNTIME:-$(py -3.12 -c 'import json;print(json.load(open("surfaces/app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)}"
-# `|| true`: this is a COSMETIC preview for the human/log, not a functional
-# check - under `set -o pipefail`, curl legitimately gets SIGPIPE'd ("(23)
-# Failed writing body") the instant `head -c` closes the pipe after its byte
-# count, since curl is usually still mid-write on the rest of the (longer)
-# manifest response. That's expected, not a real failure, but pipefail was
-# letting it read as one - scaring an owner into "deploy hook failed" on a
-# publish that fully succeeded (verified: files uploaded, manifest live).
-curl -s -m20 -H "expo-platform: android" -H "expo-runtime-version: $RTV" \
-     -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
-     "https://$RELAY_DOMAIN/updates/manifest" \
-  | head -c 240 || true
-echo
+# A REAL check per platform: the status code, not a piped preview (a `| head`
+# preview SIGPIPEs curl under pipefail and once had to be `|| true`'d, which is
+# how a platform that 404'd every time shipped green). Any non-200 fails the
+# run - after the desktop leg, so a phone-side miss never holds the desktop.
+VERIFY_FAILED=""
+for PLAT in $OTA_PLATFORMS; do
+  CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' -H "expo-platform: $PLAT" -H "expo-runtime-version: $RTV" \
+       -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
+       "https://$RELAY_DOMAIN/updates/manifest")
+  echo "  $PLAT @ $RTV: HTTP $CODE"
+  [ "$CODE" = "200" ] || VERIFY_FAILED="$VERIFY_FAILED $PLAT"
+done
 
 # ---- desktop channel (phone OTA above already shipped; failures here WARN) ----
 desktop_publish() {
@@ -196,4 +205,9 @@ if [ -n "$RUNTIME" ]; then
 elif ! desktop_publish; then
   echo "!!! DESKTOP OTA PUBLISH FAILED - the phone update above is live, but the"
   echo "!!! desktop stays on its old bundle until the next successful publish."
+fi
+if [ -n "$VERIFY_FAILED" ]; then
+  echo "!!! PHONE OTA VERIFY FAILED for:$VERIFY_FAILED - the relay serves no update"
+  echo "!!! for runtimeVersion $RTV on that platform. Phones there stay on their old JS."
+  exit 1
 fi

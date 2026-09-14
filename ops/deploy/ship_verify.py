@@ -36,11 +36,13 @@ def verify_ota():
     """Fetch the LIVE manifest and confirm it references the exact bundle
     just exported (its content-hashed filename) - the same round-trip
     discipline push_relay.sh's sha256 compare already uses for the APK
-    channel."""
+    channel. Every phone platform push_update.sh publishes (android AND ios)
+    is checked - an iOS-only miss must not read green."""
     meta_path = os.path.join(ROOT, "surfaces", "app", "dist-ota", "metadata.json")
     try:
         with open(meta_path, encoding="utf-8") as f:
-            bundle = json.load(f)["fileMetadata"]["android"]["bundle"]
+            fm = json.load(f)["fileMetadata"]
+        bundles = {p: fm[p]["bundle"] for p in ("android", "ios")}
     except Exception as e:
         return False, "could not read the just-exported metadata.json to know what to verify against (%s)" % e
     sf = _ship_facts()
@@ -49,20 +51,21 @@ def verify_ota():
         return False, "no relay domain resolvable to verify against (%s)" % err
     rtv = (sf._read_app_json() or {}).get("version") or "1.0.0"
     url = "https://%s/updates/manifest" % dom
-    req = urllib.request.Request(url, headers={
-        "expo-platform": "android", "expo-runtime-version": rtv,
-        "expo-protocol-version": "1"})
-    try:
-        with urllib.request.urlopen(req, timeout=15) as r:
-            body = r.read().decode("utf-8", "replace")
-    except Exception as e:
-        return False, "relay manifest fetch failed post-publish: %s" % e
-    bundle_name = os.path.basename(bundle)
-    if bundle_name not in body:
-        return False, ("published bundle %s but the live manifest at %s does "
-                       "not reference it - stale cache, wrong channel, or a "
-                       "publish that did not actually land" % (bundle_name, url))
-    return True, "live manifest at %s references the just-published bundle %s" % (url, bundle_name)
+    for platform, bundle in bundles.items():
+        req = urllib.request.Request(url, headers={
+            "expo-platform": platform, "expo-runtime-version": rtv,
+            "expo-protocol-version": "1"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                body = r.read().decode("utf-8", "replace")
+        except Exception as e:
+            return False, "relay %s manifest fetch failed post-publish: %s" % (platform, e)
+        bundle_name = os.path.basename(bundle)
+        if bundle_name not in body:
+            return False, ("published %s bundle %s but the live manifest at %s does "
+                           "not reference it - stale cache, wrong channel, or a "
+                           "publish that did not actually land" % (platform, bundle_name, url))
+    return True, "live manifest at %s references the just-published android+ios bundles" % url
 
 
 def verify_native():

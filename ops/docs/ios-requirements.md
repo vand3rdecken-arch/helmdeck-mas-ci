@@ -82,17 +82,15 @@ weiteres zu deklarieren.
 
 ## 5. OTA / Deploy — fixierte Entscheidungen
 
-- [x] **Per-Plattform-`runtimeVersion`** (`ios.runtimeVersion` getrennt) —
-      Studie §2.3, Option (b) **fixiert**, umgesetzt vor dem ersten iOS-Build:
-      `app.json → ios.runtimeVersion` ist jetzt ein fester String (`"1.0.5"`),
-      unabhängig vom geteilten `expo.version`, den `ship.sh` bei jedem
-      Android-Native-Bump weiterschiebt. Android bleibt exakt wie zuvor
-      (Top-Level-Policy `appVersion`) — am laufenden Kanal auf dem Phone ändert
-      sich nichts. Ein künftiger iOS-Native-Change muss diesen String von Hand
-      bumpen (kleine `ship.sh`-Logik dafür ist noch offen, siehe unten).
-- [ ] `ops/deploy/push_update.sh`: Export `--platform all` statt `android`;
-      Verify-curl zusätzlich mit `expo-platform: ios`. Relay-Server
-      (`surfaces/relay/relay.py`) ist bereits plattformfähig — keine Server-Änderung.
+- [x] ~~Per-Plattform-`runtimeVersion` (`ios.runtimeVersion: "1.0.5"`)~~ —
+      2026-09-14 ENTFERNT: das eingefrorene Literal liess jeden iOS-Build auf
+      der toten Runtime 1.0.5 laufen, kein OTA hat sie je getroffen (TestFlight
+      1.0.49 (9) = runtime 1.0.5, per `eas build:list` belegt). iOS folgt jetzt
+      der globalen Policy `appVersion` wie Android; ein gestrandeter Build wird
+      ueber den `rt-X`-Kanal des Relays erreicht, nicht ueber ein Literal.
+- [x] `ops/deploy/push_update.sh`: Export fuer android UND ios in dasselbe
+      `dist-ota`; der Verify fragt beide Plattformen ab und macht den Ship bei
+      einem Nicht-200 rot (`ops/tests/test_push_update_ios.py`).
 - [ ] `ship.sh`: Fingerprint-/Bump-Logik lernt die Plattform-Trennung
       (iOS-Bump nur bei iOS-relevanten Änderungen). Achtung Memory-Falle:
       `native_fp` läuft über git-bash, muss die `package.json`-Zeile enthalten.
