@@ -353,7 +353,13 @@ export default function RootLayout() {
   }, []);
   // Desktop first run: the instance isn't serving yet, so onboarding owns the
   // window instead of dropping the user on a board that cannot load.
-  const showOnboard = useShowOnboard();
+  // `unresolved` (below, folded into the cache-restore gate) is what actually
+  // closes the 2026-09-14 bug: the FIRST render happens before the poll
+  // inside useShowOnboard has any answer, and defaulting that to "not
+  // onboarding" - the old behavior - mounted the normal app tree's real
+  // queries for one frame even on a build that then correctly recognized
+  // onboarding was needed.
+  const { show: showOnboard, unresolved: onboardUnresolved } = useShowOnboard();
   // A 401 anywhere (client.ts) or an explicit logout (Settings) flips this -
   // restores the login screen the old Next.js web app had (web/components/
   // auth.tsx, lost at the Expo cutover) so a bad/missing token has a way
@@ -365,9 +371,14 @@ export default function RootLayout() {
   // straight into the tabbed UI and hang on an unreachable default address
   // (surfaces/app/src/data/config.ts useNeedsPairing()'s comment has the story).
   const needsPairing = useNeedsPairing();
-  // Hold the tree one tick until the persisted board is hydrated, so screens
-  // mount onto last-known data (instant paint) instead of an empty spinner.
-  if (!restored) {
+  // Hold the tree until the persisted board is hydrated AND (on desktop/web)
+  // until onboarding has a real answer, so screens mount onto last-known data
+  // (instant paint) instead of an empty spinner - and so the normal app tree
+  // never fires a single query before we know whether onboarding, not it,
+  // should own this frame. `onboardUnresolved` has its own bounded give-up
+  // timer (useShowOnboard's MAX_UNRESOLVED_MS), so this can never hang forever
+  // on an unreachable control plane.
+  if (!restored || onboardUnresolved) {
     return <View style={{ flex: 1, backgroundColor: tokens.dark.canvas }} />;
   }
   if (showOnboard) {

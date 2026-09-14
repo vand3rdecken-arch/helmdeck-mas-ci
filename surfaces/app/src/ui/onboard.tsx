@@ -383,33 +383,107 @@ export function Onboard() {
  *  the control plane instead and stay silent until it has actually answered
  *  (`null` = unknown = show nothing).
  *
- *  Onboarding is ENTERED because the instance is not serving - but it is NOT
- *  LEFT the moment it starts serving, which is the middle of the flow, not the
- *  end of it. Provisioning starts the daemon at step 3 of 5; keying purely on
- *  `!daemon` tore the screen down right there, taking the still-streaming
- *  progress log, the owner-account step and the pairing QR - the whole promised
- *  end state - with it, and dropped the user on a bare login screen instead.
+ *  ROOT CAUSE FIX (2026-09-14, owner report: a fresh install with Python + Claude
+ *  already on the machine skipped the engine picker and the create-owner screen
+ *  entirely, landing straight on a login form). The OLD condition -
+ *  `!s.daemon || s.running || s.done` - asked the LOCAL installer's own bookkeeping
+ *  about a provisioning run, which was never the real question. main.js starts
+ *  the daemon unconditionally on every launch (it has to - the daemon holds the
+ *  phone's relay bridge, see its own comment), so `!s.daemon` goes false the
+ *  instant the daemon answers, REGARDLESS of whether an owner account exists yet.
+ *  On a machine with nothing to install, that happens on the very first tick,
+ *  before the user ever gets a chance to pick engines or create an account, and
+ *  `running`/`done` never go true either because no provisioning run was ever
+ *  triggered. The picker and the create-owner step were reachable ONLY on a
+ *  machine slow enough to install something first - an accident of timing, not a
+ *  designed gate.
  *
- *  So the condition also honours the control plane's OWN `running`/`done`, the
- *  runtime's real signals about a provisioning run, rather than a local flag we
- *  set ourselves: they live in the Electron main process, so a reload mid-run
- *  lands back on the same step with the same log, and a plain later launch
- *  (fresh process => running/done false, daemon up) correctly shows nothing. */
-export function useShowOnboard() {
+ *  The actual question this screen exists to answer - is there still first-run
+ *  setup outstanding - has an authoritative answer sitting on the daemon itself:
+ *  `/auth/state`'s `setup_needed` (no owner account created yet) and whether every
+ *  repo still lacks a chosen type (the step right after it in the same flow, see
+ *  Onboard's repoStep). Ask those directly instead of inferring them from
+ *  provisioning-process side effects.
+ *
+ *  Once genuinely entered, LATCH true rather than recomputing a fresh readout
+ *  every poll: the moment `setup_needed` clears (an owner account was just
+ *  created inside THIS flow) is also the moment the repo-type step and the
+ *  pairing QR are due to render, and re-evaluating from scratch would tear the
+ *  screen down mid-flow the same way the pre-2026-08-* `!daemon`-only condition
+ *  once did (see the git history of this file). The one real exit is `dismiss()`
+ *  (the Skip button, or the QR card's "open the board" button) - the return
+ *  expression below already ANDs on `!dismissed`, so nothing else needs to
+ *  un-latch `owns`. A plain later launch of an already-provisioned machine never
+ *  latches it at all: `setup_needed` is false and every repo already has a type,
+ *  so this hook stays silent and the normal app renders straight away.
+ *
+ *  Returns `unresolved` alongside `show` so the caller can hold the SAME
+ *  blank canvas it already holds for cache hydration (_layout.tsx's
+ *  `!restored` gate) until this has a real answer, instead of defaulting to
+ *  "show the normal app" while the question is still open. That default was
+ *  the other half of the 2026-09-14 bug: even once `owns` correctly resolves
+ *  to true, React had already rendered one frame with `owns === null` (the
+ *  initial state, before the first poll lands), and THAT frame took the
+ *  `showOnboard === false` branch straight into the normal app tree, whose
+ *  screens fire real queries (`/tracks`, `/cells`, `/dashboard/data`, ...)
+ *  before the poll's answer arrives and flips the branch back to Onboard - a
+ *  visible flash of 401s on a machine with nothing to provision, where the
+ *  first poll can resolve before `!restored` even clears. `unresolved` closes
+ *  that gap by name instead of by lucky timing.
+ *
+ *  Bounded: MAX_UNRESOLVED_MS caps how long "unknown" can hold the app back.
+ *  A wedged/unreachable control plane (crashed setup.js, a rejected nonce)
+ *  must fail OPEN into "no onboarding" - the pre-2026-08 shape, and the only
+ *  safe default when the real answer cannot be had - never fail closed into a
+ *  permanently blank window, which would be a worse bug than the one this
+ *  fixes. */
+const MAX_UNRESOLVED_MS = 8000;
+
+export function useShowOnboard(): { show: boolean; unresolved: boolean } {
   const dismissed = useOnboard((s) => s.dismissed);
   const [owns, setOwns] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!setupAvailable()) return;
+    if (!setupAvailable() || dismissed) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const giveUp = setTimeout(() => { if (alive) setOwns((cur) => (cur === null ? false : cur)); }, MAX_UNRESOLVED_MS);
     const tick = async () => {
       const s = await setupApi.state();
       if (!alive) return;
-      if (s) setOwns(!s.daemon || s.running || s.done);
+      if (!s) { timer = setTimeout(tick, 2000); return; }
+      // The instance itself isn't up, or is actively installing something -
+      // definitely still onboarding, no need to ask the daemon anything.
+      if (!s.daemon || s.running) { setOwns(true); timer = setTimeout(tick, 2000); return; }
+      // The daemon answers: ask IT the real question. setup_needed alone can
+      // decide "still onboarding" here - repoTemplates needs a token, which
+      // does not exist yet while an owner account is still outstanding, and
+      // the repo step is unreachable in Onboard() until AFTER needsAuth clears
+      // anyway (same ordering: auth, then repo).
+      try {
+        const auth = await api.authState();
+        if (!alive) return;
+        if (auth.setup_needed) { setOwns(true); timer = setTimeout(tick, 2000); return; }
+        const repos = await api.repoTemplates().catch(() => null);
+        if (!alive) return;
+        const repoOutstanding = !!repos && (!repos.repos.length || repos.repos.some((r) => !r.template));
+        // LATCH: once true, a later tick landing right after setup_needed/
+        // repoOutstanding themselves clear must not flip this back to false
+        // out from under a user still looking at the repo-type step or the
+        // pairing QR - see the docstring above. Only the FIRST resolution
+        // (from null) may land on false; once true, stay true until dismiss().
+        setOwns((cur) => cur === true || repoOutstanding);
+      } catch {
+        // daemon answered /setup/state but not the real API yet - retry, but
+        // don't leave `owns` stuck at null forever on a persistent failure
+        // (giveUp above already covers that on its own timer).
+      }
       timer = setTimeout(tick, 2000);
     };
     tick();
-    return () => { alive = false; clearTimeout(timer); };
-  }, []);
-  return setupAvailable() && !dismissed && owns === true;
+    return () => { alive = false; clearTimeout(timer); clearTimeout(giveUp); };
+  }, [dismissed]);
+  return {
+    show: setupAvailable() && !dismissed && owns === true,
+    unresolved: setupAvailable() && !dismissed && owns === null,
+  };
 }
