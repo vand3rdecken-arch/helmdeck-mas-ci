@@ -64,6 +64,7 @@ def main():
     auth.USERS = os.path.join(tmp, "users.json")
     real = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
     ok(auth.USERS != real, "sandboxed away from the real users.json")
+    ok(db.DBPATH.startswith(tmp), "sandboxed away from the real helmdeck.db")
 
     auth.create_user("owner", PW, "owner")
 
@@ -97,43 +98,52 @@ def main():
     ok(auth.login("owner", PW) is not None, "clearing the counter reopens the door")
 
     # ---------------------------------------------------------------- S1 ---
+    def raw_users_blob():
+        """The raw JSON text every account row holds in the db - the DB-era
+        equivalent of reading users.json's bytes off disk."""
+        return " ".join(r[0] for r in db.conn().execute("SELECT data FROM users"))
+
     print("\nS1 - a freshly issued token authenticates, but is not stored")
     tok = auth.issue_token("owner", "phone", actor="owner")
     ok(tok.startswith("sdk_"), "plaintext returned to the caller once")
     who = auth.resolve(token=tok)
     ok(who and who["name"] == "owner", "the token authenticates")
-    raw = open(auth.USERS, encoding="utf-8").read()
-    ok(tok not in raw, "the plaintext is NOT in users.json")
+    raw = raw_users_blob()
+    ok(tok not in raw, "the plaintext is NOT in the users table")
     ok(auth._token_hash(tok) in raw, "its hash is")
 
     print("\nS1 - an existing PLAINTEXT token survives the migration")
-    users = json.load(open(auth.USERS, encoding="utf-8"))
+    # _load()/_save() bypass list_users()'s auto-migrate-on-read (the same
+    # reason the old test wrote the raw file directly instead of going
+    # through list_users()) - otherwise the very next read would fold the
+    # plaintext away before this assertion ever saw it.
+    users = auth._load()
     legacy = "sdk_legacy_device_token_value"
     users[0]["tokens"].append({"label": "old-phone", "token": legacy,
                                "created": "2026-01-01 00:00:00"})
-    json.dump(users, open(auth.USERS, "w", encoding="utf-8"))
-    ok("token" in json.load(open(auth.USERS, encoding="utf-8"))[0]["tokens"][-1],
+    auth._save(users)
+    ok("token" in auth._load()[0]["tokens"][-1],
        "legacy plaintext entry is in place before the read")
 
     who = auth.resolve(token=legacy)
     ok(who and who["name"] == "owner", "the OLD device still gets in - not locked out")
-    raw = open(auth.USERS, encoding="utf-8").read()
+    raw = raw_users_blob()
     ok(legacy not in raw, "...and its plaintext was rewritten away on first read")
-    migrated = json.load(open(auth.USERS, encoding="utf-8"))[0]["tokens"][-1]
+    migrated = auth.get_user("owner")["tokens"][-1]
     ok("token" not in migrated and "th" in migrated and "id" in migrated,
        "the record is now hash + id + tail")
     ok(migrated.get("tail") == legacy[-6:], "tail kept for human identification")
 
     print("\nS1 - revoke by id, never by the secret")
-    users = json.load(open(auth.USERS, encoding="utf-8"))
+    users = auth.list_users()
     tid = [t for t in users[0]["tokens"] if t["label"] == "phone"][0]["id"]
     auth.revoke_token("owner", tid, actor="owner")
     ok(auth.resolve(token=tok) is None, "the revoked token no longer authenticates")
     ok(auth.resolve(token=legacy) is not None, "the other device is untouched")
 
-    print("\nS1 - nothing usable left in the file")
-    raw = open(auth.USERS, encoding="utf-8").read()
-    ok('"token"' not in raw, "no `token` key anywhere in users.json")
+    print("\nS1 - nothing usable left in the store")
+    raw = raw_users_blob()
+    ok('"token"' not in raw, "no `token` key anywhere in the users table")
     for secret in (tok, legacy, PW):
         ok(secret not in raw, "secret %s... absent" % secret[:12])
 

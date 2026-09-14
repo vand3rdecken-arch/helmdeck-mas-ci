@@ -699,7 +699,7 @@ def serve(port=8140):
     from spine.auth import auth
     from spine.storage import events
     if auth.migrate_legacy(events.settings().get("users")):
-        print("AUTH: legacy token-users migrated to users.json; old tokens still work as device tokens.")
+        print("AUTH: legacy token-users migrated to real accounts; old tokens still work as device tokens.")
         print("      Set real passwords via the Users panel (owner).")
     if not auth.list_users():
         print("AUTH: no users yet - the web app will show the create-owner setup screen.")

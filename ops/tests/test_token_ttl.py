@@ -48,17 +48,19 @@ def ok(cond, msg):
 PW = "a-real-password-42"
 
 
-def _backdate(users_path, label, days):
-    """Push a token's `created` into the past, on disk - the only honest way to
-    test a time window without either sleeping for a day or letting the test
-    reach into the clock the code under test reads."""
-    rows = json.load(open(users_path, encoding="utf-8"))
+def _backdate(auth, label, days):
+    """Push a token's `created` into the past, in the account store - the only
+    honest way to test a time window without either sleeping for a day or
+    letting the test reach into the clock the code under test reads.
+    _load()/_save() bypass list_users()'s auto-migrate-on-read, the DB-era
+    equivalent of the raw file write this used to be."""
+    rows = auth._load()
     for u in rows:
         for t in u.get("tokens", []):
             if t.get("label") == label:
                 t["created"] = time.strftime("%Y-%m-%d %H:%M:%S",
                                              time.localtime(time.time() - days * 86400))
-    json.dump(rows, open(users_path, "w", encoding="utf-8"))
+    auth._save(rows)
 
 
 def main():
@@ -76,6 +78,7 @@ def main():
 
     real_users = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
     ok(auth.USERS != real_users, "sandboxed away from the real users.json")
+    ok(db.DBPATH.startswith(tmp), "sandboxed away from the real helmdeck.db")
 
     auth.create_user("duy", PW, "owner")
 
@@ -94,8 +97,8 @@ def main():
     # genuinely untouched one to age. This is the case the debt is about: a code
     # generated, screenshotted and abandoned.
     abandoned = auth.issue_token("duy", "abandoned", unused_days=1)
-    _backdate(auth.USERS, "abandoned", 3)
-    _backdate(auth.USERS, "claimed-once", 3)
+    _backdate(auth, "abandoned", 3)
+    _backdate(auth, "claimed-once", 3)
     ok(auth.resolve(token=abandoned) is None,
        "never presented + past its window -> refused, same as no such token")
     ok(auth.resolve(token=claimed) is not None,
@@ -107,7 +110,7 @@ def main():
     rec = next(t for t in auth.get_user("duy")["tokens"] if t["label"] == "pre-ttl-device")
     ok("unused_days" not in rec and "expires" not in rec,
        "no lifetime fields at all when the caller asks for none")
-    _backdate(auth.USERS, "pre-ttl-device", 400)
+    _backdate(auth, "pre-ttl-device", 400)
     ok(auth.resolve(token=legacy) is not None,
        "a 400-day-old never-used legacy token still authenticates - no retroactive expiry")
 

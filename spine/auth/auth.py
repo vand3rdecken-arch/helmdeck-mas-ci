@@ -1,22 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Real auth, zero infra. Users live in users.json (never in git):
+"""Real auth, zero infra. Users are rows in the `users` table (helmdeck.db,
+never in git; state-into-db phase I, ledger step 13):
   {name, pw: "pbkdf2$<iters>$<salt>$<hash>", role: owner|operator|client,
    tokens: [{label, token, created}], created}
 
-Humans log in with name+password -> server-side session (sessions.json,
-HttpOnly cookie, 30-day expiry, sliding). Devices (glasses, APK, scripts) get
-per-user API TOKENS issued and revoked from the Users panel - a token
-authenticates AS that user with that user's role. First run: no users ->
+Humans log in with name+password -> server-side session (the `auth_sessions`
+table, HttpOnly cookie, 30-day expiry, sliding). Devices (glasses, APK,
+scripts) get per-user API TOKENS issued and revoked from the Users panel - a
+token authenticates AS that user with that user's role. First run: no users ->
 the app shows a create-owner setup screen (POST /auth/setup, only works while
 the user table is empty)."""
 import hashlib, hmac, json, os, secrets, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
-USERS = os.path.join(ROOT, "users.json")            # accounts stay at root - credentials
-# Login sessions are the `auth_sessions` table (state-into-db phase G; ledger
-# step 10 imported state/sessions.json). The list file was read on EVERY
-# request with a retry loop around Windows' os.replace window - a keyed row
-# needs neither the rewrite nor the retry.
+# The legacy on-disk path, read ONLY by the one-time db migration (ledger step
+# 13, spine/storage/db.py's _m13) that folds daemon/users.json into the `users`
+# table and archives the file as .imported - never written or read again after
+# that. Kept as a constant (rather than deleted) because it is the thing that
+# path pointed at for years; tests still sandbox it away from the real file for
+# documentation's sake even though nothing here opens it anymore.
+USERS = os.path.join(ROOT, "users.json")
 SESSION_TTL = 30 * 86400
 ROLES = ("owner", "operator", "client", "quality", "auditor")
 
@@ -146,41 +149,22 @@ def _clear_failures(name):
     with _fails_lock:
         _fails.pop(name, None)
 
-def _load(path):
-    if not os.path.exists(path):
-        return []
-    # os.replace in _save briefly exclusive-locks the target on Windows; a
-    # concurrent reader then gets PermissionError (winerror 5/32), which used
-    # to 500 every request in that instant (measured 2026-09-10 00:00: five
-    # hits, each one a dropped phone message). Retry through the window - it
-    # is a few ms long - instead of treating it as a real ACL problem.
-    for attempt in range(5):
-        try:
-            with open(path, encoding="utf-8") as f:
-                return json.load(f)
-        except ValueError:
-            return []
-        except PermissionError:
-            if attempt == 4:
-                raise
-            time.sleep(0.02 * (attempt + 1))
+def _load():
+    """Every account row, root cause fix over the file this used to be
+    (owner decree 2026-09-14): a tmp+os.replace write briefly exclusive-locks
+    the target on Windows, and this reader used to retry through that window
+    while _save() below did not - which is exactly how signup PFGYUQAL lost
+    its invitation to a raw PermissionError. A db row has no rename to race,
+    so there is no window left to retry."""
+    from spine.storage import db
+    return db.users_all()
 
-def _save(path, data):
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    # Same Windows exclusive-lock window _load() already retries through
-    # (see its comment) - os.replace hits it too (measured 2026-09-14: a
-    # signup lost its invitation to a bare "Access is denied ...
-    # users.json.tmp -> users.json"). Retry the write side the same way.
-    for attempt in range(5):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt == 4:
-                raise
-            time.sleep(0.02 * (attempt + 1))
+def _save(data):
+    """Whole-table rewrite in ONE transaction (db.users_replace) - the same
+    read-all/mutate/write-all discipline this call sites already use, now
+    atomic by construction instead of by a retry loop around a file rename."""
+    from spine.storage import db
+    db.users_replace(data)
 
 # -- audit ---------------------------------------------------------------
 
@@ -342,9 +326,9 @@ def _check_pw(password, stored):
 # -- users ---------------------------------------------------------------
 
 def list_users():
-    users = _load(USERS)
+    users = _load()
     if _migrate_tokens(users):
-        _save(USERS, users)
+        _save(users)
         _audit("token.migrate", "system", "-",
                note="plaintext device tokens folded into hashes")
     return users
@@ -367,7 +351,7 @@ def create_user(name, password, role, actor=None):
         raise ValueError("user exists")
     users.append({"name": name, "pw": _hash_pw(password), "role": role,
                   "tokens": [], "created": time.strftime("%Y-%m-%d %H:%M:%S")})
-    _save(USERS, users)
+    _save(users)
     _audit("user.create", actor, name, role=role, first_user=(len(users) == 1))
     return {"name": name, "role": role}
 
@@ -377,7 +361,7 @@ def delete_user(name, actor=None):
        and any(u["name"] == name and u["role"] == "owner" for u in users):
         raise ValueError("cannot delete the last owner")
     gone = next((u for u in users if u["name"] == name), None)
-    _save(USERS, [u for u in users if u["name"] != name])
+    _save([u for u in users if u["name"] != name])
     # kill their sessions (count them first - the audit row below says how many)
     from spine.storage import db
     sessions_killed = sum(1 for s in db.auth_sessions_all() if s["user"] == name)
@@ -419,7 +403,7 @@ def set_password(name, password, actor=None):
     for u in users:
         if u["name"] == name:
             u["pw"] = _hash_pw(password)
-            _save(USERS, users)
+            _save(users)
             _audit("user.password", actor, name, self_service=(actor == name))
             return
     raise ValueError("no such user")
@@ -432,7 +416,7 @@ def set_role(name, role, actor=None):
         if u["name"] == name:
             was = u["role"]                 # BEFORE value: an audit trail that
             u["role"] = role                # only records the new one cannot
-            _save(USERS, users)             # answer "what was changed"
+            _save(users)             # answer "what was changed"
             _audit("user.role", actor, name, frm=was, to=role)
             return
     raise ValueError("no such user")
@@ -470,7 +454,7 @@ def issue_token(name, label, actor=None, expires_days=None, device=None,
                 replaced = len([t for t in held if t.get("device") == device])
                 held[:] = [t for t in held if t.get("device") != device]
             held.append(rec)
-            _save(USERS, users)
+            _save(users)
             _audit("token.issue", actor, name,
                    label=rec["label"], tail=_tail(tok), token_id=rec["id"],
                    expires=rec.get("expires"), device=device,
@@ -493,7 +477,7 @@ def sweep_tokens(actor="system"):
             dropped += len(held) - len(keep)
             u["tokens"] = keep
     if dropped:
-        _save(USERS, users)
+        _save(users)
         _audit("token.sweep", actor, "-", removed=dropped)
     return dropped
 
@@ -512,7 +496,7 @@ def _touch_token(name, token_id):
     only when the stored last_used is missing or already a day stale."""
     today = time.strftime("%Y-%m-%d")
     try:
-        users = _load(USERS)
+        users = _load()
         for u in users:
             if u["name"] != name:
                 continue
@@ -521,7 +505,7 @@ def _touch_token(name, token_id):
                     if (t.get("last_used") or "")[:10] == today:
                         return  # already touched today, skip the write
                     t["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                    _save(USERS, users)
+                    _save(users)
                     return
     except Exception:
         pass  # never let a bookkeeping write fail an actual auth check
@@ -537,7 +521,7 @@ def revoke_token(name, ident, actor=None):
             gone = [t for t in held if t.get("id") == ident or t.get("th") == th]
             keep = [t for t in held if t not in gone]
             u["tokens"] = keep
-            _save(USERS, users)
+            _save(users)
             # log the MATCHED RECORD's id, never `ident` - a caller may pass the
             # full token here (a script that still holds one), and echoing that
             # into the append-only audit would write the secret down forever.
@@ -651,5 +635,5 @@ def migrate_legacy(settings_users):
                       "role": su.get("role", "operator"),
                       "tokens": [_token_record(su["token"], "migrated")],
                       "created": time.strftime("%Y-%m-%d %H:%M:%S")})
-    _save(USERS, users)
+    _save(users)
     return True

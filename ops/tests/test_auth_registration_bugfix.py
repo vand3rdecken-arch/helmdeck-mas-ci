@@ -3,13 +3,19 @@
 screenshot: signup with invite PFGYUQAL failed). Three independent root
 causes, pinned down here so none of them regresses silently:
 
-  A. spine/auth/auth.py _save() had no retry around os.replace, though _load()
-     already retries the SAME Windows exclusive-lock window. A signup that
-     landed inside that window died with a raw PermissionError.
+  A. spine/auth/auth.py's _load()/_save() were a tmp+os.replace file
+     (daemon/users.json) with no retry on _save()'s side of the SAME Windows
+     exclusive-lock window _load() already retried - which is what burned
+     invitation PFGYUQAL with a raw "Access is denied ... users.json.tmp ->
+     users.json". Root-caused rather than patched with a second retry loop
+     (owner decree 2026-09-14): accounts are rows in the `users` table now
+     (state-into-db ledger step 13, spine/storage/db.py's _m13), the same
+     move sessions/invites/devices already made in ledger step 10. There is
+     no rename left to race.
   B. spine/http/routes/routes_auth.py auth_register() only released the
      invitation on ValueError from create_user - an OSError (exactly what A
-     produces) burned the invite with no account behind it, and leaked a
-     Windows path to the client.
+     used to produce) burned the invite with no account behind it, and leaked
+     a Windows path to the client.
   C. spine/auth/invites.py migrate_legacy() stored the legacy code verbatim
      ("join-swarm"), but every comparison (claim/peek/revoke/release)
      normalizes with .strip().upper() - so a migrated legacy code could never
@@ -17,7 +23,9 @@ causes, pinned down here so none of them regresses silently:
 
 Sandbox: auth.USERS, events.EV/SET, db.ROOT/DBPATH - same discipline as
 test_invites.py / test_auth_hardening.py. Never goes near the real
-users.json/helmdeck.db.
+users.json/helmdeck.db. Section A's migration check follows test_db_schema.py's
+fresh()-style pattern (repoint db.DBPATH, drop the thread-local connection) to
+run a SECOND sandboxed db within the same process.
 
 Run: py -3.12 ops/tests/test_auth_registration_bugfix.py
 """
@@ -39,6 +47,14 @@ def ok(cond, msg):
 
 
 PW = "a-real-password-42"
+
+# The 5 accounts the owner named in done_when (their real names on the live
+# daemon) - proven here as a MECHANISM against a synthetic legacy file, never
+# against the real users.json/helmdeck.db (the sandboxing law this whole file
+# lives under). Roles are illustrative; the real migration preserves whatever
+# role each row already carried.
+LEGACY_ACCOUNTS = [("owner", "owner"), ("acme", "operator"), ("newbie", "client"),
+                   ("Hans", "operator"), ("op-test", "operator")]
 
 
 def main():
@@ -81,47 +97,53 @@ def main():
 
     try:
         # -------------------------------------------------------------- A ---
-        print("\nA. _save() retries os.replace through the Windows lock window")
-        import os as _os
-        real_replace = _os.replace
-        calls = {"n": 0}
+        print("\nA. accounts are `users` db rows, not users.json - root cause, not a retry")
+        legacy_path = os.path.join(tmp, "users.json")
+        ok(not os.path.exists(legacy_path),
+           "create_user + login above never touched users.json - nothing to touch")
 
-        def flaky_replace(src, dst):
-            calls["n"] += 1
-            if calls["n"] <= 3:
-                raise PermissionError(5, "Access is denied")
-            return real_replace(src, dst)
+        st, inv0 = call("POST", "/invites", {"role": "client"}, owner_hdr)
+        st, r = call("POST", "/auth/register",
+                     {"name": "nofile-signup", "password": PW, "invite": inv0["code"]})
+        ok(st == 200 and auth.get_user("nofile-signup") is not None,
+           "POST /auth/register succeeds with users.json absent from disk")
+        ok(not os.path.exists(legacy_path),
+           "...and still never created one - the db is the only store")
 
-        auth.os.replace = flaky_replace
-        try:
-            auth.set_password("duy", PW + "-rotated", actor="duy")
-        except PermissionError:
-            pass
-        finally:
-            auth.os.replace = real_replace
-        ok(calls["n"] == 4, "os.replace was retried past the flaky window (4 attempts)")
-        ok(auth._check_pw(PW + "-rotated", auth.get_user("duy")["pw"]),
-           "...and the write actually landed once the retry succeeded")
+        applied = {name for _, name, _ in db.schema_applied()}
+        ok("users-table" in applied,
+           "a real numbered schema-ledger step created the table (not an ad hoc CREATE TABLE)")
 
-        calls["n"] = 0
+        print("\nA. the 5 named accounts migrate from a legacy users.json and log in")
+        mig_dir = tempfile.mkdtemp(prefix="helmdeck-authregbug-migrate-")
+        mig_legacy = os.path.join(mig_dir, "users.json")
+        with open(mig_legacy, "w", encoding="utf-8") as f:
+            json.dump([{"name": n, "pw": auth._hash_pw(PW), "role": role,
+                       "tokens": [], "created": "2026-01-01 00:00:00"}
+                      for n, role in LEGACY_ACCOUNTS], f)
+        open(mig_legacy + ".tmp", "w", encoding="utf-8").close()   # stray leftover from the old write path
 
-        def always_locked(src, dst):
-            calls["n"] += 1
-            raise PermissionError(5, "Access is denied")
+        db.ROOT = mig_dir
+        db.DBPATH = os.path.join(mig_dir, "migrated.db")
+        db._local.c = None      # drop this thread's cached connection so init() opens the new file
+        db.init(role="tool")
 
-        auth.os.replace = always_locked
-        raised = False
-        try:
-            auth.set_password("duy", PW, actor="duy")
-        except PermissionError:
-            raised = True
-        finally:
-            auth.os.replace = real_replace
-        ok(raised and calls["n"] == 5,
-           "a lock that never clears still raises (5 tries), not silently swallowed")
-        auth.set_password("duy", PW, actor="duy")   # restore real password for later steps
-        sid = auth.login("duy", PW)
-        owner_hdr = {"Cookie": "sd_session=%s" % sid, "Content-Type": "application/json"}
+        for name, role in LEGACY_ACCOUNTS:
+            msid = auth.login(name, PW)
+            ok(msid is not None, "migrated account %r logs in with its pre-migration password" % name)
+            ok(auth.get_user(name)["role"] == role, "...with its original role (%s)" % role)
+
+        ok(not os.path.exists(mig_legacy), "users.json is gone from its original path")
+        archived = os.path.join(mig_dir, "backups", "users.json.imported")
+        ok(os.path.exists(archived), "...renamed to .imported under backups/, never deleted")
+        ok(not os.path.exists(mig_legacy + ".tmp"), "the stray users.json.tmp leftover was cleaned up")
+        ok("users-table" in {name for _, name, _ in db.schema_applied()},
+           "the migration db recorded the same ledger step")
+
+        # back to this file's own sandbox for everything below
+        db.ROOT = tmp
+        db.DBPATH = os.path.join(tmp, "test.db")
+        db._local.c = None
 
         # -------------------------------------------------------------- B ---
         print("\nB. a non-ValueError from create_user releases the invite and hides the path")

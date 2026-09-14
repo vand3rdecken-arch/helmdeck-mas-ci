@@ -132,7 +132,10 @@ WORKSPACE_LEVEL = {"workspace_config", "policy_doc", "process_template", "connec
                    # an invite is minted for a ROLE, not an account
                    "invites",
                    # harness edit history and the ops audit are workspace-level
-                   "harness_versions", "audit_ops"}
+                   "harness_versions", "audit_ops",
+                   # entity ROOT, same reasoning as `projects` above: users.name
+                   # IS the account, not a row scoped BY one (ledger step 13)
+                   "users"}
 SCOPE_COLS = {"account", "user", "owner", "project", "project_id", "track", "run_id"}
 for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
     if t in WORKSPACE_LEVEL:
@@ -170,13 +173,21 @@ print("6. export masks, import round-trips")
 p = fresh("exp.db")
 old_shape(p)
 db.init()
+from spine.auth import auth        # noqa: E402
+auth.create_user("expuser", "a-real-password-1", "owner")
+auth.issue_token("expuser", "phone")
 from ops.tools import db_export, db_import   # noqa: E402
 doc = db_export.export()
 flat = json.dumps(doc)
 check("PLAINTEXT" not in flat and "SECRETKEY" not in flat and '"T"' not in flat, "no secret survives a default export")
+check("a-real-password-1" not in flat, "the account's own password is not in a default export either")
 check(doc["workspace_config"][0]["value"]["sk"] == "***", "sk masked at depth 1")
 check(doc["workspace_config"][0]["value"]["nested"]["api_token"] == "***", "api_token masked at depth 2")
 check(doc["workspace_config"][0]["value"]["url"] == "https://r", "non-secret kept")
+# users.data is a blob column like tracks/events - _parse() already decoded it
+urow = next(u for u in doc["users"] if u["name"] == "expuser")
+check(urow["data"]["pw"] == "***", "the account's pbkdf2 hash is masked in a default export")
+check(urow["data"]["tokens"][0]["th"] == "***", "a device token's hash is masked too")
 check(len(doc["tracks"]) == 5 and "lane" not in doc["tracks"][0], "5 cards exported, generated columns skipped")
 check("SECRETKEY" in json.dumps(db_export.export(secrets=True)), "--with-secrets keeps them")
 scoped = db_export.export(account="acme")

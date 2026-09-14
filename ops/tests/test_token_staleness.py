@@ -9,13 +9,14 @@ What this pins down:
      the default must not change existing device behaviour
   2. an expired token is refused by resolve() (same as "no such token"),
      an unexpired one still works
-  3. resolve() records last_used on first use, and does NOT rewrite the file
-     on every subsequent call the same day (throttle)
+  3. resolve() records last_used on first use, and does NOT rewrite the
+     account store on every subsequent call the same day (throttle)
   4. _token_stale(): a fresh token is not stale; a token whose last_used (or
      created, if never used) is >90 days old is
   5. GET /users surfaces last_used/expires/stale per token (real HTTP call)
 
-Run: py -3.12 ops/tests/test_token_staleness.py
+Sandbox: db.ROOT/DBPATH (accounts are db rows, state-into-db ledger step 13),
+auth.USERS, events.SET. Run: py -3.12 ops/tests/test_token_staleness.py
 """
 import json
 import os
@@ -35,8 +36,20 @@ def ok(cond, msg):
 def main():
     tmp = tempfile.mkdtemp(prefix="helmdeck-token-stale-test-")
 
+    from spine.storage import db
+    db.ROOT = tmp
+    db.DBPATH = os.path.join(tmp, "test.db")
+    from spine.storage import events
+    events.SET = os.path.join(tmp, "settings.json")
+    from spine.auth import policy
     from spine.auth import auth
     auth.USERS = os.path.join(tmp, "users.json")
+    db.init(role="tool")
+
+    real_users = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
+    ok(auth.USERS != real_users, "sandboxed away from the real users.json")
+    ok(db.DBPATH.startswith(tmp), "sandboxed away from the real helmdeck.db")
+
     auth.create_user("duy", "a-real-password", "owner")
 
     # ------------------------------------------------------------------ 1 ---
@@ -51,13 +64,13 @@ def main():
     print("\nexpires_days: an expired token is refused, an unexpired one works")
     expiring_tok = auth.issue_token("duy", "expiring-device", expires_days=30)
     ok(auth.resolve(token=expiring_tok) is not None, "not yet expired -> resolves")
-    # force it into the past directly on disk (30 days from now, backdated)
-    users = json.loads(open(auth.USERS, encoding="utf-8").read())
+    # force it into the past via the store directly (_load/_save bypass
+    # list_users()'s auto-migrate-on-read, same as reading the file used to)
+    users = auth._load()
     for t in users[0]["tokens"]:
         if t["label"] == "expiring-device":
             t["expires"] = "2000-01-01"
-    with open(auth.USERS, "w", encoding="utf-8") as f:
-        json.dump(users, f)
+    auth._save(users)
     ok(auth.resolve(token=expiring_tok) is None, "expired token is refused by resolve()")
     ok(auth.resolve(token=forever_tok) is not None,
        "...the OTHER token on the same user is unaffected")
@@ -66,11 +79,17 @@ def main():
     print("\nlast_used: set on use, throttled to once/day")
     u = auth.get_user("duy")
     tid = next(t["id"] for t in u["tokens"] if t["label"] == "forever-device")
-    before_mtime = os.path.getmtime(auth.USERS)
-    time.sleep(0.05)
-    auth.resolve(token=forever_tok)  # already touched today by call #1 above
-    after_mtime = os.path.getmtime(auth.USERS)
-    ok(after_mtime == before_mtime, "same-day re-use does NOT rewrite users.json (throttle)")
+    real_save = auth._save
+    calls = {"n": 0}
+    def counting_save(data):
+        calls["n"] += 1
+        return real_save(data)
+    auth._save = counting_save
+    try:
+        auth.resolve(token=forever_tok)  # already touched today by call #1 above
+    finally:
+        auth._save = real_save
+    ok(calls["n"] == 0, "same-day re-use does NOT rewrite the account store (throttle)")
     u = auth.get_user("duy")
     lu = next(t.get("last_used") for t in u["tokens"] if t["id"] == tid)
     ok(lu is not None and lu[:10] == time.strftime("%Y-%m-%d"), "last_used was recorded on first use")
@@ -93,13 +112,6 @@ def main():
     print("\nGET /users surfaces last_used/expires/stale (real HTTP round trip)")
     import http.client
     import threading
-    from spine.storage import db
-    db.ROOT = tmp
-    db.DBPATH = os.path.join(tmp, "test.db")
-    from spine.storage import events
-    events.SET = os.path.join(tmp, "settings.json")
-    from spine.auth import policy
-    db.init(role="tool")
 
     from spine.http import server
     httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.H)

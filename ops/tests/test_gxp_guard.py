@@ -63,6 +63,7 @@ def main():
     from spine.storage import db
     db.ROOT = tmp
     db.DBPATH = os.path.join(tmp, "test.db")
+    db.init(role="tool")          # accounts are db rows (state-into-db ledger step 13)
     from spine.storage import events
     events.SET = os.path.join(tmp, "settings.json")
     from spine.auth import auth
@@ -154,12 +155,17 @@ def main():
 
     # ------------------------------------------------------------------ 7 ---
     print("\nfails closed")
-    saved = auth.USERS
-    auth.USERS = os.path.join(tmp, "does-not-exist", "users.json")
-    r = gxp.accept_block_reason("duy", REG)
+    # Accounts are db rows now (state-into-db ledger step 13) - an unreadable
+    # registry is simulated by making the lookup itself fail, not by pointing
+    # a retired file constant at a bad path.
+    real_get_user = auth.get_user
+    auth.get_user = lambda name: None
+    try:
+        r = gxp.accept_block_reason("duy", REG)
+    finally:
+        auth.get_user = real_get_user
     ok(r and "not one" in r,
        "unreadable registry refuses AS a non-account rather than allowing")
-    auth.USERS = saved
 
     # ------------------------------------------------------------------ 8 ---
     print("\nlock file has to actually say enabled")
