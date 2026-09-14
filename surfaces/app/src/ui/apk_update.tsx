@@ -10,7 +10,7 @@
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Platform, Pressable, Text, View } from "react-native";
 
 import appJson from "../../app.json";
 import { useT } from "@/i18n";
@@ -62,6 +62,12 @@ type ApkInfo = { versionCode: number; versionName: string; url: string };
 function useApkUpdateCheck(): ApkInfo | null {
   const [info, setInfo] = useState<ApkInfo | null>(null);
   useEffect(() => {
+    // version.json/the .apk on the relay are Android-only artifacts (built
+    // by build_apk.sh from surfaces/app/android) - iOS gets updates via
+    // TestFlight/App Store, web/desktop have no APK at all. Checking on
+    // those platforms is the exact "neue APK installieren" link the owner
+    // saw on his iPhone (2026-09-14).
+    if (Platform.OS !== "android") return;
     // dev/Expo Go: no versionCode AND no release runtimeVersion - nothing to compare
     if (!build && !installedVer) return;
     const origin = relayOrigin();
