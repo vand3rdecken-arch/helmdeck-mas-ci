@@ -513,15 +513,6 @@ export default function Settings() {
               </Pressable>
             ))}
           </Panel>
-          {/* Destructive LAST (NN/g, and the plan's door-6 "Abmelden +
-              Gefahrenzone"). It stays on the door LIST rather than moving into
-              door 6, because door 6 is owner-only and a client must be able to
-              sign out of their own account - the hub root is the one page
-              every role reaches. */}
-          <Pressable onPress={logout}
-            style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
-            <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
-          </Pressable>
           {demoActive ? null : delOpen ? (
             <Panel style={{ gap: 10 }}>
               <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600" }}>{tr("settings.deleteAccount")}</Text>
@@ -578,6 +569,13 @@ export default function Settings() {
           <Toggle label={tr("settings.privacy.analyticsToggle")} value={analyticsOn} onChange={setAnalytics} />
           <Hint text={tr("settings.privacy.hint")} />
         </Panel>
+        {/* Established pattern (Apple ID / Google Account / Slack, Notion,
+            Linear profile screens): sign-out lives IN the account screen, as
+            a clear destructive button - not isolated on a hub root. This is
+            also the one door every role reaches, including a client who
+            cannot read /settings at all, so it still covers the case the old
+            hub-root copy existed for. */}
+        <Btn kind="danger" label={tr("settings.logout")} onPress={logout} />
       </DoorFrame>
     );
   }
