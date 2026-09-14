@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.wear.compose.foundation.LocalAmbientModeManager
+import androidx.wear.compose.foundation.rememberAmbientModeManager
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.MaterialTheme
 import app.helmdeck.wear.data.DeviceStore
@@ -77,6 +80,32 @@ class MainActivity : ComponentActivity() {
                     // first compile of this change said exactly that -
                     // "actual type is 'BoxScope', but 'Context' was expected".
                     val ctx = this@MainActivity
+
+                    // AMBIENT MODE (owner bug report 2026-09-14: "die Uhr geht
+                    // nach 2-3 Sekunden in Standby, sieht daher nie
+                    // Live-Nachrichten von Henry"). Without this, HenryScreen
+                    // had no opt-in to the platform's Ambient state machine at
+                    // all, so the OS fell back to its default screen timeout -
+                    // the app's own Compose tree stopped being what the wrist
+                    // shows, not merely dimmed. Wired once here, at the top of
+                    // the whole navigation tree (AppScaffold's content, above
+                    // the `when` below), so Board/Card/Henry all see the SAME
+                    // ambient state rather than each screen re-deriving it.
+                    //
+                    // LocalAmbientModeManager, not the older Fragment-based
+                    // AmbientModeSupport / AmbientLifecycleObserver: this is
+                    // Google's own current guidance for a Compose-first Wear
+                    // app (androidx.wear.compose.foundation, already resolved
+                    // here via compose-foundation:1.6.2 - stable since 1.6.0,
+                    // 2026-03-25 - so no new Gradle dependency), confirmed
+                    // 2026-09-14 against the android/skills wear-compose-m3
+                    // guide (dated 2026-09-03): "Ambient mode - Use
+                    // LocalAmbientModeManager instead of
+                    // AmbientLifecycleObserver." rememberAmbientModeManager()
+                    // resolves the Activity via LocalActivity internally as of
+                    // 1.6.0-alpha10, so it takes no Activity parameter.
+                    val ambientModeManager = rememberAmbientModeManager()
+                    CompositionLocalProvider(LocalAmbientModeManager provides ambientModeManager) {
                     var paired by remember { mutableStateOf(DeviceStore.load(ctx) != null) }
 
                     // THE APP'S ONE EVENT CHANNEL, started HERE rather than
@@ -141,6 +170,7 @@ class MainActivity : ComponentActivity() {
                                 onOpenBoard = { screen = WearScreen.Board },
                             )
                         }
+                    }
                     }
                 }
             }

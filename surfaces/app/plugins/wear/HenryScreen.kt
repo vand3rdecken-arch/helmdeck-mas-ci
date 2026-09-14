@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.wear.compose.foundation.AmbientMode
+import androidx.wear.compose.foundation.LocalAmbientModeManager
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -188,6 +190,16 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     var answered by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
     val columnState = rememberTransformingLazyColumnState()
+
+    // AMBIENT MODE - the manager MainActivity provides at the top of the
+    // whole navigation tree (see its own comment). Read here, not derived
+    // locally, so this screen and any other agree on the same ambient state.
+    // Wear's own guidance for an always-on display ("Keep 85%+ of screen
+    // black in ambient mode") is why the message cards below drop their
+    // brand fills for a near-black/muted-grey pair while ambient: this is
+    // the screen that must stay legible AND battery-safe on a dimmed OLED
+    // instead of quietly going dark, which is the bug this exists to fix.
+    val isAmbient = LocalAmbientModeManager.current?.currentAmbientMode is AmbientMode.Ambient
 
     fun ask(message: String) {
         val device = DeviceStore.load(context)
@@ -745,9 +757,11 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 time = if (row.line.ts.isBlank()) null
                                        else ({ Text(row.line.ts) }),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (row.line.mine) WearTokens.glow1
+                                    containerColor = if (isAmbient) WearTokens.canvas
+                                                     else if (row.line.mine) WearTokens.glow1
                                                      else WearTokens.layer2,
-                                    contentColor = WearTokens.txtPrimary,
+                                    contentColor = if (isAmbient) WearTokens.txtTertiary
+                                                   else WearTokens.txtPrimary,
                                 ),
                                 modifier = Modifier.padding(
                                     horizontal = sideInset, vertical = 3.dp),

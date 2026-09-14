@@ -227,17 +227,31 @@ def _repair_question(t, log):
     try:
         _sid, out, meta = _turn(t, ask.REPAIR)
     except Exception as e:
-        # a repair is a convenience, never a reason to fail a finished turn
+        # a repair is a convenience, never a reason to fail a finished turn.
+        # Also an EVENT, not just a card note: debt[ask-protocol-prompt-
+        # compliance]'s own fix asks to "track the askrepair events to see
+        # how often the fallback carries the feature" - a note buried per-card
+        # cannot answer that, only an aggregatable event can.
         log.log("note", "Frage-Reparatur fehlgeschlagen: %s" % str(e)[:200])
+        events.emit("askrepair", t["id"], ok=False, reason="exception")
         return None
     # measured economics: this turn is billed too. Through _mutate (it runs a
     # whole model turn, so it is only ever called OUTSIDE the mutation lock).
     _mutate(t["id"], lambda tt: (_record_econ(tt, meta), None)[1])
     if ask.NO_QUESTION in (out or "")[:200]:
-        return None                # worker says it was not actually asking
+        # the heuristic false-positived; not a repair failure, but a distinct
+        # outcome from a real one below, so worth its own reason.
+        events.emit("askrepair", t["id"], ok=True, reason="noquestion")
+        return None
     question, _ = ask.parse(out or "")
     if question:
-        events.emit("askrepair", t["id"], ok=True)
+        events.emit("askrepair", t["id"], ok=True, reason="parsed")
+    else:
+        # the ONE outcome that used to be invisible: the repair turn ran and
+        # still did not produce a parseable block, so the card parks on the
+        # original prose with no typed buttons - exactly the failure the
+        # owner asked how often it happens. Now it is at least countable.
+        events.emit("askrepair", t["id"], ok=False, reason="unparseable")
     return question
 
 

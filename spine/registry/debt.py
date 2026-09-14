@@ -1300,7 +1300,17 @@ DEBT = [
                "stream-json client), replace the taught protocol with a real "
                "interception + park/respond, which needs no compliance and no repair "
                "turn. Until then, track the askrepair events to see how often the "
-               "fallback carries the feature.",
+               "fallback carries the feature - 2026-09-14 (owner Wear-OS bug report): "
+               "that tracking did not actually exist yet. _repair_question emitted "
+               "askrepair ONLY on a successful parse; an exception from the repair "
+               "turn was a card note nobody could aggregate, and the worst case - the "
+               "repair turn running and STILL not producing a parseable block, which "
+               "leaves the card parked on bare prose with no typed buttons on any "
+               "surface, wristwatch included - emitted nothing at all. Now every path "
+               "emits askrepair with a reason (parsed / noquestion / unparseable / "
+               "exception), so the real failure rate this fix item calls for is "
+               "finally queryable going forward; no historical data exists from "
+               "before this instrumentation landed.",
         "order": 15,
     },
     {
