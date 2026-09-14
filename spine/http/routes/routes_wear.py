@@ -143,7 +143,7 @@ def _wear_pipeline(tracks, taken_ids):
     working, backlog = [], []
     for t in tracks or ():
         t = sessions.present(t or {})
-        if t.get("archived") or t.get("id") in taken_ids:
+        if t.get("archived") or t.get("board_hidden") or t.get("id") in taken_ids:
             continue
         status = t.get("status")
         # `body` and `status` ride along because tapping one of these rows opens

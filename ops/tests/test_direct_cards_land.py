@@ -93,12 +93,16 @@ escalations._append = lambda rec: (BUS.append(dict(rec, ts=time.strftime("%Y-%m-
 escalations.records = lambda: list(BUS)
 lanemachine._gate = lambda t: (True, [])
 # 2026-09-12 (owner: "ship als Karte"): a landing files a DECIDE ship card;
-# record the filing instead of running a second card through the stubbed turn
+# record the filing instead of running a second card through the stubbed turn.
+# 2026-09-14 (third iteration): that card is filed board_hidden - record it
+# too, so a regression that drops the flag (and re-shows the card on the
+# board) fails here, not silently.
 SHIPS = []
-dispatch.new_ship_task = lambda repo, kind, actor="henry", origin_card=None, dispatch=True: (
-    SHIPS.append((origin_card, kind, dispatch)) or
+dispatch.new_ship_task = lambda repo, kind, actor="henry", origin_card=None, dispatch=True, board_hidden=False: (
+    SHIPS.append((origin_card, kind, dispatch, board_hidden)) or
     {"id": "ship-%d" % len(SHIPS), "ship_kind": kind, "ship_origin": origin_card,
-     "repo": repo, "lane": "backlog", "run_dir": tempfile.mkdtemp(prefix="hd-ship-")})
+     "repo": repo, "lane": "backlog", "run_dir": tempfile.mkdtemp(prefix="hd-ship-"),
+     "board_hidden": board_hidden})
 lanemachine._merge_to_main = lambda t: (True, "merged", "ok")
 
 
@@ -121,8 +125,9 @@ tid = t["id"]
 cur = trackstore._db.track_get(tid)
 check("1. direct+fast_track card ran its first turn to needs_you", cur["status"] == "needs_you")
 check("1. FIRST turn autocommitted the edit (no steer needed)", git(repo, "ls-files", "new_file.txt")[1] != "")
-check("1. a DECIDE ship card is filed after the FIRST turn (no escalation, no owner move)",
-      SHIPS == [(tid, "decide", False)] and not opens("ship-decision", tid))
+check("1. a DECIDE ship card is filed board_hidden after the FIRST turn "
+     "(no escalation, no owner move, no board row)",
+      SHIPS == [(tid, "decide", False, True)] and not opens("ship-decision", tid))
 check("1. delivered-parked also open - Henry can land the card", len(opens("delivered-parked", tid)) == 1)
 
 # -- 2) plain direct card (no fast_track) parks -> delivered-parked -----------

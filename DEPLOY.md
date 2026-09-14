@@ -1040,18 +1040,29 @@ same as a hand deploy, gate still guarding.
 
 ## Fast-track deploy - a Ship card, not a deploy hook
 Owner decree 2026-09-09 (18:04 correction): a ship is not an invisible
-deploy-hook subprocess after an accept - it runs as its OWN board card, with
-a lane, a timeline, steerability, and self-correction like any other card.
+deploy-hook subprocess after an accept - it runs as a card with a lane, a
+timeline, steerability, and self-correction like any other card. Owner
+decree 2026-09-12: the DECISION runs inside that card too, not a one-shot
+judgement turn fed by a script. Owner decree 2026-09-14: that decide card
+stops being a VISIBLE one - see below.
 
 When a landed change needs shipping, `lanemachine.request_ship_decision`
-emits a `ship-decision` escalation; Henry judges it (`ship-advisor`,
-none|ota|native - unchanged by any of this) and answers with the `ship`
-verb. For `ota`/`native`, that verb now calls
-`cells/engineer/cards/dispatch.new_ship_task(repo, kind, actor="henry")`
-instead of firing a hook - a real direct-build card (no worktree, no
-branch, live repo root, `bypassPermissions`, exactly like any other
-direct-build card the owner already trusts) whose own agent turn
-(`cells/engineer/harness/agents/ship-worker.md`) does, as its own reasoning:
+files `cells/engineer/cards/dispatch.new_ship_task(repo, "decide",
+origin_card=<landing>, board_hidden=True)` - the SAME card mechanics
+(worktree-free hands, `bypassPermissions`, its own agent turn) as any other
+ship card, DECIDE -> EXECUTE -> VERIFY, but `board_hidden` means it never
+becomes a board row or a thread/process entry: the landing that triggered it
+is not a new unit of work the owner asked for. Its outcome lands on the
+ORIGIN card's ActionLog instead of a card of its own, and a stuck one
+escalates to Henry explicitly rather than sitting `needs_you` on a row
+someone would have to notice (dispatch._ship_note_origin /
+_ship_stuck_escalate). Henry can still be asked to ship directly from the
+board chat (`ship`, none|ota|native) - THAT verb calls
+`dispatch.new_ship_task(repo, kind, actor="henry")` without `board_hidden`,
+because the owner explicitly asked for that ship, so it stays a real,
+visible direct-build card (no worktree, no branch, live repo root) whose
+own agent turn (`cells/engineer/harness/agents/ship-worker.md`) does, as its
+own reasoning:
 
 1. **Diagnose** - runs `ops/tools/ship_facts.py` fresh and checks the
    resources the kind needs (JDK17/keystore/relay) BEFORE starting, so a
@@ -1067,10 +1078,12 @@ direct-build card the owner already trusts) whose own agent turn
    three version numbers for native) before the card calls anything green.
 
 The card's final reply must end with `SHIP: OK` or `SHIP: FAILED` - the
-daemon reads that line (`sessions._maybe_ship_card_close`) and moves the
-card to Done itself on OK. A FAILED (or a crash) leaves it exactly where
-any unfinished card sits: visible, `needs_you`, steerable by the owner or
-Henry to redirect or retry - no separate retry ladder needed.
+daemon reads that line (`dispatch._maybe_ship_card_close`) and moves the
+card to Done itself on OK. A FAILED (or a crash): a visible ota/native card
+stays exactly where any unfinished card sits - `needs_you`, steerable by the
+owner or Henry to redirect or retry, no separate retry ladder needed. A
+board_hidden decide card has no board row for that to mean anything on, so
+it escalates to Henry instead (dedup'd, not once per retry) - see above.
 
 `ops/deploy/ship.sh` is a TOOL the card's Bash calls invoke for the hard
 invariants - it is not the path. A bare `bash ops/deploy/ship.sh` with no

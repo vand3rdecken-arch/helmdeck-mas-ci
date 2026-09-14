@@ -565,16 +565,28 @@ def ship_process(repo):
         return ""
 
 
-def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True):
+def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True,
+                  board_hidden=False):
     """Owner decree 2026-09-09 (18:04 correction): a ship runs as its own
-    visible board card - lane, timeline, steerable, self-correcting like any
+    board card - lane, timeline, steerable, self-correcting like any
     other card - instead of an invisible deploy-hook subprocess after an
     accept. Henry's ship DECISION (kind=ota|native,
-    cells/copilot/broker/henry_broker.py's `ship` verb) spawns this; the
-    card's own agent turn (cells/engineer/harness/agents/ship-worker.md) does
-    DIAGNOSE -> EXECUTE -> VERIFY as its own reasoning and ends its reply
-    with a literal 'SHIP: OK'/'SHIP: FAILED' verdict line that
+    cells/copilot/broker/henry_broker.py's `ship` verb) spawns this VISIBLY;
+    the card's own agent turn (cells/engineer/harness/agents/ship-worker.md)
+    does DIAGNOSE -> EXECUTE -> VERIFY as its own reasoning and ends its
+    reply with a literal 'SHIP: OK'/'SHIP: FAILED' verdict line that
     sessions._maybe_ship_card_close reads to self-close it on success.
+
+    `board_hidden` (owner decree 2026-09-14, third iteration - see
+    lanemachine.request_ship_decision's docstring for the full history): the
+    ONLY caller that passes it is that function's kind="decide" filing. The
+    card mechanism (worktree-free hands, dedup, self-close on verdict) is
+    unchanged - what stops is the BOARD ROW: cells/copilot/chat/threads.py
+    and routes_tracks.py both skip a board_hidden card, so a landing's own
+    ship research never shows up as a card/process the owner did not ask
+    for. _maybe_ship_card_close reads this flag too: a board_hidden card
+    that self-closes or gets stuck writes its outcome onto the ORIGIN
+    card's ActionLog instead of relying on its own (now invisible) timeline.
 
     Rides the SAME no-worktree direct-build shape new_direct_task uses (no
     branch, no merge, live repo root as workplace, bypassPermissions) -
@@ -630,10 +642,13 @@ def new_ship_task(repo, kind, actor="henry", origin_card=None, dispatch=True):
         tt["ship_kind"] = kind
         if origin_card:
             tt["ship_origin"] = origin_card
+        if board_hidden:
+            tt["board_hidden"] = True
     cur = _mutate(t["id"], _mark) or t
     from spine.ops.actionlog import ActionLog
     ActionLog(cur["run_dir"]).log(
-        "note", "SHIP card filed (%s) - workplace is the live tree %s" % (kind, repo))
+        "note", "SHIP card filed (%s) - workplace is the live tree %s%s"
+                % (kind, repo, " (kein Board-Eintrag)" if board_hidden else ""))
     if not dispatch:
         return cur
     return move_lane(cur["id"], "working", actor=actor)
@@ -699,9 +714,12 @@ def _maybe_ship_card_close(t, log):
     either). One function, not two copies that could drift apart.
 
     A FAILED verdict (or a crash mid-turn with no verdict line at all) does
-    NOTHING extra - the card is already exactly where an ordinary unfinished
-    turn parks it (needs_you, lane unchanged): visible on the board,
-    steerable by the owner or Henry, same as any other stuck card.
+    NOTHING extra for a VISIBLE ship card - it is already exactly where an
+    ordinary unfinished turn parks it (needs_you, lane unchanged): visible
+    on the board, steerable by the owner or Henry, same as any other stuck
+    card. A board_hidden card (2026-09-14) has no board row for that to
+    mean anything on, so this hook escalates it to Henry instead -
+    _ship_stuck_escalate below, dedup'd so a retry does not spam.
 
     Returns the FRESH track dict when it moved the lane (move_lane's own
     write is the ground truth, same reasoning henry_broker's `move` verb
@@ -713,6 +731,8 @@ def _maybe_ship_card_close(t, log):
     # 2026-09-12) is as final as OK - the card's reply holds the why, and a
     # deliberate non-ship left on the board as needs_you would read as stuck.
     if not re.search(r"^SHIP:\s*(OK|NONE)\s*$", reply, re.M):
+        if t.get("board_hidden"):
+            _ship_stuck_escalate(t, log)
         return t
     try:
         r = move_lane(t["id"], "done", actor="ship-agent")
@@ -723,7 +743,64 @@ def _maybe_ship_card_close(t, log):
         reason = (r or {}).get("merge_report") or (r or {}).get("gate_report") or "unbekannt"
         log.log("note", "Ship-Karte meldete OK, aber die Selbst-Abnahme kam nicht an "
                 "(blieb auf %s) - Grund: %s" % ((r or {}).get("lane"), str(reason)[:300]))
-    return r or t
+    r = r or t
+    if r.get("board_hidden"):
+        _ship_note_origin(r, reply)
+    return r
+
+
+def _ship_note_origin(t, reply):
+    """board_hidden ship card, self-closed (SHIP: OK/NONE): it has no board
+    row of its own to read the outcome on, so the ORIGIN landing's own
+    ActionLog gets a short note instead (owner decree 2026-09-14 - "das
+    Ergebnis landet als ActionLog-Notiz auf der Original-Karte"). Best
+    effort: a note that fails to land must never turn a successful ship
+    into a failed one."""
+    origin = t.get("ship_origin")
+    if not origin:
+        return
+    try:
+        from cells.engineer.cards import sessions
+        o = sessions.get_track(origin)
+        if not o:
+            return
+        lines = [ln for ln in reply.strip().splitlines() if ln.strip()]
+        verdict = lines[-1].strip() if lines else "SHIP: ?"
+        body = "\n".join(lines[:-1])[-500:]
+        from spine.ops.actionlog import ActionLog
+        ActionLog(o["run_dir"]).log(
+            "note", "SHIP-Recherche (Karte %s, kein Board-Eintrag) - %s%s"
+                    % (t["id"], verdict, ("\n" + body) if body else ""))
+    except Exception:                                          # noqa: BLE001
+        pass
+
+
+def _ship_stuck_escalate(t, log):
+    """board_hidden ship card, no verdict yet: the visible-card version of
+    this state (needs_you) relies on the board itself making it seen. With
+    no board row, "never silent" needs an explicit escalation - reusing
+    escalations.emit's own card-note write (targeted at the ORIGIN card, not
+    this hidden one) covers both the audit-bus entry and the ActionLog note
+    in one call. Dedup'd on the open escalation, not per turn: a retry that
+    fails again must not page Henry a second time for the same stuck ship."""
+    origin = t.get("ship_origin")
+    if not origin:
+        return
+    try:
+        from spine.registry import escalations
+        if any(e.get("kind") == "ship-decision" and e.get("card") == origin
+               for e in escalations.list_open()):
+            return
+        reply = (t.get("last_reply") or "").strip()
+        escalations.emit(
+            "ship-decision", card=origin,
+            detail=("Ship-Recherche (Karte %s, kein Board-Eintrag) kam zu keinem "
+                    "Urteil - letzte Antwort:\n%s" % (t["id"], reply[-500:] or "(leer)")))
+    except Exception as e:                                     # noqa: BLE001
+        try:
+            log.log("note", "SHIP: Eskalation an Henry fehlgeschlagen: %s" % str(e)[:200])
+        except Exception:
+            pass
 
 
 # -- REMOTE DEVICE tasks: a team member's own PC executes, the gate stays here
