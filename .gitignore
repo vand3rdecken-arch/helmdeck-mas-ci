@@ -46,6 +46,7 @@ daemon/plane_links.json
 daemon/plane_credentials.txt
 daemon/events.jsonl
 daemon/users.json
+daemon/users.json.tmp
 daemon/processes.json
 daemon/asc_review_watch.json
 # config-consolidation phase 7 (2026-09-03): daemon/ runtime bookkeeping
