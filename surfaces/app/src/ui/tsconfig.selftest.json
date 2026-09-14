@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "target": "es2019",
+    "lib": ["es2019", "dom"],
+    "outDir": "../../.ui-out",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["prompt_fallback.ts", "__prompt_fallback_selftest__.ts"]
+}

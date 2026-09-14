@@ -5,6 +5,7 @@ import { t as tr } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { hasPromptHost, openPrompt } from "@/ui/prompt_host";
+import { tryHostCall } from "@/ui/prompt_fallback";
 
 export const isWeb = Platform.OS === "web";
 
@@ -103,10 +104,17 @@ export function FormGrid({ children, wide, style }: { children: React.ReactNode;
 // Android has no native single-field prompt so callers must fall back to inline
 // inputs (returns null -> handled by the caller).
 export function promptText(title: string, def = ""): Promise<string | null> {
-  if (isWeb && typeof window !== "undefined" && window.prompt) return Promise.resolve(window.prompt(title, def));
-  // Native: use the modal PromptHost mounted at the app root. This covers
-  // Android, which has no native Alert.prompt. iOS keeps Alert.prompt as a
-  // fallback only if the host somehow isn't mounted.
+  if (isWeb && typeof window !== "undefined" && window.prompt) {
+    // Electron's renderer defines window.prompt but throws "prompt() is not
+    // supported" when called - existence alone doesn't mean it works, so
+    // call it and only trust the result if it didn't throw.
+    const r = tryHostCall(() => window.prompt(title, def));
+    if (r.supported) return Promise.resolve(r.value);
+  }
+  // Native (or web/Electron where window.prompt isn't real): use the modal
+  // PromptHost mounted at the app root. This covers Android, which has no
+  // native Alert.prompt. iOS keeps Alert.prompt as a fallback only if the
+  // host somehow isn't mounted.
   if (hasPromptHost()) return openPrompt(title, def);
   return new Promise((resolve) => {
     const A = Alert as unknown as { prompt?: (t: string, m: string | undefined, cbs: unknown, type?: string, d?: string) => void };
@@ -120,7 +128,13 @@ export function promptText(title: string, def = ""): Promise<string | null> {
 }
 
 export function confirmAsync(title: string, msg: string): Promise<boolean> {
-  if (isWeb && typeof window !== "undefined" && window.confirm) return Promise.resolve(window.confirm(`${title}\n\n${msg}`));
+  if (isWeb && typeof window !== "undefined" && window.confirm) {
+    // Chromium (and Electron per its docs) implement confirm() for real, but
+    // verify the same way as promptText rather than assume it: a throw here
+    // falls through to the Alert dialog below instead of crashing the caller.
+    const r = tryHostCall(() => window.confirm(`${title}\n\n${msg}`));
+    if (r.supported) return Promise.resolve(r.value);
+  }
   return new Promise((resolve) => {
     Alert.alert(title, msg, [
       { text: tr("ui.cancel"), style: "cancel", onPress: () => resolve(false) },
