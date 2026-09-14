@@ -210,6 +210,27 @@ def _counting(req, timeout=None):
 _patch_urlopen(_counting)
 rc._resolve_base(PUB); rc._resolve_base(PUB)
 check("verdict cached within the TTL (2 probes, not 4)", probes["n"] == 2, str(probes["n"]))
+# STICKY once proven (owner 2026-09-13/14: the public probe crosses the
+# Cloudflare tunnel; when it hiccuped the bridge fell back to the tunnel and
+# every phone request went "read timed out" / "push lost frame"). A proven
+# loopback survives a FAILED public probe as long as the local relay still
+# reports the same instance id - but NOT a public relay that answers with a
+# different id, and NOT a relay restart (new local id).
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: b'{"ok": true, "instance": "abc"}'}))
+rc._resolve_base(PUB)                                     # proves abc
+rc._base_cache["ts"] = 0.0                                 # expire the TTL, keep the proof
+_patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: None}))
+check("public unreachable AFTER a proven match -> stays LOOPBACK", rc._resolve_base(PUB) == LOCAL, rc._resolve_base(PUB))
+rc._base_cache["ts"] = 0.0
+_patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: b'{"ok": true, "instance": "zzz"}'}))
+check("public answers with a DIFFERENT id -> public URL, proof cleared", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+rc._base_cache["ts"] = 0.0
+_patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: None}))
+check("...and the cleared proof does not resurrect loopback", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
+_fresh(); _patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "abc"}', PUB: b'{"ok": true, "instance": "abc"}'}))
+rc._resolve_base(PUB); rc._base_cache["ts"] = 0.0
+_patch_urlopen(_health_map({LOCAL: b'{"ok": true, "instance": "new1"}', PUB: None}))
+check("local relay restarted (new id) + public down -> public URL (proof is per instance)", rc._resolve_base(PUB) == PUB, rc._resolve_base(PUB))
 
 print()
 print("ALL PASS" if not FAILS else "FAILED: %s" % FAILS)

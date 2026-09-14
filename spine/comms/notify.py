@@ -148,14 +148,24 @@ def recipients(s):
     # migration step and no re-registration.
     phone_pub = rel.get("phone_pub", "") or ""
     phone_tok = push.get("fcm_token", "") or ""
-    if phone_tok and phone_pub and phone_pub in pinned:
+    # ...but only when no device registered that SAME token together with its
+    # own key. relay.phone_pub is _admit's pubs[0] - the OLDEST pinned key,
+    # not necessarily the key the phone holds today (8 pinned keys on the
+    # owner box 2026-09-13, six re-pairings that day never moved it). A push
+    # sealed to the wrong key decrypts to nothing and the phone shows the
+    # generic "Neue Meldung" placeholder - the owner's report. An explicit
+    # (pub, token) registration is the truth for that token; see below.
+    explicit_tokens = {((d or {}).get("token") or "").strip()
+                       for _p, d in (push.get("devices") or {}).items()
+                       if _p in pinned}
+    if phone_tok and phone_pub and phone_pub in pinned and phone_tok not in explicit_tokens:
         out.append(("phone", phone_tok, phone_pub))
     # Additional devices (the watch, W2d) register under their OWN pubkey and
     # are sealed to it - NOT to the phone's. A second device must never be able
     # to open the first device's notifications.
     for pub, d in (push.get("devices") or {}).items():
         tok = ((d or {}).get("token") or "").strip()
-        if tok and pub in pinned and pub != phone_pub:
+        if tok and pub in pinned and (pub != phone_pub or tok in explicit_tokens):
             out.append(((d or {}).get("label") or "device", tok, pub))
     return out
 

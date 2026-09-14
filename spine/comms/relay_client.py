@@ -88,9 +88,37 @@ def _resolve_base(relay):
     if not relay.startswith(local):
         lh = _health(local)
         if lh and lh.get("instance"):
-            ph = _health(relay)
-            if ph and ph.get("instance") == lh.get("instance"):
+            # STICKY once proven. The public probe crosses the Cloudflare
+            # tunnel; when it hiccups (3s timeout, a cancelled stream) the
+            # old rule fell back to the PUBLIC leg although the local relay
+            # was still the very same instance - and then pulled and pushed
+            # every phone request through the flaky tunnel: "bridge
+            # unreachable", "read timed out", "push lost frame after 3
+            # attempts", flipping every minute (events 2026-09-13 22:00-22:28;
+            # owner: push arrives, chat does not refresh until he leaves and
+            # re-enters the app). The instance id is the proof, and it is
+            # per-process: as long as the LOCAL relay still reports the id we
+            # once matched against the public one, loopback stays valid. The
+            # public probe is only needed to establish (or re-establish, after
+            # a relay restart changes the id) that identity.
+            ph = _health(relay, timeout=6)
+            with _base_lock:
+                proven = (_base_cache.get("proven_instance")
+                          if _base_cache.get("public") == relay else None)
+            if ph:
+                # the public relay ANSWERED: its verdict is the truth, and a
+                # different instance clears any older proof
+                if ph.get("instance") == lh.get("instance"):
+                    base = local
+                    proven = lh.get("instance")
+                else:
+                    proven = None
+            elif proven and lh.get("instance") == proven:
+                # the public probe FAILED but the local relay still reports the
+                # id we once matched against it - keep the proven loopback
                 base = local
+            with _base_lock:
+                _base_cache["proven_instance"] = proven
     with _base_lock:
         changed = (c["public"] == relay and c["base"] is not None and c["base"] != base)
         c.update(ts=now, public=relay, base=base)

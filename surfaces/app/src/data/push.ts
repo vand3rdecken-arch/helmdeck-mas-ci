@@ -3,7 +3,7 @@ import * as TaskManager from "expo-task-manager";
 import { Platform } from "react-native";
 import { useBlockerVoice } from "./blocker_voice";
 import { ApiError, TransportError, api } from "./client";
-import { useConfig } from "./config";
+import { deviceLabel, useConfig } from "./config";
 import { open } from "./e2ee";
 import { speak } from "./voice";
 import { t } from "@/i18n/core";
@@ -98,7 +98,15 @@ export async function registerForPush() {
       await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
     }
     const token = (await Notifications.getDevicePushTokenAsync()).data; // raw FCM token on Android
-    await api.post("/push/register", { token });
+    // WITH this device's own key. Without it the daemon sealed every push to
+    // relay.phone_pub = the OLDEST pinned key (notify.recipients), which after
+    // a reinstall or re-pair is not this phone's key any more - the push then
+    // decrypted to nothing and the tray showed only "Neue Meldung - zum
+    // Ansehen tippen" (owner 2026-09-14). The daemon's /push/register already
+    // accepts {pub,label} (the watch registers this way) and uses that pair
+    // as the seal target for this token.
+    const { myPub } = useConfig.getState();
+    await api.post("/push/register", myPub ? { token, pub: myPub, label: deviceLabel() } : { token });
   } catch { /* not paired / no daemon / no FCM */ }
 }
 
