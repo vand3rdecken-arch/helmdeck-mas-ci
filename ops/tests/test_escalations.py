@@ -169,11 +169,16 @@ def main():
         # 2026-09-12 (owner: "ship als Karte"): a landing files a DECIDE ship
         # card (synchronously, dedup-visible) and dispatches it on a thread;
         # the escalation is only the fallback when filing the card fails.
+        # 2026-09-14 (third iteration): that card is now filed board_hidden -
+        # same mechanism, no board row (threads.py/routes_tracks.py skip it).
         filed, open_cards = [], []
-        def fake_ship(repo, kind, actor="henry", origin_card=None, dispatch=True):
+        def fake_ship(repo, kind, actor="henry", origin_card=None, dispatch=True,
+                     board_hidden=False):
             assert kind == "decide" and dispatch is False and origin_card == "c9"
+            assert board_hidden is True, "the decide card must be filed board_hidden"
             c = {"id": "ship-%d" % len(filed), "ship_kind": kind, "ship_origin": origin_card,
-                 "repo": repo, "lane": "backlog", "run_dir": t9["run_dir"]}
+                 "repo": repo, "lane": "backlog", "run_dir": t9["run_dir"],
+                 "board_hidden": board_hidden}
             filed.append(c); open_cards.append(c); return c
         _dispatch.new_ship_task = fake_ship
         moved = []

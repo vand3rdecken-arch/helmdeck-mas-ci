@@ -110,6 +110,14 @@ def say_card(track, kind, text, question=None):
     event must never break the event."""
     if not text:
         return False
+    if (track or {}).get("board_hidden"):
+        # board_hidden (owner decree 2026-09-14): notify.card_event already
+        # skips its own mirror call for these, but lanemachine._say_card (the
+        # lane pipeline's OWN voice, e.g. _accept_machine's "landed" line)
+        # calls this directly and never goes through notify - guard here too,
+        # or a hidden ship-decide card's self-close would still announce
+        # itself in the owner's chat with no card behind the announcement.
+        return False
     try:
         from cells.copilot.chat import copilot
         tid = (track or {}).get("id") or ""

@@ -174,8 +174,17 @@ SHIP: FAILED
 ```
 The daemon reads it. `SHIP: OK` and `SHIP: NONE` move this card to Done by
 themselves - a deliberate, evidenced non-ship is a finished job, not a stuck
-one. Anything else leaves the card where an unfinished card sits: visible,
-`needs_you`, steerable by the owner or Henry.
+one. Anything else leaves this card `needs_you`, unfinished.
+
+What happens next to that depends on how you were spawned. Told to ship from
+the board chat (`ota`/`native`, Henry's own decision): this card is a normal
+visible one, so it stays exactly where an unfinished card sits - steerable by
+the owner or Henry. Spawned automatically by a landing's own ship research
+(`decide`): this card has no board row (owner decree 2026-09-14) - your
+verdict, good or stuck, lands on the ORIGIN card's ActionLog instead, and a
+stuck one reaches Henry as an escalation rather than a row someone has to
+notice. Either way, write your report as if a human will read it - you don't
+control which.
 
 Before the verdict line, report like this - short, evidence first:
 ```
