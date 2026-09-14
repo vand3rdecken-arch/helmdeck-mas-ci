@@ -60,6 +60,14 @@ check("exhaust_before_reset fires (it has no noise buffer)", p2["exhaust_before_
 check("flag does NOT fire (proj under 105, used under 85)", p2["flag"] is False)
 check("reset_risk does NOT fire either", p2["reset_risk"] is False)
 
+print("\n2b. false positive #3 (2026-09-14 08:46): proj over 105% on whole-percent rounding")
+now2b = reset_ts2 - 157.2 * 3600                # 6.4% elapsed
+p2b = usage.pacing(7.0, reset_ts_str2, WEEK, now=now2b)
+check("projected_pct clears 105 (the relative buffer is not enough)", (p2b["projected_pct"] or 0) >= 105)
+check("reset_risk does NOT fire (only ~0.6pp ahead of even pace)", p2b["reset_risk"] is False)
+p2c = usage.pacing(20.0, reset_ts_str2, WEEK, now=now2b)
+check("early but REAL overrun (20% at 6.4%) still fires", p2c["reset_risk"] is True)
+
 print("\n3. a genuine overrun still fires reset_risk")
 reset_ts_str3 = "2026-08-30T22:00:00Z"
 reset_ts3 = datetime.fromisoformat(reset_ts_str3.replace("Z", "+00:00")).timestamp()

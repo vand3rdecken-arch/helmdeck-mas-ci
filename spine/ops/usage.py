@@ -22,6 +22,7 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 SCOPE = "user:profile user:inference user:sessions:claude_code user:mcp_servers"
 WEEK_SEC = 7 * 24 * 3600
+RISK_MIN_AHEAD_PP = 5.0   # reset_risk needs this many pct-points over even pace
 
 _cache = {"at": 0.0, "data": None}
 CACHE_TTL = 300     # 5 min, like Paseo's staleTime - the windows move slowly
@@ -138,7 +139,15 @@ def pacing(used_pct, resets_at, window_sec=WEEK_SEC, now=None):
     # is noise, not a real trend, and used_pct is nowhere near 85 either.
     # Every "will you actually run out" claim (an owner ask, an "erschöpft"
     # escalation) must read THIS, never exhaust_before_reset by itself.
-    reset_risk = proj is not None and proj >= 105.0 and exhaust_before_reset
+    # The 105% buffer is RELATIVE, so early in a window it is worth almost
+    # nothing in absolute terms: proj = used/elapsed, and the API rounds
+    # usedPct to whole percent. Measured 2026-09-14 08:46: 7% used at 6.4%
+    # elapsed (0.6pp ahead, 157h left) -> proj 109%, reset_risk fired and
+    # asked the owner to shelve work. Rounding alone swings proj by ~8% there.
+    # So also demand a real ABSOLUTE lead over even pace (RISK_MIN_AHEAD_PP);
+    # a genuine overrun clears it easily (e.g. 20% used at 6% elapsed).
+    reset_risk = (proj is not None and proj >= 105.0 and exhaust_before_reset
+                  and ahead >= RISK_MIN_AHEAD_PP)
     # Flag stays the separate, WEAKER "spend is hot" signal used for the
     # conservative-dispatch throttle (_quota_floor) - fires on reset_risk OR
     # merely used_pct >= 85 regardless of time left. Never read this as "will
