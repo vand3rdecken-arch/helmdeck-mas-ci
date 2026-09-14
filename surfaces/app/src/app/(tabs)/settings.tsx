@@ -978,6 +978,10 @@ export default function Settings() {
       ) : null}
       {/* Daemon health + the one restart button (owner request 2026-09-12) */}
       {can(me, "settings.write") ? <DaemonPanel /> : null}
+      {/* App version + OTA check + update diagnostics. Also on the door list,
+          but the Mehr tab deep-links INTO doors, so on the phone only this
+          copy is reachable (2026-09-14, iOS OTA diagnosis). */}
+      <UpdatesPanel />
       <UsagePanel />
       {/* Business + machine knobs: schema-rendered since phase 4. This was a
           hand-built nine-field FormGrid with its own saveBusiness(). */}
