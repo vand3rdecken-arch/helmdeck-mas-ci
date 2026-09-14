@@ -153,6 +153,18 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     }
     var busy by remember { mutableStateOf(false) }
     var loadingHistory by remember { mutableStateOf(false) }
+    // Same NN Group thresholds as the phone's showCatchup/long (chat.tsx,
+    // data/stream.ts): `loadingVisible` delays the Loading row by ~900ms so a
+    // refresh that resolves inside a second never flashes it, and `loadingLong`
+    // flips once refresh() has been retrying for >=10s so the row can name the
+    // attempt instead of sitting unchanged - a plain "loading" that never moves
+    // reads as stuck past that point, not as "still working".
+    var loadingVisible by remember { mutableStateOf(false) }
+    var loadingAttempt by remember { mutableStateOf(0) }
+    var loadingLong by remember { mutableStateOf(false) }
+    LaunchedEffect(loadingHistory) {
+        if (loadingHistory) { delay(900); loadingVisible = true } else loadingVisible = false
+    }
     var voiceOn by remember { mutableStateOf(DeviceStore.loadVoiceOn(context)) }
     // WHAT HAS ALREADY BEEN SAID OUT LOUD - one variable, and the only thing
     // that decides whether a clip is played. It holds the server's key for the
@@ -377,6 +389,9 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         // buildRows renders this as Row.Hint when the list is empty and as
         // Row.Loading otherwise, so both cases now say "loading" out loud.
         loadingHistory = true
+        loadingAttempt = 0
+        loadingLong = false
+        val loadStart = System.currentTimeMillis()
         // RETRY, not return: the wake-up (WearStream's chat cursor) and this
         // load are two requests, and the cursor is already consumed by the
         // time we get here. One failed load - a relay timeout, a socket the
@@ -396,10 +411,14 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 }.getOrNull()
             }
             if (result != null && result.first in 200..299) break
+            loadingAttempt = attempt + 1
+            loadingLong = System.currentTimeMillis() - loadStart >= 10_000L
             delay(wait)
             wait = minOf(wait * 2, 15_000L)
         }
         loadingHistory = false
+        loadingAttempt = 0
+        loadingLong = false
         if (result == null || result.first !in 200..299) return
         val arr = runCatching {
             JSONObject(result.second).optJSONArray("messages")
@@ -573,12 +592,16 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         lines, answered, busy,
         // Distinguishable states: still fetching vs. genuinely nothing said
         // yet. Showing the invitation while the history is still loading would
-        // read as "Henry has forgotten everything".
-        if (loadingHistory) "Verlauf wird geladen…"
-        else "Tippe auf Sprechen und stelle deine Frage.",
+        // read as "Henry has forgotten everything". Gated on `loadingVisible`
+        // (not `loadingHistory` directly) so a refresh that resolves inside
+        // ~900ms never flashes this at all.
+        if (loadingVisible) {
+            if (loadingLong) "Verlauf wird geladen… (Versuch $loadingAttempt)"
+            else "Verlauf wird geladen…"
+        } else "Tippe auf Sprechen und stelle deine Frage.",
         // Henry's own follow-up options, when a tap can settle it.
         suggestions?.questions?.firstOrNull()?.options?.map { it.label } ?: emptyList(),
-        loading = loadingHistory,
+        loading = loadingVisible,
     )
     val newest = newestMessageIndex(rows)
 
@@ -699,7 +722,8 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             // content, a refresh is in flight, and that must
                             // stay visible rather than silent (see ChatRows.kt).
                             is Row.Loading -> Text(
-                                text = "Verlauf wird aktualisiert…",
+                                text = if (loadingLong) "Verlauf wird aktualisiert… (Versuch $loadingAttempt)"
+                                       else "Verlauf wird aktualisiert…",
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))

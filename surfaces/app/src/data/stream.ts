@@ -81,8 +81,20 @@ import type { QueryClient } from "@tanstack/react-query";
  * reuses the SAME ActivityIndicator convention settings.tsx already has
  * (`{isLoading && owner ? <ActivityIndicator .../> : null}`) rather than
  * inventing a new loading affordance.
+ *
+ * `attempt`/`long` exist for the NN Group response-time thresholds (0.1/1/10s,
+ * the same guideline Material Design and Apple HIG build on): a retry loop
+ * that can run past 10s (worst case here: 3000ms doubling to 30000ms over 12
+ * tries) must stop reading as "spinner stuck" past that point. `long` flips
+ * once the loop has been retrying for >=10s so chat.tsx can swap the bare
+ * spinner for an attempt-numbered status line - still derived at event time
+ * from ensureChatFresh's own clock, not a separate guess.
  */
-export const useChatCatchup = create<{ active: boolean }>(() => ({ active: false }));
+export const useChatCatchup = create<{ active: boolean; attempt: number; long: boolean }>(() => ({
+  active: false,
+  attempt: 0,
+  long: false,
+}));
 
 let _inflight = false;
 let _again = false;
@@ -90,7 +102,8 @@ let _again = false;
 export async function ensureChatFresh(qc: QueryClient): Promise<void> {
   if (_inflight) { _again = true; return; }
   _inflight = true;
-  useChatCatchup.setState({ active: true });
+  const startedAt = Date.now();
+  useChatCatchup.setState({ active: true, attempt: 0, long: false });
   try {
     let delay = 3000;
     // ~5 minutes of trying, then give up until the next wake (never forever:
@@ -106,11 +119,12 @@ export async function ensureChatFresh(qc: QueryClient): Promise<void> {
         if (_again) { delay = 3000; continue; }
         return;
       }
+      useChatCatchup.setState({ attempt: i + 1, long: Date.now() - startedAt >= 10000 });
       await new Promise((r) => setTimeout(r, delay));
       delay = Math.min(delay * 2, 30000);
     }
   } finally {
     _inflight = false;
-    useChatCatchup.setState({ active: false });
+    useChatCatchup.setState({ active: false, attempt: 0, long: false });
   }
 }

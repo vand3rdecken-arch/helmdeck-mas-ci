@@ -443,6 +443,19 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // Rendered in the header below so the owner sees "reloading" instead of
   // silently trusting whatever transcript happened to already be on screen.
   const catchingUp = useChatCatchup((s) => s.active);
+  const catchupAttempt = useChatCatchup((s) => s.attempt);
+  const catchupLong = useChatCatchup((s) => s.long);
+  // NN Group's 0.1/1/10s thresholds: under ~1s no indicator at all (the
+  // common case - catch-up already resolved - would otherwise flash a
+  // spinner for one frame on every wake), so this only flips true once
+  // `catchingUp` has held for a beat. Past 10s `catchupLong` (data/stream.ts)
+  // takes over below and the plain spinner is replaced, not just left running.
+  const [showCatchup, setShowCatchup] = useState(false);
+  useEffect(() => {
+    if (!catchingUp) { setShowCatchup(false); return; }
+    const id = setTimeout(() => setShowCatchup(true), 900);
+    return () => clearTimeout(id);
+  }, [catchingUp]);
   const { data } = useQuery({
     queryKey: ["chatHistory"],
     queryFn: api.chatHistory,
@@ -843,7 +856,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
-      {catchingUp ? <ActivityIndicator size="small" color={t.txtSecondary} /> : null}
+      {showCatchup ? (
+        catchupLong ? (
+          <Text style={{ color: t.txtSecondary, fontSize: 12 }}>
+            {tr("chat.reconnecting", { n: catchupAttempt })}
+          </Text>
+        ) : (
+          <ActivityIndicator size="small" color={t.txtSecondary} />
+        )
+      ) : null}
       {!wide ? (
         <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
                    style={{ marginLeft: 6 }}>

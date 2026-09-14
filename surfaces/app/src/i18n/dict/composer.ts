@@ -85,6 +85,7 @@ export const composer: Dict = {
     de: "Brillen-Modus nicht eingerichtet: glance_origin + glance_token in den Daemon-Einstellungen setzen (Glance-Worker deployen: ops/deploy/push_glance.sh).",
     en: "Glasses mode not set up: set glance_origin + glance_token in daemon settings (deploy the glance worker: ops/deploy/push_glance.sh).",
   },
+  "chat.reconnecting": { de: "Verbinde erneut… ({n})", en: "Reconnecting… ({n})" },
   "chat.latest": { de: "Neueste", en: "Latest" },
   "chat.close": { de: "Chat schließen", en: "Close chat" },
   // The floating launcher's accessibility label (ui/henry_chat.tsx). The button
