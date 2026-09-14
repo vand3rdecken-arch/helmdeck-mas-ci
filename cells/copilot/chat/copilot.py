@@ -1331,6 +1331,85 @@ def history(user):
             "followups": followups}
 
 
+def judge(prompt, cwd, perm=None, model="", timeout=900):
+    """ONE judgement turn (henry_broker's escalation call) run on the OWNER'S
+    OWN board session, from a possibly different cwd/permission level than
+    the persistent chat process - not a second, session-less brain.
+
+    THE MERGE (owner decree 2026-09-14, after "Henry antwortet nicht auf den
+    richtigen Kontext" turned out to be two Henrys: the board chat's warm
+    session and the broker's one-shot `_ask` never shared a session id, so a
+    broker report the owner read in his chat was never something Henry's OWN
+    turns had seen - "Ist der root cause nicht, dass man das zusammenfuehrt?"
+    "Ok, zusammenfuehren."). This closes that gap at the SOURCE: the
+    escalation becomes a real turn inside the SAME session transcript
+    chat() resumes, in true chronological order, so a later board turn's
+    --resume replay includes it without any injected context block.
+
+    Resuming that session from a DIFFERENT process is exactly the compaction
+    precedent (_maybe_compact's own comment): "the external turn resumes the
+    SAME session id - a live warm process on it would fork the conversation.
+    Drop it first." So: hold the SAME turn lock chat()/prewarm() hold (this
+    serializes with the owner's own messages - an escalation never races a
+    live turn), drop the persistent process if one is warm (nothing lost but
+    its warmth - the next real chat turn respawns off the tip this call
+    leaves), run a plain one-shot `-p --resume <sid>` from the CALLER's cwd
+    (the broker needs repo-root hands or a read-only check; the persistent
+    chat process itself stays sandboxed to daemon/ and none of that changes),
+    and advance the session pointer on success so later turns continue from
+    here. Raises exactly like the old one-shot did (empty output = error);
+    the caller's own JSON-verdict parsing is unchanged."""
+    from spine.agent import drivers
+    from spine.agent.spawnenv import tool_path
+    from spine.registry import harness
+    user = owner_name()
+    if not user:
+        raise RuntimeError("henry: no owner account to judge on")
+    skey = _skey(user)
+    lk = _turn_lock(user)
+    lk.acquire()
+    try:
+        sid = _sessions().get(skey)
+        if sid:
+            _persist_drop(skey)     # never resume a session a live process still owns
+        argv = [CLAUDE, "-p", "--output-format", "json",
+                "--permission-mode", perm or henry_pmode()]
+        argv += harness.cli_args("board-copilot")
+        if model:
+            argv += ["--model", model]
+        if sid:
+            argv += ["--resume", sid]
+        p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
+                             stdin=subprocess.PIPE, env=tool_path(),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace")
+        try:
+            stdout, stderr = p.communicate(input=prompt, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()          # a timed-out judgement must not linger as a zombie
+            p.communicate()
+            raise
+        if not (stdout or "").strip():
+            raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
+        raw = json.loads(stdout)
+        new_sid = raw.get("session_id")
+        if new_sid:
+            if sid and new_sid != sid:
+                # --resume silently started fresh (an overflowed/compacted tip
+                # can't continue) - not owner-visible UX like chat()'s
+                # rotate_note (this turn has no chat bubble), but the pointer
+                # must still advance so the NEXT real turn continues from HERE
+                # rather than resuming a session that just proved unusable.
+                print("copilot.judge: session did not resume (%s -> fresh %s)"
+                      % (sid[:8], new_sid[:8]), flush=True)
+            sess = _sessions()
+            sess[skey] = new_sid
+            _save_sessions(sess)
+        return raw
+    finally:
+        lk.release()
+
+
 def owner_name():
     """WHO the board chat belongs to, or None. Derived from the user registry
     every time, never cached - the same read say() always did inline, lifted

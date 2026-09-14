@@ -152,8 +152,11 @@ def _extract_json(txt):
 
 
 def _ask(prompt, model="", perm=None):
-    """Headless one-shot judgement call - same spawn shape as the board
-    copilot/PM (drivers._cmd_line, never a bare .cmd with quoted args).
+    """Headless judgement call, ON HENRY'S OWN BOARD SESSION (owner decree
+    2026-09-14: "zusammenfuehren" - see copilot.judge's docstring for why the
+    old session-less one-shot was two brains that read the same chat but
+    never shared context, and how resuming the same session from a
+    different process is safe).
 
     Runs in a WORKING permission mode, not plan (owner decree 2026-08-21:
     "Henry should start in normal mode... do stuff directly"): Henry may fix
@@ -165,35 +168,7 @@ def _ask(prompt, model="", perm=None):
     _decide to drop to "plan" (no edits) when _dispatcher_privileged(t) says
     the escalating card's owner does not qualify for Henry's hands."""
     from cells.copilot.chat import copilot
-    from spine.agent import drivers
-    argv = [copilot.CLAUDE, "-p", "--output-format", "json",
-            "--permission-mode", perm or copilot.henry_pmode()]
-    # HENRY'S OWN SETTINGS LAYER, not whatever cwd implies (2026-09-12). Until
-    # now this spawn loaded the operator's personal ~/.claude (rtk hook, model
-    # pin, memory hooks) PLUS the repo's project layer (the build-loop Stop
-    # hook that once redirected two judgement turns into filling in
-    # .loop/workorder.md - debt henry-broker-loop). With bypassPermissions the
-    # copilot layer is also where the guard hook and the secret deny-list
-    # live - without it, "more rights, fenced by a hook" would be all rights.
-    from spine.registry import harness
-    argv += harness.cli_args("board-copilot")
-    if model:
-        argv += ["--model", model]
-    from spine.agent.spawnenv import tool_path
-    p = subprocess.Popen(drivers._cmd_line(argv), cwd=_HENRY_REPO_ROOT,
-                         stdin=subprocess.PIPE, env=tool_path(),
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         text=True, encoding="utf-8", errors="replace")
-    try:
-        # 300s judged fine; a turn that ACTS (build retry, file fix) needs room.
-        stdout, stderr = p.communicate(input=prompt, timeout=900)
-    except subprocess.TimeoutExpired:
-        p.kill()          # a timed-out judgement must not linger as a zombie
-        p.communicate()
-        raise
-    if not (stdout or "").strip():
-        raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
-    raw = json.loads(stdout)
+    raw = copilot.judge(prompt, cwd=_HENRY_REPO_ROOT, perm=perm, model=model)
     txt = raw.get("result", "")
     d = _extract_json(txt)
     if d is None:
