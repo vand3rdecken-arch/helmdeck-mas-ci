@@ -112,10 +112,10 @@ MESSAGES = {
         "en": "done on the machine - check the result and accept the card "
               "(no branch, no merge).",
     },
-    "say.machineAccepted": {
-        "de": "abgenommen und geschlossen (Maschinen-Aufgabe).",
-        "en": "accepted and closed (machine task).",
-    },
+    # say.machineAccepted DELETED 2026-09-14 (owner correction 18:40,
+    # "doppelt gemoppelt"): dispatch._accept_machine's Done transition no
+    # longer echoes a second board-chat line on top of the needs_you result
+    # card_mirror.mirror already printed - see the comment at that call site.
 
     # -- push notifications (notify.card_event) -------------------------------
     "push.henry": {"de": "Henry", "en": "Henry"},

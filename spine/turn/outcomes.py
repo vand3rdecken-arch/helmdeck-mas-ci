@@ -22,7 +22,16 @@ def extract_outcome(reply):
         lines = [l.strip(" \t*-#") for l in _READY_TAIL_RE.sub("", cand).splitlines()]
         lines = [l for l in lines if l]
         if lines:
-            return " ".join(lines[:2])[:240]
+            out = " ".join(lines[:2])
+            if len(out) <= 240:
+                return out
+            # word-boundary cut, not a bare slice - a raw [:240] ends mid-word
+            # (the same defect turnrunner._clip_reply/notice.label exist to
+            # avoid). Only ever reached for a single unbroken line past 240
+            # chars; the 1-2 line join above is already short in practice.
+            cut = out[:238]
+            sp = cut.rfind(" ")
+            return (cut[:sp] if sp > 120 else cut).rstrip(" ,;:-") + " …"
     return ""
 
 
