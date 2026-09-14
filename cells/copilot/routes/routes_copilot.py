@@ -309,6 +309,14 @@ def chat_post(self, user, body):
         # if the turn actually succeeded and it was `self._send` that raised
         # (a client that hung up): fail() refuses to drop a settled claim.
         chat_dedupe.fail(mine)
+        # A failed turn must be VISIBLE in the transcript on every device: the
+        # POST's error lands in the app's optimistic turn, which the user-row
+        # echo has usually retired by then - i.e. nowhere (2026-09-14 12:45).
+        try:
+            copilot._append_log(user["name"], [{"cls": "error", "ts": time.strftime("%H:%M"),
+                                                "text": "Henry hat nicht geantwortet: %s" % str(e)[:200]}])
+        except Exception:                                    # noqa: BLE001
+            pass
         return self._send(500, json.dumps({"error": str(e)[:300]}))
 
 

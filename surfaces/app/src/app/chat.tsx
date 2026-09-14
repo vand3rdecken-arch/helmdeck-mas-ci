@@ -171,13 +171,22 @@ function openChatQuestion(msgs: ChatMsg[]): ChatMsg | null {
 // clock (like Claude), so the wait reads as active reasoning, not a frozen
 // "denkt". The copilot runs blocking (no token stream yet), so this is the
 // honest signal we can give until the run returns / its actions stream in.
-function ThinkingIndicator({ preview }: { preview?: string }) {
+function ThinkingIndicator({ preview, since }: { preview?: string; since?: number | null }) {
   const t = useTheme();
   const tr = useT();
   const d0 = useRef(new Animated.Value(0.25)).current;
   const d1 = useRef(new Animated.Value(0.25)).current;
   const d2 = useRef(new Animated.Value(0.25)).current;
-  const [secs, setSecs] = useState(0);
+  // ELAPSED FROM THE DAEMON'S CLOCK when it says when the turn began: a
+  // local setInterval restarts at 0 on every remount and stops while the app
+  // is backgrounded, so "denkt nach · 24s" was showing for a turn that had
+  // been running three minutes (owner 2026-09-14 12:38). Falls back to the
+  // local counter against an older daemon that sends no `since`.
+  const [secs, setSecs] = useState(() => since ? Math.max(0, Math.floor(Date.now() / 1000 - since)) : 0);
+  useEffect(() => {
+    if (!since) return;
+    setSecs(Math.max(0, Math.floor(Date.now() / 1000 - since)));
+  }, [since]);
   useEffect(() => {
     const pulse = (v: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
@@ -188,9 +197,9 @@ function ThinkingIndicator({ preview }: { preview?: string }) {
       ]));
     const anims = [pulse(d0, 0), pulse(d1, 160), pulse(d2, 320)];
     anims.forEach((a) => a.start());
-    const iv = setInterval(() => setSecs((s) => s + 1), 1000);
+    const iv = setInterval(() => setSecs((s) => (since ? Math.max(0, Math.floor(Date.now() / 1000 - since)) : s + 1)), 1000);
     return () => { anims.forEach((a) => a.stop()); clearInterval(iv); };
-  }, [d0, d1, d2]);
+  }, [d0, d1, d2, since]);
   // the live reasoning tail (last ~2 lines) - a real Zwischenmeldung instead of a
   // dead wait; the model streams thinking ~9s before the prose.
   const tail = (preview || "").replace(/\s+/g, " ").trim().slice(-180);
@@ -303,6 +312,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // silence sat exactly where his rigor lives. Paseo renders tool calls as
   // visible chips the moment they happen; this is that signal for the wait row.
   const [liveStatus, setLiveStatus] = useState("");
+  const [liveSince, setLiveSince] = useState<number | null>(null);
   // Transient tool steps (owner 2026-09-13): visible while Henry works, so a
   // 40s Bash round reads as work and not as a frozen spinner - rendered with
   // the SAME tool row a worker card uses, and gone the moment the turn ends
@@ -343,7 +353,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         if (cur.trim()) setHeld({ text: cur, seq: turnStartSeq.current, sig: turnStartSig.current });
         return "";
       });
-      setThink(""); setLiveStatus(""); setLiveSteps([]);
+      setThink(""); setLiveStatus(""); setLiveSteps([]); setLiveSince(null);
       derived.current = false;
       return;
     }
@@ -356,6 +366,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           setStream(r.text || ""); setThink(r.thinking || "");
           setLiveStatus(r.status || ""); takeClips(r);
           if (Array.isArray(r.steps)) setLiveSteps(r.steps);
+          if (typeof r.since === "number") setLiveSince(r.since);
           // An observed turn has no POST to end it: the daemon saying
           // "not running" IS the end. Strictly `false` - an old daemon omits
           // the field, and undefined must not end anything.
@@ -896,7 +907,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
                 else if (!busy && held) s.push({ role: "assistant", kind: "text", text: held.text, by: "Henry", byKind: "henry" });
                 return s;
               })()} />}
-          {busy && !stream.trim() ? <ThinkingIndicator preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
+          {busy && !stream.trim() ? <ThinkingIndicator since={liveSince} preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
         </ChatScroll>
 
         <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>

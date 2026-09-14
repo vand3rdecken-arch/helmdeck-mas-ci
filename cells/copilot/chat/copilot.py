@@ -136,19 +136,27 @@ def _ping_process(p, timeout=120):
     """The hidden systemcheck round-trip that refreshes the API's prompt
     cache before it lapses. Extracted so the REACTIVE ping (below, fired on
     /chat/history poll) and the PROACTIVE scheduler (_keepalive_loop) share
-    one implementation."""
-    p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
-                  "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
-    p.stdin.flush()
+    one implementation. Returns True only when the port answered with a
+    `result` inside `timeout` - a port that does not is HUNG, and the caller
+    must drop it: on 2026-09-14 12:31:52 a ping got no answer, the lock was
+    released with the dead port still registered, and the owner's 12:35
+    question sat behind it for the full 600s silence watchdog."""
+    try:
+        p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
+                      "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
+        p.stdin.flush()
+    except Exception:                                    # noqa: BLE001
+        return False
     t0 = time.time()
     for line in p.stdout:
         if time.time() - t0 > timeout:
-            break
+            return False
         try:
             if json.loads(line.strip() or "{}").get("type") == "result":
-                break
+                return True
         except ValueError:
             continue
+    return False
 
 
 _keepalive_started = False
@@ -204,10 +212,14 @@ def _start_keepalive_loop():
                         continue      # idle too long - let it go cold, matches prewarm's own rule
                     _keepalive_inflight.add(user)
                     try:
-                        _ping_process(p)
+                        ok = _ping_process(p)
                     finally:
                         _keepalive_inflight.discard(user)
-                    _last_touch_at[bkey] = time.time()
+                    if ok:
+                        _last_touch_at[bkey] = time.time()
+                    else:
+                        print("copilot: warm port hung on keepalive - dropped, respawn on next turn", flush=True)
+                        _persist_drop(bkey)
                 finally:
                     lock.release()
             except Exception:                                    # noqa: BLE001
@@ -299,15 +311,70 @@ def prewarm(user, spoken=True):
                         return              # already warm AND cached
                 _keepalive_inflight.add(user)
                 try:
-                    _ping_process(p)
+                    ok = _ping_process(p)
                 finally:
                     _keepalive_inflight.discard(user)
-                _last_touch_at[bkey] = time.time()
+                if ok:
+                    _last_touch_at[bkey] = time.time()
+                else:
+                    print("copilot: warm port hung on keepalive - dropped, respawn on next turn", flush=True)
+                    _persist_drop(bkey)
             finally:
                 lock.release()
         except Exception:
             pass
     threading.Thread(target=_go, daemon=True).start()
+
+
+_PORTS_FILE = os.path.join(ROOT, "state", "chat_ports.json")
+
+
+def _ports_update(fn):
+    """chat_ports.json = {pid: spawn_epoch} of every warm chat process this
+    daemon spawned - the on-disk witness that lets the NEXT daemon reap what
+    this one leaves behind. A daemon eviction is a hard kill (singleton
+    takeover), so no atexit ever runs and every warm port survived it: 22
+    leaked claude.exe from 09-11..09-13 were still alive on the owner box on
+    2026-09-14, ~200MB each. driver_pids.json does this for card workers
+    (proctable); chat ports were never recorded anywhere."""
+    try:
+        try:
+            with open(_PORTS_FILE, "r", encoding="utf-8") as f:
+                cur = json.load(f) or {}
+        except (OSError, ValueError):
+            cur = {}
+        fn(cur)
+        tmp = _PORTS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cur, f)
+        os.replace(tmp, _PORTS_FILE)
+    except Exception:                                    # noqa: BLE001
+        pass
+
+
+def reap_chat_ports():
+    """At daemon boot: tree-kill warm chat ports recorded by a PREVIOUS daemon
+    that are still alive AND still ours (proctable's pid-reuse check). Returns
+    how many were killed."""
+    from spine.agent import proctable
+    try:
+        with open(_PORTS_FILE, "r", encoding="utf-8") as f:
+            rec = json.load(f) or {}
+    except (OSError, ValueError):
+        return 0
+    killed = 0
+    for pid_s, spawn in rec.items():
+        try:
+            pid = int(pid_s)
+            if proctable._is_ours(pid, spawn):
+                r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                   capture_output=True, timeout=10)
+                if r.returncode == 0:
+                    killed += 1
+        except Exception:                                # noqa: BLE001
+            pass
+    _ports_update(lambda cur: cur.clear())
+    return killed
 
 
 def _persist_drop(skey):
@@ -320,6 +387,7 @@ def _persist_drop(skey):
             ent["p"].kill()
         except Exception:
             pass
+        _ports_update(lambda cur: cur.pop(str(ent["p"].pid), None))
 
 
 def _control(p, subtype, timeout=3.0, **fields):
@@ -507,6 +575,7 @@ def _persist_get(skey, cli_model, sid, system):
                          text=True, encoding="utf-8", errors="replace", bufsize=1)
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
+    _ports_update(lambda cur: cur.__setitem__(str(p.pid), time.time()))
     return p, True
 
 
@@ -1428,6 +1497,7 @@ def say(text, cls="pm", card=None, extra=None):
 
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
+_turn_started = {}       # user -> epoch the running turn began (live()["since"])
 
 
 def _note_turn(user, on):
@@ -1560,6 +1630,10 @@ def live(user):
             # in chat()) - gone with livebuf.clear(), never in the chat log
             "steps": _steps_of(_rd("steps")),
             "running": user in _running,
+            # the app's "denkt nach · Ns" counts from HERE, not from a local
+            # timer that restarts at 0 on every remount/resume (owner
+            # 2026-09-14: "counter goes to 0 or not counting when app not open")
+            "since": _turn_started.get(user) if user in _running else None,
             "card": _running_card.get(user)}
 
 
@@ -1917,18 +1991,33 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
     _running[user] = p
+    _turn_started[user] = time.time()
     _note_turn(user, True)
     _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
+    _blocks = []          # every assistant TEXT block of this turn, in order (see txt below)
     resume_echo, ctx_first = False, {}
     # SILENCE watchdog (persist only): a one-shot process ends the read loop by
     # exiting; a persistent one that stops answering would hang the pump forever.
     # 600s of NO events -> kill (the read then sees EOF); same silence-not-wall
     # clock rule as everywhere else in the harness.
-    _beat = {"t": time.time(), "done": False}
+    _beat = {"t": time.time(), "done": False, "n": 0, "hung": False}
     if persistable:
         def _watchdog():
             while not _beat["done"]:
+                # A port that emits NOTHING for 90s after the prompt was written
+                # is hung (a healthy one echoes init/message_start within
+                # seconds; even a 429 retry storm logs api_error events). The
+                # 600s rule is for a turn that is WORKING but silent (a long
+                # tool); this one is for a turn that never began (2026-09-14
+                # 12:35: 10 minutes of "denkt nach" for nothing).
+                if _beat["n"] == 0 and time.time() - _beat["t"] > 90:
+                    _beat["hung"] = True
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+                    return
                 if time.time() - _beat["t"] > 600:
                     try:
                         p.kill()
@@ -1959,6 +2048,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 break
             line = line.strip()
             _beat["t"] = time.time()
+            _beat["n"] += 1
             if not line:
                 continue
             try:
@@ -1985,6 +2075,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # this event right before the tool executes (the slow part), so
                 # writing it here shows WHAT is running while it runs.
                 for _b in ((ev.get("message") or {}).get("content") or []):
+                    if isinstance(_b, dict) and _b.get("type") == "text" and (_b.get("text") or "").strip():
+                        _blocks.append(_b["text"])
                     if isinstance(_b, dict) and _b.get("type") == "tool_use":
                         _inp = _b.get("input") or {}
                         _brief = str(_inp.get("command") or _inp.get("description")
@@ -2110,8 +2202,18 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}
-    txt = result.get("result") or "".join(parts)
+    # THE REPLY IS THE WHOLE TURN'S PROSE. The CLI's `result` is only the LAST
+    # assistant message; when Henry speaks, runs a tool, speaks again and
+    # closes with a bare ```actions block, that last message is the block and
+    # the prose before it is gone - the persisted row read "" and the app
+    # (which drops empty text rows) showed NO answer at all (2026-09-14 12:47,
+    # 3.3M tokens, cost 3.92, nothing on screen). `parts` holds every streamed
+    # text delta of this turn in order; `_blocks` the full text blocks from the
+    # assistant events (the non-partial fallback); `result` stays last resort.
+    txt = "".join(parts).strip() or "\n\n".join(b for b in _blocks if b.strip()) or result.get("result") or ""
     if not (txt or "").strip():
+        if _beat.get("hung"):
+            raise RuntimeError("copilot port hung (no event within 90s) - port dropped, please resend")
         raise RuntimeError("copilot produced no output (turn ended without a result)")
     # SENTINEL MEMORY WRITES (henry-memory-db-authority phase 1) - ANY board
     # turn may end with <memory-save>/<memory-delete> blocks, not just the

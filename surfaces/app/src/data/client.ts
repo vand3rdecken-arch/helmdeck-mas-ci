@@ -1029,6 +1029,9 @@ export const api = {
   chatThreads: () => req<ChatThreads>("GET", "/chat/threads"),
   chatLive: (voiceFrom?: number, voiceTurn?: number) => req<{
     text: string; thinking?: string; running: boolean;
+    /** epoch (s) the running turn began on the daemon - the elapsed counter's
+     *  anchor, so it survives a remount/resume (absent on an old daemon). */
+    since?: number | null;
     /** The tool action currently executing ("Bash: py ..."), so the wait shows
      *  WHAT is happening while prose and thinking are silent (tool rounds went
      *  dark before - owner report 2026-09-02). Absent on an old daemon. */

@@ -761,6 +761,17 @@ def serve(port=8140):
     # on top of the model. Fire-and-forget, best-effort, same prewarm the
     # chat screen triggers on open - just earlier, while nobody is waiting.
     def _warm_henry():
+        # ORDER MATTERS: reap what the PREVIOUS daemon left BEFORE this one
+        # spawns and records its own port, or the reaper kills the port it
+        # just warmed. An eviction is a hard kill (no atexit) - 22 leaked
+        # claude.exe from 09-11..09-13 measured on 2026-09-14.
+        try:
+            from cells.copilot.chat import copilot
+            _n = copilot.reap_chat_ports()
+            if _n:
+                print("CHAT: reaped %d warm chat port(s) left by a prior daemon" % _n, flush=True)
+        except Exception as e:                                   # noqa: BLE001
+            print("CHAT: port reaper skipped (%s)" % str(e)[:120], flush=True)
         try:
             from cells.copilot.chat import copilot
             owner = copilot.owner_name()
