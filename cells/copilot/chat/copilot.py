@@ -1933,7 +1933,36 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # rounds before the first streamed word (session b085da2d, 2026-09-02/03).
     # An instruction INSIDE the turn is the strongest placement the harness
     # controls without touching the fixed spawn - one line, ~20 tokens.
-    turn = (action_report + snapshot_block + focus
+    # WHAT THE OWNER SAW IN THIS CHAT SINCE HENRY'S LAST ANSWER. The inbox
+    # transcript is ONE record the owner reads top to bottom, but three
+    # writers fill it: Henry's own turns, the broker's follow-up reports
+    # (cls pm), and card mirrors (cls card) - and only the first ever reached
+    # Henry's session. So the owner asks "Ist es normal, dass es so lange
+    # braucht?" right under the broker's Play-Console report, and Henry
+    # answers about the UI-fix card he himself last mentioned (2026-09-14
+    # 14:17). Fold the lines the owner saw between Henry's last bot row and
+    # this message into the turn - derived from the same chat log the owner
+    # reads, never a second bookkeeping.
+    chat_since = ""
+    if not card:
+        try:
+            from spine.storage import db as _db
+            _rows = _db.chat_tail(user, 40)
+            _last_bot = max((i for i, m in enumerate(_rows) if m.get("cls") == "bot"), default=-1)
+            _seen = [m for m in _rows[_last_bot + 1:]
+                     if m.get("cls") in ("pm", "card", "act", "error") and (m.get("text") or "").strip()]
+            if _seen:
+                def _tag(m):
+                    if m.get("cls") == "card":
+                        return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
+                    return {"pm": "System/Broker", "act": "Aktion", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
+                chat_since = ("IM CHAT SEIT DEINER LETZTEN ANTWORT (der Owner hat diese Zeilen "
+                              "gesehen; seine Nachricht bezieht sich oft auf die LETZTE davon):\n- "
+                              + "\n- ".join("[%s] %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
+                                             for m in _seen[-8:]) + "\n\n")
+        except Exception:                                    # noqa: BLE001
+            chat_since = ""
+    turn = (action_report + chat_since + snapshot_block + focus
             + "\n\nUSER (%s): %s" % (user, body)
             + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
               "den Owner - was du siehst oder was du pruefst -, DANN der erste "
