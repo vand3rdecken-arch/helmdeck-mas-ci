@@ -940,6 +940,10 @@ export default function Settings() {
           <Hint text={tr("settings.reg.hint")} />
           <Toggle label={tr("settings.reg.open")} value={regOpen} onChange={saveRegOpen} />
         </Panel>
+        <Pressable onPress={logout}
+          style={{ alignSelf: "flex-start", paddingVertical: 10, paddingHorizontal: 4 }}>
+          <Text style={{ color: t.danger, fontSize: 13, fontWeight: "600" }}>{tr("settings.logout")}</Text>
+        </Pressable>
         <SchemaDoor door="team" schema={schema} />
         {inviteOpen ? (
           <TeamInvite onClose={() => setInviteOpen(false)}
