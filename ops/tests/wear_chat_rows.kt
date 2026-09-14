@@ -99,6 +99,17 @@ fun main() {
     check("newest is the dated line",
         (rows[newestMessageIndex(rows)] as Row.Msg).line.text == "new")
 
+    // ---- 7. a wake refresh must mark itself, not hide behind old lines ----
+    rows = buildRows(oneDay, emptySet(), busy = false, hint = HINT, suggestOptions = emptyList(), loading = true)
+    check("non-empty chat mid-refresh shows the loading row",
+        rows.any { it is Row.Loading }, "rows=${rows.map { it::class.simpleName }}")
+    rows = buildRows(oneDay, emptySet(), busy = false, hint = HINT, suggestOptions = emptyList(), loading = false)
+    check("non-empty chat NOT refreshing shows no loading row",
+        rows.none { it is Row.Loading })
+    rows = buildRows(emptyList(), emptySet(), busy = false, hint = HINT, suggestOptions = emptyList(), loading = true)
+    check("empty chat mid-refresh uses the existing hint row, not a second one",
+        rows.count { it is Row.Hint } == 1 && rows.none { it is Row.Loading })
+
     println()
     println(if (failures == 0) "RESULT: PASS" else "RESULT: FAIL ($failures)")
     if (failures != 0) kotlin.system.exitProcess(1)

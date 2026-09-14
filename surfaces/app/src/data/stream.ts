@@ -70,12 +70,27 @@ export function chatFallbackInterval(chatEvents: boolean | null): number | false
  */
 import type { QueryClient } from "@tanstack/react-query";
 
+/**
+ * IS A CATCH-UP RUNNING - the signal chat.tsx shows a loading state from,
+ * same shape as `useStreamCaps` above (derived at event time, one owner).
+ *
+ * Without this the chat screen had no way to tell "old transcript, still
+ * fresh" from "old transcript, a refetch is in flight" - ensureChatFresh ran
+ * silently in the background (owner report 2026-09-14: nothing on screen said
+ * a reload was happening, so a stale transcript read as current). This
+ * reuses the SAME ActivityIndicator convention settings.tsx already has
+ * (`{isLoading && owner ? <ActivityIndicator .../> : null}`) rather than
+ * inventing a new loading affordance.
+ */
+export const useChatCatchup = create<{ active: boolean }>(() => ({ active: false }));
+
 let _inflight = false;
 let _again = false;
 
 export async function ensureChatFresh(qc: QueryClient): Promise<void> {
   if (_inflight) { _again = true; return; }
   _inflight = true;
+  useChatCatchup.setState({ active: true });
   try {
     let delay = 3000;
     // ~5 minutes of trying, then give up until the next wake (never forever:
@@ -96,5 +111,6 @@ export async function ensureChatFresh(qc: QueryClient): Promise<void> {
     }
   } finally {
     _inflight = false;
+    useChatCatchup.setState({ active: false });
   }
 }

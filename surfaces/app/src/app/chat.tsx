@@ -2,13 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
 import { CHAT_FOCUS, usePresence } from "@/data/presence";
-import { chatFallbackInterval, ensureChatFresh, useStreamCaps } from "@/data/stream";
+import { chatFallbackInterval, ensureChatFresh, useChatCatchup, useStreamCaps } from "@/data/stream";
 import type { PendingQuestion } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
@@ -439,6 +439,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // older daemon - see data/stream.ts). Not a hedge: a fixed timer left in
   // "just in case" would keep the defect alive on every current daemon.
   const chatEvents = useStreamCaps((s) => s.chatEvents);
+  // Whether a wake catch-up is refetching the transcript right now (data/stream.ts).
+  // Rendered in the header below so the owner sees "reloading" instead of
+  // silently trusting whatever transcript happened to already be on screen.
+  const catchingUp = useChatCatchup((s) => s.active);
   const { data } = useQuery({
     queryKey: ["chatHistory"],
     queryFn: api.chatHistory,
@@ -839,6 +843,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
+      {catchingUp ? <ActivityIndicator size="small" color={t.txtSecondary} /> : null}
       {!wide ? (
         <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
                    style={{ marginLeft: 6 }}>

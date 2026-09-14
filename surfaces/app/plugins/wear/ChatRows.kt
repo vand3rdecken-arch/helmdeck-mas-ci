@@ -69,6 +69,12 @@ sealed interface Row {
     data class Hint(val text: String) : Row
     data class Day(val date: String) : Row
     data class Msg(val line: Line) : Row
+    /** A refresh is in flight while the transcript already has content -
+     *  the wake-catch-up case Row.Hint cannot cover (it only shows on an
+     *  EMPTY list). Without this the old messages just sat there during a
+     *  wake refetch with nothing telling the owner they might be stale
+     *  (owner report 2026-09-14: no sign a reload is happening). */
+    data object Loading : Row
     data class Option(val card: String, val label: String) : Row
     data object Busy : Row
     data class Suggest(val label: String) : Row
@@ -85,11 +91,16 @@ sealed interface Row {
  *  the layout has ever needed. */
 fun buildRows(
     lines: List<Line>, answered: Set<String>, busy: Boolean,
-    hint: String, suggestOptions: List<String>,
+    hint: String, suggestOptions: List<String>, loading: Boolean = false,
 ): List<Row> {
     val rows = ArrayList<Row>(lines.size + 8)
     rows.add(Row.Title)
+    // Empty list: the existing hint slot already carries "Verlauf wird
+    // geladen..." while loading (see HenryScreen's call site). A non-empty
+    // list has no such slot, so a refresh in flight gets its own row instead
+    // of silently leaving the last-known transcript on screen unmarked.
     if (lines.isEmpty()) rows.add(Row.Hint(hint))
+    else if (loading) rows.add(Row.Loading)
     // DATE SEPARATORS, exactly where the owner's SMS screenshot has them: one
     // centred caption above the first message of each day.
     //

@@ -370,7 +370,13 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     //   - an answer that landed while the watch screen was off.
     suspend fun refresh() {
         val device = DeviceStore.load(context) ?: return
-        loadingHistory = lines.isEmpty()
+        // ALWAYS true while this call is in flight, not just on a cold start.
+        // A wake-triggered refresh used to leave `loadingHistory` false
+        // because `lines` was already populated, so the old transcript sat
+        // there with nothing marking it possibly stale (owner 2026-09-14).
+        // buildRows renders this as Row.Hint when the list is empty and as
+        // Row.Loading otherwise, so both cases now say "loading" out loud.
+        loadingHistory = true
         // RETRY, not return: the wake-up (WearStream's chat cursor) and this
         // load are two requests, and the cursor is already consumed by the
         // time we get here. One failed load - a relay timeout, a socket the
@@ -572,6 +578,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         else "Tippe auf Sprechen und stelle deine Frage.",
         // Henry's own follow-up options, when a tap can settle it.
         suggestions?.questions?.firstOrNull()?.options?.map { it.label } ?: emptyList(),
+        loading = loadingHistory,
     )
     val newest = newestMessageIndex(rows)
 
@@ -687,6 +694,15 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             is Row.Hint -> Text(
                                 text = row.text, textAlign = TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+
+                            // The wake-catch-up banner: transcript already has
+                            // content, a refresh is in flight, and that must
+                            // stay visible rather than silent (see ChatRows.kt).
+                            is Row.Loading -> Text(
+                                text = "Verlauf wird aktualisiert…",
+                                color = WearTokens.txtTertiary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
 
                             is Row.Day -> Text(
                                 text = dayLabel(row.date),
