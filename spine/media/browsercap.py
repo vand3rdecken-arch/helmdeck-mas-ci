@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Instrumented agent browser. THE HelmDeck harness standard is CDP-ATTACH: Playwright
-docks onto a real, persistent Chrome (the owner's HelmDeck profile - its extensions and
+"""Instrumented agent browser. THE HelmDeck harness standard is CDP-ATTACH: the agent
+opens its OWN tab in a real, persistent Chrome (the owner's HelmDeck profile - its extensions and
 logins, e.g. Claude for Chrome), so agents drive the actual browser instead of a blank
 sandbox. Every action still goes through the audited verbs, and the whole turn is
 screen-recorded via wincap (screen.mp4 + the live.jpg glance feed the phone reads) - the
@@ -179,25 +179,203 @@ def ensure_chrome(port=DEFAULT_PORT, profile=None, exe=None):
     raise RuntimeError("Chrome did not open its debug port %d in time" % port)
 
 
+# Resolves a Playwright-style selector (CSS, `text=...`, optional `>> nth=i`)
+# to one element, scrolls it into view, returns its viewport centre. nth
+# indexes the RAW querySelectorAll list - the same order _FIND_JS reports.
+_LOCATE_JS = """
+(sel) => {
+  let nth = null;
+  const m = sel.match(/^([\\s\\S]*?)\\s*>>\\s*nth=(-?\\d+)\\s*$/);
+  if (m) { sel = m[1]; nth = +m[2]; }
+  let els;
+  if (sel.startsWith('text=')) {
+    let t = sel.slice(5).trim(), exact = false;
+    if (/^".*"$/.test(t)) { t = t.slice(1, -1); exact = true; }
+    const norm = s => (s || '').trim().replace(/\\s+/g, ' ');
+    const hit = e => exact ? norm(e.innerText) === t : norm(e.innerText).toLowerCase().includes(t.toLowerCase());
+    els = Array.from(document.querySelectorAll('body *')).filter(e => hit(e) && !Array.from(e.children).some(hit));
+  } else {
+    els = Array.from(document.querySelectorAll(sel));
+  }
+  const el = nth === null ? els[0] : els[nth < 0 ? els.length + nth : nth];
+  if (!el) return null;
+  el.scrollIntoView({block: 'center', inline: 'center'});
+  const r = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden' || cs.display === 'none') return null;
+  return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+}
+"""
+
+_KEYS = {"Enter": (13, "\r"), "Tab": (9, ""), "Escape": (27, ""), "Backspace": (8, ""),
+         "Delete": (46, ""), "ArrowUp": (38, ""), "ArrowDown": (40, ""),
+         "ArrowLeft": (37, ""), "ArrowRight": (39, "")}
+
+
+class _Keyboard:
+    def __init__(self, page):
+        self._page = page
+
+    def press(self, key):
+        code, text = _KEYS.get(key, (ord(key.upper()[0]) if len(key) == 1 else 0, key if len(key) == 1 else ""))
+        base = {"key": key, "windowsVirtualKeyCode": code}
+        self._page._call("Input.dispatchKeyEvent", dict(base, type="keyDown", text=text) if text
+                         else dict(base, type="rawKeyDown"))
+        self._page._call("Input.dispatchKeyEvent", dict(base, type="keyUp"))
+
+
+class CdpTab:
+    """ONE tab of the shared HelmDeck Chrome, driven over that tab's OWN CDP
+    WebSocket. Not Playwright's connect_over_cdp: that auto-attaches every
+    tab in the browser and awaits all of them (playwright 1.61 coreBundle
+    CRBrowser.connect -> _waitForAllPagesToBeInitialized, no opt-out), so a
+    single hung tab of ANY card blocked every card's attach for 180s
+    (2026-09-14). Here no foreign tab is ever contacted - create, drive and
+    close touch only our own target - and every call is bounded."""
+
+    def __init__(self, port, timeout_ms=DEFAULT_ACTION_TIMEOUT_MS):
+        from websockets.sync.client import connect
+        self._port = port
+        self._timeout = timeout_ms / 1000.0
+        self._id = 0
+        self._events = []
+        info = self._http("/json/new?about:blank", "PUT")
+        self.target_id = info["id"]
+        try:
+            self._ws = connect(info["webSocketDebuggerUrl"], open_timeout=5, max_size=None)
+            self._call("Page.enable")
+        except BaseException:
+            self._http("/json/close/%s" % self.target_id)
+            raise
+        self.keyboard = _Keyboard(self)
+
+    def _http(self, path, method="GET"):
+        import json
+        req = urllib.request.Request("http://127.0.0.1:%d%s" % (self._port, path), method=method)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            body = r.read().decode("utf-8", "replace")
+        return json.loads(body) if body.startswith("{") else body
+
+    def _call(self, method, params=None, timeout=None):
+        import json
+        timeout = self._timeout if timeout is None else timeout
+        self._id += 1
+        mid = self._id
+        self._ws.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
+        deadline = time.time() + timeout
+        while True:
+            left = deadline - time.time()
+            try:
+                if left <= 0:
+                    raise TimeoutError
+                msg = json.loads(self._ws.recv(timeout=left))
+            except TimeoutError:
+                raise TimeoutError("browser tab %s did not answer %s within %.0fs - the tab is hung "
+                                   "(only this card's own tab; other tabs are never touched)"
+                                   % (self.target_id[:8], method, timeout)) from None
+            if msg.get("id") == mid:
+                if "error" in msg:
+                    raise RuntimeError("%s: %s" % (method, msg["error"].get("message")))
+                return msg.get("result") or {}
+            if "method" in msg:
+                self._events.append(msg["method"])
+
+    def set_default_timeout(self, ms):
+        self._timeout = ms / 1000.0
+
+    def evaluate(self, js, arg=None):
+        import json
+        expr = "(%s)(%s)" % (js, json.dumps(arg)) if arg is not None or js.strip().startswith(("(", "function")) else js
+        deadline = time.time() + self._timeout
+        while True:
+            try:
+                res = self._call("Runtime.evaluate", {"expression": expr, "returnByValue": True,
+                                                      "awaitPromise": True},
+                                 timeout=max(0.1, deadline - time.time()))
+                break
+            except RuntimeError as e:
+                # a click that navigated destroys the context mid-call; retry on the new document
+                if time.time() >= deadline or "context" not in str(e).lower():
+                    raise
+                time.sleep(0.1)
+        if "exceptionDetails" in res:
+            d = res["exceptionDetails"]
+            raise RuntimeError("page script error: %s" % ((d.get("exception") or {}).get("description") or d.get("text")))
+        return (res.get("result") or {}).get("value")
+
+    @property
+    def url(self):
+        return self.evaluate("location.href")
+
+    def title(self):
+        return self.evaluate("document.title")
+
+    def goto(self, url, wait_until="domcontentloaded"):
+        self._events.clear()
+        res = self._call("Page.navigate", {"url": url})
+        if res.get("errorText"):
+            raise RuntimeError("navigation to %s failed: %s" % (url, res["errorText"]))
+        if not res.get("loaderId"):
+            return                     # same-document (fragment) navigation
+        deadline = time.time() + self._timeout
+        while "Page.domContentEventFired" not in self._events:
+            if time.time() >= deadline:
+                raise TimeoutError("browser tab %s: %s did not reach DOMContentLoaded within %.0fs"
+                                   % (self.target_id[:8], url, self._timeout))
+            try:
+                self._call("Runtime.evaluate", {"expression": "1"}, timeout=max(0.1, deadline - time.time()))
+            except RuntimeError:
+                time.sleep(0.1)
+
+    def _locate(self, selector):
+        deadline = time.time() + self._timeout
+        while True:
+            pt = self.evaluate(_LOCATE_JS, selector)
+            if pt:
+                return pt
+            if time.time() >= deadline:
+                raise TimeoutError("no visible element for selector %r within %.0fs" % (selector, self._timeout))
+            time.sleep(0.2)
+
+    def click(self, selector):
+        pt = self._locate(selector)
+        for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
+            self._call("Input.dispatchMouseEvent", {"type": kind, "x": pt["x"], "y": pt["y"],
+                                                    "button": "left", "clickCount": 1})
+
+    def fill(self, selector, text):
+        self.click(selector)
+        self.evaluate("() => { const e = document.activeElement; if (e && e.select) e.select(); "
+                      "else document.execCommand('selectAll'); }")
+        if text:
+            self._call("Input.insertText", {"text": text})
+        else:
+            self.evaluate("() => document.execCommand('delete')")
+
+    def close(self):
+        try:
+            self._ws.close()
+        finally:
+            self._http("/json/close/%s" % self.target_id)
+
+
 class AgentBrowser:
     def __init__(self, run_dir, log=None, headless=False, attach=True, port=DEFAULT_PORT):
         self.run_dir = run_dir
         self.log = log or ActionLog(run_dir)
         self.attached = attach
         self._cap = None
-        self._pw = sync_playwright().start()
+        self._pw = None
         try:
             if attach:
-                # STANDARD: dock onto the real, persistent HelmDeck Chrome.
+                # STANDARD: our own tab in the real, persistent HelmDeck Chrome.
                 ensure_chrome(port)
-                self._browser = self._pw.chromium.connect_over_cdp("http://127.0.0.1:%d" % port)
-                ctx = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
-                self._ctx = ctx
-                self.page = ctx.new_page()        # our own tab; leave the owner's tabs alone
+                self.page = CdpTab(port)          # our own tab; leave the owner's tabs alone
                 # the real browser is visible, so the SCREEN recording is the evidence
                 self._cap = wincap.start(run_dir)
                 self.log.log("note", "attached to HelmDeck Chrome (CDP :%d)" % port)
             else:
+                self._pw = sync_playwright().start()
                 # FALLBACK: a blank sandbox context with Playwright's native webm.
                 self._browser = self._pw.chromium.launch(channel="msedge", headless=headless)
                 self._ctx = self._browser.new_context(
@@ -208,16 +386,15 @@ class AgentBrowser:
             # cost seconds, not Playwright's 30s default eating the turn.
             self.page.set_default_timeout(DEFAULT_ACTION_TIMEOUT_MS)
         except BaseException:
-            # A half-finished attach (e.g. connect_over_cdp timing out) must
-            # not leave self._pw's driver alive: on the MCP server, __init__
-            # runs on ONE long-lived owner thread reused for every later
-            # call (ops/tools/browser_mcp.py THE THREAD RULE) - a leaked
-            # sync-Playwright context on that thread poisons every
-            # subsequent AgentBrowser() on it with Playwright's "Sync API
-            # inside the asyncio loop" guard, permanently, until the process
-            # restarts. Stopping it here is the only chance to fail clean.
+            # A half-finished start must not leak: our own tab stays open in
+            # the shared Chrome otherwise, and a leaked sync-Playwright driver
+            # on browser_mcp.py's ONE owner thread poisons every later
+            # AgentBrowser() there with "Sync API inside the asyncio loop".
             try:
-                self._pw.stop()
+                if self._pw is not None:
+                    self._pw.stop()
+                elif isinstance(getattr(self, "page", None), CdpTab):
+                    self.page.close()
             except Exception:
                 pass
             raise
@@ -292,7 +469,8 @@ class AgentBrowser:
                 self._ctx.close()           # finalizes the .webm
                 self._browser.close()
         finally:
-            self._pw.stop()
+            if self._pw is not None:
+                self._pw.stop()
         if not self.attached:
             # normalize playwright's random video name to browser.webm
             for f in os.listdir(self.run_dir):

@@ -4943,6 +4943,30 @@ DEBT = [
         "since": "2026-09-12",
         "order": 70,
     },
+    {
+        "id": "browser-attach-selector-subset",
+        "title": "Attached browser tab resolves only CSS / text= / >> nth=, without Playwright actionability",
+        "status": "open",
+        "what": "spine/media/browsercap.py's attach mode drives its own tab over "
+                "that tab's own CDP WebSocket (CdpTab) instead of Playwright's "
+                "connect_over_cdp, which awaits EVERY tab in the browser and so "
+                "let one hung tab block every card's attach for 180s "
+                "(2026-09-14). The price: click()/type() resolve selectors with "
+                "a small JS locator (CSS, `text=`, `>> nth=i`) and dispatch raw "
+                "mouse/insertText input at the element centre - no role=/xpath= "
+                "engines, no Playwright hit-target/stability/enabled checks.",
+        "why_it_bites": "a selector in another Playwright engine fails as a "
+                        "CSS syntax error, and a click on an element covered "
+                        "by an overlay lands on the overlay instead of raising.",
+        "trigger": "an agent passing role=/xpath=/:has-text() selectors, or a "
+                   "page with a modal/cookie banner over the target.",
+        "fix": "add an elementFromPoint hit-target check before the mouse "
+               "events (raise with the covering element's tag), and map the "
+               "selector engines agents actually use once they show up in "
+               "action logs.",
+        "since": "2026-09-14",
+        "order": 71,
+    },
 ]
 
 def list_debt():

@@ -151,6 +151,115 @@ def test_selector_miss_fails_fast_with_a_bounded_error():
         b.close()
 
 
+def _free_port():
+    import socket
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _cdp_json(port, path, method="GET"):
+    import json
+    import urllib.request
+    req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), method=method)
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read().decode() or "null") if "close" not in path else None
+
+
+def _hang_target(ws_url):
+    """Spin a tab's renderer main thread forever - the 2026-09-14 incident
+    shape (three App Store Connect tabs that answered no CDP call)."""
+    import json
+    from websockets.sync.client import connect
+    ws = connect(ws_url, open_timeout=5, max_size=None)
+    ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": "for(;;){}"}}))
+    ws.send(json.dumps({"id": 2, "method": "Runtime.evaluate", "params": {"expression": "1"}}))
+    try:
+        while True:
+            if json.loads(ws.recv(timeout=2)).get("id") == 2:
+                return False
+    except TimeoutError:
+        return True
+    finally:
+        ws.close()
+
+
+def test_attach_survives_a_hung_foreign_tab():
+    """THE REAL ATTACH PATH (attach=True, CDP on a debug port) against a
+    browser that holds a hung tab belonging to someone else. Playwright's
+    connect_over_cdp auto-attaches EVERY tab and awaits all of them, so the
+    old attach blocked for 180s on any one hung tab - every card on the
+    machine at once. A throwaway headless Chrome on its own port + profile,
+    never the owner's; wincap and the action log are stubbed only because
+    desktop recording and the live-db audit row are not the connection path."""
+    import shutil
+    import subprocess
+    import threading
+    port = _free_port()
+    profile = tempfile.mkdtemp()
+    chrome = subprocess.Popen([
+        browsercap._chrome_exe(), "--headless=new", "--remote-debugging-port=%d" % port,
+        "--user-data-dir=%s" % profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
+    real_start = browsercap.wincap.start
+    browsercap.wincap.start = lambda run_dir: None
+    box = {}
+    try:
+        for _ in range(60):
+            if browsercap._cdp_up(port):
+                break
+            time.sleep(0.25)
+        foreign = _cdp_json(port, "/json/new?about:blank", method="PUT")
+        check(_hang_target(foreign["webSocketDebuggerUrl"]), "precondition: the foreign tab really answers no CDP call")
+
+        def attach():
+            try:
+                box["b"] = browsercap.AgentBrowser(tempfile.mkdtemp(), attach=True, port=port,
+                                                   log=type("NullLog", (), {"log": lambda *a, **k: None})())
+            except BaseException as e:
+                box["err"] = e
+        t0 = time.time()
+        th = threading.Thread(target=attach, daemon=True)
+        th.start()
+        th.join(20)
+        check("b" in box, "attach completes despite the hung foreign tab (%.1fs, err=%r)"
+              % (time.time() - t0, box.get("err")))
+        if "b" not in box:
+            return
+        b = box["b"]
+        b.goto(_file_url("<html><body><p>own tab alive</p><button id=b onclick=\"document.title='hit'\">Go</button></body></html>"))
+        check("own tab alive" in b.read(), "read() works on the card's own tab")
+        check("button >> nth=0" in b.find("button"), "find() works on the card's own tab")
+        b.click("button >> nth=0")
+        check(b.page.title() == "hit", "click() via a find() locator reaches the element")
+        b.click("text=own tab")
+        check(True, "text= selector resolves")
+
+        b.page.evaluate("() => setTimeout(() => { for(;;){} }, 0)")
+        time.sleep(0.5)
+        t0 = time.time()
+        try:
+            b.read()
+            check(False, "read() on a hung OWN tab must raise, not return")
+        except Exception as e:
+            check(time.time() - t0 < 15, "own-tab hang fails in bounded time (%.1fs), not 180s" % (time.time() - t0))
+            check("did not answer" in str(e), "the error says plainly the tab did not answer: %r" % str(e)[:160])
+        own_id = b.page.target_id
+        b.close()
+        for waited in range(40):       # /json/close answers "Target is closing" - it is async
+            ids = [t["id"] for t in _cdp_json(port, "/json/list")]
+            if own_id not in ids:
+                break
+            time.sleep(0.25)
+        print("  info own tab gone after %.2fs" % (waited * 0.25))
+        check(foreign["id"] in ids, "close() leaves the foreign (hung) tab alone - never kills another card's tab")
+        check(own_id not in ids, "close() removes the card's own tab")
+    finally:
+        browsercap.wincap.start = real_start
+        chrome.kill()
+        chrome.wait(timeout=10)
+        shutil.rmtree(profile, ignore_errors=True)
+
+
 def test_mcp_server_end_to_end_over_stdio():
     """THE test that was missing when the verbs shipped (4474e29): the old
     MCP-level check called browser_mcp.navigate() as a plain Python function,
@@ -228,6 +337,7 @@ if __name__ == "__main__":
     test_find_caps_at_20_and_locators_are_click_addressable()
     test_find_reaches_off_screen_elements_that_read_cannot_see()
     test_selector_miss_fails_fast_with_a_bounded_error()
+    test_attach_survives_a_hung_foreign_tab()
     test_mcp_server_end_to_end_over_stdio()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))
     sys.exit(1 if _fails else 0)
