@@ -7,6 +7,14 @@ directories:
 files:
   - main.js
   - setup.js
+  - preload.js         # the renderer bridge (window.helmdeckNative) main.js hands to
+                       # BrowserWindow. Added 2026-08-26 (5a9a830) but never listed
+                       # here, so every installer 0.2.9..0.2.18 shipped a main.js that
+                       # names a preload the asar did not contain: "Unable to load
+                       # preload script ... ENOENT" in every packaged window (seen on
+                       # a fresh laptop install 2026-09-14). ops/tests/
+                       # test_desktop_asar_files.py now pins every local file main.js
+                       # references to this list.
   - updater.js         # the relay OTA auto-updater (UI-bundle-only) main.js require()s
   - native-updater.js  # electron-updater wrapper - FULL-app updates (main.js included)
   - package.json

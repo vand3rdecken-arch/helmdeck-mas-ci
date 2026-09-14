@@ -25,6 +25,7 @@ const { startSetupServer } = require("./setup");
 const DAEMON_PORT = 8140;
 const WEB_PORT = 3300;
 let daemon = null, web = null, win = null, failed = false, setupSrv = null, daemonAdopted = false;
+let _shellLogPath = null;   // userData/shell.log, resolved lazily by log() once app is ready
 
 // packaged: resources/{daemon,app-dist}; dev: repo ../{daemon,surfaces/app/dist}
 const root = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "..");
@@ -219,7 +220,20 @@ function realInterpreter(cmd, args) {
 // main process crashes the whole app ("A JavaScript error occurred..."). Never
 // let a log line take the process down - swallow write errors.
 function log(tag, buf) {
-  try { process.stdout.write("[" + tag + "] " + buf); } catch { /* broken pipe / closed stdout - ignore */ }
+  const line = "[" + tag + "] " + buf;
+  try { process.stdout.write(line); } catch { /* broken pipe / closed stdout - ignore */ }
+  // A packaged GUI build has NO stdout anybody can read - every shell-side
+  // fact (preload failed, page never loaded, renderer gone) used to vanish,
+  // and a black window on a fresh laptop install (2026-09-14) could only be
+  // diagnosed by the owner photographing DevTools. Mirror every line into
+  // userData/shell.log (append, best-effort, never fatal): the installer
+  // leaves userData alone, so the file survives updates and can be sent in.
+  try {
+    if (app.isReady() || _shellLogPath) {
+      _shellLogPath = _shellLogPath || path.join(app.getPath("userData"), "shell.log");
+      require("fs").appendFileSync(_shellLogPath, new Date().toISOString() + " " + line);
+    }
+  } catch { /* unwritable userData - stdout (if any) already has it */ }
 }
 
 // Belt-and-suspenders: if the stdout/stderr streams themselves emit EPIPE
@@ -406,6 +420,88 @@ function createWindow() {
   // open external links in the real browser, not a new Electron window
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
   win.on("closed", () => { win = null; });
+  watchPageLoad(win);
+}
+
+// A black window must never be silent. The BrowserWindow paints its
+// backgroundColor until the SPA's first frame, so anything that keeps the
+// page from loading - a stuck request to the local UI server, a renderer
+// crash, a preload that fails inside the asar - looked identical to "still
+// starting" for as long as the user cared to wait (fresh laptop install,
+// 2026-09-14: DevTools was the only witness). Three renderer signals are now
+// logged (shell.log, see log()), and if the document has not finished loading
+// within LOAD_WATCHDOG_MS the window is REPLACED with a plain diagnostic page
+// naming the URL, what the shell itself can see, and where the log is. Once
+// the real page has loaded, the watchdog stands down for good.
+const LOAD_WATCHDOG_MS = 25000;
+function watchPageLoad(w) {
+  const wc = w.webContents;
+  let loaded = false, failure = null, shown = false;
+  // Probe the local UI server from the shell's own side, then replace the
+  // window content. Separates "UI server dead" from "the renderer cannot
+  // reach it" (proxy/AV/loopback policy on the machine).
+  const diagnose = (what) => {
+    if (shown) return;
+    shown = true;
+    const url = wc.getURL() || "(none)";
+    log("renderer", "page never loaded - " + what + " - showing diagnostic page\n");
+    http.get({ host: "127.0.0.1", port: WEB_PORT, path: "/", timeout: 3000 }, (r) => {
+      r.destroy(); showLoadFailure(url, what, "answers HTTP " + r.statusCode + " on 127.0.0.1:" + WEB_PORT);
+    }).on("error", (e) => showLoadFailure(url, what, "does NOT answer on 127.0.0.1:" + WEB_PORT + " (" + e.message + ")"))
+      .on("timeout", function () { this.destroy(); showLoadFailure(url, what, "times out on 127.0.0.1:" + WEB_PORT); });
+  };
+  wc.on("did-finish-load", () => {
+    // Chromium fires did-finish-load for its OWN error document too (measured:
+    // ERR_CONNECTION_REFUSED -> did-fail-load, then did-finish-load 40ms
+    // later), so a failure that already happened must not count as loaded.
+    if (failure) return;
+    loaded = true;
+    log("renderer", "loaded " + wc.getURL() + "\n");
+  });
+  wc.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 || shown) return;   // -3 = ERR_ABORTED: a normal re-navigation
+    failure = "did-fail-load " + code + " " + desc + " " + url;
+    log("renderer", failure + "\n");
+    diagnose(failure);          // a hard failure needs no watchdog - say it now
+  });
+  wc.on("render-process-gone", (_e, d) => {
+    failure = "render-process-gone " + JSON.stringify(d);
+    log("renderer", failure + "\n");
+    diagnose(failure);
+  });
+  wc.on("preload-error", (_e, preloadPath, err) => {
+    // Electron reports this ON the webContents (the DevTools console line is
+    // "Unable to load preload script") - logged here so a packaged build
+    // keeps the evidence. Not fatal on its own: the page still runs, only
+    // window.helmdeckNative (update banner) is missing.
+    log("renderer", "preload-error " + preloadPath + ": " + (err && err.message) + "\n");
+  });
+  wc.on("console-message", (_e, level, message, line, sourceId) => {
+    if (level >= 3) log("renderer", "console.error " + message + " (" + sourceId + ":" + line + ")\n");
+  });
+  setTimeout(() => {
+    if (loaded || shown || !win || win.isDestroyed()) return;
+    diagnose("WATCHDOG: no did-finish-load within " + (LOAD_WATCHDOG_MS / 1000) + "s (request hangs)");
+  }, LOAD_WATCHDOG_MS);
+}
+
+function showLoadFailure(url, what, serverState) {
+  if (!win || win.isDestroyed()) return;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const html = "<!doctype html><html><body style=\"margin:0;background:#0b0f14;color:#e6edf3;font:15px/1.5 system-ui,Segoe UI,sans-serif\">"
+    + "<div style=\"max-width:720px;margin:12vh auto;padding:0 28px\">"
+    + "<h1 style=\"font-size:22px;margin:0 0 14px\">HelmDeck konnte die Oberfläche nicht laden</h1>"
+    + "<p>Das Fenster wäre sonst schwarz geblieben. Das ist der Grund, den die App selbst sehen kann:</p>"
+    + "<pre style=\"white-space:pre-wrap;background:#161b22;padding:14px;border-radius:8px\">"
+    + "URL:        " + esc(url) + "\n"
+    + "Renderer:   " + esc(what) + "\n"
+    + "UI-Server:  " + esc(serverState) + "\n"
+    + "Shell-Log:  " + esc(_shellLogPath || "(nicht beschreibbar)") + "</pre>"
+    + "<p>Bitte diese Seite fotografieren oder das Shell-Log schicken. Ein Neustart der App versucht es erneut."
+    + " Antwortet der UI-Server, blockiert meist ein Proxy, eine Sicherheitssoftware oder eine Loopback-Regel"
+    + " die Verbindung des Fensters zu 127.0.0.1.</p>"
+    + "</div></body></html>";
+  win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 }
 
 function killTree(proc) {
