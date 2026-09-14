@@ -1,3 +1,7 @@
+# spine/comms/e2ee.py: relay end-to-end encryption (nacl.public Box). REQUIRED -
+# imported by server.py and the auth/relay/settings/system routes, so a box
+# without it cannot start the daemon.
+pynacl>=1.5
 playwright>=1.40
 imageio-ffmpeg>=0.4.9
 pynput>=1.7
