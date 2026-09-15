@@ -5,14 +5,21 @@ boards_verify_daemon - same recipe as ops/tests/e2e_boards_ui.py's sign_in()/
 open_board(), reused here for pixels instead of assertions so nothing in the
 shot is invented or is a real/private board.
 
+Same four-screen narrative as ops/tools/make_appstore_screenshots.py's iPhone
+set (board / a card's history / needs-you / dashboard), captured live here
+instead of resized from the phone crop - a phone screenshot stretched onto
+the mac canvas would look pasted-on, not like a real desktop window.
+
 Viewport 1280x800 @2x = 2560x1600 output, one of Apple's exact accepted mac
 screenshot canvases (no crop/pad needed).
 
 Prereqs (both already running when this was written):
   py -3.12 ops/tools/boards_verify_daemon.py 8149
-  cd surfaces/app && npx expo start --web --port 8199
+  cd surfaces/app && npx expo start --web --port 8199 --offline
 
   py -3.12 ops/tools/make_macos_appstore_screenshots.py [web-port] [daemon-port]
+
+Output: ops/docs/store/screenshots/appstore/macos-1280x800/0N-*.png
 """
 import json, os, sys
 
@@ -29,6 +36,12 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 CFG = json.dumps({"baseUrl": DAEMON, "token": "", "relayUrl": "",
                   "room": "", "daemonPub": "", "mySec": "", "myPub": ""})
+
+# The seed daemon (ops/tools/boards_verify_daemon.py) creates this card as
+# lane=working/status=running, always present and always in that lane - a
+# stable target to click for the card-history shot, not scraped off whatever
+# a real board happens to contain right now.
+CARD_TITLE = "Relay-Reconnect härten"
 
 
 def sign_in(page):
@@ -55,6 +68,11 @@ def sign_in(page):
     page.wait_for_timeout(2500)
 
 
+def shot(page, name):
+    page.screenshot(path=os.path.join(OUT, name))
+    print("wrote %s" % name)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     with sync_playwright() as p:
@@ -63,21 +81,27 @@ def main():
         page = ctx.new_page()
         sign_in(page)
 
-        page.screenshot(path=os.path.join(OUT, "01-dashboard.png"))
-        print("wrote 01-dashboard.png")
-
+        # 01 - the board, the app's home base.
         page.goto("http://127.0.0.1:%d/board" % WEB, wait_until="domcontentloaded", timeout=180000)
         page.wait_for_timeout(5000)
-        page.screenshot(path=os.path.join(OUT, "02-board.png"))
-        print("wrote 02-board.png")
+        shot(page, "01-board.png")
 
-        try:
-            page.get_by_text("Relay-Reconnect härten", exact=True).first.click(timeout=5000)
-            page.wait_for_timeout(3000)
-            page.screenshot(path=os.path.join(OUT, "03-card.png"))
-            print("wrote 03-card.png")
-        except Exception as e:
-            print("!!! card-detail shot skipped: %r" % e)
+        # 02 - a card opened, its own history in view.
+        page.get_by_text(CARD_TITLE, exact=True).first.click(timeout=10000)
+        page.wait_for_timeout(3000)
+        shot(page, "02-card-verlauf.png")
+        page.go_back(wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_timeout(1500)
+
+        # 03 - "wartet auf dich" (needs-you), the seeded wk-2 card lives here.
+        page.goto("http://127.0.0.1:%d/needs" % WEB, wait_until="domcontentloaded", timeout=180000)
+        page.wait_for_timeout(4000)
+        shot(page, "03-wartet-auf-dich.png")
+
+        # 04 - "Übersicht" (dashboard), the tab login lands on.
+        page.goto("http://127.0.0.1:%d/" % WEB, wait_until="domcontentloaded", timeout=180000)
+        page.wait_for_timeout(4000)
+        shot(page, "04-uebersicht.png")
 
         b.close()
 
