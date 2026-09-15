@@ -159,6 +159,25 @@ SCRIPT["lines"] = _text("Ich steuere die Karte an.") + _tool() + _text(ACT) + _r
 out = copilot.chat(OWNER, "go", role="owner")
 check((last_bot() or "").strip() != "", "bare actions tail -> full text fallback, reply not empty (got %r)" % last_bot())
 
+# 4b) the owner's question answered BEFORE the tool round is content, not a
+#     preamble (2026-09-15 17:27 "This message was ignored"): it stays, as its
+#     own paragraph, the short closing status after it too
+db.chat_clear()
+LONG = ("Alle 4 DMs sind raus. Zur Frage: die Hände-Karte läuft unter Claude Codes eigenem "
+        "Auto-Mode-Sicherheits-Layer, der bestimmte UI-Klicks als reale Transaktion einstuft - "
+        "bypassPermissions hat genau diese Zusatzsperre aufgehoben. Der Log-Write scheiterte, weil "
+        "card_tool_guard Hände-Agents auf ihren Scratch-Ordner beschränkt.")
+assert len(LONG) > 200
+SCRIPT["lines"] = _text(LONG) + _tool() + _tool() + _text("Log ist nachgetragen.") + _result("x")
+copilot.chat(OWNER, "why restrictions", role="owner")
+check(last_bot() == LONG + "\n\nLog ist nachgetragen.",
+      "a long pre-tool answer survives, paragraph-separated from the closing line (got %r)" % (last_bot() or "")[:80])
+db.chat_clear()
+SCRIPT["lines"] = (_text("Moment, ich schau kurz.") + _tool() + _text(LONG) + _tool()
+                   + _text("Fertig.") + _result("x"))
+copilot.chat(OWNER, "mixed", role="owner")
+check(last_bot() == LONG + "\n\nFertig.", "short preamble dropped, long middle block kept (got %r)" % (last_bot() or "")[:60])
+
 # 5) hands._land: Henry sees the whole report
 from cells.copilot.chat import hands
 big = "FAILED\n" + "\n".join("- line %02d: %s" % (i, "x" * 60) for i in range(40))

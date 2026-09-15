@@ -682,6 +682,9 @@ def henry_pmode(project=""):
 
 
 HANDS_MODES = ("auto", "plan", "acceptEdits", "bypassPermissions")
+# a FIRST-WORD status line ("Moment, ich schau kurz auf den Board-Stand.") is
+# one short sentence; a pre-tool text block longer than this is an answer
+_PREAMBLE_MAX = 200
 
 
 def set_hands_mode(mode, actor="owner", note="hands_mode"):
@@ -2579,10 +2582,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # answer is the prose AFTER the last tool call; the preamble lives in the
     # live preview only, like the transient tool steps. Fallback to the full
     # text when the tail carries no prose (a bare actions block at the end).
+    # NOT "everything before a tool call" (2026-09-15 17:27 regression: Henry
+    # answered the owner's question in the block BEFORE his tool round and
+    # only "Log ist nachgetragen" survived - the owner: "This message was
+    # ignored"). The FIRST-WORD law defines the preamble as ONE SHORT
+    # SENTENCE; that is what gets dropped. A pre-tool block longer than that
+    # is content and stays, as its own paragraph.
     if _tail_blocks and len(_tail_blocks) < len(_blocks):
-        _tail = "\n\n".join(b for b in _tail_blocks if b.strip()).strip()
-        if _strip_actions_live(_tail).strip():
-            txt = _tail
+        _kept = [b for b in _blocks if b.strip() and (b in _tail_blocks or len(b.strip()) > _PREAMBLE_MAX)]
+        _joined = "\n\n".join(b.strip() for b in _kept).strip()
+        if _strip_actions_live(_joined).strip():
+            txt = _joined
     if not (txt or "").strip():
         if _beat.get("hung"):
             raise RuntimeError("copilot port hung (no event within 90s) - port dropped, please resend")
