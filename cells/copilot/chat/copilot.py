@@ -18,6 +18,7 @@ _MODELS_KEY = "copilot_models"
 # away); the rest is now a bigger LIMIT away, not gone.
 _HISTORY_WINDOW = 80
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
+from cells.copilot.chat import copilot_prune
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
@@ -1052,6 +1053,37 @@ _FILLER_REPLIES = {"no response requested"}
 
 _compacting = set()              # users with a background compaction in flight
 
+
+def _await_lull_and_lock(user):
+    """Acquire the user's turn lock only once the chat has been quiet for a
+    few minutes - shared by every background maintenance job that must never
+    step on a live conversation (_schedule_compact, _schedule_prune).
+
+    Extracted from _schedule_compact's own worker, verbatim (owner incident
+    2026-09-03 10:07, see that function's docstring): a lull measured BEFORE
+    acquire() proves nothing by the time acquire() actually returns, so the
+    check is repeated UNDER the lock and released again if the owner started
+    typing in between. Bounded at 30 min total - the maintenance must not be
+    deferrable forever. Returns the ALREADY-ACQUIRED lock; caller releases
+    it."""
+    t0 = time.time()
+
+    def _quiet_for():
+        mine = [v for k, v in list(_last_turn_at.items())
+                if k == _skey(user) or k.startswith(_skey(user) + "\x00")]
+        return time.time() - (max(mine) if mine else 0.0)
+
+    lk = _turn_lock(user)
+    while True:
+        while time.time() - t0 < 1800 and _quiet_for() < 180:
+            time.sleep(15)
+        lk.acquire()
+        if _quiet_for() >= 180 or time.time() - t0 >= 1800:
+            return lk
+        lk.release()
+        time.sleep(15)
+
+
 def _compact_mark(st):
     """The context level at which Henry must compact - the LOWER of two
     INDEPENDENT reasons, because they protect different things:
@@ -1125,32 +1157,9 @@ def _schedule_compact(user):
             # to conversation: only start once the chat has been quiet for a
             # few minutes. Bounded - after 30 min of nonstop chatter the
             # compaction goes ahead anyway (the overflow guard must not be
-            # deferrable forever).
-            _t0 = time.time()
-
-            def _quiet_for():
-                _mine = [v for k, v in list(_last_turn_at.items())
-                         if k == _skey(user) or k.startswith(_skey(user) + "\x00")]
-                return time.time() - (max(_mine) if _mine else 0.0)
-
-            lk = _turn_lock(user)
-            while True:
-                while time.time() - _t0 < 1800 and _quiet_for() < 180:
-                    time.sleep(15)
-                lk.acquire()
-                # RE-CHECK UNDER THE LOCK. The lull was measured BEFORE
-                # acquire(), and acquire() blocks behind a running turn - so
-                # a lull that ended the moment the owner spoke still let the
-                # compaction start the instant his turn released the lock
-                # (measured 2026-09-13 11:25:08: reply out at 11:25:07,
-                # memory-save + /compact took the lock one second later, the
-                # owner's follow-up sat 3 minutes behind it). The lock proves
-                # nothing about quiet; only the clock does. Bounded by the
-                # same 30 min as the outer wait.
-                if _quiet_for() >= 180 or time.time() - _t0 >= 1800:
-                    break
-                lk.release()
-                time.sleep(15)
+            # deferrable forever). See _await_lull_and_lock for why the lull
+            # is re-checked UNDER the lock, not just before it.
+            lk = _await_lull_and_lock(user)
             try:
                 note = _maybe_compact(user)
             finally:
@@ -1167,6 +1176,87 @@ def _schedule_compact(user):
             pass                 # best-effort, same contract as _maybe_compact
         finally:
             _compacting.discard(user)
+
+    threading.Thread(target=_go, daemon=True).start()
+
+
+_pruning = set()          # users with a background tool-result prune in flight
+
+
+def _do_prune(user, sid):
+    """The between-turns half of copilot_prune: rewrite Henry's OWN session
+    .jsonl in place (pure logic lives in copilot_prune.py; this function
+    owns the effects on the live process).
+
+    Drops the persistent warm process ONLY if something was actually
+    pruned - the file changing means nothing to an ALREADY-warm process,
+    which built its context in memory at its last spawn/resume, same
+    reasoning _maybe_compact gives for dropping it there. Never touches
+    ctx_tokens: that meter's one owner is copilot_stats._fold_stats, fed by
+    the next real usage event, not a byte-to-token guess made here (no
+    monkey patches). Best-effort, same contract as _maybe_compact."""
+    from spine.agent import claude_sessions
+    path = claude_sessions._find_transcript(sid)
+    if not path:
+        return None
+    res = copilot_prune.prune_session_file(path)
+    if not res or not res[0]:
+        return None
+    n, saved = res
+    all_st = _stats()
+    m = all_st.setdefault(user, {})
+    m["pruned_at_turn"] = int(m.get("turns") or 0)
+    _save_stats(all_st)
+    _persist_drop(_skey(user))
+    return ("KONTEXT-PRUNING: %d alte(s) Tool-Ergebnis(se) gekuerzt (~%dkb frei)."
+            % (n, round(saved / 1024)))
+
+
+def _schedule_prune(user):
+    """Second, INDEPENDENT between-turns cleanup (card
+    chat-henry-kontext-pruning, 2026-09-15): shrink old, big tool_result
+    blocks in Henry's session .jsonl long before _schedule_compact's mark,
+    so the dead tool-output weight stops accumulating instead of only being
+    summarized away once the session is already huge (measured: Henry's
+    post-compact floor is ~100k tokens against a ~25k snapshot+persona+tools
+    cost - the rest is old tool history /compact carries but doesn't drop).
+
+    Deliberately its OWN guard/worker/single-flight set, not folded into
+    _schedule_compact: a bug in one cleanup must never block the other. Runs
+    ONLY between turns (same _await_lull_and_lock discipline) - never mid-
+    turn, where a partial rewrite of the live transcript would be a
+    corruption bug, not a savings one."""
+    try:
+        st = _stats().get(user) or {}
+        ctx = st.get("ctx_tokens") or 0
+    except Exception:
+        return
+    if ctx < copilot_prune.MARK_CTX or user in _pruning:
+        return
+    # at most one prune attempt per conversation turn - once fired, the next
+    # eligible turn advances `turns` past `pruned_at_turn` again.
+    if int(st.get("turns") or 0) <= int(st.get("pruned_at_turn") or -1):
+        return
+    sid = _sessions().get(_skey(user))
+    if not sid:
+        return
+    _pruning.add(user)
+
+    def _go():
+        try:
+            lk = _await_lull_and_lock(user)
+            try:
+                note = _do_prune(user, sid)
+            finally:
+                lk.release()
+            if note:
+                prewarm(user, spoken=False)   # the drop above cost the warmth
+                _append_log(user, [{"cls": "error", "text": note,
+                                    "ts": time.strftime("%H:%M")}])
+        except Exception:
+            pass                 # best-effort, same contract as _maybe_compact
+        finally:
+            _pruning.discard(user)
 
     threading.Thread(target=_go, daemon=True).start()
 
@@ -2583,6 +2673,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
     _schedule_compact(user)      # background + single-flight, never blocks this reply
+    _schedule_prune(user)        # independent cleanup - see its own docstring
     refused = []
     if acts and not allow_actions:
         # ADVISORY CALLER (glass mode). The lens authenticates with a single
