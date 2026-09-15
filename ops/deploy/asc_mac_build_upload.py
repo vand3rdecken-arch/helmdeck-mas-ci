@@ -53,9 +53,9 @@ def cmd_show():
                 print("   %s: %s - %s" % (kind, e.get("code"), e.get("description")))
 
 
-def _create_build_upload(version):
+def _create_build_upload(short_version, build_version):
     body = {"data": {"type": "buildUploads",
-             "attributes": {"cfBundleVersion": version, "cfBundleShortVersionString": version,
+             "attributes": {"cfBundleVersion": build_version, "cfBundleShortVersionString": short_version,
                              "platform": PLATFORM},
              "relationships": {"app": {"data": {"type": "apps", "id": APP_ID}}}}}
     return _req("POST", "/v1/buildUploads", body)["data"]
@@ -103,9 +103,9 @@ def _poll_state(build_upload_id, timeout=180):
     return "TIMEOUT"
 
 
-def upload_one(path, version):
-    print("=== %s (version %s) ===" % (os.path.basename(path), version))
-    bu = _create_build_upload(version)
+def upload_one(path, short_version, build_version):
+    print("=== %s (version %s, build %s) ===" % (os.path.basename(path), short_version, build_version))
+    bu = _create_build_upload(short_version, build_version)
     print("buildUpload:", bu["id"])
     buf = _create_build_upload_file(bu["id"], path)
     print("buildUploadFile:", buf["id"])
@@ -125,14 +125,24 @@ def cmd_apply(argv):
     if not files:
         print("usage: apply --yes <path-to.pkg> [<path-to.pkg> ...]")
         sys.exit(2)
+    # Apple requires cfBundleVersion to strictly increase per upload, even for
+    # a second architecture-specific .pkg of the SAME marketing version (a
+    # real 409 ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE, not a guess) - so a
+    # second file for a version already seen this run gets a disambiguating
+    # ".N" suffix on the BUILD number only; cfBundleShortVersionString (the
+    # marketing version shown in ASC) stays the real one.
+    seen = {}
     for path in files:
         # HelmDeck-0.2.18-arm64.pkg -> 0.2.18
         base = os.path.basename(path)
-        version = base.split("-")[1] if base.startswith("HelmDeck-") else None
-        if not version:
+        short_version = base.split("-")[1] if base.startswith("HelmDeck-") else None
+        if not short_version:
             print("cannot infer version from filename %s - skipping" % base)
             continue
-        state = upload_one(path, version)
+        n = seen.get(short_version, 0)
+        seen[short_version] = n + 1
+        build_version = short_version if n == 0 else "%s.%d" % (short_version, n)
+        state = upload_one(path, short_version, build_version)
         print("%s -> %s" % (base, state))
 
 
