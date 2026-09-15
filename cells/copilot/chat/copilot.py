@@ -108,6 +108,45 @@ _pending_lock = threading.Lock()
 # carries the state. Stamped only on turn SUCCESS (a failed turn never showed
 # the model the snapshot), cleared when a resume turns out detached.
 _snap_seen = {}
+# skey -> sha1 of the project overlay last delivered. Rides the SAME continuity
+# window as _snap_seen (only honoured while that entry is live), so the two
+# pop sites that reset the snapshot seam reset this one for free.
+_ovl_seen = {}
+# Per-card cost drifts on every turn a worker runs and changed the snapshot
+# hash each time - the one thing that made "unchanged" never match. Stripped
+# from the HASHED/DIFFED text only; every full snapshot still carries it.
+_SNAP_VOLATILE = re.compile(r" ai=\$[\d.]+")
+
+
+def _snap_stable(body):
+    """(hash, lines) of a snapshot body with the volatile bits removed - the
+    identity the delta seam compares. MEASURED 2026-09-15 on the live board
+    session: every one of 10 owner turns re-sent the full 10-15 KB snapshot
+    although the board barely moved, because the hashed body carried the
+    minute-stamped header and the per-card ai=$ cost. The header is hashed
+    nowhere now (it is prepended after), the cost is stripped here."""
+    import hashlib
+    stable = _SNAP_VOLATILE.sub("", body)
+    return hashlib.sha1(stable.encode("utf-8", "replace")).hexdigest(), stable.split("\n")
+
+
+def _snapshot_delta(old, new):
+    """Line diff of a snapshot against the last FULL one the model saw -
+    the DELTA the seam's own comment promises, for the common case where the
+    board moved a little. '' when nothing but whitespace changed or the diff
+    would not beat ~60% of the full snapshot (then the full one is cheaper
+    to read than a wall of +/- lines)."""
+    import difflib
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        out += ["- " + ln for ln in old[i1:i2] if ln.strip()]
+        out += ["+ " + ln for ln in new[j1:j2] if ln.strip()]
+    text = "\n".join(out)
+    if not out or len(text) >= 0.6 * len("\n".join(new)):
+        return ""
+    return text
 
 # skey -> (session id, compacted_at_turn) the MEMORY digest was last delivered
 # on (henry-memory-db-authority phase 2). Deliberately a DIFFERENT key than
@@ -2052,11 +2091,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # gets the live board; its history stays on demand (see _snapshot's
     # docstring and ops/tools/board_state.py).
     _mem_due, _mem_marker = False, None      # card chats never carry the memory digest
+    _snap_ts = time.strftime("%Y-%m-%d %H:%M")
     if card:
         _cc = _card_context(card)
-        snapshot_block = (("CARD CONTEXT (%s):\n" % time.strftime("%Y-%m-%d %H:%M"))
-                          + _cc + "\n\n") if _cc else ""
-        _snap_body = _cc or ""
+        _snap_head, _snap_body, _snap_tail = "CARD CONTEXT (%s)" % _snap_ts, _cc or "", "\n\n"
+        snapshot_block = (_snap_head + ":\n" + _cc + _snap_tail) if _cc else ""
     else:
         _plan = _pm_plan_digest()
         # MEMORY DIGEST - session-scoped, NOT every turn (henry-memory-db-
@@ -2071,36 +2110,51 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _mem_marker = copilot_memory.marker(sid, _st.get("compacted_at_turn"))
         _mem_due = copilot_memory.digest_due(sid, _mem_marker, _digest_sent.get(skey))
         _mem = copilot_memory.digest() if _mem_due else ""
-        snapshot_block = "BOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") \
-            + _snapshot() + (("\n\n" + _plan) if _plan else "") + _mem
-        _snap_body = snapshot_block
+        # header and memory digest stay OUTSIDE _snap_body: neither is board
+        # state, and hashing the minute-stamped header is exactly what kept
+        # the seam below from ever matching (see _snap_stable)
+        _snap_head = "BOARD SNAPSHOT (%s)" % _snap_ts
+        _snap_body = _snapshot() + (("\n\n" + _plan) if _plan else "")
+        _snap_tail = _mem
+        snapshot_block = _snap_head + ":\n" + _snap_body + _snap_tail
     # DELTA, not repetition (Paseo-shape, owner decree 2026-09-03 "direkt hier
     # fixen"): the conversation is CONTINUOUS - the model still carries the
     # board state it read last turn in its own session context. Re-sending an
     # UNCHANGED snapshot is 8-12k uncachable tokens of pure prefill per turn
     # (measured: the bulk of the warm-turn latency gap vs Paseo, which sends
     # only the user's text). Content-hash per conversation: unchanged state
-    # collapses to a one-line reference. The 30min expiry is the drift guard -
-    # after a compaction, a detached resume or plain model forgetfulness the
-    # full snapshot rides again; _snap_seen is also cleared when a resume is
-    # detected as detached (the fresh session never saw any snapshot).
-    _snap_hash = None
+    # collapses to a one-line reference, a CHANGED board to the line diff
+    # against the last full snapshot (_snapshot_delta). The 30min expiry is
+    # the drift guard - after a compaction, a detached resume or plain model
+    # forgetfulness the full snapshot rides again; _snap_seen is also cleared
+    # when a resume is detected as detached (the fresh session never saw any
+    # snapshot). A delta keeps the LAST FULL send's timestamp, so the guard
+    # counts from the last time the model saw the whole board.
+    _snap_hash, _snap_when, _snap_lines = None, time.time(), None
     if _snap_body:
-        import hashlib
-        _snap_hash = hashlib.sha1(_snap_body.encode("utf-8", "replace")).hexdigest()
+        _snap_hash, _snap_lines = _snap_stable(_snap_body)
         _seen = _snap_seen.get(skey)
-        if _seen and _seen[0] == _snap_hash and time.time() - _seen[1] < 1800:
-            snapshot_block = ("BOARD SNAPSHOT: unveraendert seit deiner letzten "
-                              "Antwort - der Stand aus deinem letzten Turn gilt "
-                              "weiter.\n" if not card else
-                              "CARD CONTEXT: unveraendert seit deiner letzten "
-                              "Antwort - der Stand aus deinem letzten Turn gilt "
-                              "weiter.\n\n")
-            # None = do NOT re-stamp on success: the expiry keeps counting
-            # from the last FULL snapshot, so the drift guard actually fires
-            # mid-conversation instead of being refreshed away by every
-            # unchanged turn.
-            _snap_hash = None
+        if _seen and time.time() - _seen[1] < 1800:
+            if _seen[0] == _snap_hash:
+                snapshot_block = ("BOARD SNAPSHOT: unveraendert seit deiner letzten "
+                                  "Antwort - der Stand aus deinem letzten Turn gilt "
+                                  "weiter.\n" if not card else
+                                  "CARD CONTEXT: unveraendert seit deiner letzten "
+                                  "Antwort - der Stand aus deinem letzten Turn gilt "
+                                  "weiter.") + _snap_tail
+                # None = do NOT re-stamp on success: the expiry keeps counting
+                # from the last FULL snapshot, so the drift guard actually fires
+                # mid-conversation instead of being refreshed away by every
+                # unchanged turn.
+                _snap_hash = None
+            elif len(_seen) > 2:
+                _delta = _snapshot_delta(_seen[2], _snap_lines)
+                if _delta:
+                    snapshot_block = (_snap_head + " - NUR AENDERUNGEN seit deinem "
+                                      "letzten Turn, alles andere gilt weiter ('-' = "
+                                      "Zeile weg/alt, '+' = Zeile neu/geaendert):\n"
+                                      + _delta + "\n" + _snap_tail)
+                    _snap_when = _seen[1]
     # The ROLE is data: cells/copilot/harness/agents/board-copilot.md (the only copy).
     # brief() is total - a mangled/absent file degrades to the short stub in
     # harness._DEFAULTS and reports via harness.errors(), never breaks the turn.
@@ -2117,6 +2171,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # The project is resolved AT THE EVENT, never stored: a card chat belongs to
     # that card's repo, everything else to the workspace default. That is the
     # rule projectconfig.for_card/for_chat already own - this site just asks.
+    _ovl_hash = None
     try:
         from spine.storage import projectconfig
         # _find_card answers with a LIST when the id is ambiguous - a match set
@@ -2127,6 +2182,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         from spine.registry import behavior
         _ovl = behavior.overlay(_proj, skip=() if (card or _ship_relevant(message))
                                 else ("ship.process",))
+        if _ovl:
+            # Once per continuous session, same argument as the snapshot: the
+            # model read these rules an earlier turn of THIS session (measured
+            # 2026-09-15: ~2.7 KB re-sent on every board turn). Honoured only
+            # while the snapshot seam's own continuity entry is live, so a
+            # compaction/detach (which pops _snap_seen) resends it too.
+            import hashlib
+            _ovl_hash = hashlib.sha1(_ovl.encode("utf-8", "replace")).hexdigest()
+            _cont = _snap_seen.get(skey)
+            if _cont and time.time() - _cont[1] < 1800 and _ovl_seen.get(skey) == _ovl_hash:
+                _ovl = ""
         if _ovl:
             extra_system = (extra_system + "\n\n" + _ovl) if extra_system else _ovl
     except Exception:                                        # noqa: BLE001
@@ -2736,8 +2802,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _last_turn_at[skey] = _last_touch_at[skey] = time.time()
     if _snap_hash:
         # the model has now really SEEN this state - only from here on may an
-        # unchanged board collapse to the one-line reference
-        _snap_seen[skey] = (_snap_hash, time.time())
+        # unchanged board collapse to the one-line reference / a changed one
+        # to a diff against these lines
+        _snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)
+    if _ovl_hash:
+        _ovl_seen[skey] = _ovl_hash
     if _mem_due:
         # stamped with sid_final, not the `sid` the marker was built from: a
         # silent mid-turn detach still delivered the digest text (it rode the
