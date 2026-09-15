@@ -78,6 +78,64 @@ for i, (tid, task, lane, status, prio) in enumerate(CARDS):
                   "created": NOW, "rank": i, "driver": "claude",
                   "actor": "owner", "client": "", "ai_cost": 0.0})
 
+# A PM PLAN (opt-in via HELMDECK_SEED_PLAN=1). Without one, StatusPanel
+# ("dash.status.title") returns null - `goal = data?.plan?.goal; if (!goal)
+# return null` - so the Übersicht tab renders an empty canvas below its
+# header. Real production state, seeded through the same doors production
+# writes through (pm.set_goal, db.pm_plan_put) rather than invented shape;
+# live_plan() recomputes triage/budget/eta from live economics on every read,
+# so only the LLM-authored content (milestones/critical_path/risks) needs
+# seeding here.
+if os.environ.get("HELMDECK_SEED_PLAN") == "1":
+    from cells.copilot.planning import pm
+
+    # live_plan() (cells/copilot/planning/pm_triangle.py) recomputes the
+    # Budget corner from spine.ops.usage.snapshot() on EVERY read, which
+    # reads the REAL local Claude Code OAuth token and calls the REAL
+    # Anthropic usage endpoint - the owner's actual live subscription
+    # pacing, unsandboxed (measured 2026-09-15: it leaked "25% genutzt,
+    # projiziert 106%" - the real account's own numbers - straight into a
+    # screenshot meant for the public App Store listing). Stubbed here, in
+    # this throwaway sandbox process only, to a calm fixed reading - the
+    # same reasoning as the assert at the top of this file that refuses to
+    # touch the real db/settings/users paths.
+    from spine.ops import usage as _usage
+
+    def _fake_snapshot(force=False):
+        return {"status": "ok", "plan": "Max",
+                "windows": [
+                    {"id": "five_hour", "label": "5-Stunden", "usedPct": 8,
+                     "remainingPct": 92, "resetsAt": "2026-09-15T22:00:00Z", "tone": "ok"},
+                    {"id": "weekly", "label": "Woche", "usedPct": 14,
+                     "remainingPct": 86, "resetsAt": "2026-09-20T22:00:00Z", "tone": "ok",
+                     "pacing": {"projected_pct": 22, "exhaust_before_reset": False, "flag": False}},
+                ],
+                "fetchedAt": NOW}
+    _usage.snapshot = _fake_snapshot
+
+    pm.set_goal("App-Store-Launch (iOS + macOS) abschließen")
+    db.pm_plan_put(time.strftime("%Y%m%d"), {
+        "goal": "App-Store-Launch (iOS + macOS) abschließen",
+        "generated_at": NOW,
+        "summary": "TestFlight läuft, Mac-CI ist grün - Rest ist Owner-Handarbeit.",
+        "done_pct": 72,
+        "milestones": [
+            {"name": "iOS-Signing + TestFlight", "status": "done", "est_turns": 6},
+            {"name": "macOS-CI (Mac + MAS)", "status": "done", "est_turns": 5},
+            {"name": "Store-Screenshots (iPhone + macOS)", "status": "doing", "est_turns": 3},
+            {"name": "App Store Review einreichen", "status": "todo", "est_turns": 2,
+             "blocked_by": "Export-Compliance-Antwort"},
+        ],
+        "critical_path": [
+            {"step": "Export-Compliance-Frage beantworten", "who": "du",
+             "why": "blockiert die Einreichung"},
+            {"step": ".pkg zu App Store Connect hochladen", "who": "du"},
+            {"step": "Review einreichen", "who": "agent", "card": "rv-1"},
+        ],
+        "risks": ["Review-Wartezeit unbekannt (erster Store-Release)."],
+        "open_questions": ["Export-Compliance: enthält die App nicht-exempte Verschlüsselung?"],
+    })
+
 # THE DUMMY KNOB (accounts-boards-prd phase 4, opt-in via HELMDECK_DUMMY_KNOB=1).
 #
 # The card's acceptance is "a dummy knob with a scope tag appears in the correct
