@@ -50,6 +50,60 @@ DEBT = [
         "since": "2026-09-15",
     },
     {
+        "id": "guard-outside-worktree-check-wrong-cwd-base",
+        "order": -12,
+        "title": "card_tool_guard resolves a relative Bash arg against the worktree ROOT, not the tool's real cwd",
+        "status": "open",
+        "what": "Found while A/B-testing the pull rebuild (ops/tools/"
+                "pull_rebuild_ab_bench.py): card_tool_guard.py's "
+                "_outside_worktree() resolves a relative path candidate as "
+                "os.path.join(worktree, candidate) - always against the "
+                "WORKTREE ROOT. Henry's own board-chat spawn runs with "
+                "cwd=DAEMON_ROOT (one level BELOW the worktree root), and "
+                "every one of his pre-approved pull tools is written "
+                "relative to THAT cwd (`../ops/tools/board_state.py`). "
+                "Resolved against the root instead, `../ops/tools/...` "
+                "points one level ABOVE the worktree - outside it - so the "
+                "check would flag its own pre-approved tools as escaping. "
+                "A SEPARATE bug in the same function's caller, "
+                "_bash_escape_paths(): it tokenizes the raw command string "
+                "on whitespace, so an unquoted absolute path containing a "
+                "space (this machine's Windows profile is 'Tien Duy Vo') "
+                "splits into fragments, and the first fragment alone "
+                "(e.g. 'C:\\\\Users\\\\Tien') gets checked instead of the "
+                "real path - and fails the same way, from a different cause.",
+        "why_it_bites": "NEITHER half currently reaches a real Henry board "
+                        "turn: HELMDECK_WORKTREE is only set for a worker/"
+                        "hands spawn (spine/agent/spawnenv.py, "
+                        "cells/copilot/chat/hands.py), never for "
+                        "_persist_get's board-chat spawn, so the guard's "
+                        "own `if not worktree: _allow(); return` short-"
+                        "circuits before either bug runs - confirmed by "
+                        "re-running the bench with the var explicitly "
+                        "stripped: the exact bare pre-approved form then "
+                        "runs clean. It bites the day either changes: a "
+                        "worktree card whose task legitimately needs "
+                        "`../ops/tools/...` from a subdirectory cwd, or a "
+                        "future Henry surface that DOES set the var, would "
+                        "see its own pre-approved tools falsely denied as "
+                        "\"outside this card's worktree\" - the exact message "
+                        "this session's own operator hit repeatedly on plain "
+                        "absolute-path Bash commands, for the same root cause.",
+        "trigger": "HELMDECK_WORKTREE set for a spawn whose cwd is not the "
+                   "worktree root itself, running a relative-path command "
+                   "(the `../` form) or an unquoted absolute path with a "
+                   "space in it.",
+        "fix": "_outside_worktree needs the tool's actual cwd, not just "
+               "`worktree`, to resolve a relative candidate correctly - pass "
+               "it through from the hook payload (Claude Code's PreToolUse "
+               "payload carries the session cwd) instead of assuming cwd == "
+               "worktree root. _bash_escape_paths needs shlex.split (already "
+               "used elsewhere in this same file, see _client_allow_argv_hit) "
+               "instead of a bare regex word-split, so a quoted OR "
+               "legitimately-spaced token is read as one piece.",
+        "since": "2026-09-15",
+    },
+    {
         "id": "open-question-identity-is-lexical",
         "order": -10,
         "title": "two owner questions are judged 'the same' by word overlap, not by meaning",
