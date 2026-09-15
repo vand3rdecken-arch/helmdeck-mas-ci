@@ -139,5 +139,27 @@ for a, b in [("Wie ist das Budget für den Closed Test?", "Wie ist die Deadline 
              (UNRESOLVED, ANSWERED)]:
     check(not pm._same_question(a, b), "different asks stay apart: %r" % b[:44])
 
+print("\n[5] card Q&A never evicts a chat clarification (2026-09-15: 11 macOS-card "
+      "answers pushed 'iOS ist genehmigt' out of the ring, plan re-added the demo video)")
+IOS = "iOS-Produktionseinreichung ist bereits von Apple genehmigt - kein Demo-Video noetig"
+pm.add_clarification(IOS)
+for i in range(11):
+    pm.add_clarification("Karte 'macOS': Rueckfrage %d -> Antwort: mach weiter" % i,
+                         source="card", card="20260913-215533-machine")
+for i in range(4):
+    pm.add_clarification("Karte 'wear': Rueckfrage %d -> Antwort: ja" % i,
+                         source="card", card="20260911-182039-machine")
+blk = pm._clarifications_block()
+check(IOS in blk, "the chat clarification survives 15 card answers")
+check(blk.count("Karte 'macOS'") <= pm._CLARIFY_PER_CARD,
+      "card answers are capped per card (%d)" % blk.count("Karte 'macOS'"))
+check(blk.count("Rueckfrage") <= pm._CLARIFY_CARD_MAX, "card answers are capped overall")
+check("Rueckfrage 10" in blk and "Rueckfrage 0 ->" not in blk, "the NEWEST card answers are the ones kept")
+for i in range(20):
+    pm.add_clarification("chat fact %d" % i)
+blk = pm._clarifications_block()
+check("chat fact 19" in blk and "chat fact 7" not in blk and IOS not in blk,
+      "chat ring itself still rolls at %d" % pm._CLARIFY_MAX)
+
 print("\n%s (%d failure(s))" % ("FAILED" if _fails else "PASS", len(_fails)))
 sys.exit(1 if _fails else 0)

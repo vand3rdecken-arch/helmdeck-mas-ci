@@ -939,7 +939,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
             if pm.get_goal() and any((ms.get("card") == tid) for ms in (plan.get("milestones") or [])):
                 fact = "Karte '%s': %s -> Antwort: %s" % (
                     (t.get("task") or "")[:80], pending_q[:200] if pending_q else "Rückfrage", text[:300])
-                pm.add_clarification(fact, actor=actor)
+                pm.add_clarification(fact, actor=actor, source="card", card=tid)
         except Exception:
             pass                          # a fold failure must never block the steer
     paths = turnopts.save_attachments(t.get("worktree") or t["run_dir"], attachments)

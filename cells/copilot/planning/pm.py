@@ -88,18 +88,47 @@ def set_goal(goal):
 # text itself changes (a new goal invalidates old answers - set_goal clears
 # them). Small, capped, persisted in the same loop.json the PM already owns.
 _CLARIFY_MAX = 12
+# Card Q&A (sessions.steer folds an owner's answer to a goal-path card's
+# question in here too) gets its OWN ring, not the chat's. Measured
+# 2026-09-15: the owner told Henry at 13:19 "iOS ist schon genehmigt, kein
+# Demo-Video noetig" (clarify_goal), then answered ELEVEN questions of the
+# macOS card between 13:54 and 14:55 - one shared 12-slot ring pushed the
+# iOS fact out, and the 15:54 plan put "iOS-Demo-Video aufnehmen" back on the
+# critical path as the owner's #1 job. A chat clarification is the owner
+# correcting the PLAN; a card answer is the owner steering ONE card - the
+# latter must never evict the former.
+_CLARIFY_CARD_MAX = 6          # across all cards
+_CLARIFY_PER_CARD = 2          # newest answers per card
 
 
-def add_clarification(text, actor="owner"):
+def _trim_clarifications(cl):
+    chat = [c for c in cl if c.get("source", "chat") != "card"][-_CLARIFY_MAX:]
+    cards, seen = [], {}
+    for c in reversed([c for c in cl if c.get("source") == "card"]):
+        k = c.get("card") or ""
+        if seen.get(k, 0) >= _CLARIFY_PER_CARD:
+            continue
+        seen[k] = seen.get(k, 0) + 1
+        cards.append(c)
+        if len(cards) >= _CLARIFY_CARD_MAX:
+            break
+    keep = set(map(id, chat)) | set(map(id, cards))
+    return [c for c in cl if id(c) in keep]      # original order
+
+
+def add_clarification(text, actor="owner", source="chat", card=None):
     text = (text or "").strip()
     if not text:
         return []
     with _resolving_lock:
         st = _loopstate()
         cl = st.setdefault("clarifications", [])
-        cl.append({"text": text[:500], "at": time.strftime("%Y-%m-%d %H:%M"), "actor": actor,
-                   "goal": get_goal()})
-        st["clarifications"] = cl[-_CLARIFY_MAX:]
+        row = {"text": text[:500], "at": time.strftime("%Y-%m-%d %H:%M"), "actor": actor,
+               "goal": get_goal()}
+        if source == "card":
+            row["source"], row["card"] = "card", card or ""
+        cl.append(row)
+        st["clarifications"] = _trim_clarifications(cl)
         _save_loopstate(st)
         return st["clarifications"]
 
