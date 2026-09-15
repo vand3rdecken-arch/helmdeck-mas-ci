@@ -110,6 +110,11 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     return {
       role: "assistant", kind: "text", cls: m.cls, text: m.text, ts: m.ts,
       by: `${label} · ${m.cardName || m.card || "?"}`, byKind: "worker",
+      // Owner ask 2026-09-15: from the Henry inbox, tap through to the card
+      // itself instead of having to go find it - the same `card` field the
+      // CardTile hand-over row already navigates with (m.card is always the
+      // id this mirror line is bound to, see card_mirror.say_card's `tid`).
+      card: m.card,
     };
   }
   return {

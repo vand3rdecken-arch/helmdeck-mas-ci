@@ -46,7 +46,8 @@ export interface TStep {
   byKind?: "human" | "henry" | "worker";
   to?: string;         // on a user step: the resolved recipient ("henry" | "worker")
   streaming?: boolean; detail?: ToolDetail;
-  card?: string;       // kind === "card": a thread tile - tap opens that card's chat
+  card?: string;       // bound card id: kind "card" draws a thread-tile row (CardTile);
+                        // kind "text" (a mirrored worker message) draws a footer link - both open that card's chat
   todos?: { content: string; status: string }[];
 }
 
@@ -410,6 +411,7 @@ function readable(steps: TStep[]): TStep[] {
 export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number }) {
   const t = useTheme();
   const tr = useT();
+  const router = useRouter();
   const steps = readable(rawSteps);
   const keyFor = keyFactory();
   let lastToolIdx = -1;
@@ -533,6 +535,21 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps
             {!s.streaming ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
                 {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+                {/* A mirrored card message (byKind "worker" + bound `card`) is
+                    the Henry inbox's copy of that card's own news - the owner
+                    asked (2026-09-15) to reach the card from here instead of
+                    hunting for it. Same target/route as CardTile's hand-over
+                    tile (`/card/<id>?tab=chat`), just as a footer link since
+                    this bubble already carries the worker's own text. */}
+                {s.card ? (
+                  <Pressable onPress={() => router.push(`/card/${s.card}?tab=chat`)}
+                    accessibilityLabel={tr("chat.thread.open")}
+                    hitSlop={6}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                    <Text style={{ color: ac, fontSize: 10.5, fontWeight: "700" }}>{tr("chat.thread.open")}</Text>
+                    <Ionicons name="chevron-forward" size={10} color={ac} />
+                  </Pressable>
+                ) : null}
                 <View style={{ flex: 1 }} />
                 <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               </View>
