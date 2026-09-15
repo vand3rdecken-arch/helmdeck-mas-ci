@@ -257,3 +257,6 @@ daemon/devices.json
 daemon/gxp.lock
 ops/tools/stt_bench_results.json
 .claude/scheduled_tasks.lock
+
+# macOS App Store build artifacts (98-104 MB .pkg) - landed in a baseline commit 2026-09-15 and blocked the push
+.mas-artifact/
