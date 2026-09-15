@@ -132,6 +132,11 @@ def _turn_lock(user):
 
 _keepalive_inflight = set()      # users whose warm process is mid-ping (status line)
 
+# The hidden keepalive turn's text - ONE owner, because copilot_prune must
+# recognise it: it is a `type=user` record in the transcript like any owner
+# question, and 497 of them sat in the real board session (2026-09-15).
+_SYSTEMCHECK = "(Systemcheck, nicht vorlesen - antworte nur: ok)"
+
 
 def _ping_process(p, timeout=120):
     """The hidden systemcheck round-trip that refreshes the API's prompt
@@ -144,7 +149,7 @@ def _ping_process(p, timeout=120):
     question sat behind it for the full 600s silence watchdog."""
     try:
         p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
-                      "content": "(Systemcheck, nicht vorlesen - antworte nur: ok)"}}) + "\n")
+                      "content": _SYSTEMCHECK}}) + "\n")
         p.stdin.flush()
     except Exception:                                    # noqa: BLE001
         return False
@@ -1199,7 +1204,7 @@ def _do_prune(user, sid):
     path = claude_sessions._find_transcript(sid)
     if not path:
         return None
-    res = copilot_prune.prune_session_file(path)
+    res = copilot_prune.prune_session_file(path, hidden=(_SYSTEMCHECK,))
     if not res or not res[0]:
         return None
     n, saved = res
@@ -1253,8 +1258,11 @@ def _schedule_prune(user):
                 prewarm(user, spoken=False)   # the drop above cost the warmth
                 _append_log(user, [{"cls": "error", "text": note,
                                     "ts": time.strftime("%H:%M")}])
-        except Exception:
-            pass                 # best-effort, same contract as _maybe_compact
+        except Exception as e:                                   # noqa: BLE001
+            # best-effort like _maybe_compact, but never SILENT: a rewrite
+            # that keeps failing would otherwise look exactly like a
+            # session with nothing to prune
+            print("copilot: prune failed -", str(e)[:200], flush=True)
         finally:
             _pruning.discard(user)
 

@@ -69,7 +69,7 @@ QUESTIONS = [
 ]
 
 
-def _turn(cwd, prompt, sid=None, timeout=120):
+def _turn(cwd, prompt, sid=None, timeout=300):
     argv = [CLAUDE, "-p", "--output-format", "json",
             "--permission-mode", "bypassPermissions", "--model", "haiku"]
     if sid:
