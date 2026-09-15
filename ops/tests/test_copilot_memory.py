@@ -148,28 +148,11 @@ check(rc == 1, "get on a missing note exits non-zero, not a guess")
 check(not any("henry_memory" in p for p in os.listdir(_tmp) if os.path.isdir(os.path.join(_tmp, p))),
       "no henry_memory directory exists anywhere - the read path never touches disk")
 
-# -- marker()/digest_due(): the session-establishment gate -------------------
-print("\n[marker / digest_due - session-establishment gate]")
-check(m.marker(None, None) == ("", None), "no session yet normalizes to an empty sid")
-check(m.digest_due(None, m.marker(None, None), None) is True,
-      "a fresh spawn (no sid) is always due, regardless of any stored marker")
-
-mk1 = m.marker("sess-a", 5)
-check(m.digest_due("sess-a", mk1, mk1) is False,
-      "an unchanged (sid, compacted_at_turn) is NOT due - the resumed transcript has it")
-check(m.digest_due("sess-a", mk1, None) is True,
-      "never delivered before (no stored marker) -> due")
-
-mk2 = m.marker("sess-b", 5)                       # rotated/detached resume
-check(m.digest_due("sess-b", mk2, mk1) is True,
-      "a rotated session id is due even though compacted_at_turn is unchanged")
-
-mk3 = m.marker("sess-a", 6)                       # IN-PLACE compaction: same sid
-check(m.digest_due("sess-a", mk3, mk1) is True,
-      "an in-place compaction (same sid, compacted_at_turn bumped) is still due - "
-      "the trap a sid-only key would miss (see test_copilot_compact.py case 3)")
-check(m.digest_due("sess-a", mk3, mk3) is False,
-      "once stamped with the post-compaction marker, the next resumed turn is not due")
+# marker()/digest_due() (the session-establishment gate for Henry's own
+# auto-pushed digest) were REMOVED with the push itself (card
+# chat-henry-kontext-pruning, "voller Umbau", 2026-09-15): digest() now has
+# exactly one caller (cells/copilot/planning/pm.py's planner context), which
+# reads it fresh every time it plans - no gate needed, nothing to test here.
 
 print("")
 if _fails:

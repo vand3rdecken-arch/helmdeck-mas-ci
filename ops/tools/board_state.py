@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
-"""Print the board as text - the ON-DEMAND half of Henry's board context.
+"""Print the board as text - Henry's board context, ALL of it now on demand.
 
-Why this exists (measured 2026-09-02). The full board snapshot used to ride
-inside EVERY chat turn: 83,488 chars / ~23k tokens of uncached input the model
-re-read before answering anything at all, which was the bulk of the ~21s warm
-turn. Paseo - the reference this harness is ported from - sends only the user's
-text and keeps context in the cached system prompt plus TOOLS the agent calls
-when it needs them (packages/server/src/server/agent/providers/claude/agent.ts,
-the user message is one `content.push({type:"text", text: prompt})`).
+Why this exists (measured 2026-09-02, widened 2026-09-15). The full board
+snapshot used to ride inside EVERY chat turn: 83,488 chars / ~23k tokens of
+uncached input the model re-read before answering anything at all. Paseo -
+the reference this harness is ported from - sends only the user's text and
+keeps context in the cached system prompt plus TOOLS the agent calls when it
+needs them (packages/server/src/server/agent/providers/claude/agent.ts, the
+user message is one `content.push({type:"text", text: prompt})`).
 
-So the split is: a chat turn injects the LIVE board (open cards, processes,
-policy, debt ids), and the expensive history - finished/archived cards and the
-full debt prose, 65% of the old payload - is fetched by running this when a
-question is actually about it. Henry runs it himself; it is not wired into the
-turn.
+2026-09-02 moved the expensive HISTORY (finished/archived cards, full debt
+prose, 65% of the old payload) behind --full. Card chat-henry-kontext-pruning
+("voller Umbau", 2026-09-15) finished the move: the LIVE board and the PM
+plan are no longer wired into the turn either - Henry calls this himself,
+on his own initiative, exactly like Paseo's agents call their own tools.
 
-There is NO second implementation of the board text here: this calls
-cells.copilot.chat.copilot._snapshot(full=True), the same one owner the chat turn
-uses, so the two can never drift.
+There is NO second implementation of the board/plan text here: this calls
+cells.copilot.chat.copilot._snapshot / _pm_plan_digest, the same one owner a
+chat turn would have used, so the two can never drift.
 
-    py -3.12 ops/tools/board_state.py           # live board (what a turn sees)
+    py -3.12 ops/tools/board_state.py           # live board
     py -3.12 ops/tools/board_state.py --full    # + finished/archived + debt text
+    py -3.12 ops/tools/board_state.py --plan    # the live PM plan (goal, risks, milestones)
     py -3.12 ops/tools/board_state.py --find play store   # cards matching ALL terms
     py -3.12 ops/tools/board_state.py --card <id-or-fragment>  # one card, in full
 
@@ -116,6 +117,11 @@ def main(argv):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+    if "--plan" in argv:
+        from cells.copilot.chat.copilot import _pm_plan_digest
+        out = _pm_plan_digest()
+        sys.stdout.write((out or "kein Ziel geplant") + "\n")
+        return 0
     if "--find" in argv:
         terms = _terms(argv, "--find")
         if not terms:

@@ -102,15 +102,21 @@ _KEEPALIVE_MAX = 2700.0  # stop 45min after the last real turn
 _pending_actions = {}    # skey -> [result strings], folded into the next turn
 _pending_lock = threading.Lock()
 
-# skey -> (sha1 of last FULL snapshot/card-context sent, monotonic-enough ts).
-# The snapshot-delta seam (see chat()'s DELTA comment): an unchanged board
-# collapses to a one-line reference because the model's own session already
-# carries the state. Stamped only on turn SUCCESS (a failed turn never showed
-# the model the snapshot), cleared when a resume turns out detached.
+# skey -> (sha1 of last FULL card-context sent, monotonic-enough ts, lines).
+# The snapshot-delta seam (see chat()'s DELTA comment): an unchanged CARD
+# context collapses to a one-line reference, a changed one to a line diff,
+# because the model's own session already carries what it read last turn.
+# CARD-SCOPED ONLY since the "voller Umbau" rebuild (2026-09-15, card
+# chat-henry-kontext-pruning): the board path no longer sends a snapshot at
+# all (Paseo parity - see chat()'s PULL comment), so this dict simply never
+# gets a board-keyed entry now. Stamped only on turn SUCCESS (a failed turn
+# never showed the model anything), cleared when a resume turns out detached.
 _snap_seen = {}
-# skey -> sha1 of the project overlay last delivered. Rides the SAME continuity
-# window as _snap_seen (only honoured while that entry is live), so the two
-# pop sites that reset the snapshot seam reset this one for free.
+# skey -> (sha1 of the project overlay last delivered, session id it rode on).
+# A resend fires on a hash change OR a session-id change (compaction, detach,
+# fresh spawn) - the id alone is proof enough that the model's own --resume
+# still carries whatever overlay text an earlier turn of THIS session sent,
+# no separate timestamp/reset plumbing needed.
 _ovl_seen = {}
 # Per-card cost drifts on every turn a worker runs and changed the snapshot
 # hash each time - the one thing that made "unchanged" never match. Stripped
@@ -147,19 +153,6 @@ def _snapshot_delta(old, new):
     if not out or len(text) >= 0.6 * len("\n".join(new)):
         return ""
     return text
-
-# skey -> (session id, compacted_at_turn) the MEMORY digest was last delivered
-# on (henry-memory-db-authority phase 2). Deliberately a DIFFERENT key than
-# _snap_seen above: that one dedupes on board-content hash and legitimately
-# re-fires every time a card moves, which has nothing to do with memory. The
-# digest only needs to ride the FIRST turn of a session - a resumed turn's
-# own transcript already contains it (README: "resumede Turns bekommen
-# NICHTS"). (sid, compacted_at_turn) changes on every session-establishing
-# event this codebase already tracks: a fresh spawn (sid falsy), a rotated/
-# detached resume (sid changes, see the rotation-safety-net below), and an
-# IN-PLACE compaction that keeps the same sid but bumps compacted_at_turn
-# (_maybe_compact) - the one case a sid-only key would silently miss.
-_digest_sent = {}
 
 
 def _turn_lock(user):
@@ -1128,38 +1121,49 @@ def _await_lull_and_lock(user):
         time.sleep(15)
 
 
+# THE COST LINE - a number, deliberately not a model window.
+#
+# It used to be model_window(voice_model) - CTX_HEADROOM = 168k, named
+# "stay-fast": keep the session small enough for Haiku so a trivial ack or a
+# spoken turn could still run on it. Measured 2026-09-15 over the last 8
+# compaction windows of the live board session: ZERO calls ran on haiku
+# (Sonnet 5 / Opus 5 / Fable only). The model this line was named after never
+# carries a board turn - and "may this turn still run on haiku" is answered
+# per turn by turnopts.fits_window anyway (a haiku pick that does not fit is
+# lifted, never rejected). So the line governs exactly one thing: per-turn
+# cost and latency, because every call re-reads the whole context.
+#
+# Cost/benefit of moving it (floor ~70k after compaction, ~3k growth per
+# owner turn since the delta seam): the average read per turn grows LINEARLY
+# with the line, while the compaction overhead it saves (memory-save + compact
+# = ~2 x line per window) is ~8% at 168k. Raising it makes every turn dearer
+# for a small saving; lowering it trades summary detail for little. 168k is
+# therefore kept - what changes is that it no longer tracks voice_model, which
+# could silently lift it to the 800k overflow the day a 1M voice model is
+# configured: the exact 2026-08-30 shape (615k session, 83M input tokens over
+# 98 turns, nothing watching).
+COMPACT_COST_LINE = 168_000
+
+
 def _compact_mark(st):
     """The context level at which Henry must compact - the LOWER of two
     INDEPENDENT reasons, because they protect different things:
 
-      overflow  0.8 * window - the session must not hit the wall.
-      stay-fast the biggest context the FAST model can still carry, so a
-                trivial ack or a spoken turn can still be answered by it.
+      overflow   0.8 * window - the session must not hit the wall.
+      cost-line  COMPACT_COST_LINE - every turn re-reads the whole context,
+                 so this is the line that costs plan-share and latency.
 
-    Only the first existed, and it is the wrong guard for the symptom the owner
-    actually feels. Measured 2026-08-30: Henry sat at 615,889 of a 1M window =
-    61.6%, comfortably under the 800k overflow mark and therefore never
-    compacted - while having been too big for Haiku's 200k window since roughly
-    168k, i.e. since 17% fill. The overflow guard fires at 80%; the line that
-    costs speed and plan-share is crossed at 17%. Nothing watched it, so every
-    board turn - typed or spoken - silently ran on the big model with a 615k
-    prefill re-read each time (83M input tokens over 98 turns).
+    Only the first existed once. Measured 2026-08-30: Henry sat at 615,889 of
+    a 1M window = 61.6%, comfortably under the 800k overflow mark and
+    therefore never compacted, every board turn re-reading a 615k prefill.
 
     Returns (mark, why). `why` is carried into the chat note so a compaction
     never looks arbitrary to the owner."""
-    from spine.agent import turnopts
-    from spine.storage import events
     from cells.engineer.cards import sessions
     window = max(int(st.get("ctx_window") or 0), sessions._CTX_WINDOW)
     overflow = int(0.8 * window)
-    try:
-        vm = events.settings().get("voice_model")
-        fast_id, _ = turnopts.resolve_model((vm if vm is not None else "haiku") or "haiku", "")
-        fw = turnopts.model_window(fast_id)
-    except Exception:                                            # noqa: BLE001
-        fw = None
-    if fw and fw - turnopts.CTX_HEADROOM < overflow:
-        return fw - turnopts.CTX_HEADROOM, "stay-fast"
+    if COMPACT_COST_LINE < overflow:
+        return COMPACT_COST_LINE, "cost-line"
     return overflow, "overflow"
 
 
@@ -1800,6 +1804,38 @@ _cancelled = set()
 # live instead of a blocking "denkt". Actions still come as a trailing block.
 
 
+def _inbox_since(user, limit=8):
+    """What the owner saw in the board chat since Henry's own last reply -
+    the OTHER two writers of that one inbox transcript (the broker's
+    follow-up reports, cls 'pm'; card mirrors, cls 'card'; plus dispatched
+    action results, cls 'act'/'error') that never otherwise reach Henry's own
+    session. '' when there is nothing, or nothing has happened since.
+
+    Used to ride every board turn unconditionally; now the pull half of that
+    (card chat-henry-kontext-pruning, "voller Umbau", 2026-09-15) - ONLY
+    caller is ops/tools/henry_inbox.py, on Henry's own initiative, per the
+    brief's BIAS TO ACTION rule 3. No second implementation: this is the
+    exact text/ordering the removed inline block built, just relocated."""
+    try:
+        from spine.storage import db as _db
+        rows = _db.chat_tail(user, 40)
+        last_bot = max((i for i, m in enumerate(rows) if m.get("cls") == "bot"), default=-1)
+        seen = [m for m in rows[last_bot + 1:]
+                if m.get("cls") in ("pm", "card", "act", "error") and (m.get("text") or "").strip()]
+        if not seen:
+            return ""
+
+        def _tag(m):
+            if m.get("cls") == "card":
+                return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
+            return {"pm": "System/Broker", "act": "Aktion", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
+        # In ORDER, oldest first - the sequence the owner actually read.
+        return "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
+                         for m in seen[-limit:])
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
 def _pm_plan_digest():
     """The PM's LIVE PMP plan, compact - so the copilot GROUNDS its planning in
     it (owner decisions, DoD, risks, feasibility, the measured triangle) instead
@@ -2090,33 +2126,30 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # sending them was most of what made the board session grow. A BOARD chat
     # gets the live board; its history stays on demand (see _snapshot's
     # docstring and ops/tools/board_state.py).
-    _mem_due, _mem_marker = False, None      # card chats never carry the memory digest
+    # PASEO-STYLE PULL, not push (card chat-henry-kontext-pruning, "voller
+    # Umbau", 2026-09-15): the board snapshot, the PM plan digest and the
+    # memory digest USED to ride every board turn (cut to a delta/dedupe by
+    # the same card's earlier commits, but still non-zero on any turn where
+    # the board actually moved). Measured against the real Paseo source
+    # (packages/server/.../claude/agent.ts: the user message is exactly ONE
+    # `content.push({type:"text", text: prompt})`, nothing else) - Henry now
+    # gets the same: NOTHING auto-injected for a board turn. What he needs he
+    # pulls himself, pre-approved, exactly like memory already worked:
+    #   board state / PM plan   -> py -3.12 ../ops/tools/board_state.py [--plan]
+    #   what happened in chat   -> py -3.12 ../ops/tools/henry_inbox.py
+    #   since his last reply       (the old chat_since block, now a pull -
+    #                                see _inbox_since, its one remaining owner)
+    # A card-scoped chat is UNCHANGED: that card's own timeline is what makes
+    # it a participant in THAT conversation, not board-wide state, and it was
+    # never the thing this rebuild's cost measurements were about.
     _snap_ts = time.strftime("%Y-%m-%d %H:%M")
     if card:
         _cc = _card_context(card)
         _snap_head, _snap_body, _snap_tail = "CARD CONTEXT (%s)" % _snap_ts, _cc or "", "\n\n"
         snapshot_block = (_snap_head + ":\n" + _cc + _snap_tail) if _cc else ""
     else:
-        _plan = _pm_plan_digest()
-        # MEMORY DIGEST - session-scoped, NOT every turn (henry-memory-db-
-        # authority phase 2). A resumed turn's own transcript already carries
-        # whatever digest rode an earlier turn of this same session; re-
-        # sending it on every board-content change (the _snap_seen hash below
-        # dedupes THAT, not this) was the measured token waste the design
-        # card's finding #3 names. _mem_marker changes on a fresh spawn (sid
-        # falsy), a rotated/detached session (sid changes) and an in-place
-        # compaction (sid same, compacted_at_turn bumps) - the three events
-        # README calls "session establishment".
-        _mem_marker = copilot_memory.marker(sid, _st.get("compacted_at_turn"))
-        _mem_due = copilot_memory.digest_due(sid, _mem_marker, _digest_sent.get(skey))
-        _mem = copilot_memory.digest() if _mem_due else ""
-        # header and memory digest stay OUTSIDE _snap_body: neither is board
-        # state, and hashing the minute-stamped header is exactly what kept
-        # the seam below from ever matching (see _snap_stable)
-        _snap_head = "BOARD SNAPSHOT (%s)" % _snap_ts
-        _snap_body = _snapshot() + (("\n\n" + _plan) if _plan else "")
-        _snap_tail = _mem
-        snapshot_block = _snap_head + ":\n" + _snap_body + _snap_tail
+        _snap_head, _snap_body, _snap_tail = "", "", ""
+        snapshot_block = ""
     # DELTA, not repetition (Paseo-shape, owner decree 2026-09-03 "direkt hier
     # fixen"): the conversation is CONTINUOUS - the model still carries the
     # board state it read last turn in its own session context. Re-sending an
@@ -2183,15 +2216,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _ovl = behavior.overlay(_proj, skip=() if (card or _ship_relevant(message))
                                 else ("ship.process",))
         if _ovl:
-            # Once per continuous session, same argument as the snapshot: the
-            # model read these rules an earlier turn of THIS session (measured
-            # 2026-09-15: ~2.7 KB re-sent on every board turn). Honoured only
-            # while the snapshot seam's own continuity entry is live, so a
-            # compaction/detach (which pops _snap_seen) resends it too.
+            # Once per continuous session, independent of the (now removed)
+            # board push: the model read these rules an earlier turn of THIS
+            # session (measured 2026-09-15: ~2.7 KB re-sent on every board
+            # turn). (hash, sid) is proof enough on its own - see _ovl_seen's
+            # own module-level comment for why no separate timestamp is needed.
             import hashlib
             _ovl_hash = hashlib.sha1(_ovl.encode("utf-8", "replace")).hexdigest()
-            _cont = _snap_seen.get(skey)
-            if _cont and time.time() - _cont[1] < 1800 and _ovl_seen.get(skey) == _ovl_hash:
+            if _ovl_seen.get(skey) == (_ovl_hash, sid):
                 _ovl = ""
         if _ovl:
             extra_system = (extra_system + "\n\n" + _ovl) if extra_system else _ovl
@@ -2218,39 +2250,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # rounds before the first streamed word (session b085da2d, 2026-09-02/03).
     # An instruction INSIDE the turn is the strongest placement the harness
     # controls without touching the fixed spawn - one line, ~20 tokens.
-    # WHAT THE OWNER SAW IN THIS CHAT SINCE HENRY'S LAST ANSWER. The inbox
-    # transcript is ONE record the owner reads top to bottom, but three
-    # writers fill it: Henry's own turns, the broker's follow-up reports
-    # (cls pm), and card mirrors (cls card) - and only the first ever reached
-    # Henry's session. So the owner asks "Ist es normal, dass es so lange
-    # braucht?" right under the broker's Play-Console report, and Henry
-    # answers about the UI-fix card he himself last mentioned (2026-09-14
-    # 14:17). Fold the lines the owner saw between Henry's last bot row and
-    # this message into the turn - derived from the same chat log the owner
-    # reads, never a second bookkeeping.
-    chat_since = ""
-    if not card:
-        try:
-            from spine.storage import db as _db
-            _rows = _db.chat_tail(user, 40)
-            _last_bot = max((i for i, m in enumerate(_rows) if m.get("cls") == "bot"), default=-1)
-            _seen = [m for m in _rows[_last_bot + 1:]
-                     if m.get("cls") in ("pm", "card", "act", "error") and (m.get("text") or "").strip()]
-            if _seen:
-                def _tag(m):
-                    if m.get("cls") == "card":
-                        return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
-                    return {"pm": "System/Broker", "act": "Aktion", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
-                # In ORDER, and placed right before the owner's line below -
-                # that is where he read them (owner 2026-09-14: "meine Frage
-                # kam direkt darunter, der Kontext stand direkt drueber").
-                chat_since = ("\n\nCHAT-VERLAUF DIREKT VOR DIESER NACHRICHT (in Reihenfolge, so hat der "
-                              "Owner es gelesen - 'es'/'das' meint meist die letzte Zeile):\n"
-                              + "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
-                                          for m in _seen[-8:]))
-        except Exception:                                    # noqa: BLE001
-            chat_since = ""
-    turn = (action_report + snapshot_block + focus + chat_since
+    #
+    # WHAT THE OWNER SAW IN THIS CHAT SINCE HENRY'S LAST ANSWER used to ride
+    # HERE, unconditionally, on every board turn (the chat log's other two
+    # writers - broker follow-up reports, card mirrors - reaching Henry's own
+    # session). Card chat-henry-kontext-pruning ("voller Umbau", 2026-09-15):
+    # that push is gone; _inbox_since(user) below is its ONE remaining owner,
+    # now called only from ops/tools/henry_inbox.py, on Henry's own initiative.
+    turn = (action_report + snapshot_block + focus
             + "\n\nUSER (%s): %s" % (user, body)
             + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
               "den Owner - was du siehst oder was du pruefst -, DANN der erste "
@@ -2803,15 +2810,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if _snap_hash:
         # the model has now really SEEN this state - only from here on may an
         # unchanged board collapse to the one-line reference / a changed one
-        # to a diff against these lines
+        # to a diff against these lines (CARD chats only - see the branch above)
         _snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)
     if _ovl_hash:
-        _ovl_seen[skey] = _ovl_hash
-    if _mem_due:
-        # stamped with sid_final, not the `sid` the marker was built from: a
-        # silent mid-turn detach still delivered the digest text (it rode the
-        # prompt regardless of which session absorbed it), just under a new
-        # id - stamping the OLD id would reinject next turn for no reason.
-        _digest_sent[skey] = copilot_memory.marker(sid_final or sid or "", _mem_marker[1])
+        # keyed on (hash, session id) rather than a timestamp window: the
+        # model's own --resume already proves it saw this overlay as long as
+        # the session id is unchanged, and sid_final IS the id the NEXT turn
+        # resumes from - a compaction/detach/fresh-spawn changes it, which is
+        # exactly when a resend is needed, with no separate reset plumbing.
+        _ovl_seen[skey] = (_ovl_hash, sid_final or sid)
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}

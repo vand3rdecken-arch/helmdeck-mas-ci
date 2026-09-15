@@ -10,6 +10,100 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "henry-context-pull-is-prompt-enforced",
+        "order": -11,
+        "title": "board/plan/memory/inbox awareness is now PROMPT-enforced, not code-guaranteed",
+        "status": "open",
+        "what": "Card chat-henry-kontext-pruning's 'voller Umbau' (2026-09-15): "
+                "the board snapshot, PM plan, memory index and 'what happened "
+                "in chat since my last reply' USED to ride every board turn "
+                "unconditionally (a code guarantee - Henry could not fail to "
+                "see them). All four are now PULL-only (board_state.py, "
+                "henry_inbox.py, henry_memory_get.py), fetched only if the "
+                "model actually calls the tool. The brief instructs this "
+                "(BIAS TO ACTION rule 3, the AUF ABRUF header) but nothing in "
+                "code enforces it - a turn that skips the call is "
+                "indistinguishable, from the daemon's side, from one that "
+                "correctly decided it didn't need to.",
+        "why_it_bites": "A model that forgets/skips the pull gives a STALE "
+                        "answer with no visible error: 'der Umbau laeuft "
+                        "noch' about a card that finished an hour ago, or a "
+                        "duplicate card filed because the NO DUPLICATE CARDS "
+                        "check never actually ran board_state.py. The old "
+                        "push made this class of bug structurally impossible; "
+                        "the new pull makes it a prompt-following bet. "
+                        "Measured trade for the trade: real Henry turns "
+                        "went from ~9k tokens/turn of forced re-reads to "
+                        "near-zero on a turn that needs nothing extra.",
+        "trigger": "The owner returns after being away, or asks a status "
+                   "question, on a turn/model that does not reliably follow "
+                   "the brief's pull instructions (measured to matter more "
+                   "on weaker/faster-routed tiers than on the model that "
+                   "wrote this rule).",
+        "fix": "Not a rollback (the token cost was real and measured) - a "
+               "cheap SIGNAL instead of the removed full push: e.g. a single "
+               "boolean/count folded into the turn ('N Karten haben sich seit "
+               "deiner letzten Antwort bewegt') derived from the runtime's "
+               "own bg_tasks/track-update events, costing ~10 tokens instead "
+               "of the ~2-12k the full block cost, that tells Henry a pull is "
+               "worth making without handing him the content itself.",
+        "since": "2026-09-15",
+    },
+    {
+        "id": "guard-outside-worktree-check-wrong-cwd-base",
+        "order": -12,
+        "title": "card_tool_guard resolves a relative Bash arg against the worktree ROOT, not the tool's real cwd",
+        "status": "open",
+        "what": "Found while A/B-testing the pull rebuild (ops/tools/"
+                "pull_rebuild_ab_bench.py): card_tool_guard.py's "
+                "_outside_worktree() resolves a relative path candidate as "
+                "os.path.join(worktree, candidate) - always against the "
+                "WORKTREE ROOT. Henry's own board-chat spawn runs with "
+                "cwd=DAEMON_ROOT (one level BELOW the worktree root), and "
+                "every one of his pre-approved pull tools is written "
+                "relative to THAT cwd (`../ops/tools/board_state.py`). "
+                "Resolved against the root instead, `../ops/tools/...` "
+                "points one level ABOVE the worktree - outside it - so the "
+                "check would flag its own pre-approved tools as escaping. "
+                "A SEPARATE bug in the same function's caller, "
+                "_bash_escape_paths(): it tokenizes the raw command string "
+                "on whitespace, so an unquoted absolute path containing a "
+                "space (this machine's Windows profile is 'Tien Duy Vo') "
+                "splits into fragments, and the first fragment alone "
+                "(e.g. 'C:\\\\Users\\\\Tien') gets checked instead of the "
+                "real path - and fails the same way, from a different cause.",
+        "why_it_bites": "NEITHER half currently reaches a real Henry board "
+                        "turn: HELMDECK_WORKTREE is only set for a worker/"
+                        "hands spawn (spine/agent/spawnenv.py, "
+                        "cells/copilot/chat/hands.py), never for "
+                        "_persist_get's board-chat spawn, so the guard's "
+                        "own `if not worktree: _allow(); return` short-"
+                        "circuits before either bug runs - confirmed by "
+                        "re-running the bench with the var explicitly "
+                        "stripped: the exact bare pre-approved form then "
+                        "runs clean. It bites the day either changes: a "
+                        "worktree card whose task legitimately needs "
+                        "`../ops/tools/...` from a subdirectory cwd, or a "
+                        "future Henry surface that DOES set the var, would "
+                        "see its own pre-approved tools falsely denied as "
+                        "\"outside this card's worktree\" - the exact message "
+                        "this session's own operator hit repeatedly on plain "
+                        "absolute-path Bash commands, for the same root cause.",
+        "trigger": "HELMDECK_WORKTREE set for a spawn whose cwd is not the "
+                   "worktree root itself, running a relative-path command "
+                   "(the `../` form) or an unquoted absolute path with a "
+                   "space in it.",
+        "fix": "_outside_worktree needs the tool's actual cwd, not just "
+               "`worktree`, to resolve a relative candidate correctly - pass "
+               "it through from the hook payload (Claude Code's PreToolUse "
+               "payload carries the session cwd) instead of assuming cwd == "
+               "worktree root. _bash_escape_paths needs shlex.split (already "
+               "used elsewhere in this same file, see _client_allow_argv_hit) "
+               "instead of a bare regex word-split, so a quoted OR "
+               "legitimately-spaced token is read as one piece.",
+        "since": "2026-09-15",
+    },
+    {
         "id": "open-question-identity-is-lexical",
         "order": -10,
         "title": "two owner questions are judged 'the same' by word overlap, not by meaning",

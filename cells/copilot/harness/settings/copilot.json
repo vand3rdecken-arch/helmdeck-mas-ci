@@ -55,6 +55,8 @@
       "Bash(py -3.12 ../ops/tools/board_state.py:*)",
       "Bash(py -3.12 ../ops/tools/loop_state.py:*)",
       "Bash(py -3.12 ../ops/tools/henry_memory_get.py:*)",
+      "Bash(py -3.12 ../ops/tools/henry_brief_get.py:*)",
+      "Bash(py -3.12 ../ops/tools/henry_inbox.py:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
