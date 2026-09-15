@@ -18,8 +18,8 @@ directly, same as the already-live Play Store listing):
   this script                                            - the two things
       `eas metadata` does not do: attaching an already-processed build to
       the appStoreVersion, and the actual "submit for App Review" call
-      (POST appStoreVersionSubmissions - `eas submit` only uploads a binary,
-      it never puts a Store listing in the review queue).
+      (reviewSubmissions + reviewSubmissionItems - `eas submit` only uploads
+      a binary, it never puts a Store listing in the review queue).
 
 Reuses auth/env/HTTP from asc_metadata_draft so there stays exactly one raw
 ASC JSON:API client in the repo; asc_external_beta.py is the TestFlight
@@ -80,18 +80,6 @@ def _platform_arg(argv):
     return "IOS", argv
 
 
-def _submission_or_none(version_id):
-    """The appStoreVersionSubmission relationship 404s (not an empty 200) when
-    no submission exists yet for this version - that is Apple's normal shape
-    for "not submitted", not a real error."""
-    try:
-        return _get("/v1/appStoreVersions/%s/appStoreVersionSubmission" % version_id).get("data")
-    except RuntimeError as ex:
-        if "HTTP 404" in str(ex):
-            return None
-        raise
-
-
 def cmd_show(argv):
     platform, argv = _platform_arg(argv)
     print("--- appInfos ---")
@@ -111,9 +99,12 @@ def cmd_show(argv):
         print("no editable appStoreVersion yet - run `eas metadata:push` first "
               "(surfaces/app/store.config.json)")
         return
-    sub = _submission_or_none(ev["id"])
-    print("submission on editable version %s: %s" % (
-        ev["id"], sub["attributes"] if sub else "NOT SUBMITTED"))
+    subs = _get("/v1/reviewSubmissions?filter[app]=%s&filter[platform]=%s" % (APP_ID, platform)).get("data", [])
+    if not subs:
+        print("reviewSubmissions (%s): NONE" % platform)
+    for rs in subs:
+        a = rs["attributes"]
+        print("reviewSubmission %s state=%s submittedDate=%s" % (rs["id"], a.get("state"), a.get("submittedDate")))
 
 
 def cmd_attach(argv):
@@ -141,15 +132,38 @@ def cmd_submit(argv):
     if not ev:
         print("no editable appStoreVersion - run `eas metadata:push` first")
         sys.exit(2)
-    existing = _submission_or_none(ev["id"])
-    if existing:
-        print("already submitted: id=%s" % existing["id"])
-        return
-    d = _req("POST", "/v1/appStoreVersionSubmissions", {
-        "data": {"type": "appStoreVersionSubmissions",
-                 "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": ev["id"]}}}}})
-    print("submitted for App Review: id=%s (Apple typically answers in 24-48h, can take longer)"
-          % d["data"]["id"])
+    # appStoreVersionSubmissions is retired - the API now only allows DELETE on
+    # it (403 "does not allow CREATE", measured 2026-09-15). Submission is
+    # reviewSubmissions: open one per platform (or reuse a draft the web UI
+    # already opened), add the version as an item, then flip submitted=true.
+    q = "/v1/reviewSubmissions?filter[app]=%s&filter[platform]=%s" % (APP_ID, platform)
+    for rs in _get(q).get("data", []):
+        state = rs["attributes"].get("state")
+        if state in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
+            print("already submitted: reviewSubmission %s state=%s" % (rs["id"], state))
+            return
+    draft = next((rs for rs in _get(q + "&filter[state]=READY_FOR_REVIEW").get("data", [])), None)
+    if draft:
+        rs_id = draft["id"]
+        print("reusing draft reviewSubmission", rs_id)
+    else:
+        rs_id = _req("POST", "/v1/reviewSubmissions", {
+            "data": {"type": "reviewSubmissions", "attributes": {"platform": platform},
+                     "relationships": {"app": {"data": {"type": "apps", "id": APP_ID}}}}})["data"]["id"]
+        print("created reviewSubmission", rs_id)
+    items = _get("/v1/reviewSubmissions/%s/items?include=appStoreVersion" % rs_id).get("data", [])
+    has_version = any(((it.get("relationships", {}).get("appStoreVersion") or {}).get("data") or {}).get("id") == ev["id"]
+                      for it in items)
+    if not has_version:
+        _req("POST", "/v1/reviewSubmissionItems", {
+            "data": {"type": "reviewSubmissionItems",
+                     "relationships": {"reviewSubmission": {"data": {"type": "reviewSubmissions", "id": rs_id}},
+                                       "appStoreVersion": {"data": {"type": "appStoreVersions", "id": ev["id"]}}}}})
+        print("added appStoreVersion %s to the submission" % ev["id"])
+    d = _req("PATCH", "/v1/reviewSubmissions/%s" % rs_id, {
+        "data": {"type": "reviewSubmissions", "id": rs_id, "attributes": {"submitted": True}}})
+    print("submitted for App Review: reviewSubmission %s state=%s (Apple typically answers in 24-48h)"
+          % (rs_id, d["data"]["attributes"].get("state")))
 
 
 CMDS = {"show": cmd_show, "attach": cmd_attach, "submit": cmd_submit}
