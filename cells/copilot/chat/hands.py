@@ -33,8 +33,18 @@ from daemon.paths import DAEMON_ROOT
 
 _lock = threading.Lock()
 _tasks = {}          # id -> {title, status, since, updated, detail, result, pid, user, skey, card}
+_queue = []          # hids waiting for the desktop, FIFO
+_active = None       # the ONE hands run that owns the desktop right now (mutated only in _kick/_run)
 SILENCE_S = 600      # no stream output for this long = hung -> tree-kill (turn idle-watchdog parity)
 MCP_GRANTS = ["mcp__windows-mcp__*", "mcp__helmdeck-browser__*"]
+# ONE AT A TIME (measured 2026-09-15 18:44: Henry fanned round 2 out as three
+# hands at once "in Zehner-Paketen"; all three drove the same persistent Chrome
+# and the same mouse, tabs stepped on each other, the first run's end took the
+# browser down and the other two died with "no close frame received or sent").
+# There is one desktop and one browser, so a second hands WAITS - the same
+# physical fact cards express through locks._desktop_lock, which a run holds
+# for its whole life here (cards take it non-blocking per tool call and fail
+# safe, so a long hands run never deadlocks them).
 
 
 def tasks(closed_within_s=3600):
@@ -80,17 +90,66 @@ def spawn(user, task, skey, card=None, why=""):
     # is the scratch folder (the brief says the same in prose; this is code)
     env["HELMDECK_WORKTREE"] = scratch
     env["MCP_TIMEOUT"] = env.get("MCP_TIMEOUT") or "60000"
-    p = subprocess.Popen(drivers._cmd_line(argv), cwd=scratch, stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                         text=True, encoding="utf-8", errors="replace")
     with _lock:
+        ahead = len(_queue) + (1 if _active else 0)
         _tasks[hid] = {"title": title, "status": "running", "since": time.time(), "updated": time.time(),
-                       "detail": task.strip()[:600], "result": "", "pid": p.pid, "user": user,
-                       "skey": skey, "card": card}
-    proctable._record_pid(p.pid, time.time())
-    events.emit("hands", card or "-", action="spawned", id=hid, actor=user, task=title, why=why[:200])
-    threading.Thread(target=_pump, args=(hid, p), daemon=True, name="hands-" + hid).start()
+                       "detail": task.strip()[:600], "pid": None, "user": user, "skey": skey, "card": card,
+                       "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
+                       "result": ("wartet: %d Hände-Lauf(e) davor (ein Desktop, ein Browser)" % ahead) if ahead else ""}
+        _queue.append(hid)
+    events.emit("hands", card or "-", action="spawned", id=hid, actor=user, task=title, why=why[:200],
+                queued_behind=ahead)
+    _kick()
     return hid
+
+
+def _popen(argv, cwd, env):
+    """The process itself - CREATE_NO_WINDOW because the daemon is DETACHED
+    (no console), so every console child it starts got a console WINDOW of
+    its own; orphaned MCP children kept those alive after the run ("about 8
+    empty terminal windows stacked on the desktop", 2026-09-15 = the day's 8
+    hands runs). Kept separate so a test can stand in a fake process."""
+    return subprocess.Popen(argv, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=env, text=True, encoding="utf-8",
+                            errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _kick():
+    """Start the next waiting hands if none owns the desktop. The ONE place
+    _active is set; _run is the one place it is cleared."""
+    global _active
+    with _lock:
+        if _active is not None or not _queue:
+            return
+        hid = _queue.pop(0)
+        _active = hid
+    threading.Thread(target=_run, args=(hid,), daemon=True, name="hands-" + hid).start()
+
+
+def _run(hid):
+    global _active
+    from spine.agent import proctable
+    from spine.git import locks
+    with _lock:
+        t = dict(_tasks.get(hid) or {})
+    locks._desktop_lock.acquire()          # blocking: waits out a card's live desktop tool call
+    try:
+        p = _popen(t["argv"], t["cwd"], t["env"])
+        with _lock:
+            if hid in _tasks:
+                _tasks[hid].update(pid=p.pid, result="", updated=time.time())
+        proctable._record_pid(p.pid, time.time())
+        _pump(hid, p)
+    except Exception as e:                               # noqa: BLE001
+        with _lock:
+            if hid in _tasks:
+                _tasks[hid].update(status="failed", result="FAILED - spawn: %s" % str(e)[:300], updated=time.time())
+        _land(hid, "failed", "FAILED - spawn: %s" % str(e)[:300], 0)
+    finally:
+        locks._desktop_lock.release()
+        with _lock:
+            _active = None
+        _kick()
 
 
 def _pump(hid, p):

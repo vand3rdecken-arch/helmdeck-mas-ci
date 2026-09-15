@@ -18,6 +18,7 @@ Env overrides: HELMDECK_CHROME (exe path), HELMDECK_CHROME_PORT (default 9222),
 HELMDECK_CHROME_PROFILE (default %LOCALAPPDATA%/HelmDeck/chrome-profile)."""
 import os
 import subprocess
+import sys
 import time
 import urllib.request
 
@@ -153,6 +154,28 @@ def _cdp_up(port):
         return False
 
 
+def _spawn_orphan(argv):
+    """Start `argv` OUTSIDE the caller's process tree (measured 2026-09-15:
+    the persistent HelmDeck Chrome was a child of whichever hands/card
+    process first called ensure_chrome - via this MCP server - and died with
+    it: taskkill /T at that run's end took Chrome down, every other run
+    attached to it lost its CDP socket ("no close frame received or sent"),
+    and the next start showed "Chrome didn't shut down correctly"). A short-
+    lived launcher spawns Chrome and exits at once, so Chrome's parent is
+    gone before anyone can walk the tree - proctable._descendants and
+    taskkill /T both follow live parent links only."""
+    if os.name != "nt":
+        subprocess.Popen(argv, start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    detached = 0x00000008 | 0x00000200          # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    launcher = [sys.executable, "-c",
+                "import subprocess,sys; subprocess.Popen(sys.argv[1:], creationflags=%d, close_fds=True)" % detached]
+    subprocess.run(launcher + list(argv), timeout=30, check=True,
+                   creationflags=detached | 0x08000000,          # + CREATE_NO_WINDOW
+                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def ensure_chrome(port=DEFAULT_PORT, profile=None, exe=None):
     """Start the persistent HelmDeck Chrome with a debug port + its own profile, or reuse
     the one already listening. Returns when CDP is reachable. Leaves the process running so
@@ -165,7 +188,7 @@ def ensure_chrome(port=DEFAULT_PORT, profile=None, exe=None):
     os.makedirs(profile, exist_ok=True)
     # visible window (screen-recorded), dedicated profile, no first-run nags. NOT headless
     # and NOT your daily user-data-dir.
-    subprocess.Popen([
+    _spawn_orphan([
         exe,
         "--remote-debugging-port=%d" % port,
         "--user-data-dir=%s" % profile,
