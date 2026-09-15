@@ -32,13 +32,19 @@ def ok(cond, what):
 
 print("compaction mark (copilot)")
 
+# 2026-09-15: the line is a NUMBER (COMPACT_COST_LINE), decoupled from
+# voice_model. Measured over the last 8 compaction windows: zero board calls
+# on haiku, so "stay-fast" guarded a model never used, and a 1M voice model
+# would have silently lifted the mark to 800k. Same value as before (168k =
+# haiku window - headroom), so nothing moved the day this landed.
 mark, why = copilot._compact_mark({"ctx_window": 1_000_000})
-ok(why == "stay-fast", "a 1M session is governed by the fast-model line, not overflow")
+ok(why == "cost-line", "a 1M session is governed by the cost line, not overflow")
+ok(mark == copilot.COMPACT_COST_LINE == 168_000,
+   "the mark IS the cost line, and it equals the old haiku-derived value (%d)" % mark)
 ok(mark == turnopts.model_window("claude-haiku-4-5") - turnopts.CTX_HEADROOM,
-   "the mark is exactly what the fast model can still carry (%d)" % mark)
-ok(mark < 800_000, "the new mark is below the old overflow mark")
+   "...which is still haiku's window minus headroom - documented, not derived at runtime")
 ok(HENRY_CTX >= mark,
-   "Henry at 615,889 now compacts (old rule: %s)" % (HENRY_CTX >= 800_000))
+   "Henry at 615,889 compacts (old overflow-only rule: %s)" % (HENRY_CTX >= 800_000))
 
 # a small-window session must keep the overflow guard - stay-fast would be
 # LOOSER there (168k vs 160k) and must not be allowed to relax the wall.

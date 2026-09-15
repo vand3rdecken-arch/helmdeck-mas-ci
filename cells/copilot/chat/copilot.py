@@ -1128,38 +1128,49 @@ def _await_lull_and_lock(user):
         time.sleep(15)
 
 
+# THE COST LINE - a number, deliberately not a model window.
+#
+# It used to be model_window(voice_model) - CTX_HEADROOM = 168k, named
+# "stay-fast": keep the session small enough for Haiku so a trivial ack or a
+# spoken turn could still run on it. Measured 2026-09-15 over the last 8
+# compaction windows of the live board session: ZERO calls ran on haiku
+# (Sonnet 5 / Opus 5 / Fable only). The model this line was named after never
+# carries a board turn - and "may this turn still run on haiku" is answered
+# per turn by turnopts.fits_window anyway (a haiku pick that does not fit is
+# lifted, never rejected). So the line governs exactly one thing: per-turn
+# cost and latency, because every call re-reads the whole context.
+#
+# Cost/benefit of moving it (floor ~70k after compaction, ~3k growth per
+# owner turn since the delta seam): the average read per turn grows LINEARLY
+# with the line, while the compaction overhead it saves (memory-save + compact
+# = ~2 x line per window) is ~8% at 168k. Raising it makes every turn dearer
+# for a small saving; lowering it trades summary detail for little. 168k is
+# therefore kept - what changes is that it no longer tracks voice_model, which
+# could silently lift it to the 800k overflow the day a 1M voice model is
+# configured: the exact 2026-08-30 shape (615k session, 83M input tokens over
+# 98 turns, nothing watching).
+COMPACT_COST_LINE = 168_000
+
+
 def _compact_mark(st):
     """The context level at which Henry must compact - the LOWER of two
     INDEPENDENT reasons, because they protect different things:
 
-      overflow  0.8 * window - the session must not hit the wall.
-      stay-fast the biggest context the FAST model can still carry, so a
-                trivial ack or a spoken turn can still be answered by it.
+      overflow   0.8 * window - the session must not hit the wall.
+      cost-line  COMPACT_COST_LINE - every turn re-reads the whole context,
+                 so this is the line that costs plan-share and latency.
 
-    Only the first existed, and it is the wrong guard for the symptom the owner
-    actually feels. Measured 2026-08-30: Henry sat at 615,889 of a 1M window =
-    61.6%, comfortably under the 800k overflow mark and therefore never
-    compacted - while having been too big for Haiku's 200k window since roughly
-    168k, i.e. since 17% fill. The overflow guard fires at 80%; the line that
-    costs speed and plan-share is crossed at 17%. Nothing watched it, so every
-    board turn - typed or spoken - silently ran on the big model with a 615k
-    prefill re-read each time (83M input tokens over 98 turns).
+    Only the first existed once. Measured 2026-08-30: Henry sat at 615,889 of
+    a 1M window = 61.6%, comfortably under the 800k overflow mark and
+    therefore never compacted, every board turn re-reading a 615k prefill.
 
     Returns (mark, why). `why` is carried into the chat note so a compaction
     never looks arbitrary to the owner."""
-    from spine.agent import turnopts
-    from spine.storage import events
     from cells.engineer.cards import sessions
     window = max(int(st.get("ctx_window") or 0), sessions._CTX_WINDOW)
     overflow = int(0.8 * window)
-    try:
-        vm = events.settings().get("voice_model")
-        fast_id, _ = turnopts.resolve_model((vm if vm is not None else "haiku") or "haiku", "")
-        fw = turnopts.model_window(fast_id)
-    except Exception:                                            # noqa: BLE001
-        fw = None
-    if fw and fw - turnopts.CTX_HEADROOM < overflow:
-        return fw - turnopts.CTX_HEADROOM, "stay-fast"
+    if COMPACT_COST_LINE < overflow:
+        return COMPACT_COST_LINE, "cost-line"
     return overflow, "overflow"
 
 
