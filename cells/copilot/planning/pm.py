@@ -373,7 +373,9 @@ def _scratch_cwd():
 def _memory_index():
     """Henry's memory INDEX (names + one-liners, ~4k chars) - progressive
     disclosure: the note itself is fetched with `find`/`get` only when it
-    turns out to matter. The same digest Henry's own turn carries."""
+    turns out to matter. The PLANNER's own context; Henry's board turn no
+    longer auto-carries this (card chat-henry-kontext-pruning, "voller
+    Umbau" - he pulls it himself via henry_memory_get.py get MEMORY)."""
     try:
         from cells.copilot.chat import copilot_memory
         return copilot_memory.digest()

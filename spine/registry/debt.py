@@ -10,6 +10,46 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "henry-context-pull-is-prompt-enforced",
+        "order": -11,
+        "title": "board/plan/memory/inbox awareness is now PROMPT-enforced, not code-guaranteed",
+        "status": "open",
+        "what": "Card chat-henry-kontext-pruning's 'voller Umbau' (2026-09-15): "
+                "the board snapshot, PM plan, memory index and 'what happened "
+                "in chat since my last reply' USED to ride every board turn "
+                "unconditionally (a code guarantee - Henry could not fail to "
+                "see them). All four are now PULL-only (board_state.py, "
+                "henry_inbox.py, henry_memory_get.py), fetched only if the "
+                "model actually calls the tool. The brief instructs this "
+                "(BIAS TO ACTION rule 3, the AUF ABRUF header) but nothing in "
+                "code enforces it - a turn that skips the call is "
+                "indistinguishable, from the daemon's side, from one that "
+                "correctly decided it didn't need to.",
+        "why_it_bites": "A model that forgets/skips the pull gives a STALE "
+                        "answer with no visible error: 'der Umbau laeuft "
+                        "noch' about a card that finished an hour ago, or a "
+                        "duplicate card filed because the NO DUPLICATE CARDS "
+                        "check never actually ran board_state.py. The old "
+                        "push made this class of bug structurally impossible; "
+                        "the new pull makes it a prompt-following bet. "
+                        "Measured trade for the trade: real Henry turns "
+                        "went from ~9k tokens/turn of forced re-reads to "
+                        "near-zero on a turn that needs nothing extra.",
+        "trigger": "The owner returns after being away, or asks a status "
+                   "question, on a turn/model that does not reliably follow "
+                   "the brief's pull instructions (measured to matter more "
+                   "on weaker/faster-routed tiers than on the model that "
+                   "wrote this rule).",
+        "fix": "Not a rollback (the token cost was real and measured) - a "
+               "cheap SIGNAL instead of the removed full push: e.g. a single "
+               "boolean/count folded into the turn ('N Karten haben sich seit "
+               "deiner letzten Antwort bewegt') derived from the runtime's "
+               "own bg_tasks/track-update events, costing ~10 tokens instead "
+               "of the ~2-12k the full block cost, that tells Henry a pull is "
+               "worth making without handing him the content itself.",
+        "since": "2026-09-15",
+    },
+    {
         "id": "open-question-identity-is-lexical",
         "order": -10,
         "title": "two owner questions are judged 'the same' by word overlap, not by meaning",

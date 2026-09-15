@@ -111,28 +111,6 @@ def apply(mutations, actor="henry"):
     return done
 
 
-def marker(sid, compacted_at_turn):
-    """The (sid, compacted_at_turn) pair identifying 'this session, as of its
-    last compaction' - the session-establishment key the digest gate in
-    copilot.chat() compares turn to turn. It changes on exactly the three
-    events README calls "session establishment": a fresh spawn (sid falsy), a
-    rotated/detached resume (sid itself changes), and an IN-PLACE compaction
-    that keeps the same sid but bumps compacted_at_turn - the one case a
-    sid-only key would silently miss (a real /compact commonly does NOT
-    rotate the session id, see ops/tests/test_copilot_compact.py case 3)."""
-    return (sid or "", compacted_at_turn)
-
-
-def digest_due(sid, marker_now, last_marker):
-    """True when the memory digest must ride THIS turn. No session yet, or
-    the session-establishment marker moved since it was last delivered - a
-    resumed turn whose marker is UNCHANGED already carries the digest in its
-    own transcript (README finding #3: "resumede Turns bekommen NICHTS, das
-    Transkript hat es schon"), so re-sending it there would be the exact
-    token waste this phase exists to cut."""
-    return (not sid) or (last_marker != marker_now)
-
-
 def digest():
     """The memory INDEX for the turn - never the notes themselves (progressive
     disclosure: a full note is fetched only when it turns out to matter).
