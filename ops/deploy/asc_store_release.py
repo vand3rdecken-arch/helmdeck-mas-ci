@@ -59,15 +59,25 @@ def _app_infos():
     return _get("/v1/apps/%s/appInfos" % APP_ID).get("data", [])
 
 
-def _versions():
-    return _get("/v1/apps/%s/appStoreVersions?limit=50&filter[platform]=IOS" % APP_ID).get("data", [])
+def _versions(platform="IOS"):
+    return _get("/v1/apps/%s/appStoreVersions?limit=50&filter[platform]=%s" % (APP_ID, platform)).get("data", [])
 
 
-def _editable_version():
-    for v in _versions():
+def _editable_version(platform="IOS"):
+    for v in _versions(platform):
         if v["attributes"].get("appStoreState") in EDITABLE_VERSION_STATES:
             return v
     return None
+
+
+def _platform_arg(argv):
+    """--platform MAC_OS anywhere in argv, default IOS - same knob for
+    show/attach/submit so a macOS release uses this exact script, not a
+    parallel copy that could drift from it."""
+    if "--platform" in argv:
+        i = argv.index("--platform")
+        return argv[i + 1], argv[:i] + argv[i + 2:]
+    return "IOS", argv
 
 
 def _submission_or_none(version_id):
@@ -83,19 +93,20 @@ def _submission_or_none(version_id):
 
 
 def cmd_show(argv):
+    platform, argv = _platform_arg(argv)
     print("--- appInfos ---")
     for info in _app_infos():
         print("  id=%s appStoreState=%s" % (info["id"], info["attributes"].get("appStoreState")))
 
-    print("--- appStoreVersions (IOS) ---")
-    for v in _versions():
+    print("--- appStoreVersions (%s) ---" % platform)
+    for v in _versions(platform):
         a = v["attributes"]
         build = _get("/v1/appStoreVersions/%s/build" % v["id"]).get("data")
         print("  id=%s version=%s state=%s copyright=%r build=%s" % (
             v["id"], a.get("versionString"), a.get("appStoreState"), a.get("copyright"),
             build["id"] if build else None))
 
-    ev = _editable_version()
+    ev = _editable_version(platform)
     if not ev:
         print("no editable appStoreVersion yet - run `eas metadata:push` first "
               "(surfaces/app/store.config.json)")
@@ -106,11 +117,12 @@ def cmd_show(argv):
 
 
 def cmd_attach(argv):
+    platform, argv = _platform_arg(argv)
     if not argv:
-        print("usage: attach <build-id>")
+        print("usage: attach <build-id> [--platform MAC_OS]")
         sys.exit(2)
     build_id = argv[0]
-    ev = _editable_version()
+    ev = _editable_version(platform)
     if not ev:
         print("no editable appStoreVersion - run `eas metadata:push` first")
         sys.exit(2)
@@ -120,11 +132,12 @@ def cmd_attach(argv):
 
 
 def cmd_submit(argv):
+    platform, argv = _platform_arg(argv)
     if "--yes" not in argv:
         print("refusing to submit without --yes (this puts the actual Store listing in "
               "front of a real Apple App Review, not the Beta App Review)")
         sys.exit(2)
-    ev = _editable_version()
+    ev = _editable_version(platform)
     if not ev:
         print("no editable appStoreVersion - run `eas metadata:push` first")
         sys.exit(2)
