@@ -28,6 +28,7 @@ export const card: Dict = {
   "card.descPlaceholder": { de: "Kontext, Akzeptanzkriterien, Links… (der Worker liest es)",
                             en: "Context, acceptance criteria, links… (the worker reads it)" },
   "card.editDescription": { de: "Beschreibung bearbeiten", en: "Edit description" },
+  "card.editTask": { de: "Aufgabe bearbeiten", en: "Edit task" },
 
   // attachments
   "card.attachment": { de: "Anhang", en: "Attachment" },

@@ -74,17 +74,18 @@ function EditText({ value, onSave, placeholder, multiline, style, autoFocus, onD
   );
 }
 
-/** The card body, READABLE. The PM writes a structured work package
- *  (NUTZERGESCHICHTE / FERTIG, WENN / WARUM JETZT / ENTHÄLT); a multiline
- *  TextInput renders as a ~2-row textarea on web that never grows, so the
- *  acceptance criteria and steps were clipped mid-line and effectively
- *  invisible - the exact opposite of the point. Show the whole thing with the
- *  ALL-CAPS section heads lifted out, and swap to the editor on tap.
- *  Formatting happens HERE, not in the stored text, so the board's two-line
- *  preview and the agent's prompt stay clean (no markdown syntax to leak). */
-function DescriptionField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+/** Shared shape for any multiline card field. A multiline TextInput renders as
+ *  a ~2-row textarea on web that never grows (RN-Web limitation), so a raw
+ *  EditText clips long text mid-line - first hit on DescriptionField (the PM's
+ *  structured work package), now again on the task title. Read mode shows the
+ *  WHOLE text with no line limit in a plain <Text>; tap swaps to the growing
+ *  editor. `renderText` lets a field format its body (e.g. DescriptionField's
+ *  ALL-CAPS section heads) while keeping this read/edit toggle in one place. */
+function GrowingTextField({ value, onSave, placeholder, editLabel, editStyle, textStyle, minHeight = 60, renderText }: {
+  value: string; onSave: (v: string) => void; placeholder?: string; editLabel: string;
+  editStyle?: any; textStyle?: any; minHeight?: number; renderText?: (text: string) => React.ReactNode;
+}) {
   const t = useTheme();
-  const tr = useT();
   const [editing, setEditing] = useState(false);
   const text = value ?? "";
 
@@ -92,19 +93,37 @@ function DescriptionField({ value, onSave }: { value: string; onSave: (v: string
     return (
       <EditText value={text} onSave={onSave} multiline autoFocus={editing}
         onDone={() => setEditing(false)}
-        placeholder={tr("card.descPlaceholder")}
-        style={{ minHeight: 200, textAlignVertical: "top", lineHeight: 20 }} />
+        placeholder={placeholder}
+        style={[{ minHeight, textAlignVertical: "top", lineHeight: 20 }, editStyle]} />
     );
   }
+  return (
+    <Pressable onPress={() => setEditing(true)} accessibilityLabel={editLabel}
+      style={[{ backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
+        borderColor: t.borderSubtle, padding: 10 }, renderText ? { gap: 2 } : null]}>
+      {renderText ? renderText(text) : (
+        <Text selectable style={[{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }, textStyle]}>{text}</Text>
+      )}
+    </Pressable>
+  );
+}
+
+/** The card body, READABLE. The PM writes a structured work package
+ *  (NUTZERGESCHICHTE / FERTIG, WENN / WARUM JETZT / ENTHÄLT); show it with the
+ *  ALL-CAPS section heads lifted out via GrowingTextField's renderText.
+ *  Formatting happens HERE, not in the stored text, so the board's two-line
+ *  preview and the agent's prompt stay clean (no markdown syntax to leak). */
+function DescriptionField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const t = useTheme();
+  const tr = useT();
   const isHead = (l: string) => {
     const s = l.trim();
     return s.length > 2 && s.length <= 40 && s === s.toUpperCase() && /[A-ZÄÖÜ]/.test(s);
   };
   return (
-    <Pressable onPress={() => setEditing(true)} accessibilityLabel={tr("card.editDescription")}
-      style={{ backgroundColor: t.surface2, borderRadius: 8, borderWidth: 1,
-        borderColor: t.borderSubtle, padding: 10, gap: 2 }}>
-      {text.split("\n").map((line, i) => {
+    <GrowingTextField value={value} onSave={onSave} placeholder={tr("card.descPlaceholder")}
+      editLabel={tr("card.editDescription")} minHeight={200}
+      renderText={(text) => text.split("\n").map((line, i) => {
         const s = line.trim();
         if (!s) return <View key={i} style={{ height: 8 }} />;
         if (isHead(line)) {
@@ -122,8 +141,7 @@ function DescriptionField({ value, onSave }: { value: string; onSave: (v: string
           );
         }
         return <Text key={i} selectable style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }}>{s}</Text>;
-      })}
-    </Pressable>
+      })} />
   );
 }
 
@@ -233,7 +251,8 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
 
       <Panel>
         <SectionLabel text={tr("card.sec.task")} />
-        <EditText value={k.task} onSave={(v) => v && edit({ task: v })} multiline style={{ fontWeight: "600" }} />
+        <GrowingTextField value={k.task} onSave={(v) => v && edit({ task: v })}
+          editLabel={tr("card.editTask")} editStyle={{ fontWeight: "600" }} textStyle={{ fontWeight: "600" }} />
         <View style={{ height: 8 }} />
         <SectionLabel text={tr("card.sec.description")} />
         <DescriptionField value={k.description ?? ""} onSave={(v) => edit({ description: v })} />
