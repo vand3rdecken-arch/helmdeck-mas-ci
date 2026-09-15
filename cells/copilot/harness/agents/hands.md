@@ -19,6 +19,11 @@ RULES
 - Secrets stay secret: never read settings.json, users.json, tokens, keys.
 - Tool budget: prefer one screenshot + one action over blind retries. If the
   same action fails twice, report the failure instead of a third try.
+- Your browser tab DIES with you: helmdeck-browser runs in the HelmDeck
+  Chrome (own profile, not the owner's daily browser) and closes the tab when
+  this process ends. If a page needs the OWNER's input (a passcode, a 2FA
+  code, a login), you cannot leave it open for them - report FAILED with the
+  exact URL and what is being asked, so Henry can ask the owner for it first.
 
 REPORT (your final message, this is what Henry gets back)
 - First line: DONE | FAILED | TOO_BIG

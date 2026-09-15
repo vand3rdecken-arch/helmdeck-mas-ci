@@ -2331,6 +2331,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     _blocks = []          # every assistant TEXT block of this turn, in order (see txt below)
+    _tail_blocks = []     # TEXT blocks since the last tool_use = the answer (see txt below)
     resume_echo, ctx_first = False, {}
     # SILENCE watchdog (persist only): a one-shot process ends the read loop by
     # exiting; a persistent one that stops answering would hang the pump forever.
@@ -2416,7 +2417,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 for _b in ((ev.get("message") or {}).get("content") or []):
                     if isinstance(_b, dict) and _b.get("type") == "text" and (_b.get("text") or "").strip():
                         _blocks.append(_b["text"])
+                        _tail_blocks.append(_b["text"])
                     if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                        _tail_blocks = []     # prose before a tool call is a status line, not the answer
                         _inp = _b.get("input") or {}
                         _brief = str(_inp.get("command") or _inp.get("description")
                                      or _inp.get("query") or _inp.get("file_path") or "")
@@ -2567,6 +2570,19 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # text delta of this turn in order; `_blocks` the full text blocks from the
     # assistant events (the non-partial fallback); `result` stays last resort.
     txt = "".join(parts).strip() or "\n\n".join(b for b in _blocks if b.strip()) or result.get("result") or ""
+    # ONLY THE RESULT IS KEPT (owner 2026-09-15 "ich will nicht diese
+    # Nachricht sehen, nur Ergebnisse"): the FIRST-WORD law makes Henry
+    # announce every tool round ("Moment, ich schau kurz...") - that sentence
+    # streams live through `parts` and is right there, but it is a status
+    # line, not the answer. Persisting the whole `parts` join glued it onto
+    # the result without even a space ("Board-Stand.macOS ist durch"). The
+    # answer is the prose AFTER the last tool call; the preamble lives in the
+    # live preview only, like the transient tool steps. Fallback to the full
+    # text when the tail carries no prose (a bare actions block at the end).
+    if _tail_blocks and len(_tail_blocks) < len(_blocks):
+        _tail = "\n\n".join(b for b in _tail_blocks if b.strip()).strip()
+        if _strip_actions_live(_tail).strip():
+            txt = _tail
     if not (txt or "").strip():
         if _beat.get("hung"):
             raise RuntimeError("copilot port hung (no event within 90s) - port dropped, please resend")

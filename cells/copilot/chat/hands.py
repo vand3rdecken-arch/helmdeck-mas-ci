@@ -162,13 +162,18 @@ def _land(hid, status, result, steps):
     if not t:
         return
     user, skey, card, title = t.get("user"), t.get("skey"), t.get("card"), t.get("title")
-    short = result.strip()[:700]
+    # Henry gets the WHOLE report (owner 2026-09-15: the 700-char cut fed him
+    # a DM-failure report ending mid-sentence at "The TASK block didn'", so
+    # he never saw the passcode/permission lines and invented a still-open
+    # browser window); the chat act row stays a readable excerpt.
+    full = result.strip()[:4000]
+    short = result.strip()[:1500]
     events.emit("hands", card or "-", action=status, id=hid, actor=user, steps=steps,
                 result=short[:300])
     try:
         with copilot._pending_lock:
             copilot._pending_actions.setdefault(skey, []).append(
-                "HANDS %s (%s): %s\n%s" % (status.upper(), hid, title, short))
+                "HANDS %s (%s): %s\n%s" % (status.upper(), hid, title, full))
     except Exception:                                    # noqa: BLE001
         pass
     line = "Hände %s: %s\n%s" % ("fertig" if status == "completed" else "fehlgeschlagen", title, short)
