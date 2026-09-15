@@ -184,6 +184,44 @@ check("Ready for Review" not in txt,
       "so is the hand-off boilerplate - the owner already knows accepting deploys")
 check("folded Abmelden" in txt, "the actual plain-language result survives")
 
+# the owner complaint that reopened this (screenshot 2026-09-15 07:37): a
+# reply that puts its plain-language RESULT first and a DELIVERED recap with
+# backtick-wrapped paths/hashes after it used to print the recap instead - and
+# mangled, because stripping a backtick-wrapped path/hash left the empty
+# backticks behind. Two defects, one reply: the mirror must pick the LEDE
+# ("did it work"), not extract_outcome's technical tail, and whatever it
+# prints must never carry a stray "``".
+reset()
+half_reply = ("I cut the per-message snapshot roughly in half by collapsing "
+             "done processes to a count and done steps to an n/m counter. "
+             "This takes effect after a daemon restart.\n\n"
+             "DELIVERED: commit `fef0d1d1` on main, touching "
+             "`cells/copilot/chat/copilot.py`, `spine/registry/behavior.py` "
+             "and the new test file. Nothing else changed on the machine.")
+notify.card_event(card(last_reply=half_reply), "needs_you")
+txt = cards()[0]["text"] if cards() else ""
+check("``" not in txt, "a stripped code span leaves no empty-backtick scar")
+check("roughly in half" in txt and "daemon restart" in txt,
+      "the RESULT sentence (what the owner needs) is the one that survives")
+check("fef0d1d1" not in txt and "copilot.py" not in txt and "DELIVERED" not in txt,
+      "the technical DELIVERED recap - written for Henry's planning "
+      "snapshot, not the owner - does not ride along with it")
+
+# a reply whose only usable text sits AFTER a DELIVERED tail that itself
+# turns broken once decluttered (e.g. a lede-free reply) must still fall
+# back to something, not go silent - _declutter drops the wrecked sentence,
+# extract_outcome's remaining sentence still says something.
+reset()
+tail_only = ("DELIVERED: commit `abc1234` on main, touching `a/b/c.py`, "
+            "`d/e/f.py` and the new test file. Nothing else changed on the "
+            "machine.")
+notify.card_event(card(last_reply=tail_only), "needs_you")
+txt = cards()[0]["text"] if cards() else ""
+check("``" not in txt, "still no empty-backtick scar when only the tail exists")
+check("Nothing else changed on the machine" in txt,
+      "the one sentence that survives decluttering is printed, not dropped "
+      "along with its broken neighbour")
+
 # -- 3. THE CORE PROPERTY: suppressed push, written inbox ---------------------
 for decision, why in (("silent", "the owner is looking at that very card"),
                       ("inapp", "the owner is present on another screen")):

@@ -108,14 +108,37 @@ REASONS = {"question": KIND_QUESTION, "needs_you": KIND_RESULT}
 # never has, so this only ever matches something that looks like a repo path.
 _PATH_RE = re.compile(r"\b(?!https?://)[\w.\-]+(?:/[\w.\-()]+)+\.\w{1,5}\b:?")
 _HASH_RE = re.compile(r"\b[0-9a-f]{7,40}\b")   # git hashes are lowercase hex
+# A whole inline code span - backticks AND their contents together. Stripping
+# only _PATH_RE/_HASH_RE's match and leaving the backticks behind is the
+# 2026-09-15 bug: "`abc1234`" -> "``", a token-shaped scar the owner reads as
+# broken text. Removing the span whole is also strictly more general - a code
+# span holding something that isn't path- or hash-shaped never leaked before.
+_CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
+# What a removed token leaves behind when the surrounding sentence can't
+# survive its absence: a comma with nothing before it, a doubled comma, a
+# conjunction running straight into punctuation, empty parens, or a run of
+# collapsed whitespace where a word used to sit. Checked BEFORE whitespace
+# normalization erases the tell.
+_BROKEN_RE = re.compile(r"\s,|,\s*,|\b(?:and|und)\s*[.,;:]|\(\s*\)|\s{2,}")
 
 
 def _declutter(text):
-    """The chat-only cleanup pass: strip inline paths/hashes, collapse the
-    whitespace their removal leaves behind. Never touches the stored
-    `last_reply`/`outcome` - only the copy this module is about to print."""
-    t = _HASH_RE.sub("", _PATH_RE.sub("", text or ""))
-    return " ".join(t.split())
+    """The chat-only cleanup pass: strip inline code spans/paths/hashes,
+    sentence by sentence. A sentence a removal leaves grammatically broken is
+    DROPPED WHOLE rather than printed as a mangled remnant (owner correction
+    2026-09-15 - a sentence full of stray commas/backticks told the owner
+    nothing). Never touches the stored `last_reply`/`outcome` - only the copy
+    this module is about to print."""
+    kept = []
+    for sentence in re.split(r"(?<=[.!?])\s+", text or ""):
+        if not sentence.strip():
+            continue
+        stripped = _HASH_RE.sub("", _PATH_RE.sub("", _CODE_SPAN_RE.sub("", sentence)))
+        if stripped != sentence and (_BROKEN_RE.search(stripped)
+                                      or not re.search(r"[A-Za-z]{2,}", stripped)):
+            continue
+        kept.append(" ".join(stripped.split()))
+    return " ".join(kept)
 
 
 POINTER = "Details in der Karte."
@@ -223,9 +246,21 @@ def mirror(track, status):
             # _finish_turn persisted, so a raw <helmdeck-ask> can never leak
             # into the inbox - extract_outcome/`_declutter` only ever shorten
             # and declutter it further, never expose more than it already had.
+            #
+            # Prefer the reply's own LEDE (outcomes.lede: whatever it said
+            # BEFORE a DELIVERED/ready-for-review tail) over extract_outcome's
+            # tail pick. That tail is written for Henry's planning snapshot
+            # and keeps file names/hashes on purpose - the owner's inbox wants
+            # the plain sentence that answers "did it work", which a worker
+            # reply conventionally puts FIRST and the technical recap AFTER
+            # (owner complaint 2026-09-15: the inbox was showing that recap,
+            # mangled, instead of the actual result one paragraph earlier).
+            # Falls back to extract_outcome's own pick when the reply has
+            # nothing ahead of its DELIVERED marker, or _declutter drops the
+            # lede whole as unsalvageable.
             from spine.turn import outcomes
             raw = (track.get("last_reply") or "").strip()
-            text = _declutter(outcomes.extract_outcome(raw) or raw)
+            text = _declutter(outcomes.lede(raw)) or _declutter(outcomes.extract_outcome(raw) or "")
             if text:
                 text += "\n\n" + POINTER
         if not text:

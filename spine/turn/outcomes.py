@@ -10,6 +10,24 @@ _DELIVERED_RE = re.compile(r"\bDELIVERED\b[:\s*-]*", re.I)
 _READY_TAIL_RE = re.compile(r"ready for review\b.*", re.I | re.S)
 
 
+def _first_lines(text):
+    """1-2 lines out of `text`, hand-off boilerplate stripped, word-boundary
+    cut past 240 chars (never a bare slice - the same defect
+    turnrunner._clip_reply/notice.label exist to avoid). '' when nothing
+    usable. Shared by extract_outcome (candidate = the DELIVERED tail, or the
+    whole reply) and lede (candidate = whatever comes BEFORE that tail)."""
+    lines = [l.strip(" \t*-#") for l in _READY_TAIL_RE.sub("", text).splitlines()]
+    lines = [l for l in lines if l]
+    if not lines:
+        return ""
+    out = " ".join(lines[:2])
+    if len(out) <= 240:
+        return out
+    cut = out[:238]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > 120 else cut).rstrip(" ,;:-") + " …"
+
+
 def extract_outcome(reply):
     """A 1-2 line result sentence from a card's final reply: the agent's
     DELIVERED summary (cells/engineer/harness/agents/card-worker.md convention, same anchor ask.py keys
@@ -19,20 +37,33 @@ def extract_outcome(reply):
         return ""
     m = _DELIVERED_RE.search(text)
     for cand in ([text[m.end():]] if m else []) + [text]:
-        lines = [l.strip(" \t*-#") for l in _READY_TAIL_RE.sub("", cand).splitlines()]
-        lines = [l for l in lines if l]
-        if lines:
-            out = " ".join(lines[:2])
-            if len(out) <= 240:
-                return out
-            # word-boundary cut, not a bare slice - a raw [:240] ends mid-word
-            # (the same defect turnrunner._clip_reply/notice.label exist to
-            # avoid). Only ever reached for a single unbroken line past 240
-            # chars; the 1-2 line join above is already short in practice.
-            cut = out[:238]
-            sp = cut.rfind(" ")
-            return (cut[:sp] if sp > 120 else cut).rstrip(" ,;:-") + " …"
+        out = _first_lines(cand)
+        if out:
+            return out
     return ""
+
+
+def lede(reply):
+    """The reply's OWN opening statement - whatever it said BEFORE any
+    DELIVERED/ready-for-review tail - as 1-2 lines. '' when there is nothing
+    ahead of that marker (e.g. a reply that opens with "DELIVERED: ..."
+    itself), NOT the tail - callers that want a guaranteed pick fall back to
+    extract_outcome for that.
+
+    Exists apart from extract_outcome because the two readers of a reply want
+    OPPOSITE halves of it: extract_outcome's DELIVERED tail is written for
+    Henry's planning snapshot (sessions._record_outcome persists it there) and
+    deliberately keeps the file names/commit hash that snapshot needs; the
+    owner's chat inbox (cells/copilot/chat/card_mirror.py) wants the
+    plain-language sentence a worker wrote BEFORE it started listing what it
+    touched - the one that actually answers 'did it work' (owner complaint
+    2026-09-15: the inbox was printing the technical tail, mangled, instead)."""
+    text = (reply or "").strip()
+    if not text:
+        return ""
+    m = _DELIVERED_RE.search(text)
+    head = text[:m.start()] if m else text
+    return _first_lines(head)
 
 
 def _record_outcome(tt):
