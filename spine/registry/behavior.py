@@ -1030,9 +1030,12 @@ def segments(text, surface, project=""):
     return out
 
 
-def overlay(project=""):
+def overlay(project="", skip=()):
     """The TURN OVERLAY: what this project's rules say that the base brief does
     not. Empty string when nothing differs, which is the normal case.
+
+    `skip`: rule keys whose deviating text is replaced by a one-line pointer
+    (the caller judged the turn not to need them - ship.process is 3.6k chars).
 
     WHY AN OVERLAY AND NOT A RE-RENDER (design doc section 3). The base brief
     rides along once at spawn - that is what makes Henry's warm turns 1.6s. A
@@ -1053,6 +1056,11 @@ def overlay(project=""):
         for s in r.get("surfaces") or {}:
             here, base = value(r["key"], s, project), value(r["key"], s, "")
             if here == base:
+                continue
+            if r["key"] in skip:
+                out.append("- %s: projektspezifisch hinterlegt, hier ausgeblendet - "
+                           "bei Ship/Deploy/Build/Release-Fragen mitgeschickt "
+                           "(Settings > Harness)." % r["key"])
                 continue
             txt = _render_one(r, s, here)
             out.append("- %s" % txt.strip().replace("\n", " ")

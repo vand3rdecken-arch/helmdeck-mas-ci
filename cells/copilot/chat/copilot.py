@@ -797,6 +797,33 @@ def _card_context(card_id, limit=40):
                   "notes and every steer the owner sent):\n" + "\n".join(lines[-limit:])
 
 
+_SHIP_WORDS = re.compile(r"ship|deploy|build|release|ota\b|apk|aab|testflight|"
+                         r"play.?store|app.?store|ausroll|veroeffentl|veröffentl|einreich",
+                         re.IGNORECASE)
+
+
+def _ship_relevant(message):
+    """Does this board turn need the project's ship.process text? Only when the
+    message reads like shipping or a ship card is live on the board."""
+    if _SHIP_WORDS.search(message or ""):
+        return True
+    from cells.engineer.cards import sessions
+    return any(t.get("ship_kind") and t.get("lane") != "done" and not t.get("archived")
+               for t in sessions.list_tracks())
+
+
+def _demojibake(s):
+    """'Ã¤' -> 'ä': UTF-8 bytes once decoded as cp1252/latin-1 in stored titles."""
+    if "Ã" not in s and "Â" not in s:
+        return s
+    for enc in ("cp1252", "latin-1"):
+        try:
+            return s.encode(enc).decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+    return s
+
+
 def _snapshot(full=False):
     """The board as text. `full=False` (the default, what a chat turn injects)
     carries only the LIVE board; `full=True` adds finished/archived cards and
@@ -887,20 +914,34 @@ def _snapshot(full=False):
                     "%s - %s (bites when: %s)" % (d["id"], d["title"], d["trigger"])
                     for d in open_items))
             else:
-                # ids + titles only: the full 'bites when' prose was 14,427 chars
-                # of every turn. The ids are enough for Henry to know what exists
-                # and to look one up when a question is actually about it.
-                lines.append("STRUCTURAL DEBT (%d open): " % len(open_items) + "; ".join(
-                    "%s - %s" % (d["id"], d["title"]) for d in open_items))
+                # Slugs only (titles were ~6k chars a turn); a title rides only
+                # for debt a live card or the PM plan names.
+                live_text = "\n".join(lines) + "\n" + _pm_plan_digest()
+                touched = [d for d in open_items if d["id"] in live_text]
+                lines.append("STRUCTURAL DEBT (%d open, slugs only): " % len(open_items)
+                             + ", ".join(d["id"] for d in open_items))
+                for d in touched:
+                    lines.append("  touched by live work: %s - %s" % (d["id"], d["title"]))
     except Exception:
         pass
     lines.append("PROCESSES:")
+    n_done = 0
     for p in processes.list_processes():
-        lines.append("- id=%s status=%s client=%s due=%s request=%s" % (
-            p["id"], p["status"], p.get("client") or "-", p.get("due") or "-", p["request"][:80]))
-        for i, s in enumerate(p.get("steps", [])):
-            lines.append("    step[%d] state=%s mode=%s title=%s" % (
-                i, s.get("state", "proposed"), s["mode"], s["title"][:70]))
+        steps = p.get("steps", [])
+        if not full and p["status"] == "done":
+            n_done += 1
+            continue
+        done = sum(1 for s in steps if s.get("state") == "done")
+        lines.append("- id=%s status=%s client=%s due=%s steps=%d/%d done request=%s" % (
+            p["id"], p["status"], p.get("client") or "-", p.get("due") or "-",
+            done, len(steps), _demojibake(p["request"][:80])))
+        for i, s in enumerate(steps):
+            if not full and s.get("state") == "done":
+                continue
+            lines.append("    step[%d] %s/%s: %s" % (
+                i, s.get("state", "proposed"), s["mode"], _demojibake(s["title"][:70])))
+    if n_done:
+        lines.append("- %d finished process(es) not shown (board_state.py --full)" % n_done)
     if not full and (hidden_done or hidden_arch):
         # NOT a silent cap: Henry is told exactly what is missing and how to get
         # it, so "I don't know" is never the honest answer to a history question.
@@ -911,9 +952,9 @@ def _snapshot(full=False):
         # relative path resolves. The absolute-path form told him before
         # 2026-09-02 did not match the allow rule and was unrunnable.
         lines.append(
-            "\nNOT SHOWN ABOVE: %d finished and %d archived card(s), plus the full "
-            "'bites when' text of each debt item. They are omitted because they are "
-            "history and cost ~19k tokens on every turn. When a question is about "
+            "\nNOT SHOWN ABOVE: %d finished and %d archived card(s), finished "
+            "processes and done steps, and each debt item's title + 'bites when' text. "
+            "They are omitted because they are history. When a question is about "
             "finished/archived work, a past outcome, or a debt item's detail, RUN "
             "THIS FIRST (pre-approved for you, exactly this form - your cwd is "
             "daemon/) and answer from its output:\n"
@@ -1986,7 +2027,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _proj = (projectconfig.for_card(_ct) if isinstance(_ct, dict)
                  else projectconfig.for_chat())
         from spine.registry import behavior
-        _ovl = behavior.overlay(_proj)
+        _ovl = behavior.overlay(_proj, skip=() if (card or _ship_relevant(message))
+                                else ("ship.process",))
         if _ovl:
             extra_system = (extra_system + "\n\n" + _ovl) if extra_system else _ovl
     except Exception:                                        # noqa: BLE001
