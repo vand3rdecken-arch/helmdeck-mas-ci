@@ -173,6 +173,14 @@ def main():
             p = os.path.join(DAEMON, f)
             if os.path.exists(p):
                 os.remove(p)
+        # Accounts live in the `users` table now (state-into-db ledger step
+        # 13) - the file above is only ever present pre-migration, so wiping
+        # it alone would leave every already-migrated installation's accounts
+        # untouched and this flag's promise broken.
+        from spine.storage import db
+        with db.conn() as c:
+            c.execute("DELETE FROM users")
+        db.bump()
         print("wiped users + settings - you'll re-create the owner login on next launch")
 
     print("\ndone. kept: %s. restart the daemon."

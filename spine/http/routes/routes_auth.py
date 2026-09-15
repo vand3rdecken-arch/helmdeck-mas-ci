@@ -88,13 +88,20 @@ def auth_register(self, user, body):
         return self._send(403, json.dumps({"error": "valid invite code required"}))
     try:
         auth.create_user(name, body.get("password", ""), role)
-    except ValueError as e:
+    except Exception as e:
         # The claim is atomic and happens FIRST (invites.claim's docstring), so
-        # a rejected password must hand the invitation back - otherwise a typo
-        # burns the link and the owner has to mint another one.
+        # ANY failure past that point must hand the invitation back - not just
+        # a rejected password. A disk-level error (Windows' os.replace lock
+        # window, measured 2026-09-14) used to only release on ValueError, so
+        # an OSError burned the invitation with no account behind it and the
+        # owner had to release it by hand.
         if claimed:
             invites.release(claimed, name)
-        return self._send(400, json.dumps({"error": str(e)}))
+        if isinstance(e, ValueError):
+            return self._send(400, json.dumps({"error": str(e)}))
+        # Anything else is a server-side fault - never echo it (it can carry a
+        # Windows path, e.g. "users.json.tmp -> users.json") to the client.
+        return self._send(500, json.dumps({"error": "signup failed, try again"}))
     # optional enrichment only - never touches the user record
     # above, never blocks/fails the signup if Loops is down.
     email = (body.get("email") or "").strip()

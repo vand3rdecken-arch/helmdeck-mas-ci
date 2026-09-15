@@ -85,15 +85,18 @@ def main():
 
     # ------------------------------------------------------------------ 5 ---
     print("\na lookup failure degrades to empty, never raises")
-    real_users = auth.USERS
-    auth.USERS = os.path.join(tmp, "does-not-exist", "users.json")
+    # Accounts are db rows now (state-into-db ledger step 13) - simulate the
+    # lookup itself failing rather than pointing a retired file constant at a
+    # bad path.
+    real_get_user = auth.get_user
+    auth.get_user = lambda name: None
     try:
         r = henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "duy"})
         ok(r == "", "unreadable user registry -> empty context, no exception")
     except Exception as e:
         ok(False, "raised instead of degrading: %s" % e)
     finally:
-        auth.USERS = real_users
+        auth.get_user = real_get_user
 
     print()
     if _fails:

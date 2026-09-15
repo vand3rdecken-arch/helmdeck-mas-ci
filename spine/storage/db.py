@@ -1779,6 +1779,22 @@ def devices_replace(rows):
                       (r["id"], r.get("owner") or r.get("user") or "", json.dumps(r, ensure_ascii=False)))
 
 
+def users_all():
+    return _rows_all("users")
+
+
+def users_replace(rows):
+    """Whole-table rewrite in ONE transaction - auth.py's read-all/mutate/
+    write-all discipline unchanged, just backed by a row store instead of a
+    tmp+os.replace file. No PermissionError window left to retry: there is no
+    rename here at all."""
+    with conn() as c:
+        c.execute("DELETE FROM users")
+        for r in rows:
+            c.execute("INSERT INTO users(name,data) VALUES(?,?)",
+                      (r["name"], json.dumps(r, ensure_ascii=False)))
+
+
 @_migration(11, "events-db-first")
 def _m11(c):
     """Phase H (owner decision 2026-09-12): the events table is the record.
@@ -1907,6 +1923,43 @@ def _m12(c):
         try:
             os.rmdir(ns)
             print("db: dead nightshift/ dir removed (state archived)")
+        except OSError:
+            pass
+
+
+@_migration(13, "users-table")
+def _m13(c):
+    """Phase I (auth records, cont'd - root cause of the 2026-09-14 22:49
+    registration bug). Accounts move out of daemon/users.json, the LAST
+    tmp+os.replace file auth.py still rewrote on every login, signup, token
+    issue/revoke and role change - and the one write in that shape with no
+    retry around Windows' exclusive-lock window (_load() already retried it;
+    _save() didn't), which is what burned invitation PFGYUQAL with a raw
+    'Access is denied ... users.json.tmp -> users.json'. One row per account,
+    one transaction per write - same move migration 10 already made for
+    sessions/invites/devices, same reason."""
+    c.execute("""CREATE TABLE IF NOT EXISTS users(
+        name TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    if not _file_steps_allowed():
+        return
+    path = os.path.join(ROOT, "users.json")
+    if os.path.exists(path):
+        rows = _read_json_file(path) or []
+        n = 0
+        for r in rows:
+            if isinstance(r, dict) and r.get("name"):
+                c.execute("INSERT OR REPLACE INTO users(name,data) VALUES(?,?)",
+                          (r["name"], json.dumps(r, ensure_ascii=False)))
+                n += 1
+        _archive(path)
+        print("db: imported %d account(s) from users.json (archived)" % n)
+    # a stray .tmp is dead the moment accounts stop being a file: no writer
+    # will ever finish (or fail) that rename again, so it is litter, not state.
+    leftover = path + ".tmp"
+    if os.path.exists(leftover):
+        try:
+            os.remove(leftover)
+            print("db: removed stray users.json.tmp (dead since accounts moved into the db)")
         except OSError:
             pass
 

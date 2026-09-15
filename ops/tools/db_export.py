@@ -12,9 +12,9 @@ niemanden"; state-into-db phase A, 2026-09-12).
 Every table becomes {"table": [row, ...]} with the row as a column dict; blob
 columns (`data`, `json`, `value`) are emitted as parsed JSON so the file is
 readable and diffable. SECRETS ARE MASKED by default: any key named token,
-sk, secret, api_token, password, key_b64 or ending in _token/_secret, at any
-depth, becomes "***". Generated (virtual) columns are skipped - they are
-derived from `data` and db_import recomputes them.
+sk, secret, api_token, password, key_b64, pw or th, or ending in
+_token/_secret, at any depth, becomes "***". Generated (virtual) columns are
+skipped - they are derived from `data` and db_import recomputes them.
 
 --account keeps only rows scoped to that account (boards.owner, user_config.
 user, memory.account, and later chat/auth tables); --project keeps rows scoped
@@ -31,7 +31,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-_SECRET_KEY = re.compile(r"^(token|sk|secret|api_token|password|key_b64)$|_(token|secret)$")
+# pw/th (state-into-db ledger step 13): the users table's pbkdf2 password
+# hash and a device token's sha256 hash - never in the clear even masked-off,
+# now that accounts are a db table this export walks like any other.
+_SECRET_KEY = re.compile(r"^(token|sk|secret|api_token|password|key_b64|pw|th)$|_(token|secret)$")
 _BLOB_COLS = ("data", "json", "value", "content")
 _SKIP_TABLES = ("sqlite_sequence",)
 # scope column per table: which column carries the account / the project
