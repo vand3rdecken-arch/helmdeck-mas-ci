@@ -251,21 +251,21 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
   const sfx = product === "cloud" ? "Cloud" : "";
   const id = (base) => base + "-" + product;
   return `      <div id="${id("joinbox")}" ${showSuccess ? "hidden" : ""}>
-        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Trag dich ein. Wir melden uns, sobald es losgeht.</p>
+        <p class="lead" data-i="lead" style="margin:0 0 .8rem; font-size:.92rem; color:var(--ink-3)">Join the list. We'll reach out once it ships.</p>
         <form id="${id("f")}" data-product="${product}" action="/api/join" method="post" novalidate>
           <div class="field">
-            <label class="hp" for="${id("email")}" data-i="label">E-Mail-Adresse</label>
+            <label class="hp" for="${id("email")}" data-i="label">Email address</label>
             <input id="${id("email")}" name="email" type="email" required maxlength="254"
-                   placeholder="du@example.com" autocomplete="email" spellcheck="false" data-i-ph="ph">
+                   placeholder="you@example.com" autocomplete="email" spellcheck="false" data-i-ph="ph">
             <input type="hidden" name="product" value="${product}">
             <input class="hp" type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
           </div>
-          <button class="btn btn-primary" id="${id("go")}" type="submit" data-i="cta">Auf die Liste</button>
-          <p class="err" id="${id("err")}" role="status" aria-live="polite">${err ? "Das sieht nicht nach einer gültigen E-Mail-Adresse aus." : ""}</p>
+          <button class="btn btn-primary" id="${id("go")}" type="submit" data-i="cta">Join the list</button>
+          <p class="err" id="${id("err")}" role="status" aria-live="polite">${err ? "That doesn't look like a valid email address." : ""}</p>
         </form>
         <p class="consent" data-i="consent${sfx}">${product === "cloud"
-          ? "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um zu sehen, wer eine gehostete Variante brauchen würde, und um dich einmalig zu benachrichtigen, sobald HelmDeck Cloud startet, oder dir vorher eine Frage zu deinem Bedarf zu stellen. Kein Newsletter, keine Weitergabe."
-          : "Ein Eintrag, eine Mail: Wir speichern deine Adresse nur, um dich einmalig zu benachrichtigen, sobald HelmDeck für Watch/Glasses startet. Kein Newsletter, keine Weitergabe."}</p>
+          ? "One entry, one email: we store your address only to see who would need a hosted variant, and to notify you once when HelmDeck Cloud launches, or to ask you one question about your needs beforehand. No newsletter, no sharing."
+          : "One entry, one email: we store your address only to notify you once when HelmDeck for Watch/Glasses launches. No newsletter, no sharing."}</p>
       </div>
 
       <div class="success" id="${id("done")}" ${showSuccess ? "" : "hidden"}>
@@ -274,20 +274,20 @@ function waitlistBlock({ product, safeEmail, showSuccess, already, err }) {
           <path d="M7.4 12.4l3 3 6-6.4" stroke="#5CB572" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <div>
-          <h2 id="${id("done-h")}" tabindex="-1" data-i="${already ? "doneAlreadyH" : "doneH"}" style="font-size:1.05rem">${already ? "Schon eingetragen." : "Du stehst auf der Liste."}</h2>
-          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "Diese Adresse steht bereits auf der Liste. Alles gut." : "Wir melden uns einmalig, sobald es losgeht:"}</span> <b id="${id("done-mail")}">${safeEmail}</b></p>
+          <h2 id="${id("done-h")}" tabindex="-1" data-i="${already ? "doneAlreadyH" : "doneH"}" style="font-size:1.05rem">${already ? "Already signed up." : "You're on the list."}</h2>
+          <p><span data-i="${already ? "doneAlreadyP" : "doneP"}">${already ? "This address is already on the list. You're all set." : "We'll reach out once when it ships:"}</span> <b id="${id("done-mail")}">${safeEmail}</b></p>
         </div>
       </div>
 
       <details>
-        <summary data-i="privacyQ">Was passiert mit deiner E-Mail?</summary>
-        <div data-i-html="privacyA${sfx}">Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und
-        ausschließlich verwendet, um dich einmalig über den Start von ${product === "cloud" ? "HelmDeck Cloud" : "HelmDeck für Watch/Glasses"} zu
-        informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über
-        PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte.
-        Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern.
-        Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
-        (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung:
+        <summary data-i="privacyQ">What happens to your email?</summary>
+        <div data-i-html="privacyA${sfx}">Your address is stored with Cloudflare (Workers KV) and
+        used solely to notify you once about ${product === "cloud" ? "HelmDeck Cloud" : "HelmDeck for Watch/Glasses"}
+        launching. The list is deleted afterwards. This site measures anonymously and cookielessly via
+        PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties.
+        This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer of the page.
+        Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a>
+        (controller: Tien Duy Vo). Full privacy policy:
         <a href="/datenschutz">/datenschutz</a>.</div>
       </details>`;
 }
@@ -308,14 +308,14 @@ function page({ rel, joined, already, err, email, product }) {
   const macX64 = rel.ok ? rel.macX64 : null;
   const android = rel.ok ? rel.android : null;
   return `<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck: Claude Code fragt. Du antwortest vom Handy.</title>
-<meta name="description" content="HelmDeck ist eine App für dein Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage landet als Push auf dem Handy. Du antwortest, der Agent macht weiter. Kein Cloud-Account, kein Code verlässt deinen Rechner.">
-<meta property="og:title" content="HelmDeck: Claude Code fragt. Du antwortest vom Handy.">
-<meta property="og:description" content="Jede Rückfrage von Claude Code als Push auf dem Handy. Du antwortest, der Agent macht weiter. Der Rechner bleibt zu Hause, dein Code auch.">
+<title>HelmDeck: Claude Code asks. You answer from your phone.</title>
+<meta name="description" content="HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question lands as a push on your phone. You answer, the agent carries on. No cloud account, no code leaves your machine.">
+<meta property="og:title" content="HelmDeck: Claude Code asks. You answer from your phone.">
+<meta property="og:description" content="Every question from Claude Code as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -533,24 +533,24 @@ footer a:hover{color:var(--ink-2)}
   <div class="topbar">
     <div class="lockup">${ICON_SVG}<b>HelmDeck</b></div>
     <div class="topnav">
-      <a href="#why" data-i="navProof">Was es kann</a>
+      <a href="#why" data-i="navProof">What it does</a>
       <a href="#downloads" data-i="navDownloads">Downloads</a>
       <a href="#cloud" data-i="navCloud">Cloud</a>
       <a href="#waitlist" data-i="navWaitlist">Glasses</a>
     </div>
-    <button class="lang" id="lang" type="button" aria-label="Switch language">EN</button>
+    <button class="lang" id="lang" type="button" aria-label="Switch language">DE</button>
   </div>
 </div>
 <main>
   <section class="hero" style="border-top:0; padding-top:1rem">
     <div class="hero-copy">
-    <p class="kicker" data-i="kicker">Für alle, die Claude Code nutzen</p>
-    <h1 data-i="h1">Claude Code fragt. Du antwortest vom Handy.</h1>
-    <p class="sub" data-i="sub">HelmDeck ist eine App für dein Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage, jede Freigabe und jeder Fehler landen als Push auf dem Handy. Du antwortest, der Agent macht weiter. Der Rechner bleibt zu Hause, dein Code auch.</p>
-    <p class="objection" data-i="objection">Kein Cloud-Account. Kein Code verlässt deinen Rechner. Läuft mit deinem bestehenden Claude-Abo.</p>
+    <p class="kicker" data-i="kicker">For everyone who runs Claude Code</p>
+    <h1 data-i="h1">Claude Code asks. You answer from your phone.</h1>
+    <p class="sub" data-i="sub">HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question, every approval and every error lands as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.</p>
+    <p class="objection" data-i="objection">No cloud account. No code leaves your machine. Works with the Claude subscription you already have.</p>
     <div class="hero-actions">
-      <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Loslegen</a>
-      <a class="btn btn-ghost" href="#proof" data-i="heroCtaSecondary">Screenshots ansehen</a>
+      <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
+      <a class="btn btn-ghost" href="#proof" data-i="heroCtaSecondary">See screenshots</a>
     </div>
     </div>
     <div class="hero-shot">
@@ -560,103 +560,103 @@ footer a:hover{color:var(--ink-2)}
 
   <section id="founder">
     <blockquote class="quote">
-      <p data-i="quoteP">„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“</p>
-      <footer><span data-i="quoteBy">Tien Duy Vo, Entwickler</span></footer>
+      <p data-i="quoteP">“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”</p>
+      <footer><span data-i="quoteBy">Tien Duy Vo, developer</span></footer>
     </blockquote>
   </section>
 
   <section id="problem">
-    <h2 data-i="problemTitle">Der Agent arbeitet nicht ohne dich.</h2>
-    <p class="section-sub" data-i="problemP">Claude Code macht zehn Minuten Arbeit, dann stellt er eine Frage. Bis du antwortest, passiert nichts. Wer die Antwort nur am Schreibtisch geben kann, sitzt am Schreibtisch und wartet. Auf eine Maschine.</p>
+    <h2 data-i="problemTitle">The agent does not work without you.</h2>
+    <p class="section-sub" data-i="problemP">Claude Code does ten minutes of work, then asks a question. Until you answer, nothing happens. If the only place you can answer is your desk, you sit at your desk and wait. For a machine.</p>
   </section>
 
   <section id="why">
-    <h2 data-i="whyTitle">Drei Dinge, die vom Handy gehen</h2>
+    <h2 data-i="whyTitle">Three things you do from your phone</h2>
     <div class="why">
-      <div><b data-i="why1H">Rückfragen beantworten.</b><p data-i="why1P">Der Agent fragt „A oder B?“. Du tippst A. Er baut weiter. Zeit am Handy: zehn Sekunden.</p></div>
-      <div><b data-i="why2H">Mitten im Lauf umlenken.</b><p data-i="why2P">Du siehst im Verlauf, dass er die falsche Datei anfasst. Du schreibst „nimm die andere“. Er bricht ab und nimmt die andere. Kein Neustart, nichts verloren.</p></div>
-      <div><b data-i="why3H">Ergebnis freigeben.</b><p data-i="why3P">Diff lesen, „übernehmen“ tippen. Gemergt, bevor du wieder am Rechner bist.</p></div>
+      <div><b data-i="why1H">Answer questions.</b><p data-i="why1P">The agent asks “A or B?”. You tap A. It keeps building. Time on the phone: ten seconds.</p></div>
+      <div><b data-i="why2H">Redirect mid-run.</b><p data-i="why2P">You see in the log that it is touching the wrong file. You write “use the other one”. It stops and uses the other one. No restart, nothing lost.</p></div>
+      <div><b data-i="why3H">Approve the result.</b><p data-i="why3P">Read the diff, tap “accept”. Merged before you are back at the machine.</p></div>
     </div>
   </section>
 
   <section id="proof">
-    <h2 data-i="proofTitle">Die Aufgabe ist die Karte. Es gibt kein zweites Tool.</h2>
-    <p class="section-sub" data-i="proofSub">In Jira schreibst du ein Ticket, dann gehst du zu Claude Code und erklärst es nochmal. Wenn er fertig ist, gehst du zurück und setzt das Ticket auf „Done“. Drei Orte, eine Aufgabe.</p>
-    <p class="section-sub" data-i="proofSub2">In HelmDeck ist die Karte die Aufgabe. Du schreibst sie, der Agent bekommt sie, die Karte zeigt Fortschritt, Rückfragen und Diff. Du nimmst ab, die Karte ist fertig. Ein Ort.</p>
+    <h2 data-i="proofTitle">The task is the card. There is no second tool.</h2>
+    <p class="section-sub" data-i="proofSub">In Jira you write a ticket, then you go to Claude Code and explain it again. When it is done you go back and set the ticket to “Done”. Three places, one task.</p>
+    <p class="section-sub" data-i="proofSub2">In HelmDeck the card is the task. You write it, the agent gets it, the card shows progress, questions and diff. You accept, the card is done. One place.</p>
     <div class="shots shots-2">
       <div class="shot phone">
         <figure><img src="${IMG_BOARD}" width="520" height="1125" alt="HelmDeck Board auf dem Handy: Backlog, In Arbeit, eine Karte wartet auf Antwort" loading="lazy"></figure>
-        <figcaption><b data-i="shot1H">Das Board auf dem Handy</b><p data-i="shot1P">Eine Karte läuft, eine wartet auf dich. Echte Screenshots, keine Mockups.</p></figcaption>
+        <figcaption><b data-i="shot1H">The board on your phone</b><p data-i="shot1P">One card running, one waiting for you. Real screenshots, not mockups.</p></figcaption>
       </div>
       <div class="shot">
         <figure><img src="${IMG_DESK}" width="1100" height="687" alt="HelmDeck Board am Desktop: Lanes Backlog, In Arbeit, Review mit Gate-Ergebnis" loading="lazy"></figure>
-        <figcaption><b data-i="shot2H">Auch fürs Team</b><p data-i="shot2P">Kollegen und Auftraggeber bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.</p></figcaption>
+        <figcaption><b data-i="shot2H">For the team, too</b><p data-i="shot2P">Colleagues and clients only get the app. They see the board, never your machine. File cards, watch progress, accept.</p></figcaption>
       </div>
     </div>
   </section>
 
   <section id="steps">
-    <h2 data-i="stepsTitle">So fängst du an</h2>
+    <h2 data-i="stepsTitle">How to start</h2>
     <div class="steps">
-      <div><b data-i="step1H">Operator auf den Rechner</b><p data-i="step1P">Auf den Rechner mit dem Projekt. Claude Code verbinden. Zwei Minuten.</p></div>
-      <div><b data-i="step2H">QR-Code mit dem Handy scannen</b><p data-i="step2P">Das Handy ist gekoppelt. Kein Account bei uns, keine Cloud dazwischen.</p></div>
-      <div><b data-i="step3H">Erste Aufgabe schicken und weggehen</b><p data-i="step3P">Die erste Rückfrage kommt als Push. Wenn du hängst, <a href="mailto:${OWNER_EMAIL}">schreib uns</a>, wir helfen persönlich.</p></div>
+      <div><b data-i="step1H">Operator on the machine</b><p data-i="step1P">On the machine with the project. Connect Claude Code. Two minutes.</p></div>
+      <div><b data-i="step2H">Scan the QR code with your phone</b><p data-i="step2P">The phone is paired. No account with us, no cloud in between.</p></div>
+      <div><b data-i="step3H">Send the first task and walk away</b><p data-i="step3P">The first question arrives as a push. If you get stuck, <a href="mailto:${OWNER_EMAIL}">write to us</a>, we help in person.</p></div>
     </div>
-    <h3 class="devices-h" data-i="devicesTitle">Läuft auf</h3>
-    <div class="devices" data-i-html="devices">${devicesHtml(DEV_DE)}</div>
+    <h3 class="devices-h" data-i="devicesTitle">Runs on</h3>
+    <div class="devices" data-i-html="devices">${devicesHtml(DEV_EN)}</div>
   </section>
 
   <section id="downloads">
-    <h2 data-i="dlTitle">Jetzt verfügbar</h2>
-    <p class="section-sub" data-i="dlSub">Operator für Windows und macOS. App für Android und iPhone, die Uhr-App liegt im selben Paket. Kein Account bei uns, keine Wartezeit.</p>
+    <h2 data-i="dlTitle">Available now</h2>
+    <p class="section-sub" data-i="dlSub">Operator for Windows and macOS. App for Android and iPhone, the watch app ships in the same package. No account with us, no waiting.</p>
     <div class="dl-grid">
       <div class="dl-card">
         <h3>Windows</h3>
         <p class="dl-meta">${dlMeta(win)}</p>
-        <p class="dl-note" data-i="dlWinNote">Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.</p>
+        <p class="dl-note" data-i="dlWinNote">Not code-signed yet, so Windows will warn you. Click “More info” → “Run anyway”.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn" data-cta="windows">Herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn" data-cta="windows">Download</a>
         </div>
       </div>
       <div class="dl-card">
         <h3>macOS</h3>
         <p class="dl-meta">${dlMeta(macArm)}${macArm && macX64 ? " · " : ""}${macX64 ? "Intel " + dlMeta(macX64) : ""}</p>
-        <p class="dl-note" data-i="dlMacNote">Signiert &amp; von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.</p>
+        <p class="dl-note" data-i="dlMacNote">Signed &amp; notarized by Apple, opens with no Gatekeeper warning.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Apple Silicon herunterladen</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Intel herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Download for Apple Silicon</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Download for Intel</a>
         </div>
       </div>
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
-        <p class="dl-meta" data-i="dlIosMeta">Öffentliche TestFlight-Beta · inkl. Apple Watch</p>
-        <p class="dl-note" data-i-html="dlIosNote">Ein Tipp auf den Link genügt, die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.</p>
+        <p class="dl-meta" data-i="dlIosMeta">Public TestFlight beta · incl. Apple Watch</p>
+        <p class="dl-note" data-i-html="dlIosNote">One tap on the link is enough, the TestFlight app has to be installed. The Apple Watch app ships in the same package, no separate download. The App Store listing follows.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn" data-cta="ios">TestFlight beitreten</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn" data-cta="ios">TestFlight-App laden</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn" data-cta="ios">Join TestFlight</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn" data-cta="ios">Get the TestFlight app</a>
         </div>
       </div>
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i-html="dlAndroidNote">Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.</p>
+        <p class="dl-note" data-i-html="dlAndroidNote">Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn" data-cta="android">Bei Google Play laden</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn" data-cta="android">APK herunterladen</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn" data-cta="android">Get it on Google Play</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn" data-cta="android">Download APK</a>
         </div>
       </div>
     </div>
-    <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">Alle Downloads &amp; Prüfsummen auf GitHub</a></p>
+    <p class="dl-all"><a href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAll">All downloads &amp; checksums on GitHub</a></p>
     <div class="faq">
-      <details><summary data-i="faq1Q">Muss der Rechner an sein?</summary><div data-i-html="faq1A">Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.</div></details>
-      <details><summary data-i="faq2Q">Was sehen die anderen im Team?</summary><div data-i="faq2A">Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.</div></details>
-      <details><summary data-i="faq3Q">Welche Agenten laufen darin?</summary><div data-i-html="faq3A">Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.</div></details>
+      <details><summary data-i="faq1Q">Does the machine have to be on?</summary><div data-i-html="faq1A">Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.</div></details>
+      <details><summary data-i="faq2Q">What do the others on the team see?</summary><div data-i="faq2A">The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.</div></details>
+      <details><summary data-i="faq3Q">Which agents run inside?</summary><div data-i-html="faq3A">Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.</div></details>
     </div>
   </section>
 
   <section class="waitlist" id="cloud">
     <h2 data-i="cloudTitle">HelmDeck Cloud</h2>
-    <p class="section-sub" data-i="cloudSub">Kein Rechner, der durchläuft? Wir prüfen einen gehosteten Operator: dein Projekt läuft auf einer Maschine bei uns, du steuerst vom Handy, ganz ohne eigenen PC. Das hier ist reine Interessensmessung, ohne Zusage und ohne Termin. Trag dich ein, wenn du genau das brauchst. Wir bauen es, wenn genug Leute es wollen.</p>
+    <p class="section-sub" data-i="cloudSub">No machine that stays on? We're evaluating a hosted operator: your project runs on a machine we host, you steer from your phone, no PC of your own. This is a pure interest measurement, with no commitment and no timeline. Join if that's exactly what you need. We build it once enough people want it.</p>
     <div class="wl-inner">
 ${wl("cloud")}
     </div>
@@ -664,19 +664,19 @@ ${wl("cloud")}
 
   <section class="waitlist" id="waitlist">
     <h2 data-i="waitlistTitle">HelmDeck Glasses</h2>
-    <p class="section-sub" data-i="waitlistSub">Nach dem Handy: HelmDeck für Glasses. Trag dich ein, wir melden uns einmal, wenn es losgeht.</p>
+    <p class="section-sub" data-i="waitlistSub">After the phone: HelmDeck for Glasses. Join the list, we write once when it ships.</p>
     <div class="wl-inner">
 ${wl("wearables")}
     </div>
   </section>
 </main>
-<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Kontakt</a> · <a href="/datenschutz" data-i="privacyLink">Datenschutz</a> · <a href="/impressum" data-i="imprintLink">Kontakt</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie-Einstellungen</button></footer>
+<footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Contact</a> · <a href="/datenschutz" data-i="privacyLink">Privacy</a> · <a href="/impressum" data-i="imprintLink">Contact</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie settings</button></footer>
 
-<div class="cookiebar" id="cookiebar" role="dialog" aria-label="Cookie-Hinweis" hidden>
-  <p data-i-html="cookieMsg">Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a></p>
+<div class="cookiebar" id="cookiebar" role="dialog" aria-label="Cookie notice" hidden>
+  <p data-i-html="cookieMsg">This site measures usage anonymously and without cookies via PostHog (EU, Frankfurt), but only with your consent. Nothing loads and nothing is measured before you accept. <a href="/datenschutz">More in the privacy policy.</a></p>
   <div class="cookiebar-actions">
-    <button class="btn btn-ghost btn-sm" id="cookie-decline" type="button" data-i="cookieDecline">Ablehnen</button>
-    <button class="btn btn-primary btn-sm" id="cookie-accept" type="button" data-i="cookieAccept">Akzeptieren</button>
+    <button class="btn btn-ghost btn-sm" id="cookie-decline" type="button" data-i="cookieDecline">Decline</button>
+    <button class="btn btn-primary btn-sm" id="cookie-accept" type="button" data-i="cookieAccept">Accept</button>
   </div>
 </div>
 <script>
@@ -860,9 +860,9 @@ ${wl("wearables")}
       cookieDecline:"Decline", cookieAccept:"Accept",
       sending:"…", toggle:"DE" }
   };
-  var lang = "de";
-  try { lang = localStorage.getItem("hd_lang") || ((navigator.language||"de").slice(0,2)==="de" ? "de" : "en"); } catch(e){}
-  if (lang !== "de" && lang !== "en") lang = "de";
+  var lang = "en";
+  try { lang = localStorage.getItem("hd_lang") || ((navigator.language||"en").slice(0,2)==="de" ? "de" : "en"); } catch(e){}
+  if (lang !== "de" && lang !== "en") lang = "en";
 
   // Platform-aware primary CTA: the visitor's own download first (Android ->
   // Play, iPhone/iPad -> TestFlight, macOS -> arm64 dmg, Windows -> exe),
@@ -956,7 +956,7 @@ ${wl("wearables")}
     apply();
     cap("lang_toggle", { to: lang });
   });
-  if (lang !== "de") apply(); else langBtn.textContent = "EN";
+  if (lang !== "en") apply(); else langBtn.textContent = "DE";
 
   // iOS card: copy the contact address. navigator.clipboard is https-only and
   // absent in older browsers, hence the execCommand fallback - this button
