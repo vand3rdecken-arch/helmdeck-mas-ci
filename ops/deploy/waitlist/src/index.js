@@ -122,12 +122,17 @@ const WEAR_REQUEST_URL =
   );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
-// Demo video (brag.mp4, 21.5s, uploaded as a v0.2.18 release asset 2026-09-16).
-// Too big to inline as a data URI like the screenshots below (~1.9 MB vs. their
-// ~100 KB combined); the release CDN is already the trust boundary the download
-// buttons rely on, so link straight to it instead of adding an asset bucket.
-const DEMO_VIDEO_URL = `https://github.com/${REPO}/releases/download/v0.2.18/brag.mp4`;
-const DEMO_POSTER_URL = `https://github.com/${REPO}/releases/download/v0.2.18/brag.jpg`;
+// Demo video (brag.mp4, 21.5s). Served same-origin via the Worker's static
+// assets binding (ops/deploy/waitlist/public/) rather than linked at the
+// GitHub release CDN: GitHub forces every release asset to
+// `Content-Disposition: attachment` + `Content-Type: application/octet-stream`
+// regardless of extension, which mobile Chrome honors even for <video>/<img>
+// tags (triggers a download / broken-poster icon instead of inline playback -
+// desktop Chrome happened to content-sniff around it during testing, hiding
+// the bug until a real phone hit it, 2026-09-16). Same-origin assets get a
+// correct Content-Type from their extension and no forced disposition.
+const DEMO_VIDEO_URL = "/brag.mp4";
+const DEMO_POSTER_URL = "/brag.jpg";
 
 // Real app screenshots (Expo web, demo mode, German, dark) - the proof strip.
 // Inlined as webp data URIs: this worker has no asset bucket and the three
