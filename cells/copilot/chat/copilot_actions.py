@@ -36,6 +36,17 @@ def _strip_actions_live(partial):
     return partial
 
 
+# Every verb execute() dispatches on - the ONE list (copilot._actions_in_shell
+# reads it to catch an action JSON that was typed into a shell command
+# instead of the ```actions block, owner 2026-09-16 19:33 'Warum keine Karte').
+ACTION_KINDS = frozenset((
+    "configure", "apply_template", "set_station", "machine_task", "direct_task", "file_card",
+    "move", "steer", "delete", "archive", "hands", "follow_up", "resolve_blocker", "resolve_conflict",
+    "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
+    "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
+    "edit_process", "cancel_process", "delete_process", "process_status"))
+
+
 def _parse_reply_actions(txt):
     """(reply_prose, actions[]). New contract: prose reply + optional trailing
     ```actions [..]``` block. Falls back to the legacy {"reply","actions"} JSON

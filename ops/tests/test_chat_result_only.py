@@ -364,6 +364,47 @@ copilot._schedule_bg_continue(OWNER, done)
 n_after = len((copilot.history(OWNER) or {}).get("messages") or [])
 check(n_after == n_before, "policy.auto_continue=false -> the hand-back is shown on the bg line but no turn is started")
 
+
+# 8) ACTION JSON TYPED INTO A SHELL COMMAND (owner 2026-09-16 19:33 "Warum keine
+#    Karte oder thread"): Henry put a full direct_task JSON through
+#    `cat <<'EOF'`, read the echo as confirmation and said "Karte laeuft".
+#    Nothing was filed. The pump has the tool_use input - evidence, not prose.
+db.chat_clear()
+with copilot._pending_lock:
+    copilot._pending_actions.pop(SK, None)
+CMD = "cat <<'EOF'\n{\"type\": \"direct_task\", \"task\": \"Onboarding bauen\", \"dispatch\": true}\nEOF"
+SCRIPT["lines"] = (_text("Ich leg die Karte an.")
+                   + [{"type": "assistant", "message": {"content": [
+                          {"type": "tool_use", "id": "sh1", "name": "Bash", "input": {"command": CMD}}],
+                       "usage": {"input_tokens": 1, "output_tokens": 1}}},
+                      {"type": "user", "message": {"content": [
+                          {"type": "tool_result", "tool_use_id": "sh1", "content": CMD.split("\n")[1]}]}}]
+                   + _text("Karte läuft, ich meld mich.\n\n```actions\n[{\"type\": \"clarify_goal\", \"text\": \"x\"}]\n```")
+                   + _result("x"))
+out = copilot.chat(OWNER, "mach die karte", role="owner")
+check([a.get("type") for a in out.get("actions") or []] == ["clarify_goal"], "only the real actions block ran (got %r)" % out.get("actions"))
+with copilot._pending_lock:
+    pend = list(copilot._pending_actions.get(SK) or [])
+check(any("direct_task" in x and "Shell-Befehl" in x for x in pend),
+      "Henry's next turn gets the FAILED verdict for the shell-typed direct_task (got %r)" % [x[:60] for x in pend])
+msgs = (copilot.history(OWNER) or {}).get("messages") or []
+acts = [m for m in msgs if m.get("cls") == "act" and "Nicht gelaufen" in (m.get("text") or "")]
+check(len(acts) == 1 and "direct_task" in acts[0]["text"], "the owner sees one plumbing line: nothing was filed")
+# a verb that DID go through the actions block is not flagged
+db.chat_clear()
+with copilot._pending_lock:
+    copilot._pending_actions.pop(SK, None)
+SCRIPT["lines"] = (_text("Ich pruefe das JSON.")
+                   + [{"type": "assistant", "message": {"content": [
+                          {"type": "tool_use", "id": "sh2", "name": "Bash", "input": {"command": "echo '{\"type\": \"clarify_goal\"}'"}}],
+                       "usage": {"input_tokens": 1, "output_tokens": 1}}},
+                      {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "sh2", "content": "ok"}]}}]
+                   + _text("Notiert.\n\n```actions\n[{\"type\": \"clarify_goal\", \"text\": \"y\"}]\n```") + _result("x"))
+copilot.chat(OWNER, "nochmal", role="owner")
+with copilot._pending_lock:
+    pend = list(copilot._pending_actions.get(SK) or [])
+check(not any("Shell-Befehl" in x for x in pend), "the same verb also emitted in the actions block is not flagged")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails)); sys.exit(1)

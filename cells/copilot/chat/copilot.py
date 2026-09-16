@@ -19,7 +19,7 @@ _MODELS_KEY = "copilot_models"
 _HISTORY_WINDOW = 80
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
 from cells.copilot.chat import copilot_prune
-from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
+from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions, ACTION_KINDS
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
 from cells.copilot.chat import henry_bg  # Henry's own CLI background agents (chat bg line)
 from cells.copilot.chat import port as _port  # always-on stdout reader of the warm process
@@ -364,6 +364,28 @@ def _flush_pending(skey, user, seen):
         st["pending"] = []
     if done:
         _schedule_bg_continue(user, done, seen=seen)
+
+
+_ACTION_JSON_RE = re.compile(r'"type"\s*:\s*"([a-z_]+)"')
+
+
+def _actions_in_shell(steps):
+    """Action verbs whose JSON Henry typed into a SHELL command this turn
+    (cat <<EOF / echo) instead of the ```actions block. Measured 2026-09-16
+    19:24: a full direct_task JSON went through `cat <<'EOF'`, the shell
+    echoed it back, Henry read the echo as confirmation and told the owner
+    "Karte laeuft" - no card existed (owner 19:33: "Warum keine Karte oder
+    thread"). Evidence is the tool_use input, never the prose."""
+    kinds = []
+    for st in steps or []:
+        if st.get("tool") not in ("Bash", "PowerShell", "Shell"):
+            continue
+        det = st.get("detail") if isinstance(st.get("detail"), dict) else {}
+        cmd = str(det.get("command") or "")
+        for k in _ACTION_JSON_RE.findall(cmd):
+            if k in ACTION_KINDS and k not in kinds:
+                kinds.append(k)
+    return kinds
 
 
 def _schedule_bg_continue(user, done, seen=False):
@@ -2828,6 +2850,32 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         sess[skey] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
+    # AN ACTION JSON IN A SHELL COMMAND IS NOT AN ACTION (see _actions_in_shell):
+    # told to Henry as a FAILED action of this turn (his next turn's ERGEBNIS
+    # block) and to the owner as one plumbing line NOW, so "Karte laeuft"
+    # never stands unchallenged on the screen.
+    try:
+        _parsed_kinds = {a.get("type") for a in acts_parsed if isinstance(a, dict)}
+        _missed = [k for k in _actions_in_shell(_live_steps) if k not in _parsed_kinds]
+    except Exception:                                        # noqa: BLE001
+        _missed = []
+    if _missed:
+        _what = "/".join(_missed)
+        with _pending_lock:
+            _pending_actions.setdefault(skey, []).append(
+                "FEHLER: dein %s-JSON stand in einem Shell-Befehl (cat/echo), NICHT im ```actions "
+                "Block - die Shell hat es nur zurueckgespiegelt, nichts wurde angelegt oder gestartet. "
+                "Aktionen laufen ausschliesslich im ```actions Block am Ende deiner Antwort. Hol das "
+                "jetzt nach." % _what)
+        if not card_run_dir:
+            _append_log(user, [{"cls": "act", "ts": time.strftime("%H:%M"),
+                                "text": "Nicht gelaufen: %s-Aktion stand in einem Shell-Befehl statt im "
+                                        "actions-Block - keine Karte angelegt, nichts gestartet." % _what}])
+        try:
+            from spine.storage import events as _ev
+            _ev.emit("copilot", "-", action="action_in_shell", actor=user, kinds=_missed)
+        except Exception:                                    # noqa: BLE001
+            pass
     # THE ASK BLOCK, folded in HERE - at event time, at the protocol's one owner.
     #
     # _parse_reply_actions strips the ```actions fence and nothing else, so a
