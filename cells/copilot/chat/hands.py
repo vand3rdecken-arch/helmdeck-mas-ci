@@ -247,5 +247,20 @@ def _land(hid, status, result, steps):
                                        "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
         else:
             copilot._append_log(user, [{"cls": "act", "text": line, "ts": time.strftime("%H:%M")}])
+            # Owner report 2026-09-16: a hands result landed in the transcript
+            # but never pinged the phone/watch - he only saw it because Henry
+            # happened to quote it back in a later reply. copilot.py's own
+            # bot-reply path fires notify.chat_reply right after its
+            # _append_log (see the "REVERSE MIRROR" comment there); this is
+            # the same push, for the ONE case that path doesn't cover: a
+            # hands result landing async, outside any live chat turn.
+            def _announce_hands():
+                try:
+                    from spine.comms import notify
+                    notify.chat_reply(line)
+                except Exception as _ne:                        # noqa: BLE001
+                    print("hands: reply notification failed -", str(_ne)[:200])
+            from spine.http import server as _srv
+            _srv._bg("hands:notify:" + hid, _announce_hands)
     except Exception:                                    # noqa: BLE001
         pass
