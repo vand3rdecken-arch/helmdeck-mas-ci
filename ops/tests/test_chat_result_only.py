@@ -178,6 +178,35 @@ SCRIPT["lines"] = (_text("Moment, ich schau kurz.") + _tool() + _text(LONG) + _t
 copilot.chat(OWNER, "mixed", role="owner")
 check(last_bot() == LONG + "\n\nFertig.", "short preamble dropped, long middle block kept (got %r)" % (last_bot() or "")[:60])
 
+# 4c) NULL-RESULT guard (2026-09-16 10:54 "Henry hat nicht geantwortet: copilot
+#     produced no output"): a resumed process first flushes the CLI's OWN
+#     synthetic turn ("Continue from where you left off." -> "No response
+#     requested.", zero usage) - that result frame is not ours; keep reading
+db.chat_clear()
+SYN = [{"type": "assistant", "message": {"content": [{"type": "text", "text": "No response requested."}],
+                                         "usage": {"input_tokens": 0, "output_tokens": 0}}},
+       {"type": "result", "result": "No response requested.", "session_id": "sess-test",
+        "usage": {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0}}]
+SCRIPT["lines"] = SYN + _text("Echte Antwort.") + _result("Echte Antwort.")
+out = copilot.chat(OWNER, "hallo", role="owner")
+check(last_bot() == "Echte Antwort.", "synthetic zero-usage result skipped, real answer persisted (got %r)" % last_bot())
+db.chat_clear()
+SCRIPT["lines"] = [{"type": "result", "result": "", "session_id": "sess-test", "usage": {}}] + _text("Nach Notification.") + _result("x")
+copilot.chat(OWNER, "hallo", role="owner")
+check(last_bot() == "Nach Notification.", "empty zero-usage frame (task-notification turn) skipped too (got %r)" % last_bot())
+
+# 4d) the keepalive ping applies the same guard, else the real "ok" result
+#     stays unread and the owner's next turn ends in 0.5s with a stale "ok"
+lines = [json.dumps(x) + "\n" for x in [{"type": "result", "result": "", "usage": {}},
+                                         {"type": "result", "result": "ok", "usage": {"input_tokens": 2, "cache_read_input_tokens": 100}},
+                                         {"type": "result", "result": "STALE", "usage": {"input_tokens": 9}}]]
+fp = _FakeProc(lines)
+check(copilot._ping_process(fp) is True, "ping answered")
+fp2 = _FakeProc(lines)
+copilot._ping_process(fp2)
+rest = list(fp2.stdout)
+check(len(rest) == 1 and "STALE" in rest[0], "ping consumed exactly the null frame + its own result, nothing more (%d left)" % len(rest))
+
 # 5) hands._land: Henry sees the whole report
 from cells.copilot.chat import hands
 big = "FAILED\n" + "\n".join("- line %02d: %s" % (i, "x" * 60) for i in range(40))

@@ -190,10 +190,20 @@ def _ping_process(p, timeout=120):
         if time.time() - t0 > timeout:
             return False
         try:
-            if json.loads(line.strip() or "{}").get("type") == "result":
-                return True
+            ev = json.loads(line.strip() or "{}")
         except ValueError:
             continue
+        if ev.get("type") == "result":
+            # same null-result guard as the turn loop: a resumed process may
+            # first flush the CLI's own synthetic turn (zero usage). Taking
+            # it as the ping's answer leaves the real "ok" result unread in
+            # stdout - and the owner's next turn then ends in 0.5s with that
+            # stale "ok" as its reply (chat 2026-09-16 10:38, usage identical
+            # to the systemcheck's).
+            _u = ev.get("usage") or {}
+            if not ev.get("is_error") and not any(v for v in _u.values() if isinstance(v, (int, float))):
+                continue
+            return True
     return False
 
 
@@ -2335,6 +2345,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     _blocks = []          # every assistant TEXT block of this turn, in order (see txt below)
     _tail_blocks = []     # TEXT blocks since the last tool_use = the answer (see txt below)
+    _null_results = 0     # synthetic zero-usage result frames skipped this turn (see the result branch)
     resume_echo, ctx_first = False, {}
     # SILENCE watchdog (persist only): a one-shot process ends the read loop by
     # exiting; a persistent one that stops answering would hang the pump forever.
@@ -2526,6 +2537,25 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         think.append(dl.get("thinking", ""))
                         livebuf.set_field(live_key, "thinking", "".join(think)[-600:])
             elif typ == "result":
+                # NULL-RESULT guard (drivers._on_event parity, measured here
+                # 2026-09-16 10:54): a process respawned with --resume runs
+                # the CLI's OWN synthetic turn first - "Continue from where
+                # you left off." / a <task-notification> for a background
+                # task the dropped process left behind - and that turn ends
+                # with a result frame carrying ZERO usage. Taking it as this
+                # turn's result ended the owner's turn after 91s with "copilot
+                # produced no output", while Henry's real answer (with a hands
+                # action) streamed 3 minutes later to nobody. Evidence, not
+                # timing: a real model turn always carries usage. Compaction
+                # runs in its own one-shot process (_maybe_compact), so no
+                # legitimate zero-usage frame ever reaches this loop.
+                _u = ev.get("usage") or {}
+                if (persistable and not ev.get("is_error")
+                        and not any(v for v in _u.values() if isinstance(v, (int, float)))):
+                    _null_results += 1
+                    del parts[:]; del _blocks[:]; del _tail_blocks[:]   # its "No response requested." is not our prose
+                    print("copilot turn %s: dropped synthetic zero-usage result #%d, waiting on" % (user, _null_results), flush=True)
+                    continue
                 result = ev
                 if persistable:
                     break        # the process LIVES ON - this turn is complete
