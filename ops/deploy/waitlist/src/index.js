@@ -390,8 +390,8 @@ h3{margin:0; font-size:1.08rem; font-weight:700}
 .hero-actions{display:flex; gap:.8rem; flex-wrap:wrap}
 .hero .objection{margin:-.9rem 0 1.6rem; font-size:.9rem; color:var(--ink-3)}
 .hero-shot{margin-top:2.2rem}
-.hero-shot figure{margin:0; max-width:19rem; border:1px solid var(--border-strong); border-radius:26px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45)}
-.hero-shot img{display:block; width:100%; height:auto}
+.hero-shot figure{margin:0; border:1px solid var(--border-strong); border-radius:20px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.hero-shot img,.hero-shot video{display:block; width:100%; height:auto}
 .quote{margin:0; padding:1.2rem 1.4rem; border-left:3px solid var(--accent-hi); background:var(--surface); border-radius:0 14px 14px 0; max-width:44rem}
 .quote p{margin:0 0 .5rem; font-size:1.02rem; line-height:1.55; color:var(--ink-2); text-wrap:pretty}
 .quote footer{font-size:.84rem; color:var(--ink-3)}
@@ -411,6 +411,7 @@ a.device:hover{border-color:var(--border-strong)}
 @media (min-width:64rem){
   .hero{display:grid; grid-template-columns:minmax(0,1fr) 19rem; column-gap:3.5rem; align-items:center}
   .hero .hero-shot{margin-top:0}
+  .hero-shot figure{max-width:19rem}
 }
 .btn{
   display:inline-flex; align-items:center; justify-content:center; height:3rem;
@@ -495,13 +496,14 @@ footer a:hover{color:var(--ink-2)}
 .footer-btn{background:none; border:0; padding:0; margin:0; font:inherit; font-size:inherit; color:var(--ink-3); cursor:pointer; text-decoration:underline}
 .footer-btn:hover{color:var(--ink-2)}
 .cookiebar{
-  position:fixed; left:1rem; right:1rem; bottom:1rem; z-index:5; max-width:40rem; margin:0 auto;
-  display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding:1.1rem 1.3rem;
-  background:var(--layer); border:1px solid var(--border-strong); border-radius:14px;
-  box-shadow:0 20px 50px rgba(0,0,0,.45);
+  position:fixed; left:0; right:0; bottom:0; z-index:5;
+  display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem;
+  padding:.65rem 1.1rem; padding-bottom:calc(.65rem + env(safe-area-inset-bottom, 0px));
+  background:var(--layer); border-top:1px solid var(--border-strong);
+  box-shadow:0 -8px 24px rgba(0,0,0,.35);
 }
-.cookiebar p{margin:0; font-size:.85rem; line-height:1.5; color:var(--ink-2); flex:1 1 18rem}
-.cookiebar-actions{display:flex; gap:.6rem; flex:none}
+.cookiebar p{margin:0; font-size:.8rem; line-height:1.4; color:var(--ink-2); flex:1 1 16rem}
+.cookiebar-actions{display:flex; gap:.5rem; flex:none}
 @media (max-width:480px){.cookiebar-actions{width:100%}.cookiebar-actions .btn{flex:1 1 0}}
 /* proof strip: two phones + one desktop, real screenshots */
 .shots{display:grid; grid-template-columns:1fr; gap:1.2rem; margin-top:1.6rem}
@@ -559,15 +561,14 @@ footer a:hover{color:var(--ink-2)}
     <div class="hero-copy">
     <p class="kicker" data-i="kicker">For everyone who runs Claude Code</p>
     <h1 data-i="h1">Claude Code asks. You answer from your phone.</h1>
-    <p class="sub" data-i="sub">HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question, every approval and every error lands as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.</p>
+    <p class="sub" data-i="sub">HelmDeck is an app for your phone and an operator for the machine running Claude Code. Every question lands as a push, you answer, the agent carries on.</p>
     <p class="objection" data-i="objection">No cloud account. No code leaves your machine. Works with the Claude subscription you already have.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
-      <a class="btn btn-ghost" href="#demo" data-i="heroCtaSecondary">Watch the demo</a>
     </div>
     </div>
     <div class="hero-shot">
-      <figure><img src="${IMG_CHAT}" width="520" height="1125" alt="HelmDeck auf dem Handy: Claude Code stellt eine Rückfrage mit zwei Optionen" loading="eager"></figure>
+      <figure><video autoplay muted loop playsinline poster="${DEMO_POSTER_URL}" width="1920" height="1080" aria-hidden="true"><source src="${DEMO_VIDEO_URL}" type="video/mp4"></video></figure>
     </div>
   </section>
 
@@ -697,10 +698,10 @@ ${wl("wearables")}
 <footer>HelmDeck · <a href="mailto:tienduyvo@googlemail.com" data-i="contact">Contact</a> · <a href="/datenschutz" data-i="privacyLink">Privacy</a> · <a href="/impressum" data-i="imprintLink">Contact</a>${FEEDBACK_URL ? ` · <a href="${FEEDBACK_URL}" target="_blank" rel="noopener noreferrer">Feedback</a>` : ""} · <button class="footer-btn" id="cookie-settings" type="button" data-i="cookieSettings">Cookie settings</button></footer>
 
 <div class="cookiebar" id="cookiebar" role="dialog" aria-label="Cookie notice" hidden>
-  <p data-i-html="cookieMsg">This site measures usage anonymously and without cookies via PostHog (EU, Frankfurt), but only with your consent. Nothing loads and nothing is measured before you accept. <a href="/datenschutz">More in the privacy policy.</a></p>
+  <p data-i-html="cookieMsg">Anonymous, cookieless analytics only with your consent. <a href="/datenschutz">More in the privacy policy.</a></p>
   <div class="cookiebar-actions">
     <button class="btn btn-ghost btn-sm" id="cookie-decline" type="button" data-i="cookieDecline">Decline</button>
-    <button class="btn btn-primary btn-sm" id="cookie-accept" type="button" data-i="cookieAccept">Accept</button>
+    <button class="btn btn-ghost btn-sm" id="cookie-accept" type="button" data-i="cookieAccept">Accept</button>
   </div>
 </div>
 <script>
@@ -766,9 +767,9 @@ ${wl("wearables")}
       navProof:"Was es kann", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"Für alle, die Claude Code nutzen",
       h1:"Claude Code fragt. Du antwortest vom Handy.",
-      sub:"HelmDeck ist eine App für dein Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage, jede Freigabe und jeder Fehler landen als Push auf dem Handy. Du antwortest, der Agent macht weiter. Der Rechner bleibt zu Hause, dein Code auch.",
+      sub:"HelmDeck ist eine App fürs Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage kommt als Push, du antwortest, der Agent macht weiter.",
       objection:"Kein Cloud-Account. Kein Code verlässt deinen Rechner. Läuft mit deinem bestehenden Claude-Abo.",
-      heroCtaPrimary:"Loslegen", heroCtaSecondary:"Demo ansehen",
+      heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       demoTitle:"So sieht das aus", demoSub:"21 Sekunden: Aufgabe vom Handy schicken, der Agent arbeitet sie auf deinem eigenen Rechner ab, du nimmst das Ergebnis ab.",
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
@@ -821,7 +822,7 @@ ${wl("wearables")}
       privacyA:'Deine Adresse wird bei Cloudflare (Workers KV) gespeichert und ausschließlich verwendet, um dich einmalig über den Start von HelmDeck für Glasses zu informieren. Danach wird die Liste gelöscht. Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt). Keine Cookies, keine Aufzeichnung, keine Weitergabe an Dritte. Das läuft erst nach deiner Zustimmung im Cookie-Banner; deine Wahl kannst du jederzeit über „Cookie-Einstellungen" im Fußbereich der Seite ändern. Löschung jederzeit auf Zuruf: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (Verantwortlicher: Tien Duy Vo). Vollständige Datenschutzerklärung: <a href="/datenschutz">/datenschutz</a>.',
       contact:"Kontakt", privacyLink:"Datenschutz", imprintLink:"Kontakt",
       cookieSettings:"Cookie-Einstellungen",
-      cookieMsg:'Diese Seite misst anonym und cookielos über PostHog (EU, Frankfurt), aber nur mit deiner Zustimmung. Nichts lädt und nichts wird gemessen, bevor du zustimmst. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a>',
+      cookieMsg:'Anonyme, cookielose Analyse nur mit deiner Zustimmung. <a href="/datenschutz">Mehr in der Datenschutzerklärung.</a>',
       cookieDecline:"Ablehnen", cookieAccept:"Akzeptieren",
       sending:"…", toggle:"EN" },
     en:{
@@ -829,9 +830,9 @@ ${wl("wearables")}
       navProof:"What it does", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"For everyone who runs Claude Code",
       h1:"Claude Code asks. You answer from your phone.",
-      sub:"HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question, every approval and every error lands as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.",
+      sub:"HelmDeck is an app for your phone and an operator for the machine running Claude Code. Every question lands as a push, you answer, the agent carries on.",
       objection:"No cloud account. No code leaves your machine. Works with the Claude subscription you already have.",
-      heroCtaPrimary:"Get started", heroCtaSecondary:"Watch the demo",
+      heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       demoTitle:"Watch it work", demoSub:"21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.",
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
@@ -884,7 +885,7 @@ ${wl("wearables")}
       privacyA:'Your address is stored with Cloudflare (Workers KV) and used solely to notify you once about HelmDeck for Glasses launching. The list is deleted afterwards. This site measures anonymously and cookielessly via PostHog (EU, Frankfurt). No cookies, no recording, no sharing with third parties. This only runs after you accept the cookie banner; change your choice any time via "Cookie settings" in the footer. Deletion any time on request: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a> (controller: Tien Duy Vo). Full privacy policy: <a href="/datenschutz">/datenschutz</a>.',
       contact:"Contact", privacyLink:"Privacy", imprintLink:"Contact",
       cookieSettings:"Cookie settings",
-      cookieMsg:'This site measures usage anonymously and without cookies via PostHog (EU, Frankfurt), but only with your consent. Nothing loads and nothing is measured before you accept. <a href="/datenschutz">More in the privacy policy.</a>',
+      cookieMsg:'Anonymous, cookieless analytics only with your consent. <a href="/datenschutz">More in the privacy policy.</a>',
       cookieDecline:"Decline", cookieAccept:"Accept",
       sending:"…", toggle:"DE" }
   };
