@@ -563,6 +563,7 @@ footer a:hover{color:var(--ink-2)}
       <p data-i="quoteP">“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”</p>
       <footer><span data-i="quoteBy">Tien Duy Vo, developer</span></footer>
     </blockquote>
+    <p class="section-sub" data-i="founderFact">Built in two months, steering the agents from a phone, not a desk.</p>
   </section>
 
   <section id="problem">
@@ -748,6 +749,7 @@ ${wl("wearables")}
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
       quoteBy:"Tien Duy Vo, Entwickler",
+      founderFact:"Gebaut in zwei Monaten, weil die Agenten vom Handy liefen, nicht nur vom Schreibtisch.",
       problemTitle:"Der Agent arbeitet nicht ohne dich.",
       problemP:"Claude Code macht zehn Minuten Arbeit, dann stellt er eine Frage. Bis du antwortest, passiert nichts. Wer die Antwort nur am Schreibtisch geben kann, sitzt am Schreibtisch und wartet. Auf eine Maschine.",
       whyTitle:"Drei Dinge, die vom Handy gehen",
@@ -809,6 +811,7 @@ ${wl("wearables")}
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
       quoteBy:"Tien Duy Vo, developer",
+      founderFact:"Built in two months, steering the agents from a phone, not a desk.",
       problemTitle:"The agent does not work without you.",
       problemP:"Claude Code does ten minutes of work, then asks a question. Until you answer, nothing happens. If the only place you can answer is your desk, you sit at your desk and wait. For a machine.",
       whyTitle:"Three things you do from your phone",
