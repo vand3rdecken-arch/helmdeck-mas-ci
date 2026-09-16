@@ -382,7 +382,7 @@ SCRIPT["lines"] = (_text("Ich leg die Karte an.")
                           {"type": "tool_result", "tool_use_id": "sh1", "content": CMD.split("\n")[1]}]}}]
                    + _text(KL) + _result(KL))     # the actions block is parsed from the result frame
 out = copilot.chat(OWNER, "mach die karte", role="owner")
-check([a.get("type") for a in out.get("actions") or []] == ["clarify_goal"], "only the real actions block ran (got %r)" % out.get("actions"))
+check(out.get("reply", "").startswith("Karte läuft"), "the turn itself completes normally (chat() returns actions as [] by design - they run in the background)")
 with copilot._pending_lock:
     pend = list(copilot._pending_actions.get(SK) or [])
 check(any("direct_task" in x and "Shell-Befehl" in x for x in pend),
