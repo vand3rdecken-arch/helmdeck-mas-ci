@@ -122,6 +122,12 @@ const WEAR_REQUEST_URL =
   );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
+// Demo video (brag.mp4, 21.5s, uploaded as a v0.2.18 release asset 2026-09-16).
+// Too big to inline as a data URI like the screenshots below (~1.9 MB vs. their
+// ~100 KB combined); the release CDN is already the trust boundary the download
+// buttons rely on, so link straight to it instead of adding an asset bucket.
+const DEMO_VIDEO_URL = `https://github.com/${REPO}/releases/download/v0.2.18/brag.mp4`;
+const DEMO_POSTER_URL = `https://github.com/${REPO}/releases/download/v0.2.18/brag.jpg`;
 
 // Real app screenshots (Expo web, demo mode, German, dark) - the proof strip.
 // Inlined as webp data URIs: this worker has no asset bucket and the three
@@ -496,6 +502,8 @@ footer a:hover{color:var(--ink-2)}
 .shots{display:grid; grid-template-columns:1fr; gap:1.2rem; margin-top:1.6rem}
 @media (min-width:46rem){.shots{grid-template-columns:1fr 1fr}}
 @media (min-width:64rem){.shots{grid-template-columns:1fr 1fr 1.6fr; align-items:start}}
+.demo-shot{margin:0; border:1px solid var(--border-strong); border-radius:18px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45); max-width:44rem}
+.demo-shot video{display:block; width:100%; height:auto; aspect-ratio:16/9; background:#000}
 .shot{display:flex; flex-direction:column; gap:.7rem}
 .shot figure{margin:0; border:1px solid var(--border-strong); border-radius:18px; overflow:hidden;
   background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45)}
@@ -550,12 +558,22 @@ footer a:hover{color:var(--ink-2)}
     <p class="objection" data-i="objection">No cloud account. No code leaves your machine. Works with the Claude subscription you already have.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
-      <a class="btn btn-ghost" href="#proof" data-i="heroCtaSecondary">See screenshots</a>
+      <a class="btn btn-ghost" href="#demo" data-i="heroCtaSecondary">Watch the demo</a>
     </div>
     </div>
     <div class="hero-shot">
       <figure><img src="${IMG_CHAT}" width="520" height="1125" alt="HelmDeck auf dem Handy: Claude Code stellt eine Rückfrage mit zwei Optionen" loading="eager"></figure>
     </div>
+  </section>
+
+  <section id="demo">
+    <h2 data-i="demoTitle">Watch it work</h2>
+    <p class="section-sub" data-i="demoSub">21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.</p>
+    <figure class="demo-shot">
+      <video controls preload="metadata" poster="${DEMO_POSTER_URL}" playsinline width="1920" height="1080">
+        <source src="${DEMO_VIDEO_URL}" type="video/mp4">
+      </video>
+    </figure>
   </section>
 
   <section id="founder">
@@ -745,8 +763,9 @@ ${wl("wearables")}
       h1:"Claude Code fragt. Du antwortest vom Handy.",
       sub:"HelmDeck ist eine App für dein Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage, jede Freigabe und jeder Fehler landen als Push auf dem Handy. Du antwortest, der Agent macht weiter. Der Rechner bleibt zu Hause, dein Code auch.",
       objection:"Kein Cloud-Account. Kein Code verlässt deinen Rechner. Läuft mit deinem bestehenden Claude-Abo.",
-      heroCtaPrimary:"Loslegen", heroCtaSecondary:"Screenshots ansehen",
+      heroCtaPrimary:"Loslegen", heroCtaSecondary:"Demo ansehen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
+      demoTitle:"So sieht das aus", demoSub:"21 Sekunden: Aufgabe vom Handy schicken, der Agent arbeitet sie auf deinem eigenen Rechner ab, du nimmst das Ergebnis ab.",
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
       quoteBy:"Tien Duy Vo, Entwickler",
       founderFact:"Gebaut in zwei Monaten, weil die Agenten vom Handy liefen, nicht nur vom Schreibtisch.",
@@ -807,8 +826,9 @@ ${wl("wearables")}
       h1:"Claude Code asks. You answer from your phone.",
       sub:"HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question, every approval and every error lands as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.",
       objection:"No cloud account. No code leaves your machine. Works with the Claude subscription you already have.",
-      heroCtaPrimary:"Get started", heroCtaSecondary:"See screenshots",
+      heroCtaPrimary:"Get started", heroCtaSecondary:"Watch the demo",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
+      demoTitle:"Watch it work", demoSub:"21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.",
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
       quoteBy:"Tien Duy Vo, developer",
       founderFact:"Built in two months, steering the agents from a phone, not a desk.",
