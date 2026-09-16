@@ -21,6 +21,7 @@ from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _
 from cells.copilot.chat import copilot_prune
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
+from cells.copilot.chat import henry_bg  # Henry's own CLI background agents (chat bg line)
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip)
 
@@ -177,7 +178,7 @@ _keepalive_inflight = set()      # users whose warm process is mid-ping (status 
 _SYSTEMCHECK = "(Systemcheck, nicht vorlesen - antworte nur: ok)"
 
 
-def _ping_process(p, timeout=120):
+def _ping_process(p, timeout=120, skey=None):
     """The hidden systemcheck round-trip that refreshes the API's prompt
     cache before it lapses. Extracted so the REACTIVE ping (below, fired on
     /chat/history poll) and the PROACTIVE scheduler (_keepalive_loop) share
@@ -200,6 +201,15 @@ def _ping_process(p, timeout=120):
             ev = json.loads(line.strip() or "{}")
         except ValueError:
             continue
+        if skey:
+            # a background agent finishing BETWEEN turns surfaces as the
+            # system/task_notification frame on THIS read (the only stdout
+            # reader while no turn runs) - fold it, or the chat line shows a
+            # runner that already came back (owner 2026-09-16 18:51)
+            try:
+                henry_bg.fold(skey, ev)
+            except Exception:                            # noqa: BLE001
+                pass
         if ev.get("type") == "result":
             # same null-result guard as the turn loop: a resumed process may
             # first flush the CLI's own synthetic turn (zero usage). Taking
@@ -271,7 +281,7 @@ def _start_keepalive_loop():
                         continue      # idle too long - let it go cold, matches prewarm's own rule
                     _keepalive_inflight.add(user)
                     try:
-                        ok = _ping_process(p)
+                        ok = _ping_process(p, skey=bkey)
                     finally:
                         _keepalive_inflight.discard(user)
                     if ok:
@@ -370,7 +380,7 @@ def prewarm(user, spoken=True):
                         return              # already warm AND cached
                 _keepalive_inflight.add(user)
                 try:
-                    ok = _ping_process(p)
+                    ok = _ping_process(p, skey=bkey)
                 finally:
                     _keepalive_inflight.discard(user)
                 if ok:
@@ -447,6 +457,11 @@ def _persist_drop(skey):
         except Exception:
             pass
         _ports_update(lambda cur: cur.pop(str(ent["p"].pid), None))
+        # its sub-agents died with it - close them WITH the reason (finishAll)
+        try:
+            henry_bg.finish_all(skey, "Henrys Chat-Prozess wurde beendet, der Hintergrund-Agent starb mit")
+        except Exception:                                    # noqa: BLE001
+            pass
 
 
 def _control(p, subtype, timeout=3.0, **fields):
@@ -1520,6 +1535,7 @@ def history(user):
     try:
         from cells.copilot.chat import hands
         followups.update(hands.tasks())     # Henry's hands sub-agents, same BgTask shape
+        followups.update(henry_bg.tasks(user))   # his own CLI Agent/Task background runs
     except Exception:                                        # noqa: BLE001
         pass
     return {"messages": [_readable(m) for m in _entries(user)],
@@ -2417,6 +2433,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             except ValueError:
                 continue
             typ = ev.get("type")
+            try:
+                henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
+            except Exception:                        # noqa: BLE001
+                pass                                 # registry is best-effort, never the turn
             if typ == "system" and ev.get("session_id"):
                 got = ev["session_id"]
                 # resume-attachment evidence (drivers.py parity): a successful

@@ -240,6 +240,91 @@ check("line 39" in turn, "the END of the hands report is in the turn, not a 400-
 with copilot._pending_lock:
     check(not copilot._pending_actions.get(copilot._skey(OWNER, None)), "told exactly once - pending drained")
 
+
+# 6) HENRY'S OWN BACKGROUND AGENTS (owner 2026-09-16 18:51 "Arbeitet aber keine
+#    visuelle Rueckmeldung"): an Agent launched with run_in_background from
+#    Henry's warm process worked for 9+ minutes and the chat line showed
+#    nothing - followups knew broker + hands only. Pinned through the real
+#    copilot.chat() pump, the ping reader and _persist_drop.
+from cells.copilot.chat import henry_bg
+SK = copilot._skey(OWNER, None)
+
+
+def _agent_launch(uid, desc):
+    return [{"type": "assistant", "message": {"content": [
+                 {"type": "tool_use", "id": uid, "name": "Agent",
+                  "input": {"description": desc, "subagent_type": "Explore", "run_in_background": True,
+                            "prompt": "find the onboarding code"}}],
+             "usage": {"input_tokens": 100, "output_tokens": 5}}},
+            {"type": "user", "message": {"content": [
+                 {"type": "tool_result", "tool_use_id": uid,
+                  "content": "Async agent launched successfully. agentId: abc"}]}}]
+
+
+def _bg():
+    return (copilot.history(OWNER) or {}).get("followups") or {}
+
+
+db.chat_clear()
+SCRIPT["lines"] = _text("Ich lass recherchieren.") + _agent_launch("tu_bg1", "Explore onboarding code") + _text("Dauert zwei Minuten.") + _result("x")
+copilot.chat(OWNER, "verbessere onboarding", role="owner")
+t = _bg().get("bg:tu_bg1")
+check(t is not None and t.get("status") == "running", "a run_in_background Agent shows on the chat bg line as running (got %r)" % t)
+check(t and t.get("title") == "Explore onboarding code", "bg task carries the Agent's description as title")
+
+# the CLI reports the hand-back BETWEEN turns as a system/task_notification
+# frame - the ping is the only stdout reader then; it must fold it
+lines = [json.dumps(x) + "\n" for x in [
+    {"type": "system", "subtype": "task_notification", "tool_use_id": "tu_bg1", "status": "completed",
+     "summary": "Found 3 files: onboarding.tsx, demo_seed.py, chat panel"},
+    {"type": "result", "result": "ok", "usage": {"input_tokens": 2, "cache_read_input_tokens": 100}}]]
+check(copilot._ping_process(_FakeProc(lines), skey=SK) is True, "ping still answers with the notification in front")
+t = _bg().get("bg:tu_bg1")
+check(t and t.get("status") == "completed" and "onboarding.tsx" in (t.get("result") or ""),
+      "task_notification read by the ping closes the task with its summary (got %r)" % t)
+
+# same frame arriving INSIDE a turn (the pump) closes it too
+db.chat_clear()
+SCRIPT["lines"] = _text("Los.") + _agent_launch("tu_bg2", "Second look") + _result("x")
+copilot.chat(OWNER, "nochmal", role="owner")
+check((_bg().get("bg:tu_bg2") or {}).get("status") == "running", "second agent registered")
+SCRIPT["lines"] = [{"type": "system", "subtype": "task_notification", "tool_use_id": "tu_bg2",
+                    "status": "failed", "summary": "agent hit an error"}] + _text("Er ist gescheitert.") + _result("x")
+copilot.chat(OWNER, "und?", role="owner")
+check((_bg().get("bg:tu_bg2") or {}).get("status") == "failed", "in-turn task_notification closes it with the CLI's status")
+
+# a sync Agent (no run_in_background, plain result) is NOT a background task
+SCRIPT["lines"] = _text("Kurz.") + [{"type": "assistant", "message": {"content": [
+    {"type": "tool_use", "id": "tu_sync", "name": "Agent", "input": {"description": "quick check", "prompt": "x"}}],
+    "usage": {"input_tokens": 1, "output_tokens": 1}}},
+    {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu_sync", "content": "the answer is 42"}]}}] + _result("x")
+copilot.chat(OWNER, "sync", role="owner")
+check("bg:tu_sync" not in _bg(), "a synchronous Agent result never becomes a bg line")
+
+# the process dies (_persist_drop) -> its running agents are closed as failed WITH the reason, never left running
+SCRIPT["lines"] = _text("Los.") + _agent_launch("tu_bg3", "Dies with the port") + _result("x")
+copilot.chat(OWNER, "drei", role="owner")
+check((_bg().get("bg:tu_bg3") or {}).get("status") == "running", "third agent registered")
+
+
+class _DeadProc:
+    pid = 4242
+
+    def kill(self):
+        pass
+
+    def poll(self):
+        return None
+
+
+with copilot._persist_lock:
+    copilot._persist[SK] = {"p": _DeadProc(), "key": ("m", "p")}
+copilot._persist_drop(SK)
+t = _bg().get("bg:tu_bg3")
+check(t and t.get("status") == "failed" and "beendet" in (t.get("result") or ""),
+      "_persist_drop reconciles: open agents -> failed with the reason (got %r)" % t)
+check(not henry_bg.running_ids(SK), "nothing left running after the drop")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails)); sys.exit(1)
