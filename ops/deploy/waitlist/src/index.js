@@ -1270,7 +1270,7 @@ function html(body, status = 200) {
         "font-src https://fonts.gstatic.com; " +
         "script-src 'unsafe-inline' https://eu-assets.i.posthog.com; " +
         "connect-src 'self' https://eu.i.posthog.com; " +
-        "img-src 'self' data:; frame-ancestors 'none'",
+        "img-src 'self' data:; media-src 'self'; frame-ancestors 'none'",
     },
   });
 }
