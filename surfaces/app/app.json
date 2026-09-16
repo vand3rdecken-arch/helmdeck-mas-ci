@@ -2,7 +2,7 @@
   "expo": {
     "name": "HelmDeck",
     "slug": "helmdeck",
-    "version": "1.0.50",
+    "version": "1.0.51",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "helmdeck",
@@ -32,7 +32,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 93,
+      "versionCode": 94,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
