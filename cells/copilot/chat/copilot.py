@@ -22,6 +22,7 @@ from cells.copilot.chat import copilot_prune
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
 from cells.copilot.chat import henry_bg  # Henry's own CLI background agents (chat bg line)
+from cells.copilot.chat import port as _port  # always-on stdout reader of the warm process
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
 from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip)
 
@@ -187,6 +188,7 @@ def _ping_process(p, timeout=120, skey=None):
     must drop it: on 2026-09-14 12:31:52 a ping got no answer, the lock was
     released with the dead port still registered, and the owner's 12:35
     question sat behind it for the full 600s silence watchdog."""
+    _port.begin(p)                 # attach BEFORE the write - the reply must not race into idle
     try:
         p.stdin.write(json.dumps({"type": "user", "message": {"role": "user",
                       "content": _SYSTEMCHECK}}) + "\n")
@@ -194,7 +196,7 @@ def _ping_process(p, timeout=120, skey=None):
     except Exception:                                    # noqa: BLE001
         return False
     t0 = time.time()
-    for line in p.stdout:
+    for line in _port.lines(p):
         if time.time() - t0 > timeout:
             return False
         try:
@@ -299,7 +301,72 @@ def _start_keepalive_loop():
     threading.Thread(target=_loop, daemon=True, name="henry-keepalive").start()
 
 
-def _schedule_bg_continue(user, done):
+_idle = {}                # skey -> {"tail": [text blocks since the last main-line tool call], "pending": [done tasks]}
+_idle_lock = threading.Lock()
+_IDLE_FALLBACK_S = 120    # a hand-back with no CLI-run follow-up turn inside this -> harness continue
+
+
+def _idle_frame(skey, user, line):
+    """A stdout line of the warm process while NO consumer is attached
+    (port.py). Three things can arrive here: sub-agent chatter (fed to the
+    bg registry, otherwise ignored), the CLI's own between-turns turn after a
+    task_notification (Henry reacting - into a pipe the owner never sees),
+    and the task_notification itself. Every hand-back ends in ONE
+    _schedule_bg_continue: at once when the CLI's own turn finished (Henry
+    must now say to the OWNER what he said to nobody), else after
+    _IDLE_FALLBACK_S via the timer (the CLI did not run a turn)."""
+    line = (line or "").strip()
+    if not line:
+        return
+    try:
+        ev = json.loads(line)
+    except ValueError:
+        return
+    try:
+        henry_bg.fold(skey, ev, user=user)
+    except Exception:                                        # noqa: BLE001
+        pass
+    done = henry_bg.take_closed(skey)
+    with _idle_lock:
+        st = _idle.setdefault(skey, {"tail": [], "pending": []})
+        if done:
+            st["pending"].extend(done)
+            threading.Timer(_IDLE_FALLBACK_S, _flush_pending, args=(skey, user, False)).start()
+        if ev.get("parent_tool_use_id"):
+            return
+        typ = ev.get("type")
+        if typ == "assistant":
+            for b in ((ev.get("message") or {}).get("content") or []):
+                if isinstance(b, dict) and b.get("type") == "tool_use":
+                    st["tail"] = []
+                elif isinstance(b, dict) and b.get("type") == "text" and (b.get("text") or "").strip():
+                    st["tail"].append(b["text"])
+            return
+        if typ != "result":
+            return
+        _u = ev.get("usage") or {}
+        real = not ev.get("is_error") and any(v for v in _u.values() if isinstance(v, (int, float)))
+        said = "\n\n".join(st["tail"]).strip()
+        st["tail"] = []
+    if real:
+        try:
+            from spine.storage import events
+            events.emit("henry_bg", "-", action="idle_turn", skey=skey, said=said[:300])
+        except Exception:                                    # noqa: BLE001
+            pass
+        _flush_pending(skey, user, True)
+
+
+def _flush_pending(skey, user, seen):
+    with _idle_lock:
+        st = _idle.get(skey) or {}
+        done = list(st.get("pending") or [])
+        st["pending"] = []
+    if done:
+        _schedule_bg_continue(user, done, seen=seen)
+
+
+def _schedule_bg_continue(user, done, seen=False):
     """A background agent of Henry's handed back BETWEEN turns (the ping fold
     closed it). Nobody reacts to that on its own: in -p stream mode the CLI
     queues the task-notification for the NEXT user message, and the next
@@ -313,10 +380,10 @@ def _schedule_bg_continue(user, done):
     if not pol.get("auto_continue", True):
         return
     from spine.http import server as _srv
-    _srv._bg("henry:bg-continue:" + str(int(time.time())), lambda: _bg_continue(user, done))
+    _srv._bg("henry:bg-continue:" + str(int(time.time())), lambda: _bg_continue(user, done, seen))
 
 
-def _bg_continue(user, done):
+def _bg_continue(user, done, seen=False):
     from spine.ops import ask as _ask
     lines = []
     for t in done:
@@ -329,8 +396,11 @@ def _bg_continue(user, done):
         "Hinweis des Harness, keine Nachricht vom Owner:\n" + "\n".join(lines) + "\n\n"
         "Das vollstaendige Ergebnis steht in deinem Verlauf (task-notification). "
         "Mach jetzt genau dort weiter, wo du auf ihn gewartet hast, und antworte dem "
-        "Owner im Chat - er wartet seit deinem 'ich meld mich gleich'. Nichts "
-        "wiederholen, was du ihm schon gesagt hast.")
+        "Owner im Chat - er wartet seit deinem 'ich meld mich gleich'."
+        + (" Du hast auf die Meldung bereits in einem automatischen Turn reagiert - "
+           "DAVON HAT DER OWNER NICHTS GESEHEN (der Turn lief ohne Leser). Gib ihm "
+           "jetzt das Ergebnis und deine Fragen, so als waere es das erste Mal."
+           if seen else " Nichts wiederholen, was du ihm schon gesagt hast."))
     try:
         chat(user, prompt, role="owner", harness_note="Hintergrund-Agent %s: %s" % (
             "fertig" if all(t.get("status") == "completed" for t in done) else "beendet",
@@ -524,6 +594,7 @@ def _control(p, subtype, timeout=3.0, **fields):
     steal the next turn's events.
     """
     req_id = "cp-" + uuid.uuid4().hex[:12]
+    _port.begin(p)
     try:
         p.stdin.write(json.dumps({"type": "control_request", "request_id": req_id,
                                   "request": dict({"subtype": subtype}, **fields)}) + "\n")
@@ -534,7 +605,7 @@ def _control(p, subtype, timeout=3.0, **fields):
 
     def _read():
         try:
-            for line in p.stdout:
+            for line in _port.lines(p):
                 try:
                     ev = json.loads(line.strip() or "{}")
                 except ValueError:
@@ -696,6 +767,10 @@ def _persist_get(skey, cli_model, sid, system):
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     _ports_update(lambda cur: cur.__setitem__(str(p.pid), time.time()))
+    # the always-on reader (port.py): between turns the child no longer
+    # blocks on a full pipe, and what it says unasked is folded, not lost
+    _user = skey.split("\x00", 1)[0] if isinstance(skey, str) else skey   # _skey: user, or user NUL card:<id>
+    _port.attach(p, lambda line, _sk=skey, _u=_user: _idle_frame(_sk, _u, line))
     return p, True
 
 
@@ -2454,6 +2529,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         threading.Thread(target=_watchdog, daemon=True).start()
     try:
         if persistable:
+            _port.begin(p)         # attach BEFORE the write (port.py)
             try:
                 p.stdin.write(json.dumps({"type": "user",
                                           "message": {"role": "user", "content": prompt}}) + "\n")
@@ -2466,12 +2542,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 base_system = harness.brief("board-copilot")
                 p, _fresh = _persist_get(skey, cli_model, sid, base_system)
                 _running[user] = p
+                _port.begin(p)
                 p.stdin.write(json.dumps({"type": "user",
                                           "message": {"role": "user", "content": prompt}}) + "\n")
                 p.stdin.flush()
         else:
             p.stdin.write(prompt); p.stdin.close()
-        for line in p.stdout:                       # the pump (like drivers._pump)
+        for line in _port.lines(p):                 # the pump (like drivers._pump)
             if user in _cancelled:
                 break
             line = line.strip()
@@ -2490,6 +2567,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
             except Exception:                        # noqa: BLE001
                 pass                                 # registry is best-effort, never the turn
+            if ev.get("parent_tool_use_id"):
+                # a SUB-AGENT's frame (measured 2026-09-16: the CLI streams
+                # them with parent_tool_use_id set): it keeps the silence
+                # watchdog fed above, but its text is not Henry's prose and
+                # its tool calls are not Henry's steps
+                continue
             if typ == "system" and ev.get("session_id"):
                 got = ev["session_id"]
                 # resume-attachment evidence (drivers.py parity): a successful
