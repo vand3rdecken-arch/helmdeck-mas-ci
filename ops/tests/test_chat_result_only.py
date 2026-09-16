@@ -58,8 +58,12 @@ def check(cond, msg):
         _fails.append(msg)
 
 
+SENT = []                 # everything chat() writes to the process - the turn itself
+
+
 class _FakeStdin:
     def write(self, s):
+        SENT.append(s)
         return len(s)
 
     def flush(self):
@@ -220,6 +224,21 @@ hands._land(hid, "failed", big, 3)
 with copilot._pending_lock:
     pend = list(copilot._pending_actions.get(copilot._skey(OWNER, None)) or [])
 check(pend and "line 39" in pend[-1], "hands report reaches Henry uncut (%d chars)" % len(pend[-1] if pend else ""))
+
+# 5b) ...and the FOLD into the next turn keeps it whole too (2026-09-16 18:31:
+#     _land handed over 4000 chars, the turn assembly cut every item back to
+#     400 - Henry read "...once Apple a" and never the "Pending Developer
+#     Release" bullet three lines further down, then answered from a two-week
+#     old memory). Pinned through the REAL copilot.chat() turn assembly.
+db.chat_clear()
+del SENT[:]
+SCRIPT["lines"] = _text("Gelesen.") + _result("Gelesen.")
+copilot.chat(OWNER, "und?", role="owner")
+turn = "".join(SENT)
+check("ERGEBNIS deiner Aktionen" in turn, "pending hands result is folded into the next turn")
+check("line 39" in turn, "the END of the hands report is in the turn, not a 400-char stump (turn has %d chars)" % len(turn))
+with copilot._pending_lock:
+    check(not copilot._pending_actions.get(copilot._skey(OWNER, None)), "told exactly once - pending drained")
 
 print()
 if _fails:

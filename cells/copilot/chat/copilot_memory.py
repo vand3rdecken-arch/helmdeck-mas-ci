@@ -37,6 +37,13 @@ import re
 MAX_NAME_LEN = 60
 MAX_CONTENT_LEN = 8000
 MAX_BLOCKS = 30           # a turn cannot mutate an unbounded number of notes
+# The index rides whole. It was cut at 4000 chars while the live index had
+# grown to 5767 (2026-09-16): the newest ~10 entries - the ones Henry appends
+# at the END - were the ones that never reached him, so a note he had just
+# saved was invisible the next turn. ~4k tokens is the ceiling for an INDEX;
+# past it the fix is a shorter index (Henry's own SAVE turn tidies it), not a
+# silent tail-cut.
+DIGEST_MAX = 16000
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,%d}$" % (MAX_NAME_LEN - 1))
 
@@ -125,7 +132,7 @@ def digest():
         return ""
     return ("\n\nDEIN GEDAECHTNIS (Index; volle Notiz mit "
             "`py -3.12 ops/tools/henry_memory_get.py get <name>` lesen, wenn "
-            "sie zur Frage passt):\n%s" % body[:4000])
+            "sie zur Frage passt):\n%s" % body[:DIGEST_MAX])
 
 
 # The dedicated pre-compaction save turn (copilot._save_memory): ONE turn to

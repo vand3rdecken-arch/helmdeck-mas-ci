@@ -100,6 +100,13 @@ _KEEPALIVE_MAX = 2700.0  # stop 45min after the last real turn
 # actual report so the worker isn't blind") - this is that wheel, not a new
 # one. In-memory: a daemon restart loses at most one turn's pending results.
 _pending_actions = {}    # skey -> [result strings], folded into the next turn
+# Per-item cap when the results are folded into the turn. Was 400: hands._land
+# handed over the whole 4000-char report (f16fcdf9), and this fold then cut it
+# back to 400 anyway - Henry read "...once Apple a" and never the line
+# "iOS 1.0.49 Pending Developer Release" three bullets down (2026-09-16 18:31,
+# he answered from a 1.9. memory instead). Same size as the hands hand-over,
+# so ONE number bounds the report end to end.
+PENDING_ITEM_MAX = 4000
 _pending_lock = threading.Lock()
 
 # skey -> (sha1 of last FULL card-context sent, monotonic-enough ts, lines).
@@ -2255,7 +2262,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                          "seitig NACH deiner Antwort ausgefuehrt - du siehst sie "
                          "hier zum ersten Mal; ein Fehler heisst: die Aktion ist "
                          "NICHT gelaufen, behaupte nichts anderes):\n- "
-                         + "\n- ".join(str(r)[:400] for r in _pending) + "\n\n")
+                         + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _pending) + "\n\n")
     # Turn-LOCAL first-word reminder, every message. The brief carries the same
     # law (board-copilot.md SPEED OF FIRST WORD), but system-prompt prose alone
     # measurably lost to the "look first, then speak" habit: all four owner

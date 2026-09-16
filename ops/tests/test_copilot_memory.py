@@ -120,6 +120,14 @@ db.memory_put("MEMORY", "- [note-a](note-a.md) - fact a", actor="henry")
 d = m.digest()
 check("fact a" in d, "digest carries the index body - got %r" % d)
 check("note-a.md" not in d or "fact a" in d, "digest is the index, not a note dump")
+# the index rides WHOLE: the live one was 5767 chars on 2026-09-16 and the
+# digest cut it at 4000, so the newest entries (appended at the end) were
+# exactly the ones Henry never saw again
+_big = "\n".join("- [note-%03d](note-%03d.md) - %s" % (i, i, "x" * 80) for i in range(60)) + "\n- [newest](newest.md) - IOS APPROVED"
+assert len(_big) > 5000
+db.memory_put("MEMORY", _big, actor="henry")
+d = m.digest()
+check("IOS APPROVED" in d, "an index past 4000 chars still carries its newest (last) entry - digest %d chars" % len(d))
 
 # -- henry_memory_get.py: the only read path for a full note, no cache -------
 print("\n[henry_memory_get - read-only, no filesystem surface]")
