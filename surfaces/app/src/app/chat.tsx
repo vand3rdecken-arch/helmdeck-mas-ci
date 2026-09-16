@@ -475,6 +475,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     enabled: me?.role !== "client",
     refetchInterval: chatFallbackInterval(chatEvents),
   });
+  // The onboarding sample card is still on the board and nobody has ever said
+  // anything to Henry: same two DERIVED facts useAutoOpenHenryWelcome opens
+  // this panel on (see that hook's docstring) - reused here, not re-decided,
+  // so the greeting shown and the reason the panel opened stay one story.
+  const { data: tracksForWelcome } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
+  const showWelcome = (tracksForWelcome ?? []).some((k) => k.example) && !(data?.messages?.length);
   const { data: models } = useModels(me?.role !== "client");
   // PM-session economics (card parity): context fill + spend, folded by the
   // daemon per finished turn (copilot._fold_stats) and served with the history.
@@ -921,10 +927,15 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       <View style={{ flex: 1 }}>
         <ChatScroll ref={scroll} label={tr("chat.latest")}
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
-          {msgs.length === 0 && !(busy && stream.trim())
+          {msgs.length === 0 && !showWelcome && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
             : <Transcript me={me?.name} ctxWindow={stats?.ctx_window} steps={(() => {
                 const s = msgs.map((m) => toStep(m, me?.name, tr));
+                // STATIC, local-only greeting (no daemon call, no turn, no
+                // cost) - never persisted, so it renders again every time
+                // this stays true and disappears the moment either half
+                // (the sample card, an actual message) goes away.
+                if (showWelcome) s.unshift({ role: "assistant", kind: "text", text: tr("chat.welcome"), by: "Henry", byKind: "henry" });
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
                 if (busy) {

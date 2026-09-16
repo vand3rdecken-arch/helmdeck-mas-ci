@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Platform, Pressable, View, type ViewStyle } from "react-native";
 
 import { CopilotOverlay, useCopilotPanel, type ChatContext } from "@/app/chat";
+import { api } from "@/data/client";
 import { useCellEnabled } from "@/data/cells";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -42,6 +44,35 @@ export function useOpenHenry(): (ctx?: ChatContext) => void {
     if (wide) panel.show(ctx);
     else { panel.setContext(ctx); router.push("/chat" as never); }
   }, [router, wide]);
+}
+
+/** First-run nudge, mirroring Jira/Trello's guided sample board: Henry drives
+ * himself out instead of waiting for a tap, the one time there is something
+ * to introduce. DERIVED, not a stored "have we shown this" flag (CLAUDE.md) -
+ * it fires exactly while BOTH facts the runtime already owns are still true:
+ * the seeded onboarding card (dispatch.seed_example_card, `example: true`) is
+ * still on the board, and Henry has never actually been talked to
+ * (/chat/history empty). Either one clearing - the owner deletes the sample
+ * card, or sends a real message - retires the nudge on its own; nothing here
+ * has to remember it already ran. `firedRef` only stops it opening twice for
+ * the SAME still-true condition within one mount (e.g. a stray refetch),
+ * never suppresses a later, still-warranted open. */
+export function useAutoOpenHenryWelcome() {
+  const open = useOpenHenry();
+  const enabled = useCellEnabled("copilot");
+  const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, enabled, staleTime: 5000 });
+  const hasExample = (tracks ?? []).some((k) => k.example);
+  const { data: history } = useQuery({
+    queryKey: ["chatHistory"], queryFn: api.chatHistory,
+    enabled: enabled && hasExample, staleTime: 60000,
+  });
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || !hasExample || firedRef.current || !history) return;
+    if ((history.messages?.length ?? 0) > 0) return;
+    firedRef.current = true;
+    open();
+  }, [enabled, hasExample, history, open]);
 }
 
 /** The launcher button itself, unpositioned - for a screen that already has a

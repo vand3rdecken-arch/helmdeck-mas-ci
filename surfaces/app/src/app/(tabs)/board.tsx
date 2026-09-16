@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
 import { CopilotOverlay } from "@/app/chat";
-import { HenryFab } from "@/ui/henry_chat";
+import { HenryFab, useAutoOpenHenryWelcome } from "@/ui/henry_chat";
 import { BoardList } from "@/ui/board";
 import { BoardSwitcher } from "@/ui/board_switcher";
 import { GlowBackdrop } from "@/ui/glow";
@@ -42,6 +42,10 @@ export default function BoardTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { wide } = useResponsive();
+  // Onboarding's guided sample card exists to be MET, not just found - see
+  // useAutoOpenHenryWelcome's own docstring for why this is derived rather
+  // than a stored "first run" flag.
+  useAutoOpenHenryWelcome();
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       <GlowBackdrop />

@@ -68,6 +68,12 @@ export const composer: Dict = {
   "chat.title": { de: "Henry", en: "Henry" },
   "chat.placeholder": { de: "Frage…", en: "Question…" },
   "chat.empty": { de: "Frag Henry über die Arbeit.", en: "Ask Henry about the work." },
+  // Static local greeting shown once (no daemon call - see henry_chat.tsx
+  // useAutoOpenHenryWelcome): introduces Henry and the guided sample card.
+  "chat.welcome": {
+    de: "Hi, ich bin Henry, dein Copilot für dieses Board. Auf dem Board liegt eine Beispielkarte - sie zeigt, wie eine Karte durchs Board läuft (Backlog → Working → Review → Done), startet aber nie einen Agenten und kostet nichts. Schau sie dir an, oder frag mich einfach etwas.",
+    en: "Hi, I'm Henry, your copilot for this board. There's a sample card on the board - it shows how a card moves through the board (Backlog → Working → Review → Done), but it never starts an agent and costs nothing. Take a look, or just ask me something.",
+  },
   "chat.followups.line": { de: "Henry hat geprüft: {n}", en: "Henry checked: {n}" },
   "chat.followups.lineLive": { de: "Henry prüft gerade: {m} · {n} gesamt", en: "Henry is checking: {m} · {n} total" },
   "chat.teamOnly": { de: "Henry ist nur für das Team.", en: "Henry is for the team only." },
