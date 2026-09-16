@@ -372,6 +372,7 @@ check(n_after == n_before, "policy.auto_continue=false -> the hand-back is shown
 db.chat_clear()
 with copilot._pending_lock:
     copilot._pending_actions.pop(SK, None)
+KL = "Karte läuft, ich meld mich.\n\n```actions\n[{\"type\": \"clarify_goal\", \"text\": \"x\"}]\n```"
 CMD = "cat <<'EOF'\n{\"type\": \"direct_task\", \"task\": \"Onboarding bauen\", \"dispatch\": true}\nEOF"
 SCRIPT["lines"] = (_text("Ich leg die Karte an.")
                    + [{"type": "assistant", "message": {"content": [
@@ -379,8 +380,7 @@ SCRIPT["lines"] = (_text("Ich leg die Karte an.")
                        "usage": {"input_tokens": 1, "output_tokens": 1}}},
                       {"type": "user", "message": {"content": [
                           {"type": "tool_result", "tool_use_id": "sh1", "content": CMD.split("\n")[1]}]}}]
-                   + _text("Karte läuft, ich meld mich.\n\n```actions\n[{\"type\": \"clarify_goal\", \"text\": \"x\"}]\n```")
-                   + _result("x"))
+                   + _text(KL) + _result(KL))     # the actions block is parsed from the result frame
 out = copilot.chat(OWNER, "mach die karte", role="owner")
 check([a.get("type") for a in out.get("actions") or []] == ["clarify_goal"], "only the real actions block ran (got %r)" % out.get("actions"))
 with copilot._pending_lock:
