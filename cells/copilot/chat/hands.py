@@ -235,7 +235,8 @@ def _land(hid, status, result, steps):
                 "HANDS %s (%s): %s\n%s" % (status.upper(), hid, title, full))
     except Exception:                                    # noqa: BLE001
         pass
-    line = "Hände %s: %s\n%s" % ("fertig" if status == "completed" else "fehlgeschlagen", title, short)
+    word = "fertig" if status == "completed" else "fehlgeschlagen"
+    line = "Hände %s: %s\n%s" % (word, title, short)
     try:
         if card:
             from spine.agent import timeline_store
@@ -246,7 +247,16 @@ def _land(hid, status, result, steps):
                                       {"kind": "note", "text": line, "byKind": "henry",
                                        "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
         else:
-            copilot._append_log(user, [{"cls": "act", "text": line, "ts": time.strftime("%H:%M")}])
+            # Owner ask 2026-09-16: render like the worker-card mirror box
+            # (cls "card"/byKind "worker" in chat.tsx toStep), not the plain
+            # plumbing "note" line generic action results get - a hands report
+            # is a full sub-agent turn, worth reading like one. cls "hands" is
+            # its own value (not "card": that one is bound to a real card id
+            # and routes replies through routes_copilot._route_to_card, which
+            # a bare hands run has no target for) so chat.tsx can box it under
+            # sender "Hände" without wiring an inline-reply route to nowhere.
+            copilot._append_log(user, [{"cls": "hands", "text": "%s: %s\n%s" % (word, title, short),
+                                        "ts": time.strftime("%H:%M")}])
             # Owner report 2026-09-16: a hands result landed in the transcript
             # but never pinged the phone/watch - he only saw it because Henry
             # happened to quote it back in a later reply. copilot.py's own

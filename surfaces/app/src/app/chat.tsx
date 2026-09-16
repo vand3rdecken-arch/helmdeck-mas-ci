@@ -105,6 +105,14 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   if (m.cls === "act") {
     return { role: "assistant", kind: "note", cls: m.cls, text: m.text, ts: m.ts };
   }
+  // Owner ask 2026-09-16: a hands run is a full sub-agent turn worth reading
+  // like one, not plumbing like a plain "moved x -> review" note - box it the
+  // same way a worker-card mirror renders (cls "card" below), just under its
+  // own sender so it's never mistaken for Henry's own words or a card's.
+  if (m.cls === "hands") {
+    return { role: "assistant", kind: "text", cls: m.cls, text: m.text, ts: m.ts,
+             by: "Hände", byKind: "worker" };
+  }
   if (m.cls === "card") {
     const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
     return {

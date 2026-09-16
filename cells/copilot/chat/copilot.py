@@ -1834,14 +1834,14 @@ def _inbox_since(user, limit=8):
         rows = _db.chat_tail(user, 40)
         last_bot = max((i for i, m in enumerate(rows) if m.get("cls") == "bot"), default=-1)
         seen = [m for m in rows[last_bot + 1:]
-                if m.get("cls") in ("pm", "card", "act", "error") and (m.get("text") or "").strip()]
+                if m.get("cls") in ("pm", "card", "act", "hands", "error") and (m.get("text") or "").strip()]
         if not seen:
             return ""
 
         def _tag(m):
             if m.get("cls") == "card":
                 return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
-            return {"pm": "System/Broker", "act": "Aktion", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
+            return {"pm": "System/Broker", "act": "Aktion", "hands": "Hände", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
         # In ORDER, oldest first - the sequence the owner actually read.
         return "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
                          for m in seen[-limit:])
