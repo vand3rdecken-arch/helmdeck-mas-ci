@@ -289,11 +289,54 @@ def _start_keepalive_loop():
                     else:
                         print("copilot: warm port hung on keepalive - dropped, respawn on next turn", flush=True)
                         _persist_drop(bkey)
+                    _done_bg = henry_bg.take_closed(bkey)
                 finally:
                     lock.release()
+                if _done_bg:
+                    _schedule_bg_continue(user, _done_bg)
             except Exception:                                    # noqa: BLE001
                 pass                   # a missed refresh degrades to the reactive path, never crashes the daemon
     threading.Thread(target=_loop, daemon=True, name="henry-keepalive").start()
+
+
+def _schedule_bg_continue(user, done):
+    """A background agent of Henry's handed back BETWEEN turns (the ping fold
+    closed it). Nobody reacts to that on its own: in -p stream mode the CLI
+    queues the task-notification for the NEXT user message, and the next
+    message was a Systemcheck ping answered with "ok" (owner 2026-09-16
+    18:59 "Es steckt fest": Henry had said "ich meld mich gleich" at 18:51
+    and never could). Card parity: sessions_bg._sweep_background continues a
+    card once its background work finished; this is the chat's half. Runs
+    off the caller's thread (the ping holds the turn lock)."""
+    from spine.storage import events
+    pol = events.settings().get("policy") or {}
+    if not pol.get("auto_continue", True):
+        return
+    from spine.http import server as _srv
+    _srv._bg("henry:bg-continue:" + str(int(time.time())), lambda: _bg_continue(user, done))
+
+
+def _bg_continue(user, done):
+    from spine.ops import ask as _ask
+    lines = []
+    for t in done:
+        word = {"completed": "fertig", "failed": "FEHLGESCHLAGEN", "canceled": "abgebrochen"}.get(t.get("status"), t.get("status"))
+        lines.append("- %s: %s%s" % (t.get("title") or t.get("uid"), word,
+                                    (" - " + t["result"][:300]) if t.get("result") else ""))
+    prompt = _ask.harness_msg(
+        "background-done",
+        "Dein Hintergrund-Agent hat sich gemeldet - das hier ist ein automatischer "
+        "Hinweis des Harness, keine Nachricht vom Owner:\n" + "\n".join(lines) + "\n\n"
+        "Das vollstaendige Ergebnis steht in deinem Verlauf (task-notification). "
+        "Mach jetzt genau dort weiter, wo du auf ihn gewartet hast, und antworte dem "
+        "Owner im Chat - er wartet seit deinem 'ich meld mich gleich'. Nichts "
+        "wiederholen, was du ihm schon gesagt hast.")
+    try:
+        chat(user, prompt, role="owner", harness_note="Hintergrund-Agent %s: %s" % (
+            "fertig" if all(t.get("status") == "completed" for t in done) else "beendet",
+            "; ".join((t.get("title") or "")[:60] for t in done)))
+    except Exception as e:                                       # noqa: BLE001
+        print("copilot: bg-continue turn failed -", str(e)[:200], flush=True)
 
 
 def prewarm(user, spoken=True):
@@ -388,8 +431,11 @@ def prewarm(user, spoken=True):
                 else:
                     print("copilot: warm port hung on keepalive - dropped, respawn on next turn", flush=True)
                     _persist_drop(bkey)
+                _done_bg = henry_bg.take_closed(bkey)
             finally:
                 lock.release()
+            if _done_bg:
+                _schedule_bg_continue(user, _done_bg)
         except Exception:
             pass
     threading.Thread(target=_go, daemon=True).start()
@@ -2040,7 +2086,8 @@ def build_argv(cli_model, sid, system):
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
-         client_msg_id="", announce=True, _retried=False, model_source="user", mode=""):
+         client_msg_id="", announce=True, _retried=False, model_source="user", mode="",
+         harness_note=""):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -2152,9 +2199,15 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # client_msg_id rides along so the app can reconcile its optimistic
         # bubble instead of drawing a duplicate. The completion path appends
         # only the bot entry now.
-        _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
-        if client_msg_id:
-            _you["client_msg_id"] = client_msg_id
+        if harness_note:
+            # a turn the HARNESS started (bg-continue): the owner typed
+            # nothing, so no "you" bubble - one plumbing line saying why
+            # Henry speaks now, same class as the action-result rows
+            _you = {"cls": "act", "text": harness_note, "ts": time.strftime("%H:%M")}
+        else:
+            _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
+            if client_msg_id:
+                _you["client_msg_id"] = client_msg_id
         _append_log(user, [_you])
     # A turn carries the context of the surface it belongs to, and only that.
     # A CARD chat gets that card's own timeline (worker steps, Henry's notes,

@@ -28,6 +28,7 @@ import time
 _lock = threading.Lock()
 _tasks = {}          # skey -> {uid: BgTask dict (+ "user")}
 _cand = {}           # skey -> {uid: (title, detail)}
+_closed = {}         # skey -> [uid] closed since the last take_closed() - the auto-continue cue
 _re_done = re.compile(r"<tool-use-id>(.*?)</tool-use-id>", re.S)
 _re_status = re.compile(r"<status>(.*?)</status>", re.S)
 
@@ -108,7 +109,20 @@ def _close(skey, uid, status, result):
         if not t or t["status"] != "running":
             return
         t["status"], t["result"], t["updated"] = status, (result or "")[:400], time.time()
+        _closed.setdefault(skey, []).append(uid)
     _emit(status, skey, uid, result=(result or "")[:200])
+
+
+def take_closed(skey):
+    """Pop the tasks closed since the last call - descriptors, not ids. The
+    ping reader calls this after its fold: a non-empty answer means a
+    hand-back landed BETWEEN turns, i.e. nobody is going to react to it
+    unless the harness starts a turn (copilot._bg_continue). Popped, so one
+    hand-back drives exactly one continue."""
+    with _lock:
+        uids = _closed.pop(skey, [])
+        per = _tasks.get(skey) or {}
+        return [dict(per[u], uid=u) for u in uids if u in per]
 
 
 def finish_all(skey, why):

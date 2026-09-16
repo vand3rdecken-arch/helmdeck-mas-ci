@@ -219,8 +219,10 @@ hid = "test-hands-1"
 with hands._lock:
     hands._tasks[hid] = {"title": "t", "status": "failed", "since": 0, "updated": 0, "detail": "",
                          "result": "", "pid": 0, "user": OWNER, "skey": copilot._skey(OWNER, None), "card": None}
-copilot._append_log = lambda *a, **k: None
+_real_append_log = copilot._append_log
+copilot._append_log = lambda *a, **k: None      # hands' chat row is not under test here
 hands._land(hid, "failed", big, 3)
+copilot._append_log = _real_append_log           # restore - the tests below read the chat log
 with copilot._pending_lock:
     pend = list(copilot._pending_actions.get(copilot._skey(OWNER, None)) or [])
 check(pend and "line 39" in pend[-1], "hands report reaches Henry uncut (%d chars)" % len(pend[-1] if pend else ""))
@@ -324,6 +326,43 @@ t = _bg().get("bg:tu_bg3")
 check(t and t.get("status") == "failed" and "beendet" in (t.get("result") or ""),
       "_persist_drop reconciles: open agents -> failed with the reason (got %r)" % t)
 check(not henry_bg.running_ids(SK), "nothing left running after the drop")
+
+
+# 7) AUTO-CONTINUE (owner 2026-09-16 18:59 "Es steckt fest"): the hand-back
+#    landed between turns, the ping read it, and nobody started the turn in
+#    which Henry could say what he found - he had promised "ich meld mich
+#    gleich" at 18:51. Card parity: sessions_bg._sweep_background. The ping
+#    reader now hands closed tasks to _schedule_bg_continue, which runs ONE
+#    harness turn: an act row (not a "you" bubble) + Henry's reply.
+db.chat_clear()
+henry_bg.take_closed(SK)                          # drain what section 6 closed
+SCRIPT["lines"] = _text("Los.") + _agent_launch("tu_bg4", "Explore onboarding") + _result("x")
+copilot.chat(OWNER, "vier", role="owner")
+lines = [json.dumps(x) + "\n" for x in [
+    {"type": "system", "subtype": "task_notification", "tool_use_id": "tu_bg4", "status": "completed",
+     "summary": "3 Fakten gefunden"},
+    {"type": "result", "result": "ok", "usage": {"input_tokens": 2, "cache_read_input_tokens": 100}}]]
+copilot._ping_process(_FakeProc(lines), skey=SK)
+done = henry_bg.take_closed(SK)
+check(len(done) == 1 and done[0].get("uid") == "tu_bg4" and done[0].get("status") == "completed",
+      "after the ping fold, take_closed hands over the finished task once (got %r)" % done)
+check(henry_bg.take_closed(SK) == [], "...and only once")
+SCRIPT["lines"] = _text("Recherche ist da: drei Fakten. Meine Fragen an dich: ...") + _result("x")
+copilot._schedule_bg_continue(OWNER, done)          # server._bg runs inline in this test
+msgs = (copilot.history(OWNER) or {}).get("messages") or []
+acts = [m for m in msgs if m.get("cls") == "act" and "Hintergrund-Agent" in (m.get("text") or "")]
+yous = [m for m in msgs if m.get("cls") == "you" and "Harness" in (m.get("text") or "")]
+check(len(acts) == 1 and "Explore onboarding" in acts[0]["text"],
+      "the harness turn shows as ONE plumbing line naming the agent (got %r)" % [a.get("text") for a in acts])
+check(not yous, "the harness prompt is never drawn as something the owner typed")
+check(last_bot() and last_bot().startswith("Recherche ist da"), "Henry's follow-up lands as a normal bot row (got %r)" % last_bot())
+# policy.auto_continue off -> no turn
+db.chat_clear()
+events.save_settings(dict(events.settings(), policy={"auto_continue": False})) if hasattr(events, "save_settings") else None
+n_before = len((copilot.history(OWNER) or {}).get("messages") or [])
+copilot._schedule_bg_continue(OWNER, done)
+n_after = len((copilot.history(OWNER) or {}).get("messages") or [])
+check(n_after == n_before, "policy.auto_continue=false -> the hand-back is shown on the bg line but no turn is started")
 
 print()
 if _fails:
