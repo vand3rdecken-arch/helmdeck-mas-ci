@@ -723,11 +723,11 @@ ${wl("wearables")}
   function applyConsent(v){
     setConsent(v);
     hideBar();
-    if (v === "granted") { loadPosthog(); cap("page_view"); }
+    if (v === "granted") { loadPosthog(); cap("$pageview"); }
     else if (posthogLoaded) { try { posthog.opt_out_capturing(); } catch(e){} }
   }
   var existingConsent = getConsent();
-  if (existingConsent === "granted") { loadPosthog(); cap("page_view"); }
+  if (existingConsent === "granted") { loadPosthog(); cap("$pageview"); }
   else if (existingConsent !== "declined") { showBar(); }
   var cookieAccept = document.getElementById("cookie-accept");
   var cookieDecline = document.getElementById("cookie-decline");
