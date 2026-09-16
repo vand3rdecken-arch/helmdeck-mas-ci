@@ -1,0 +1,1 @@
+Introducing HelmDeck: a Kanban board where the cards actually get worked. File a task from your phone, an agent runs it end-to-end on your own PC, and you approve or reject the result from bed. No account. No ads. No servers. Because there are none.

@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>HelmDeck — brag</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0e0f10;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      /* ---------- shared scene chrome ---------- */
+      .scene {
+        width: 100%;
+        height: 100%;
+        background: #0e0f10;
+        overflow: hidden;
+      }
+      .scene-center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .glow {
+        position: absolute;
+        width: 1600px;
+        height: 1600px;
+        left: 50%;
+        top: 46%;
+        margin-left: -800px;
+        margin-top: -800px;
+        border-radius: 50%;
+        filter: blur(120px);
+        pointer-events: none;
+        opacity: 0;
+      }
+      .glow-blue {
+        background: radial-gradient(circle, rgba(61, 155, 214, 0.32) 0%, rgba(61, 155, 214, 0) 62%);
+      }
+
+      /* ---------- Scene 1: hook ---------- */
+      .hook-wrap {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 22px;
+        padding: 0 160px;
+        text-align: center;
+      }
+      .hook-line1 {
+        font-size: 62px;
+        line-height: 1.2;
+        font-weight: 600;
+        color: #e4e6e6;
+        letter-spacing: -0.01em;
+        opacity: 0;
+      }
+      .hook-line2 {
+        font-size: 32px;
+        font-weight: 400;
+        color: #afb3b6;
+        opacity: 0;
+      }
+
+      /* ---------- Scene 2: compose ---------- */
+      .wordmark-sm {
+        position: absolute;
+        top: 64px;
+        left: 96px;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        color: #e4e6e6;
+        opacity: 0;
+      }
+      .composer-panel {
+        position: absolute;
+        left: 50%;
+        top: 46%;
+        width: 920px;
+        margin-left: -460px;
+        margin-top: -140px;
+        background: #141515;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 22px;
+        padding: 40px 44px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+        opacity: 0;
+      }
+      .composer-input-row {
+        display: block;
+        font-size: 32px;
+        color: #e4e6e6;
+        min-height: 44px;
+        line-height: 44px;
+      }
+      .composer-caret {
+        display: inline-block;
+        width: 3px;
+        height: 32px;
+        background: #3d9bd6;
+        vertical-align: -6px;
+        margin-left: 3px;
+      }
+      .composer-chip {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        align-self: flex-start;
+        background: #1d1f20;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        padding: 10px 22px;
+        color: #afb3b6;
+        font-size: 19px;
+        opacity: 0;
+      }
+      .chip-dot {
+        display: block;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #3d9bd6;
+      }
+      .compose-tagline {
+        position: absolute;
+        left: 50%;
+        top: 46%;
+        margin-left: -460px;
+        margin-top: 190px;
+        width: 920px;
+        text-align: center;
+        font-size: 23px;
+        color: #afb3b6;
+        opacity: 0;
+      }
+
+      /* ---------- Scene 3: board ---------- */
+      .board-wrap {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1600px;
+        height: 640px;
+        margin-left: -800px;
+        margin-top: -360px;
+        opacity: 0;
+      }
+      .board-col-header {
+        position: absolute;
+        top: 0;
+        width: 380px;
+        height: 40px;
+        font-size: 20px;
+        font-weight: 600;
+        color: #afb3b6;
+        letter-spacing: 0.02em;
+      }
+      .board-col-header::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 10px;
+        vertical-align: 2px;
+      }
+      .col-0 {
+        left: 10px;
+      }
+      .col-1 {
+        left: 410px;
+      }
+      .col-2 {
+        left: 810px;
+      }
+      .col-3 {
+        left: 1210px;
+      }
+      .col-0::before {
+        background: #afb3b6;
+      }
+      .col-1::before {
+        background: #3d9bd6;
+      }
+      .col-2::before {
+        background: #967af0;
+      }
+      .col-3::before {
+        background: #5cb572;
+      }
+      .board-divider {
+        position: absolute;
+        top: 0;
+        width: 1px;
+        height: 560px;
+        background: rgba(255, 255, 255, 0.07);
+      }
+      .div-1 {
+        left: 400px;
+      }
+      .div-2 {
+        left: 800px;
+      }
+      .div-3 {
+        left: 1200px;
+      }
+      .board-card {
+        position: absolute;
+        left: 70px;
+        top: 200px;
+        width: 260px;
+        height: 128px;
+        background: #141515;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-left: 4px solid #afb3b6;
+        border-radius: 14px;
+        padding: 20px 22px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .board-card-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #e4e6e6;
+      }
+      .board-card-sub {
+        font-size: 15px;
+        color: #afb3b6;
+      }
+      .chip-row {
+        position: absolute;
+        left: 50%;
+        top: 470px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 16px;
+      }
+      .status-chip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #1d1f20;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        padding: 10px 22px;
+        font-size: 17px;
+        color: #afb3b6;
+        opacity: 0;
+      }
+      .status-chip .chip-dot {
+        width: 8px;
+        height: 8px;
+      }
+
+      /* ---------- Scene 4: sign-off ---------- */
+      .signoff-wrap {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 1400px;
+        height: 420px;
+        margin-left: -700px;
+        margin-top: -210px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        opacity: 0;
+      }
+      .signoff-panel {
+        position: relative;
+        width: 900px;
+        height: 320px;
+        background: #141515;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 22px;
+        padding: 44px 48px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+      }
+      .signoff-title {
+        font-size: 20px;
+        color: #afb3b6;
+        margin-bottom: 26px;
+        letter-spacing: 0.02em;
+      }
+      .signoff-pills {
+        display: flex;
+        gap: 20px;
+      }
+      .signoff-pill {
+        flex: 1;
+        text-align: center;
+        border-radius: 16px;
+        padding: 22px 0;
+        font-size: 21px;
+        font-weight: 600;
+        border: 2px solid;
+        background: transparent;
+      }
+      .pill-approved {
+        color: #5cb572;
+        border-color: #5cb572;
+      }
+      .pill-reviewed {
+        color: #967af0;
+        border-color: #967af0;
+      }
+      .pill-rejected {
+        color: #ea6a66;
+        border-color: #ea6a66;
+      }
+      .cursor-dot {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: rgba(228, 230, 230, 0.9);
+        box-shadow: 0 0 0 6px rgba(228, 230, 230, 0.18);
+        opacity: 0;
+      }
+      .done-slot {
+        width: 340px;
+        height: 300px;
+        border: 1px dashed rgba(255, 255, 255, 0.14);
+        border-radius: 18px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        color: #afb3b6;
+      }
+      .done-slot-label {
+        font-size: 18px;
+        letter-spacing: 0.03em;
+      }
+      .mini-card {
+        position: absolute;
+        left: 48px;
+        top: 170px;
+        width: 240px;
+        height: 118px;
+        background: #141515;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-left: 4px solid #967af0;
+        border-radius: 14px;
+        padding: 18px 20px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+      }
+      .mini-card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #e4e6e6;
+      }
+      .mini-card-sub {
+        font-size: 14px;
+        color: #afb3b6;
+      }
+
+      /* ---------- Scene 5: outro ---------- */
+      .outro-wrap {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 26px;
+        text-align: center;
+      }
+      .outro-word {
+        font-size: 80px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: #e4e6e6;
+        opacity: 0;
+      }
+      .outro-line {
+        font-size: 26px;
+        color: #afb3b6;
+        max-width: 1100px;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="helmdeck-brag"
+      data-start="0"
+      data-duration="21.5"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- SCENE 1: hook — 0.0 to 4.3 -->
+      <section id="scene-hook" class="clip scene scene-center" data-start="0" data-duration="4.3">
+        <div class="glow glow-blue" id="glow-hook" data-layout-allow-overflow="true"></div>
+        <div class="hook-wrap">
+          <p class="hook-line1" id="hook-line1">Never sit in front of a PC again.</p>
+          <p class="hook-line2" id="hook-line2">unless you want to.</p>
+        </div>
+      </section>
+
+      <!-- SCENE 2: compose — 4.0 to 8.3 -->
+      <section id="scene-compose" class="clip scene" data-start="4" data-duration="4.3">
+        <div class="wordmark-sm" id="wordmark-compose">HelmDeck</div>
+        <div class="composer-panel" id="composer-panel">
+          <div class="composer-input-row" id="composer-text-row">
+            <span id="composer-text"></span><span class="composer-caret"></span>
+          </div>
+          <div class="composer-chip" id="photo-chip"><span class="chip-dot"></span>screenshot.png</div>
+        </div>
+        <div class="compose-tagline" id="compose-tagline">A task board where the tickets get done.</div>
+      </section>
+
+      <!-- SCENE 3: board — 8.0 to 14.3 -->
+      <section id="scene-board" class="clip scene" data-start="8" data-duration="6.3">
+        <div class="board-wrap" id="board-wrap">
+          <div class="board-col-header col-0">Backlog</div>
+          <div class="board-col-header col-1">Working</div>
+          <div class="board-col-header col-2">Review</div>
+          <div class="board-col-header col-3">Done</div>
+          <div class="board-divider div-1"></div>
+          <div class="board-divider div-2"></div>
+          <div class="board-divider div-3"></div>
+          <div class="board-card" id="board-card">
+            <div class="board-card-title">Fix login crash</div>
+            <div class="board-card-sub" id="board-card-sub">queued</div>
+          </div>
+          <div class="chip-row">
+            <div class="status-chip" id="chip-queued"><span class="chip-dot" style="background:#afb3b6"></span>queued</div>
+            <div class="status-chip" id="chip-running"><span class="chip-dot" style="background:#3d9bd6"></span>running</div>
+            <div class="status-chip" id="chip-gating"><span class="chip-dot" style="background:#967af0"></span>gating</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCENE 4: sign-off — 14.0 to 18.3 -->
+      <section id="scene-signoff-real" class="clip scene" data-start="14" data-duration="4.3">
+        <div class="signoff-wrap" id="signoff-wrap">
+          <div class="signoff-panel">
+            <div class="signoff-title">Sign off</div>
+            <div class="signoff-pills">
+              <div class="signoff-pill pill-approved" id="pill-approved">Approved</div>
+              <div class="signoff-pill pill-reviewed" id="pill-reviewed">Reviewed</div>
+              <div class="signoff-pill pill-rejected" id="pill-rejected">Rejected</div>
+            </div>
+            <div class="mini-card" id="mini-card" data-layout-allow-overflow="true">
+              <div class="mini-card-title">Fix login crash</div>
+              <div class="mini-card-sub">Review</div>
+            </div>
+          </div>
+          <div class="done-slot">
+            <div class="done-slot-label" id="done-label">Done</div>
+          </div>
+          <div class="cursor-dot" id="cursor-dot"></div>
+        </div>
+      </section>
+
+      <!-- SCENE 5: outro — 18.0 to 21.5 -->
+      <section id="scene-outro" class="clip scene scene-center" data-start="18" data-duration="3.5">
+        <div class="glow glow-blue" id="glow-outro" data-layout-allow-overflow="true"></div>
+        <div class="outro-wrap">
+          <div class="outro-word" id="outro-word">HelmDeck</div>
+          <div class="outro-line" id="outro-line">No account. No ads. No servers. Because there are none.</div>
+        </div>
+      </section>
+
+      <!-- ================= AUDIO ================= -->
+      <audio
+        id="bg-music"
+        src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"
+        data-start="0"
+        data-duration="21.5"
+        data-track-index="10"
+        data-volume="1"
+      ></audio>
+
+      <!-- typing ticks (sparse, thinned for a dense sentence per audio.md restraint guidance) -->
+      <audio id="kp-1" src="assets/sfx/keyboard/keypress-001.wav" data-start="4.55" data-duration="0.15" data-track-index="11" data-volume="0.32"></audio>
+      <audio id="kp-2" src="assets/sfx/keyboard/keypress-002.wav" data-start="4.68" data-duration="0.15" data-track-index="12" data-volume="0.30"></audio>
+      <audio id="kp-3" src="assets/sfx/keyboard/keypress-003.wav" data-start="4.9" data-duration="0.15" data-track-index="13" data-volume="0.30"></audio>
+      <audio id="kp-4" src="assets/sfx/keyboard/keypress-004.wav" data-start="5.12" data-duration="0.15" data-track-index="14" data-volume="0.30"></audio>
+      <audio id="kp-5" src="assets/sfx/keyboard/keypress-005.wav" data-start="5.3" data-duration="0.15" data-track-index="15" data-volume="0.30"></audio>
+      <audio id="kp-6" src="assets/sfx/keyboard/keypress-006.wav" data-start="5.48" data-duration="0.15" data-track-index="16" data-volume="0.32"></audio>
+
+      <audio id="sfx-photo-drop" src="assets/sfx/interface/drop_001.ogg" data-start="5.9" data-duration="0.11" data-track-index="17" data-volume="0.55"></audio>
+
+      <audio id="sfx-chip-queued" src="assets/sfx/interface/drop_002.ogg" data-start="8.3" data-duration="0.19" data-track-index="18" data-volume="0.42"></audio>
+      <audio id="sfx-chip-running" src="assets/sfx/interface/drop_002.ogg" data-start="8.74" data-duration="0.19" data-track-index="19" data-volume="0.20"></audio>
+      <audio id="sfx-chip-gating" src="assets/sfx/interface/drop_002.ogg" data-start="9.29" data-duration="0.19" data-track-index="20" data-volume="0.16"></audio>
+
+      <audio id="sfx-slide-1" src="assets/sfx/casino/card-slide-2.ogg" data-start="8.74" data-duration="0.5" data-track-index="21" data-volume="0.6"></audio>
+      <audio id="sfx-slide-2" src="assets/sfx/casino/card-slide-4.ogg" data-start="9.7" data-duration="0.5" data-track-index="22" data-volume="0.55"></audio>
+      <audio id="sfx-slide-3" src="assets/sfx/casino/card-slide-6.ogg" data-start="17.6" data-duration="0.5" data-track-index="23" data-volume="0.55"></audio>
+
+      <audio id="sfx-approve-chime" src="assets/sfx/impact/impactSoft_medium_002.ogg" data-start="17.47" data-duration="0.14" data-track-index="24" data-volume="0.55"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      /* ===================== Scene 1 — Hook (0 – 4.3) ===================== */
+      tl.fromTo("#glow-hook", { opacity: 0 }, { opacity: 1, duration: 1.2, ease: "sine.out" }, 0);
+      tl.fromTo("#hook-line1", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, ease: "power3.out" }, 0.3);
+      tl.fromTo("#hook-line2", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 1.35);
+      tl.to("#glow-hook", { opacity: 0.6, duration: 1.1, ease: "sine.inOut" }, 1.7);
+      tl.to("#glow-hook", { opacity: 0.35, duration: 1.1, ease: "sine.inOut" }, 2.8);
+      tl.to("#scene-hook", { opacity: 0, duration: 0.35, ease: "power1.in" }, 3.95);
+
+      /* ===================== Scene 2 — Compose (4.0 – 8.3) ===================== */
+      tl.fromTo("#scene-compose", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, 3.95);
+      tl.fromTo("#wordmark-compose", { opacity: 0, y: -8 }, { opacity: 1, y: 0, duration: 0.4 }, 4.1);
+      tl.fromTo(
+        "#composer-panel",
+        { opacity: 0, y: 18, scale: 0.97 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.45, ease: "power3.out" },
+        4.2
+      );
+
+      // typing — character by character, 19 chars incl. spaces, 4.55 -> ~5.6
+      (function typeText() {
+        const full = "Fix the login crash";
+        const el = document.getElementById("composer-text");
+        const startT = 4.55;
+        const step = 0.058;
+        for (let i = 0; i <= full.length; i++) {
+          tl.call(
+            (function (txt) {
+              return function () {
+                el.textContent = txt;
+              };
+            })(full.slice(0, i)),
+            [],
+            startT + i * step
+          );
+        }
+      })();
+
+      tl.fromTo("#photo-chip", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(1.6)" }, 5.9);
+      tl.fromTo("#compose-tagline", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.5 }, 6.3);
+      tl.to("#scene-compose", { x: -140, opacity: 0, duration: 0.35, ease: "power2.in" }, 7.95);
+
+      /* ===================== Scene 3 — Board (8.0 – 14.3) ===================== */
+      tl.fromTo("#scene-board", { x: 140, opacity: 0 }, { x: 0, opacity: 1, duration: 0.35, ease: "power2.out" }, 8.0);
+      tl.fromTo("#board-wrap", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 8.0);
+
+      // status chip 1: queued (natural timing, ahead of the beat-locked moves)
+      tl.fromTo("#chip-queued", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.3 }, 8.3);
+
+      // beat-locked: card Backlog -> Working @ 8.74s
+      tl.to(
+        "#board-card",
+        { x: 400, borderLeftColor: "#3d9bd6", duration: 0.45, ease: "power2.inOut" },
+        8.74
+      ); // beat-locked: 8.74s
+      tl.call(() => (document.getElementById("board-card-sub").textContent = "running"), [], 8.74);
+      tl.fromTo("#chip-running", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.3 }, 8.74); // beat-locked: 8.74s
+
+      // beat-locked: gating chip @ 9.29s
+      tl.fromTo("#chip-gating", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.3 }, 9.29); // beat-locked: 9.29s
+      tl.call(() => (document.getElementById("board-card-sub").textContent = "gating"), [], 9.55);
+
+      // card Working -> Review, glow shifts to human/purple, holds through the rest of the scene
+      tl.to("#board-card", { x: 800, borderLeftColor: "#967af0", duration: 0.5, ease: "power2.inOut" }, 9.7);
+      tl.call(() => (document.getElementById("board-card-sub").textContent = "needs you"), [], 10.05);
+
+      tl.to("#scene-board", { x: -140, opacity: 0, duration: 0.35, ease: "power2.in" }, 14.0);
+
+      /* ===================== Scene 4 — Sign-off (14.0 – 18.3) ===================== */
+      tl.fromTo("#scene-signoff-real", { x: 140, opacity: 0 }, { x: 0, opacity: 1, duration: 0.35, ease: "power2.out" }, 14.0);
+      tl.fromTo("#signoff-wrap", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 14.0);
+      tl.fromTo("#mini-card", { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.35 }, 14.3);
+      // cursor fades in hovering just above the Approved pill, then descends and taps — beat-locked @ 17.47s
+      tl.fromTo("#cursor-dot", { opacity: 0, x: 160, y: 67 }, { opacity: 1, x: 160, y: 67, duration: 0.3 }, 14.8);
+      tl.to("#cursor-dot", { y: 157, duration: 0.9, ease: "power2.inOut" }, 16.4);
+      tl.to("#cursor-dot", { scale: 0.7, duration: 0.12, yoyo: true, repeat: 1 }, 17.47); // beat-locked: 17.47s
+      tl.to(
+        "#pill-approved",
+        { backgroundColor: "#5cb572", color: "#0e0f10", duration: 0.2, ease: "power1.out" },
+        17.47
+      ); // beat-locked: 17.47s
+
+      // result: mini-card leaves the panel and lands in the Done slot
+      tl.to("#mini-card", { x: 1062, y: -69, borderLeftColor: "#5cb572", duration: 0.5, ease: "power2.inOut" }, 17.6);
+      tl.call(
+        () => {
+          const sub = document.querySelector("#mini-card .mini-card-sub");
+          if (sub) sub.textContent = "Done";
+        },
+        [],
+        17.85
+      );
+      tl.to("#done-label", { color: "#5cb572", duration: 0.3 }, 17.85);
+      tl.to("#cursor-dot", { opacity: 0, duration: 0.2 }, 17.7);
+
+      tl.to("#scene-signoff-real", { opacity: 0, duration: 0.3, ease: "power1.in" }, 17.95);
+
+      /* ===================== Scene 5 — Outro (18.0 – 21.5) ===================== */
+      tl.fromTo("#scene-outro", { opacity: 0 }, { opacity: 1, duration: 0.35 }, 17.95);
+      tl.fromTo("#glow-outro", { opacity: 0 }, { opacity: 0.5, duration: 1.0, ease: "sine.out" }, 18.0);
+      tl.fromTo("#outro-word", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 18.3);
+      tl.fromTo("#outro-line", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 18.9);
+      tl.to("#glow-outro", { opacity: 0.3, duration: 1.6, ease: "sine.inOut" }, 19.6);
+
+      /* ===================== Music shaping ===================== */
+      tl.fromTo("#bg-music", { volume: 0 }, { volume: 0.18, duration: 1.0 }, 0);
+      tl.to("#bg-music", { volume: 0.3, duration: 1.0 }, 7.6);
+      tl.to("#bg-music", { volume: 0.15, duration: 1.0 }, 17.5);
+      tl.to("#bg-music", { volume: 0.0, duration: 1.2 }, 20.2);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["helmdeck-brag"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
