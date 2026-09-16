@@ -1017,6 +1017,9 @@ ${wl("wearables")}
         body: JSON.stringify({ email: email, lang: lang, product: product, company: form.company.value || "" })
       }).then(function(r){ return r.json(); }).then(function(res){
         if (!res.ok){ throw new Error(res.error || "invalid"); }
+        // No PII in the event (same rule as the app's analytics.ts): the
+        // email lives only in the /api/join request, never in a PostHog prop.
+        cap("waitlist_submit", { product: product, already: !!res.already });
         document.getElementById("done-mail-" + product).textContent = email;
         var h = document.getElementById("done-h-" + product);
         h.setAttribute("data-i", res.already ? "doneAlreadyH" : "doneH");
