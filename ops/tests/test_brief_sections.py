@@ -33,8 +33,8 @@ print("brief sections")
 core = open(CORE, encoding="utf-8").read()
 idx = re.search(r"AUF ABRUF.*?\n\n", core, re.S).group(0)
 named = re.findall(r"^  ([a-z]+) +- ", idx, re.M)
-ok(set(named) == {"actions", "pipeline", "grillen", "planning", "ops"},
-   "the core's index names exactly the five sections: %s" % named)
+ok(set(named) == {"actions", "pipeline", "grillen", "planning", "charter", "ops"},
+   "the core's index names exactly the six sections: %s" % named)
 files = {fn[:-3] for fn in os.listdir(SECTIONS) if fn.endswith(".md")}
 ok(files == set(named), "every indexed section is a file and every file is indexed (%s)" % sorted(files))
 for n in sorted(files):
@@ -48,7 +48,8 @@ for slot in ("report.followup_interval", "initiative.repo_default", "hands.confi
              "hands.protected_files", "initiative.stale_check", "tone.house_rules", "memory.enabled"):
     ok("{{rule:%s}}" % slot in core, "core still carries the slot-bearing law %s" % slot)
 ok("henry_brief_get.py get <name>" in core, "core tells Henry the exact pre-approved command form")
-ok(len(core) < 30_000, "core brief stays under 30k chars (was 34.8k before the split; now %d)" % len(core))
+ok(len(core) < 15_000, "core brief stays under 15k chars (34.8k before the split, 28.5k before the 2026-09-17 thinning; now %d)" % len(core))
+ok("EMPTY result is not a finding" in core, "core carries the EVIDENCE law (2026-09-17: an empty process scan read as 'nothing runs')")
 
 print("\n" + ("FAIL (%d)" % len(fails) if fails else "brief-sections: all pinned - PASS"))
 sys.exit(1 if fails else 0)
