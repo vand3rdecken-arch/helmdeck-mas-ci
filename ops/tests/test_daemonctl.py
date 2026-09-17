@@ -28,6 +28,13 @@ from spine.ops import daemonctl  # noqa: E402
 from spine.agent import drivers  # noqa: E402
 from cells.engineer.cards import sessions  # noqa: E402
 
+# DISARM FIRST: no path in this file may reach the real Task Scheduler. The
+# route test below calls restart() without a runner; when its "a turn is live"
+# precondition slipped (2026-09-17) that fired the REAL HelmDeckRestart and
+# tree-killed the live daemon with the owner's benchmark under it.
+_real_fired = []
+daemonctl._run = lambda argv: _real_fired.append(argv) or (0, "DISARMED")
+
 _fails = []
 
 
@@ -147,6 +154,7 @@ finally:
 check(ok is False and any("turn_active" in n for n in hb.escalations.notes),
       "broker: a refused restart stays open with the reason noted")
 
+check(_real_fired == [], "no path in this file reached the (disarmed) real runner: %s" % _real_fired)
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

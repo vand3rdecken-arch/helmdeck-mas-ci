@@ -125,10 +125,15 @@ def _run(argv):
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
-def restart(force=False, actor="owner", runner=_run):
+def restart(force=False, actor="owner", runner=None):
     """Fire the out-of-tree restart. Returns {ok, reason?, turns?, detail}.
     `runner` is injectable so a test can prove the decision without touching
-    the Task Scheduler."""
+    the Task Scheduler. It resolves to the module's `_run` AT CALL TIME, so a
+    test can disarm EVERY path at once (`daemonctl._run = fake`): bound as a
+    default argument it was unreachable through the route, and on 2026-09-17 a
+    slipped precondition in test_daemonctl fired the REAL task and tree-killed
+    the owner's running benchmark."""
+    runner = runner or _run
     live = running_turns()
     if live and not force:
         return {"ok": False, "reason": "turn_active", "turns": live,
