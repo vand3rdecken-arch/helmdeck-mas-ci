@@ -104,8 +104,25 @@ class MainActivity : ComponentActivity() {
                     // AmbientLifecycleObserver." rememberAmbientModeManager()
                     // resolves the Activity via LocalActivity internally as of
                     // 1.6.0-alpha10, so it takes no Activity parameter.
-                    val ambientModeManager = rememberAmbientModeManager()
-                    CompositionLocalProvider(LocalAmbientModeManager provides ambientModeManager) {
+                    // GUARDED, not called unconditionally (found 2026-09-17 while
+                    // testing the font-scale fix below): rememberAmbientModeManager()
+                    // constructs AmbientComponentState from com.google.wear:wear-sdk,
+                    // a PROPRIETARY system class shipped only inside a real watch's
+                    // system image - not present on the generic AOSP Wear emulator
+                    // (confirmed: ClassNotFoundException, app force-closed on every
+                    // launch, google/sdk_gwear_x86 API 30). It throws in the
+                    // constructor, before any composition-local wiring - a try/catch
+                    // around the composable call itself would not help. Checked once,
+                    // not on every recomposition (`remember`); HenryScreen's existing
+                    // `LocalAmbientModeManager.current?.currentAmbientMode` is already
+                    // null-safe, so simply not providing the local when unsupported is
+                    // the correct fallback, not a new special case to maintain.
+                    val supportsAmbient = remember {
+                        runCatching {
+                            Class.forName("com.google.wear.services.ambient.AmbientComponentState")
+                        }.isSuccess
+                    }
+                    val content: @Composable () -> Unit = {
                     var paired by remember { mutableStateOf(DeviceStore.load(ctx) != null) }
 
                     // THE APP'S ONE EVENT CHANNEL, started HERE rather than
@@ -171,6 +188,15 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                    }
+                    if (supportsAmbient) {
+                        val ambientModeManager = rememberAmbientModeManager()
+                        CompositionLocalProvider(
+                            LocalAmbientModeManager provides ambientModeManager,
+                            content = content,
+                        )
+                    } else {
+                        content()
                     }
                 }
             }
