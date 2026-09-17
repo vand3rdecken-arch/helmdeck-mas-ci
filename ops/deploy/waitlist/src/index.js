@@ -572,16 +572,6 @@ footer a:hover{color:var(--ink-2)}
     </div>
   </section>
 
-  <section id="demo">
-    <h2 data-i="demoTitle">Watch it work</h2>
-    <p class="section-sub" data-i="demoSub">21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.</p>
-    <figure class="demo-shot">
-      <video controls preload="metadata" poster="${DEMO_POSTER_URL}" playsinline width="1920" height="1080">
-        <source src="${DEMO_VIDEO_URL}" type="video/mp4">
-      </video>
-    </figure>
-  </section>
-
   <section id="founder">
     <blockquote class="quote">
       <p data-i="quoteP">“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”</p>
