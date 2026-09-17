@@ -122,7 +122,11 @@ android {
         // einen anderen Release ersetzt / Nicht veroeffentlicht". Punkt 3 ist
         // gesperrt, bis Wear-Screenshots in ALLEN Sprach-Store-Eintraegen
         // liegen UND der Listing-Entwurf gespeichert ist.
-        versionCode 1000005
+        // 1000006: rebuild carrying the four post-1000005 wear-chat fixes
+        // (ee3761e0 backoff refresh, f06f8030/1e739c19 wake catch-up loading
+        // state, 4f360250 HenryScreen ambient mode) - none of them were in
+        // the vc1000005 bundle uploaded 2026-09-11.
+        versionCode 1000006
         versionName "1.0.0"
     }
 
