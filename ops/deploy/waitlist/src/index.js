@@ -560,8 +560,8 @@ footer a:hover{color:var(--ink-2)}
   <section class="hero" style="border-top:0; padding-top:1rem">
     <div class="hero-copy">
     <p class="kicker" data-i="kicker">For everyone who runs Claude Code</p>
-    <h1 data-i="h1">Claude Code asks. You answer from your phone.</h1>
-    <p class="sub" data-i="sub">HelmDeck is an app for your phone and an operator for the machine running Claude Code. Every question lands as a push, you answer, the agent carries on.</p>
+    <h1 data-i="h1">Your assistant works the PC. You are on the move.</h1>
+    <p class="sub" data-i="sub">What a virtual assistant bills 20 an hour for, your agents do on your own computer. You only approve, from your phone.</p>
     <p class="objection" data-i="objection">No cloud account. No code leaves your machine. Works with the Claude subscription you already have.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
@@ -572,17 +572,22 @@ footer a:hover{color:var(--ink-2)}
     </div>
   </section>
 
+  <section id="problem">
+    <h2 data-i="problemTitle">The time you already lose to this</h2>
+    <p class="section-sub" data-i="problemP">This is what it looks like without HelmDeck, and with it.</p>
+    <div class="why">
+      <div><b data-i="problem1H">One question, one lost hour</b><p data-i="problem1P">Without HelmDeck: the agent hits a fork, asks a question, and waits until you're back at your desk, maybe an hour later. With HelmDeck: the question lands as a push, you answer in ten seconds, it keeps going.</p></div>
+      <div><b data-i="problem2H">Research and orders eat the evening</b><p data-i="problem2P">Without HelmDeck: research, forms, orders, that is desk work for the evening. With HelmDeck: the agent does it on the machine while you're out, you only review the result.</p></div>
+      <div><b data-i="problem3H">No PC, no approval</b><p data-i="problem3P">Without HelmDeck: you can only approve sitting at the machine. With HelmDeck: you approve wherever you are, the agent already did the work.</p></div>
+    </div>
+  </section>
+
   <section id="founder">
     <blockquote class="quote">
       <p data-i="quoteP">“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”</p>
       <footer><span data-i="quoteBy">Tien Duy Vo, developer</span></footer>
     </blockquote>
     <p class="section-sub" data-i="founderFact">Built in two months, steering the agents from a phone, not a desk.</p>
-  </section>
-
-  <section id="problem">
-    <h2 data-i="problemTitle">The agent does not work without you.</h2>
-    <p class="section-sub" data-i="problemP">Claude Code does ten minutes of work, then asks a question. Until you answer, nothing happens. If the only place you can answer is your desk, you sit at your desk and wait. For a machine.</p>
   </section>
 
   <section id="why">
@@ -756,8 +761,8 @@ ${wl("wearables")}
       title:"HelmDeck: Claude Code fragt. Du antwortest vom Handy.",
       navProof:"Was es kann", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"Für alle, die Claude Code nutzen",
-      h1:"Claude Code fragt. Du antwortest vom Handy.",
-      sub:"HelmDeck ist eine App fürs Handy und ein Operator für den Rechner, auf dem Claude Code läuft. Jede Rückfrage kommt als Push, du antwortest, der Agent macht weiter.",
+      h1:"Dein Assistent arbeitet am PC. Du bist unterwegs.",
+      sub:"Was ein virtueller Assistent für 20 € die Stunde macht, erledigen deine Agenten auf deinem eigenen Rechner. Du gibst nur frei, vom Handy.",
       objection:"Kein Cloud-Account. Kein Code verlässt deinen Rechner. Läuft mit deinem bestehenden Claude-Abo.",
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
@@ -765,8 +770,14 @@ ${wl("wearables")}
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
       quoteBy:"Tien Duy Vo, Entwickler",
       founderFact:"Gebaut in zwei Monaten, weil die Agenten vom Handy liefen, nicht nur vom Schreibtisch.",
-      problemTitle:"Der Agent arbeitet nicht ohne dich.",
-      problemP:"Claude Code macht zehn Minuten Arbeit, dann stellt er eine Frage. Bis du antwortest, passiert nichts. Wer die Antwort nur am Schreibtisch geben kann, sitzt am Schreibtisch und wartet. Auf eine Maschine.",
+      problemTitle:"Die Zeit, die du heute schon verlierst",
+      problemP:"So läuft das ohne HelmDeck, und so läuft das mit HelmDeck.",
+      problem1H:"Eine Frage, eine verlorene Stunde",
+      problem1P:"Ohne HelmDeck: Der Agent stellt eine Frage und wartet, bis du wieder am Schreibtisch bist, manchmal eine Stunde später. Mit HelmDeck: Die Frage kommt als Push, du antwortest in zehn Sekunden, er macht weiter.",
+      problem2H:"Recherche und Bestellungen fressen den Abend",
+      problem2P:"Ohne HelmDeck: Recherche, Formulare, Bestellungen, das ist Schreibtischarbeit für den Abend. Mit HelmDeck: Der Agent erledigt das am Rechner, während du unterwegs bist, du prüfst nur das Ergebnis.",
+      problem3H:"Kein Rechner, keine Freigabe",
+      problem3P:"Ohne HelmDeck: Freigeben geht nur direkt am Gerät. Mit HelmDeck: Du gibst frei, wo du gerade bist, der Agent hat schon gearbeitet.",
       whyTitle:"Drei Dinge, die vom Handy gehen",
       why1H:"Rückfragen beantworten.", why1P:"Der Agent fragt „A oder B?“. Du tippst A. Er baut weiter. Zeit am Handy: zehn Sekunden.",
       why2H:"Mitten im Lauf umlenken.", why2P:"Du siehst im Verlauf, dass er die falsche Datei anfasst. Du schreibst „nimm die andere“. Er bricht ab und nimmt die andere. Kein Neustart, nichts verloren.",
@@ -819,8 +830,8 @@ ${wl("wearables")}
       title:"HelmDeck: Claude Code asks. You answer from your phone.",
       navProof:"What it does", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
       kicker:"For everyone who runs Claude Code",
-      h1:"Claude Code asks. You answer from your phone.",
-      sub:"HelmDeck is an app for your phone and an operator for the machine running Claude Code. Every question lands as a push, you answer, the agent carries on.",
+      h1:"Your assistant works the PC. You are on the move.",
+      sub:"What a virtual assistant bills 20 an hour for, your agents do on your own computer. You only approve, from your phone.",
       objection:"No cloud account. No code leaves your machine. Works with the Claude subscription you already have.",
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
@@ -828,8 +839,14 @@ ${wl("wearables")}
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
       quoteBy:"Tien Duy Vo, developer",
       founderFact:"Built in two months, steering the agents from a phone, not a desk.",
-      problemTitle:"The agent does not work without you.",
-      problemP:"Claude Code does ten minutes of work, then asks a question. Until you answer, nothing happens. If the only place you can answer is your desk, you sit at your desk and wait. For a machine.",
+      problemTitle:"The time you already lose to this",
+      problemP:"This is what it looks like without HelmDeck, and with it.",
+      problem1H:"One question, one lost hour",
+      problem1P:"Without HelmDeck: the agent hits a fork, asks a question, and waits until you're back at your desk, maybe an hour later. With HelmDeck: the question lands as a push, you answer in ten seconds, it keeps going.",
+      problem2H:"Research and orders eat the evening",
+      problem2P:"Without HelmDeck: research, forms, orders, that is desk work for the evening. With HelmDeck: the agent does it on the machine while you're out, you only review the result.",
+      problem3H:"No PC, no approval",
+      problem3P:"Without HelmDeck: you can only approve sitting at the machine. With HelmDeck: you approve wherever you are, the agent already did the work.",
       whyTitle:"Three things you do from your phone",
       why1H:"Answer questions.", why1P:"The agent asks “A or B?”. You tap A. It keeps building. Time on the phone: ten seconds.",
       why2H:"Redirect mid-run.", why2P:"You see in the log that it is touching the wrong file. You write “use the other one”. It stops and uses the other one. No restart, nothing lost.",
