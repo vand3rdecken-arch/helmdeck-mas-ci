@@ -1109,6 +1109,14 @@ def _snapshot(full=False):
         # board sent the owner looking for a card no board view could show.
         # Telling him it is archived is what lets him ask for it back.
         arch = " ARCHIVED" if t.get("archived") else ""
+        # A card whose TURN ended can still be WORKING: its background tasks
+        # (sessions_bg descriptors, folded at event time) outlive the turn.
+        # status=needs_you alone read as "nothing runs" while a 27-run
+        # benchmark was burning ~$1/run under that card (2026-09-17 10:24).
+        bg = [str(v.get("title") or k)[:60] for k, v in (t.get("bg_tasks") or {}).items()
+              if isinstance(v, dict) and v.get("status", "running") == "running"]
+        if bg:
+            arch += " BACKGROUND-RUNNING=%d (%s)" % (len(bg), "; ".join(bg))
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
             t["id"], repo, t["branch"], t.get("lane"), t.get("status"), arch, t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
