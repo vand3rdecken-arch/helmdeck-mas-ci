@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""MCP stdio server exposing FIVE bounded browser verbs - navigate/read/find/
-click/type - backed by spine/media/browsercap.py's AgentBrowser (CDP-attach
+"""MCP stdio server exposing the bounded browser verbs - navigate/read/find/
+click/type, plus the FORM verbs form/fill/select (2026-09-17: a native
+<select> was unreachable and a form cost one model turn per field) - backed by spine/media/browsercap.py's AgentBrowser (CDP-attach
 to the persistent, logged-in HelmDeck Chrome).
 
 WHY (ops/docs/backlog/token-burn-hardening/README.md, Karte C): the 190M-
@@ -165,6 +166,45 @@ def type(selector: str, text: str) -> str:
         _get_browser().type(selector, text)
         return "ok: typed into %r" % selector
     return _shaped(do)
+
+
+def _set_line(b, selector, value):
+    r = b.set_field(selector, value)
+    if r.get("ok"):
+        return "ok: %s = %r" % (selector, r.get("now"))
+    extra = " - offered: %s" % r["options"] if r.get("options") else ""
+    return "FAILED: %s -> %s (holds %r)%s" % (selector, r.get("error") or "value did not stick", r.get("now"), extra)
+
+
+@mcp.tool()
+def form() -> str:
+    """ALL form fields of the current page in ONE call (whole page, not just
+    the viewport): kind, label, current value, a dropdown's options, and a
+    locator `[data-hd-f="i"]` for each. START HERE on any form - then set
+    everything with ONE fill() call, and call form() again to verify. After
+    a page change or re-render the locators are stale: call form() again."""
+    return _shaped(lambda: _get_browser().form())
+
+
+@mcp.tool()
+def fill(fields: dict[str, str]) -> str:
+    """Set MANY fields in one call: {locator: value, ...} with the locators
+    from form(). Text is typed, a dropdown is chosen by its option TEXT, a
+    checkbox/radio takes "true"/"false". One result line per field with the
+    value the page holds AFTERWARDS - a dropdown that has no such option
+    answers with the options it does offer. Never submits anything."""
+    def do():
+        from spine.media.browsercap import _cap_text
+        b = _get_browser()
+        return _cap_text("\n".join(_set_line(b, sel, val) for sel, val in fields.items()))
+    return _shaped(do)
+
+
+@mcp.tool()
+def select(selector: str, option: str) -> str:
+    """Choose `option` (its visible TEXT) in the <select> dropdown matching
+    `selector`. For several fields at once use fill()."""
+    return _shaped(lambda: _set_line(_get_browser(), selector, option))
 
 
 @mcp.tool()

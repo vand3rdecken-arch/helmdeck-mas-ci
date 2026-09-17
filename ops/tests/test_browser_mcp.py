@@ -28,7 +28,17 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "ops", "tools"))
 
-from spine.media import browsercap
+# SANDBOX THE DB FIRST: ActionLog writes every verb to the db since the
+# state-into-db refactor, and the live-db guard (rightly) refused this file -
+# it had been dead from its first live-browser test on, unnoticed (2026-09-17).
+_SANDBOX = tempfile.mkdtemp(prefix="hd-browsermcp-")
+from spine.storage import db  # noqa: E402
+db.DBPATH = os.path.join(_SANDBOX, "helmdeck.db")
+from spine.storage import events  # noqa: E402
+events.SET = os.path.join(_SANDBOX, "settings.json")
+db.init()
+
+from spine.media import browsercap  # noqa: E402
 
 _fails = []
 
@@ -149,6 +159,94 @@ def test_selector_miss_fails_fast_with_a_bounded_error():
             check(len(str(e)) < 2000, "the raised error itself is a bounded Playwright message, not a page dump")
     finally:
         b.close()
+
+
+_FORM_HTML = """<html><body><form onsubmit="document.title='SUBMITTED';return false">
+<label>Name <input id=n name=name></label>
+<label>Rechtsform <select id=r name=rf required><option value="">Bitte waehlen</option>
+<option value=eu>Einzelunternehmen</option><option value=gmbh>GmbH</option>
+<option value=uni>University or University Organization (long label past thirty chars)</option></select></label>
+<label><input type=checkbox id=c name=en> English</label>
+<input type=hidden name=csrf value=secret-token><input type=password id=p name=pw value=hunter2>
+<select id=big>""" + "".join("<option>Option %d</option>" % i for i in range(40)) + """</select>
+<button type=submit>Send</button></form>
+<script>document.getElementById('r').addEventListener('change', e => { document.body.dataset.heard = e.target.value; });</script>
+</body></html>"""
+
+
+def _form_verbs_hold(b, path):
+    """The shared body: form() lists the controls bounded, set_field() sets
+    every kind and reports what the DOM holds AFTERWARDS. Proven to fail on
+    the pre-2026-09-17 module: neither verb existed, so a native <select> was
+    unreachable through the browser verbs at all."""
+    b.goto(_file_url(_FORM_HTML))
+    listing = b.form()
+    check('[data-hd-f="0"] text \'Name\'' in listing, "%s: form() lists the text field with its label + locator" % path)
+    check("select 'Rechtsform" in listing and "Einzelunternehmen" in listing, "%s: form() shows a dropdown's options" % path)
+    check("+28 more" in listing, "%s: a 40-option dropdown is capped at %d options, the rest counted" % (path, browsercap.FORM_MAX_OPTIONS))
+    check("secret-token" not in listing and "hunter2" not in listing, "%s: hidden inputs and password VALUES never reach the model" % path)
+    check(len(listing) <= browsercap.MAX_ACTION_CHARS + len(browsercap._TRUNC), "%s: form() is bounded" % path)
+
+    r = b.set_field('[data-hd-f="1"]', "Einzelunternehmen")
+    check(r.get("ok") and r.get("now") == "Einzelunternehmen", "%s: a native <select> is set by option text (%r)" % (path, r))
+    check(b.page.evaluate("() => document.body.dataset.heard") == "eu",
+          "%s: the page's own change listener FIRED - a framework-bound select would see it" % path)
+    r = b.set_field("#r", "University or University")
+    check(r.get("ok") and r.get("now", "").startswith("University or University Organization"),
+          "%s: a long option is reachable by a unique partial text (%r)" % (path, r))
+    r = b.set_field("#r", "Aktiengesellschaft")
+    check(not r.get("ok") and "GmbH" in (r.get("options") or []), "%s: a missing option FAILS and names the options offered" % path)
+    check(b.page.evaluate("() => document.getElementById('r').value") == "uni", "%s: a failed select leaves the previous value alone" % path)
+
+    r = b.set_field("#n", "Alex Test")
+    check(r.get("ok") and r.get("now") == "Alex Test", "%s: text is typed and read back (%r)" % (path, r))
+    r = b.set_field("#c", "true")
+    check(r.get("ok") and b.page.evaluate("() => document.getElementById('c').checked") is True, "%s: a checkbox is ticked" % path)
+    r = b.set_field("#c", "true")
+    check(r.get("ok") and b.page.evaluate("() => document.getElementById('c').checked") is True, "%s: ticking twice does not untick it" % path)
+    check(b.page.title() != "SUBMITTED", "%s: nothing was submitted" % path)
+    check("now='Alex Test'" in b.form(), "%s: a second form() shows the values now held - the verify step" % path)
+
+
+def test_form_verbs_on_the_fallback_context():
+    b = _fresh_browser()
+    try:
+        _form_verbs_hold(b, "fallback")
+    finally:
+        b.close()
+
+
+def test_form_verbs_on_the_real_cdp_tab():
+    """Same body over CdpTab - the path every card and Henry's hands really
+    use. Throwaway headless Chrome on its own port + profile, never the owner's."""
+    import shutil
+    import subprocess
+    port = _free_port()
+    profile = tempfile.mkdtemp()
+    chrome = subprocess.Popen([
+        browsercap._chrome_exe(), "--headless=new", "--remote-debugging-port=%d" % port,
+        "--user-data-dir=%s" % profile, "--no-first-run", "--no-default-browser-check", "about:blank"])
+    real_start = browsercap.wincap.start
+    browsercap.wincap.start = lambda run_dir: None
+    b = None
+    try:
+        for _ in range(60):
+            if browsercap._cdp_up(port):
+                break
+            time.sleep(0.25)
+        b = browsercap.AgentBrowser(tempfile.mkdtemp(), attach=True, port=port,
+                                    log=type("NullLog", (), {"log": lambda *a, **k: None})())
+        _form_verbs_hold(b, "cdp")
+    finally:
+        browsercap.wincap.start = real_start
+        if b is not None:
+            try:
+                b.close()
+            except Exception:
+                pass
+        chrome.kill()
+        chrome.wait(timeout=10)
+        shutil.rmtree(profile, ignore_errors=True)
 
 
 def _free_port():
@@ -302,8 +400,16 @@ def test_mcp_server_end_to_end_over_stdio():
         p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
         p.stdin.flush()
         tools = [t["name"] for t in rpc("tools/list")["result"]["tools"]]
-        check(tools == ["navigate", "read", "find", "click", "type", "close"],
-              "tools/list = the five verbs + close, in order")
+        check(tools == ["navigate", "read", "find", "click", "type", "form", "fill", "select", "close"],
+              "tools/list = the five verbs, the three form verbs, close - in order")
+
+        out, err, rpcerr = call("navigate", url=_file_url(_FORM_HTML))
+        out, err, rpcerr = call("form")
+        check(not rpcerr and '[data-hd-f="1"] select' in out, "form() through REAL FastMCP dispatch lists the dropdown: %r" % out[:90])
+        out, err, rpcerr = call("fill", fields={'[data-hd-f="0"]': "Alex Test", '[data-hd-f="1"]': "GmbH", '[data-hd-f="2"]': "true"})
+        check(not rpcerr and out.count("ok: ") == 3, "fill() sets text + dropdown + checkbox in ONE call, one ok line each: %r" % out[:200])
+        out, err, rpcerr = call("select", selector="#r", option="Aktiengesellschaft")
+        check(out.startswith("FAILED") and "Einzelunternehmen" in out, "select() on a missing option says FAILED and names the offer: %r" % out[:160])
 
         url = _file_url("<html><body><p>hello e2e</p><button id=b>Go</button></body></html>")
         out, err, rpcerr = call("navigate", url=url)
@@ -344,6 +450,8 @@ if __name__ == "__main__":
     test_find_caps_at_20_and_locators_are_click_addressable()
     test_find_reaches_off_screen_elements_that_read_cannot_see()
     test_selector_miss_fails_fast_with_a_bounded_error()
+    test_form_verbs_on_the_fallback_context()
+    test_form_verbs_on_the_real_cdp_tab()
     test_attach_survives_a_hung_foreign_tab()
     test_mcp_server_end_to_end_over_stdio()
     print("OK" if not _fails else "FAILED: %d" % len(_fails))

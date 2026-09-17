@@ -230,6 +230,102 @@ _LOCATE_JS = """
 }
 """
 
+# FORM VERBS (2026-09-17, measured in ops/docs/marketing/jev-bench bench4): the
+# five verbs had NO way to set a native <select> (a Gewerbeanmeldung run was
+# blocked on it twice) and filled a form field by field - find, click, type,
+# read, one model turn each - so the same Lever form took ~370 s here against
+# 58-106 s for a browser agent with a select and a batch-fill verb. form()
+# lists every control ONCE, bounded; set_field() sets one and reports what the
+# DOM holds afterwards, so success is read back, never assumed.
+#
+# form() stamps each control with data-hd-f="<i>": a plain CSS locator that
+# survives sibling re-ordering (unlike `>> nth=i`) and is accepted by every
+# other verb. A re-render drops the stamps - call form() again after one.
+_FORM_JS = """
+({maxOptions}) => {""" + _RENDERED_FN + """
+  const norm = s => (s || '').trim().replace(/\\s+/g, ' ');
+  const skip = new Set(['hidden', 'submit', 'button', 'image', 'reset', 'file']);
+  const out = [];
+  let i = 0;
+  document.querySelectorAll('input,select,textarea').forEach(el => {
+    const type = (el.getAttribute('type') || el.type || '').toLowerCase();
+    if (skip.has(type) || !_hdRendered(el)) return;
+    el.setAttribute('data-hd-f', String(i));
+    const tag = el.tagName.toLowerCase();
+    const kind = tag === 'select' ? 'select' : tag === 'textarea' ? 'textarea' : (type || 'text');
+    const label = norm((el.labels && el.labels[0] && el.labels[0].innerText) ||
+                       (el.closest('label') || {}).innerText || el.getAttribute('aria-label') ||
+                       el.getAttribute('placeholder') || el.name || el.id).slice(0, 70);
+    const f = {i, kind, label, required: !!el.required, disabled: !!el.disabled};
+    if (kind === 'select') {
+      const opts = Array.from(el.options).map(o => norm(o.text)).filter(Boolean);
+      f.value = norm((el.selectedOptions[0] || {}).text);
+      f.options = opts.slice(0, maxOptions).map(o => o.slice(0, 60));
+      f.more = Math.max(0, opts.length - maxOptions);
+    } else if (kind === 'checkbox' || kind === 'radio') {
+      f.checked = el.checked;
+    } else {
+      f.value = kind === 'password' ? (el.value ? '(set)' : '') : String(el.value || '').slice(0, 80);
+    }
+    out.push(f);
+    i++;
+  });
+  return out;
+}
+"""
+
+# Sets a <select> / checkbox / radio in the page and reports what the DOM holds
+# AFTERWARDS. Text-like fields answer {kind:'text'}: the caller types those
+# through the trusted input path (fill), which framework-bound inputs need.
+# A <select> is set through the prototype's own value setter and announced
+# with input+change, which is what React/Angular-bound selects listen for.
+_SET_JS = """
+({sel, value}) => {
+  let nth = null;
+  const m = sel.match(/^([\\s\\S]*?)\\s*>>\\s*nth=(-?\\d+)\\s*$/);
+  if (m) { sel = m[1]; nth = +m[2]; }
+  const els = Array.from(document.querySelectorAll(sel));
+  const el = nth === null ? els[0] : els[nth < 0 ? els.length + nth : nth];
+  if (!el) return {ok: false, error: 'no element for ' + sel};
+  const norm = s => String(s == null ? '' : s).trim().replace(/\\s+/g, ' ').toLowerCase();
+  const fire = () => { el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); };
+  const tag = el.tagName.toLowerCase(), type = (el.type || '').toLowerCase();
+  if (tag === 'select') {
+    const opts = Array.from(el.options), want = norm(value);
+    let hit = opts.find(o => norm(o.text) === want) || opts.find(o => norm(o.value) === want);
+    if (!hit && want) {
+      const near = opts.filter(o => norm(o.text).startsWith(want) || norm(o.text).includes(want));
+      if (near.length === 1) hit = near[0];
+    }
+    if (!hit) return {ok: false, kind: 'select', error: 'no option matches ' + JSON.stringify(value),
+                      options: opts.map(o => o.text.trim()).filter(Boolean).slice(0, 25)};
+    el.scrollIntoView({block: 'center'});
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, hit.value);
+    fire();
+    return {ok: true, kind: 'select', now: ((el.selectedOptions[0] || {}).text || '').trim()};
+  }
+  if (type === 'checkbox' || type === 'radio') {
+    const on = !/^(false|0|no|nein|off|)$/.test(norm(value));
+    if (el.checked !== on) { el.scrollIntoView({block: 'center'}); el.click(); }
+    return {ok: el.checked === on, kind: type, now: String(el.checked)};
+  }
+  return {kind: 'text'};
+}
+"""
+
+_VALUE_JS = """
+(sel) => {
+  let nth = null;
+  const m = sel.match(/^([\\s\\S]*?)\\s*>>\\s*nth=(-?\\d+)\\s*$/);
+  if (m) { sel = m[1]; nth = +m[2]; }
+  const els = Array.from(document.querySelectorAll(sel));
+  const el = nth === null ? els[0] : els[nth < 0 ? els.length + nth : nth];
+  return el ? String(el.value == null ? '' : el.value) : null;
+}
+"""
+
+FORM_MAX_OPTIONS = 12
+
 _KEYS = {"Enter": (13, "\r"), "Tab": (9, ""), "Escape": (27, ""), "Backspace": (8, ""),
          "Delete": (46, ""), "ArrowUp": (38, ""), "ArrowDown": (40, ""),
          "ArrowLeft": (37, ""), "ArrowRight": (39, "")}
@@ -463,6 +559,45 @@ class AgentBrowser:
         out = _cap_text("\n".join(lines) if lines else "(no visible matches)")
         self.log.log("find", "%r -> %d match(es)" % (selector, len(items)), selector=selector)
         return out
+
+    def form(self):
+        """Every rendered form control on the page, ONE call, capped: index,
+        kind, label, what it holds now, a <select>'s options (first
+        FORM_MAX_OPTIONS, '+N more' beyond) and its locator
+        `[data-hd-f="i"]`, which every other verb accepts. The bounded
+        alternative to find()+read() per field."""
+        items = self.page.evaluate(_FORM_JS, {"maxOptions": FORM_MAX_OPTIONS})
+        lines = []
+        for f in items:
+            if f["kind"] == "select":
+                more = " +%d more" % f["more"] if f.get("more") else ""
+                now = "now=%r options=%s%s" % (f.get("value", ""), f.get("options", []), more)
+            elif f["kind"] in ("checkbox", "radio"):
+                now = "checked=%s" % f.get("checked")
+            else:
+                now = "now=%r" % f.get("value", "")
+            flags = "".join(" " + k for k in ("required", "disabled") if f.get(k))
+            lines.append('[data-hd-f="%d"] %s %r %s%s' % (f["i"], f["kind"], f["label"], now, flags))
+        raw = "\n".join(lines) if lines else "(no form fields on this page)"
+        out = _cap_text(raw)
+        self.log.log("form", "%d field(s)%s" % (len(items), " (capped)" if len(raw) > len(out) else ""))
+        return out
+
+    def set_field(self, selector, value, secret=False):
+        """Set ONE control of any kind and return what the DOM holds
+        afterwards: a <select> by option text (exact, else value, else a
+        unique partial match), a checkbox/radio by true/false, anything else
+        typed through the trusted input path. A miss on a <select> answers
+        with the options actually offered."""
+        shown = "•" * len(str(value)) if secret else value
+        self.log.log("set", "%s ← %s" % (selector, shown), selector=selector)
+        r = self.page.evaluate(_SET_JS, {"sel": selector, "value": value}) or {}
+        if r.get("kind") == "text":
+            self.page.fill(selector, str(value))
+            now = self.page.evaluate(_VALUE_JS, selector)
+            ok = now is not None and "".join(now.split()) == "".join(str(value).split())
+            return {"ok": ok, "kind": "text", "now": "(set)" if secret else now}
+        return r
 
     def press(self, key):
         self.log.log("key", key)
