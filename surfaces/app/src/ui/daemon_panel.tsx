@@ -56,7 +56,9 @@ export function DaemonPanel() {
     try {
       const r = await api.daemonRestart(force);
       if (!r.ok) {
-        if (r.reason === "turn_active") {
+        // background_active: the turn is over but the card's background tasks
+        // still run - the same "this kills running work" confirm, same force.
+        if (r.reason === "turn_active" || r.reason === "background_active") {
           const go = await confirmAsync(tr("daemon.restart.busyTitle"),
             tr("daemon.restart.busyBody", { n: r.turns?.length ?? live }));
           if (go) return fire(true);

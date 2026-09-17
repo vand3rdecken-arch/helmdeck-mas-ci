@@ -53,6 +53,18 @@ def busy():
     return cards, list(_load("chat_turns.json").keys())
 
 
+def background():
+    """Why a session is still busy, by name: daemonctl.background_work (the
+    ONE reading of the bg descriptors). A bare pid told the owner nothing -
+    2026-09-17 'cards=[18732]' was a 27-run benchmark."""
+    try:
+        sys.path.insert(0, ROOT)
+        from spine.ops import daemonctl
+        return daemonctl.background_work()
+    except Exception:                                    # noqa: BLE001
+        return {}
+
+
 def healthy():
     try:
         with urllib.request.urlopen("http://127.0.0.1:8140/auth/state", timeout=4) as r:
@@ -69,12 +81,13 @@ def main():
     t0 = time.time()
     while not a.force:
         cards, chats = busy()
-        if not cards and not chats:
+        bg = background()
+        if not cards and not chats and not bg:
             break
         if time.time() - t0 > a.wait:
-            print("still busy after %ds - cards=%s chat=%s; not restarting (use --force)" % (a.wait, cards, chats))
+            print("still busy after %ds - cards=%s chat=%s background=%s; not restarting (use --force)" % (a.wait, cards, chats, bg))
             return 2
-        print("waiting: cards=%s chat=%s" % (cards, chats))
+        print("waiting: cards=%s chat=%s background=%s" % (cards, chats, bg))
         time.sleep(15)
     old = ""
     try:

@@ -1113,8 +1113,8 @@ def _snapshot(full=False):
         # (sessions_bg descriptors, folded at event time) outlive the turn.
         # status=needs_you alone read as "nothing runs" while a 27-run
         # benchmark was burning ~$1/run under that card (2026-09-17 10:24).
-        bg = [str(v.get("title") or k)[:60] for k, v in (t.get("bg_tasks") or {}).items()
-              if isinstance(v, dict) and v.get("status", "running") == "running"]
+        from cells.engineer.cards import sessions_bg as _sbg
+        bg = [x[:60] for x in _sbg.running_bg(t)]
         if bg:
             arch += " BACKGROUND-RUNNING=%d (%s)" % (len(bg), "; ".join(bg))
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (

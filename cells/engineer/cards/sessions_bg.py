@@ -91,6 +91,22 @@ def reconcile_bg(tid, status="canceled", why="Prozess beendet, bevor der Task me
     return box.get("n", 0)
 
 
+def running_bg(t):
+    """Titles of this card's background tasks that are STILL RUNNING - the ONE
+    reading of the descriptors for everyone who asks "does this card still
+    work?" (board snapshot, daemonctl's restart refusal, restart_daemon.py).
+    A card whose turn ended (status=needs_you) can carry these for an hour:
+    2026-09-17 three readers had three answers - the snapshot said nothing
+    runs, the in-app restart would have killed a 27-run benchmark, only the
+    CLI restart refused. 'running' is trustworthy because reconcile_bg closes
+    every descriptor when the owning process dies."""
+    tasks = t.get("bg_tasks")
+    if not isinstance(tasks, dict):
+        return []
+    return [str(v.get("title") or k) for k, v in tasks.items()
+            if isinstance(v, dict) and v.get("status", "running") == "running"]
+
+
 def _bg_continue_on(t):
     """policy.auto_continue (default on). Off => the card keeps the cue but is
     never steered automatically."""

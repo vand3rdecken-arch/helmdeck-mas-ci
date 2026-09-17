@@ -84,6 +84,30 @@ r = daemonctl.restart(runner=lambda argv: (1, "ERROR: Access is denied."))
 check(r["ok"] is False and r["reason"] == "task_run_failed" and "denied" in r["detail"],
       "restart: a failed schtasks run comes back as the reason")
 
+# 6b) a card whose TURN is over but whose background task still runs blocks
+#     too (2026-09-17: status=needs_you + a 27-run benchmark in the
+#     background - this verb would have killed it, only the CLI tool refused).
+#     The descriptor goes in through the REAL fold (sessions_bg.bg_upsert).
+from cells.engineer.cards import sessions_bg  # noqa: E402
+sessions._save([{"id": "c1", "task": "x", "status": "running", "lane": "working",
+                 "run_dir": SANDBOX, "worktree": SANDBOX},
+                {"id": "c2", "task": "bench", "status": "needs_you", "lane": "working",
+                 "run_dir": SANDBOX, "worktree": SANDBOX}])
+sessions_bg.bg_upsert("c2", "toolu_x", title="27-run benchmark")
+calls.clear()
+drivers.turn_active = lambda tid: False
+check(daemonctl.status()["background"] == {"c2": ["27-run benchmark"]},
+      "status: running background work is reported per card")
+r = daemonctl.restart(runner=runner)
+check(r["ok"] is False and r["reason"] == "background_active" and r["turns"] == ["c2"] and calls == [],
+      "restart: refused while c2's background task runs, nothing fired")
+r = daemonctl.restart(force=True, runner=runner)
+check(r["ok"] is True and len(calls) == 1, "restart: force overrides background work")
+sessions_bg.bg_upsert("c2", "toolu_x", status="completed")
+calls.clear()
+r = daemonctl.restart(runner=runner)
+check(r["ok"] is True, "restart: a COMPLETED background task no longer blocks")
+
 # 7) the routes exist and gate on role - a client never restarts the daemon
 from spine.http.routes import routes_system
 sent = []

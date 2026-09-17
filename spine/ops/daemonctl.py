@@ -62,6 +62,25 @@ def running_turns():
     return out
 
 
+def background_work():
+    """Cards whose TURN is over but whose background tasks still run -
+    {card_id: [titles]}. As much the owner's running work as a live turn: the
+    tasks are children of the card's worker process and die with the daemon
+    tree. One reading (sessions_bg.running_bg), shared with the board
+    snapshot and restart_daemon.py."""
+    out = {}
+    try:
+        from spine.storage import db
+        from cells.engineer.cards import sessions_bg
+        for t in db.tracks_all():
+            titles = sessions_bg.running_bg(t)
+            if titles:
+                out[t.get("id")] = titles
+    except Exception:
+        pass
+    return out
+
+
 def _task_present():
     try:
         r = subprocess.run(["schtasks", "/Query", "/TN", TASK],
@@ -95,6 +114,7 @@ def status():
         "repo_head": head[:12],
         "stale": bool(_BOOT_SHA and head and _BOOT_SHA != head),
         "running_turns": running_turns(),
+        "background": background_work(),
         "restart_task": _task_present(),
         "last_restart": _last_restart(),
     }
@@ -113,6 +133,11 @@ def restart(force=False, actor="owner", runner=_run):
     if live and not force:
         return {"ok": False, "reason": "turn_active", "turns": live,
                 "detail": "Karte(n) mitten im Turn - Neustart wuerde laufende Arbeit killen"}
+    bg = background_work()
+    if bg and not force:
+        return {"ok": False, "reason": "background_active", "turns": sorted(bg), "background": bg,
+                "detail": "Hintergrund-Task(s) laufen noch (%s) - Neustart wuerde sie killen"
+                          % "; ".join(t[:60] for ts in bg.values() for t in ts)}
     if not _task_present():
         tr = 'powershell.exe -ExecutionPolicy Bypass -File "%s" -DelaySeconds 90' % SCRIPT
         rc, out = runner(["schtasks", "/Create", "/TN", TASK, "/SC", "ONCE", "/ST", "23:59",

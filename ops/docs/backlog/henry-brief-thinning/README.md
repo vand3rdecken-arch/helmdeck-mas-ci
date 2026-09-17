@@ -27,27 +27,26 @@ all 17 `{{rule:...}}` placeholders and all 34 action verbs are still present.
 New: the EVIDENCE paragraph (board tools answer "what runs", an empty result
 is not a finding, name disagreeing signals).
 
-## Before the proposal may replace the live brief
+## Status 2026-09-17: LIVE
 
-1. `board-copilot.d/actions.md`: add the WHEN/HOW for `hands` (HelmDeck
-   Chrome, tab dies with the process, owner-only secrets = failed report,
-   serialized, TOO_BIG split), `direct_task` (when file_card instead, queue
-   per tree, fast_track ships every turn), `follow_up`. Text = the paragraphs
-   removed from lines 178/179/185 of the current brief.
-2. New on-demand section `charter` (current lines 206-233) + register the
-   name in `ops/tools/henry_brief_get.py`.
-3. Tools carry the state the prose compensated for:
-   - DONE a9656624: snapshot line states `BACKGROUND-RUNNING=n (titles)`.
-   - one busy derivation (driver pids + chat turns + running bg_tasks) read
-     by snapshot, `restart_daemon.busy()` and the app - today three readers,
-     three sources.
-   - `file_card`/`machine_task` answer with the matching ACTIVE card instead
-     of relying on Henry to look first (the dup rule then shrinks to a clause).
-4. Write through `write_agent()` (HARNESS.md: schema check + .versions
-   archive), never a raw file copy.
-5. Judge on real turns, not on reading: replay "Was läuft gerade?", a QUICK
-   fix ask, a BIG fuzzy ask, a permission-file ask, a "Danke". Tone must not
-   move; first-word latency must not move.
+1. DONE 0ef4a913 - brief written through `write_agent()`; `actions.md` carries
+   the hands details, `charter` is its own on-demand section; pinned hash and
+   the six-section / 15k-cap test moved in the same commit. Henry's process
+   respawns on its own (`_brief_fp` is part of the persist key).
+2. DONE - ONE reading of "does this card still work": `sessions_bg.running_bg`,
+   read by the board snapshot, `daemonctl.background_work` (status + the
+   restart refusal `background_active`) and `restart_daemon.py`. Found on the
+   way: the in-app restart verb checked live TURNS only and would have killed
+   the benchmark; test_daemonctl 6b pins it and fails on the old code.
+   Daemon-side half needs a restart to load.
+3. DROPPED - "file_card answers with the matching active card". Whether two
+   cards cover the same work is a similarity JUDGEMENT; code holds hard
+   invariants only (dual-architecture decree), and a fuzzy matcher would be a
+   registered shortcut from day one. The one sentence in the brief stays.
+4. OPEN - judge on real turns: "Was laeuft gerade?", a QUICK fix ask, a BIG
+   fuzzy ask, a permission-file ask, a "Danke". Tone and first-word latency
+   must not move.
 
 Risk: the incident stories may be what makes some rules stick. If a rule
-regresses in step 5, restore ITS one story, not the whole block.
+regresses in step 4, restore ITS one story, not the whole block. The old brief
+is in `ops/harness/.versions/` (2026-09-17_11-07-03) and in git before 0ef4a913.
