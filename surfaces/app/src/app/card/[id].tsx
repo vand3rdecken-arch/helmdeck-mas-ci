@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api, neverDelivered, type SteerOpts } from "@/data/client";
+import { api, HeldError, neverDelivered, type SteerOpts } from "@/data/client";
 import * as outbox from "@/data/outbox";
 import { usePresence } from "@/data/presence";
 import { useModels } from "@/data/use_models";
@@ -497,6 +497,16 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
         await api.chat(text, { ...o, card: k.id });
         if (retryOf) await outbox.settle(retryOf);
       } catch (e) {
+        if (e instanceof HeldError) {
+          // The bridge's held leg gave up, the daemon did not: the message was
+          // accepted (folded into this card's transcript at submission) and
+          // Henry is still on it, usually queued behind a running turn. Keep
+          // the echo, raise nothing - an Alert here told the owner "timed out"
+          // about messages that were delivered AND answered (2026-09-17).
+          if (retryOf) await outbox.settle(retryOf);
+          await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
+          return;
+        }
         // Retract the echo (it was never sent) but keep the TEXT - parked on
         // disk, where closing the card can't take it with it. An Alert alone
         // left the owner with a dismissed dialog and no message anywhere.

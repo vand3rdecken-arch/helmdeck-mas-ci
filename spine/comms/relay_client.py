@@ -57,6 +57,7 @@ PAIR_TTL = 900
 import os as _os
 LOCAL_RELAY_PORT = int(_os.environ.get("HELMDECK_RELAY_PORT", "6790") or 6790)
 LOCAL_PROBE_TTL = 60.0
+LOCAL_TIMEOUT = 115             # seconds the held loopback leg waits (< relay REPLY_TIMEOUT 120)
 PUSH_TIMEOUT_BASE = 15          # seconds, the old fixed value
 PUSH_TIMEOUT_PER_100K = 1       # +1 s per 100 KB of frame - a 2 MB reply gets ~35 s
 _base_lock = threading.Lock()
@@ -216,7 +217,7 @@ def _local(port, inner):
     req = urllib.request.Request(url, data=data, method=method,
                                  headers=inner.get("headers") or {})
     try:
-        with urllib.request.urlopen(req, timeout=115) as resp:
+        with urllib.request.urlopen(req, timeout=LOCAL_TIMEOUT) as resp:
             return {"status": getattr(resp, "status", 200),
                     "headers": {"Content-Type": resp.headers.get("Content-Type", "application/json")},
                     "body": resp.read().decode("utf-8", "replace")}
@@ -224,6 +225,18 @@ def _local(port, inner):
         return {"status": e.code,
                 "headers": {"Content-Type": e.headers.get("Content-Type", "application/json")},
                 "body": e.read().decode("utf-8", "replace")}
+    except socket.timeout:
+        # The HELD leg gave up, the daemon did not fail. A read timeout on
+        # loopback is proof the request was accepted and is still being worked
+        # on (a daemon that is down refuses the connect - a different error).
+        # It used to leave as 502 {"error": "timed out"}, which the card's
+        # Henry door read as "the daemon answered" and raised an Alert over a
+        # message that was delivered and answered (2026-09-17 09:16: two sends
+        # waited 132s / 116s on the turn lock behind a 195s turn). `held` is
+        # the signal the app keys on (client.ts HeldError) - never the text.
+        return {"status": 504, "headers": {},
+                "body": json.dumps({"error": "still working - the answer arrives in the chat",
+                                    "held": True})}
     except Exception as e:
         return {"status": 502, "headers": {}, "body": json.dumps({"error": str(e)[:200]})}
 

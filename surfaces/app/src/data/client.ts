@@ -33,6 +33,13 @@ export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
+// The relay bridge's HELD leg gave up (spine/comms/relay_client._local, 115s)
+// while the daemon was still working on the request: it was ACCEPTED, the
+// answer just will not ride this response. Not a failure to report and not an
+// undelivered message - the caller keeps its optimistic state and lets the
+// transcript/history deliver the result. Keyed on the bridge's `held` flag,
+// never on the message text.
+export class HeldError extends ApiError {}
 
 /** True when the daemon never PROCESSED the request: the transport never got
  *  there, or the session was refused before any work happened. Only these two
@@ -199,11 +206,13 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   }
   if (status >= 400) {
     let msg = "";
-    try { msg = String(JSON.parse(txt)?.error ?? ""); } catch { /* not json */ }
+    let held = false;
+    try { const j = JSON.parse(txt); msg = String(j?.error ?? ""); held = j?.held === true; } catch { /* not json */ }
     // The class of failure that until now was thrown and forgotten unless some
     // call site happened to render it - a silent 4xx is the hardest kind to
     // diagnose on a device precisely because nothing shows.
     diag("net", `${method} ${path.split("?")[0]}`, `${status}${msg ? " " + msg : ""}`);
+    if (held) throw new HeldError(status, msg);
     throw new ApiError(status, msg || t("net.httpError", { status, method, path }));
   }
   return (txt ? JSON.parse(txt) : {}) as T;
