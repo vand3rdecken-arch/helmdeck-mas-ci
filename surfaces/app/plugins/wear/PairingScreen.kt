@@ -16,8 +16,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -202,10 +202,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                         // Label and value on SEPARATE lines. With both on one
                         // line the label plus colon ate the whole width and the
                         // value ellipsised to "..." - a confirmation field that
-                        // confirms nothing. Now the host is at least partly
-                        // readable, still capped at one line so the default URL
-                        // cannot swallow the screen again.
-                        maxLines = 1,
+                        // confirms nothing.
                         valueOnOwnLine = true,
                         onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
                     )
@@ -237,35 +234,37 @@ private fun FieldRow(
     label: String,
     value: String,
     onDictate: () -> Unit,
-    maxLines: Int = 2,
     /** Put the value on its OWN line instead of after "label: ". For a long
      *  value (the claim URL) the single-line form spent the entire width on the
-     *  label and ellipsised the value to nothing. */
+     *  label, forcing the value onto a truncated remainder. */
     valueOnOwnLine: Boolean = false,
 ) {
     // Centred, not start-aligned: a watch screen is widest through its middle,
     // so left-aligned text is the first thing a round bezel eats. The
     // horizontal inset comes from ScreenScaffold's contentPadding on the list
     // above, so this only adds the spacing BETWEEN rows.
+    //
+    // NO maxLines / TextOverflow.Ellipsis on the value: Play's Wear font-size
+    // guideline (rejection 2026-09-15, submission #11) requires that nothing
+    // be clipped at the largest system font scale, and an ellipsis IS a clip -
+    // it hides characters rather than growing the row. Wrapping is the only
+    // way a value keeps its full content at every font scale. A side inset
+    // (10% of screen width, same reasoning as HenryScreen/CardScreen) keeps a
+    // wrapped line's first/last characters off the round bezel instead of
+    // relying on ScreenScaffold's padding alone, which only protects the
+    // first/last ROW, not every side of a multi-line block.
+    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
     Column(
-        modifier = Modifier.padding(vertical = 6.dp),
+        modifier = Modifier.padding(vertical = 6.dp, horizontal = sideInset),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (valueOnOwnLine) {
-            Text(text = label, textAlign = TextAlign.Center, maxLines = 1,
-                 overflow = TextOverflow.Ellipsis)
-            Text(
-                text = value.ifBlank { "–" },
-                textAlign = TextAlign.Center,
-                maxLines = maxLines,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Text(text = label, textAlign = TextAlign.Center)
+            Text(text = value.ifBlank { "–" }, textAlign = TextAlign.Center)
         } else {
             Text(
                 text = "$label: ${value.ifBlank { "–" }}",
                 textAlign = TextAlign.Center,
-                maxLines = maxLines,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         Button(onClick = onDictate) { Text("Diktieren") }
