@@ -256,7 +256,7 @@ _FORM_JS = """
     const label = norm((el.labels && el.labels[0] && el.labels[0].innerText) ||
                        (el.closest('label') || {}).innerText || el.getAttribute('aria-label') ||
                        el.getAttribute('placeholder') || el.name || el.id).slice(0, 70);
-    const f = {i, kind, label, required: !!el.required, disabled: !!el.disabled};
+    const f = {i, kind, label, group: el.name || '', required: !!el.required, disabled: !!el.disabled};
     if (kind === 'select') {
       const opts = Array.from(el.options).map(o => norm(o.text)).filter(Boolean);
       f.value = norm((el.selectedOptions[0] || {}).text);
@@ -568,7 +568,27 @@ class AgentBrowser:
         alternative to find()+read() per field."""
         items = self.page.evaluate(_FORM_JS, {"maxOptions": FORM_MAX_OPTIONS})
         lines = []
+        # A checkbox/radio GROUP is one line, not one per box: Lever's 33
+        # language boxes alone ate 2300 of the 5000 chars and pushed the three
+        # dropdowns behind them past the cap (measured 2026-09-17 - the agent
+        # then hunted them with find/read, 41 turns instead of ~8).
+        groups = {}
         for f in items:
+            if f["kind"] in ("checkbox", "radio") and f.get("group"):
+                groups.setdefault((f["kind"], f["group"]), []).append(f)
+        done = set()
+        for f in items:
+            key = (f["kind"], f.get("group"))
+            if key in groups and len(groups[key]) > 2:
+                if key in done:
+                    continue
+                done.add(key)
+                g = groups[key]
+                on = [x["label"] for x in g if x.get("checked")]
+                lines.append('%s group %r (%d, checked: %s) - locator [data-hd-f="<n>"]: %s' % (
+                    f["kind"], f["group"][:40], len(g), on or "none",
+                    " | ".join("%d=%s" % (x["i"], x["label"][:32]) for x in g)))
+                continue
             if f["kind"] == "select":
                 more = " +%d more" % f["more"] if f.get("more") else ""
                 now = "now=%r options=%s%s" % (f.get("value", ""), f.get("options", []), more)

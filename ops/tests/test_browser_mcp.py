@@ -169,6 +169,7 @@ _FORM_HTML = """<html><body><form onsubmit="document.title='SUBMITTED';return fa
 <label><input type=checkbox id=c name=en> English</label>
 <input type=hidden name=csrf value=secret-token><input type=password id=p name=pw value=hunter2>
 <select id=big>""" + "".join("<option>Option %d</option>" % i for i in range(40)) + """</select>
+<fieldset>""" + "".join("<label><input type=radio name=grund value=g%d> Grund %d</label>" % (i, i) for i in range(5)) + """</fieldset>
 <button type=submit>Send</button></form>
 <script>document.getElementById('r').addEventListener('change', e => { document.body.dataset.heard = e.target.value; });</script>
 </body></html>"""
@@ -186,6 +187,12 @@ def _form_verbs_hold(b, path):
     check("+28 more" in listing, "%s: a 40-option dropdown is capped at %d options, the rest counted" % (path, browsercap.FORM_MAX_OPTIONS))
     check("secret-token" not in listing and "hunter2" not in listing, "%s: hidden inputs and password VALUES never reach the model" % path)
     check(len(listing) <= browsercap.MAX_ACTION_CHARS + len(browsercap._TRUNC), "%s: form() is bounded" % path)
+    check("radio group 'grund' (5, checked: none)" in listing and listing.count("Grund 3") == 1 and "=Grund 3" in listing,
+          "%s: a radio/checkbox GROUP is ONE line (Lever's 33 language boxes pushed the dropdowns past the cap)" % path)
+    n = [ln for ln in listing.splitlines() if "radio group" in ln][0].split("=Grund 3")[0].split(" ")[-1]
+    r = b.set_field('[data-hd-f="%s"]' % n, "true")
+    check(r.get("ok") and b.page.evaluate("() => document.querySelector('input[name=grund]:checked').value") == "g3",
+          "%s: a group member is reachable by the index the group line names (%r)" % (path, r))
 
     r = b.set_field('[data-hd-f="1"]', "Einzelunternehmen")
     check(r.get("ok") and r.get("now") == "Einzelunternehmen", "%s: a native <select> is set by option text (%r)" % (path, r))
