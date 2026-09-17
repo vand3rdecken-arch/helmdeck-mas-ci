@@ -13,5 +13,12 @@
       "binding": "WAITLIST",
       "id": "762164d2bc4343b8b22f24755f017453"
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "SITE_STATS",
+      "database_name": "helmdeck-site-stats",
+      "database_id": "8151a80c-43cc-49cc-a914-9dd77f4391a9"
+    }
   ]
 }

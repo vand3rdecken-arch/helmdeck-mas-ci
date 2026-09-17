@@ -6,6 +6,19 @@ the waitlist (now scoped to the not-yet-shipped **Watch & Glasses** line,
 since the app itself is downloadable directly). Storage in Workers KV. No
 framework, no build step.
 
+- **Cookieless reach measurement** (own worker, no consent needed): every
+  page load beacons view/section_seen/scroll/video/cta_click/form_*/leave
+  events to `POST /api/ev`, stored in D1 (`SITE_STATS` binding, db
+  `helmdeck-site-stats`, schema in `schema.sql`). No cookies, no
+  localStorage, no IP address, no user-agent string, no fingerprinting -
+  the only "identity" is a random id held in a JS variable that dies with
+  the tab. GET `/` also counts a `server_view` row so no-JS visitors and
+  bots (flagged via `isBot()`, never stored raw) are still visible. Read it
+  with `py -3.12 ops/tools/site_stats.py` (`--help` for options). Retention
+  6 months, purged lazily on a fraction of writes (`insertEvent()`). Details
+  in `/datenschutz` section 3 and `ops/docs/marketing/gtm-messung-2026-09.md`
+  section 4b.
+
 - **Analytics**: PostHog EU cloud (project 248157, same public token as the
   app), consent-gated by a cookie banner (owner decision 2026-09-13: German
   sites get a real banner instead of relying on the cookieless-so-no-banner
