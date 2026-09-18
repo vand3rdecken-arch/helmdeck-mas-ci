@@ -4,6 +4,7 @@ import android.app.Activity.RESULT_OK
 import android.content.Context
 import android.content.Intent
 import android.speech.RecognizerIntent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -188,6 +189,16 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // a certain 409. Derived state, never persisted - a restart re-reads the
     // real answer from the transcript rather than trusting a remembered flag.
     var answered by remember { mutableStateOf(setOf<String>()) }
+    // QUEUE-WHILE-BUSY - the same parity the phone's Composer already has
+    // (ui/card_composer.tsx: "send stays enabled while busy — the message is
+    // queued instead of dropped"). Owner bug report 2026-09-18: the watch's
+    // "Sprechen" button was DISABLED while `busy`, so dictating a second
+    // message while Henry was still answering did nothing at all - no error,
+    // no queue, literally no reaction to the tap. Held here, not sent
+    // immediately, and flushed the moment the running turn frees up; last
+    // dictation wins if the owner re-records before that happens, same as
+    // the phone's setQueued().
+    var queued by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val columnState = rememberTransformingLazyColumnState()
 
@@ -201,130 +212,26 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // instead of quietly going dark, which is the bug this exists to fix.
     val isAmbient = LocalAmbientModeManager.current?.currentAmbientMode is AmbientMode.Ambient
 
-    fun ask(message: String) {
-        val device = DeviceStore.load(context)
-        if (device == null) {
-            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
-            return
-        }
-        record(Line(true, message, nowHm(), nowDate()))
-        busy = true
-        suggestions = null
-        scope.launch {
-            // `voice` tells the daemon whether this wrist is LISTENING. It used
-            // to render a clip on every single turn regardless, which meant a
-            // speech round trip per answer for a toggle that defaults to OFF.
-            // An older daemon ignores the field and behaves exactly as before.
-            val body = JSONObject()
-                .put("message", message).put("voice", voiceOn).toString()
-            // talk() = long timeout + dedupe-safe retries (see RelayClient) -
-            // a Henry turn outliving one HTTP request is normal, not an error.
-            // answerCard below deliberately stays on a single authedCall: its
-            // reply_to_card path has no dedupe claim, and the daemon's own 409
-            // on a doubled answer is its correctness backstop, not a retry.
-            val result = withContext(Dispatchers.IO) {
-                RelayClient.talk(
-                    device.relayUrl, device.room, device.daemonPubB64,
-                    device.myPublicKeyB64, device.mySecretKeyB64,
-                    device.deviceToken, body)
-            }
-            busy = false
-            if (result == null || result.first !in 200..299) {
-                // A network answer the owner can act on, not a blank screen.
-                // After talk()'s retries this is a real outage, not a slow
-                // turn. The turn may STILL land server-side - the transcript
-                // poll below is the truth - so promise that instead of a dead
-                // Henry.
-                record(Line(false, "Henry nicht erreichbar - falls die Antwort noch entsteht, erscheint sie gleich im Verlauf.", nowHm(), nowDate()))
-                return@launch
-            }
-            val o = runCatching { JSONObject(result.second) }.getOrNull()
-            val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
-            record(Line(false, reply, nowHm(), nowDate()))
-            suggestions = parseQuestionBlock(o?.optJSONObject("question"))
-            // CLAIM FIRST, THEN PLAY. `voiceKey` names the line this reply
-            // became in the server's transcript, and the same answer is about
-            // to arrive again over refresh() (the chat cursor moved when the
-            // daemon logged it). Recording it here is what stops the watch
-            // saying the same sentence twice - claimed even when nothing is
-            // played, so switching voice on later does not replay an answer
-            // that was already read on screen.
-            //
-            // A blank key means the daemon did not name the line: either an
-            // older build (which also sends no keys on /wear/chat, so the
-            // refresh path stays silent and this inline clip is the only
-            // voice there is) or a talk() RETRY collecting a settled turn
-            // (which carries no clip either, and refresh() then speaks it).
-            // Both degrade to exactly one utterance.
-            val vk = o?.optString("voiceKey") ?: ""
-            if (vk.isNotBlank()) spokenKey = vk
-            // `voice` is ABSENT (not null) when server-side rendering failed;
-            // the text is already on screen, so a missing clip is silence and
-            // never an error.
-            val v = o?.optJSONObject("voice")
-            if (voiceOn && v != null) {
-                VoicePlayer.play(context, v.optString("mime"), v.optString("b64"))
-            }
-        }
+    // KEEP THE SCREEN ON WHILE A REPLY IS PENDING (owner bug report
+    // 2026-09-18: "Display geht aus, bevor die Antwort kommt"). Ambient mode
+    // above (and MainActivity's own fix, 2026-09-14) only changes WHAT is
+    // drawn once the system has already decided to dim or sleep - it opts the
+    // app INTO ambient, it does not stop the OS reaching for it in the first
+    // place. FLAG_KEEP_SCREEN_ON is the actual "stay awake" signal, scoped
+    // tightly to `busy` (a sent message with no answer yet) so the watch is
+    // never held awake outside a running turn - a permanent flag would be
+    // the battery bug this one explicitly must not become.
+    DisposableEffect(busy) {
+        val window = (context as? ComponentActivity)?.window
+        if (busy) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    /** Answer a MIRRORED card question from the wrist.
-     *
-     *  Same POST as `ask`, plus `reply_to_card` - which is what makes it reach
-     *  that card's worker (routes_wear routes it through sessions.reply_door)
-     *  instead of Henry's advisory session. Sending it as an ordinary message
-     *  would put a bare "A" in front of Henry, who cannot settle another
-     *  agent's question, while the card went on waiting.
-     *
-     *  `answered` clears the buttons immediately: the daemon rejects a second
-     *  answer to the same request_id with a 409, so leaving them tappable would
-     *  invite a guaranteed error. */
-    fun answerCard(card: String, label: String) {
-        val device = DeviceStore.load(context)
-        if (device == null) {
-            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
-            return
-        }
-        record(Line(true, label, nowHm(), nowDate()))
-        answered = answered + card
-        busy = true
-        scope.launch {
-            val body = JSONObject()
-                .put("message", label).put("reply_to_card", card).toString()
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    RelayClient.authedCall(
-                        device.relayUrl, device.room, device.daemonPubB64,
-                        device.myPublicKeyB64, device.mySecretKeyB64,
-                        device.deviceToken, "POST", "/wear/talk", body)
-                }.getOrNull()
-            }
-            busy = false
-            if (result == null || result.first !in 200..299) {
-                // Say so, and put the buttons BACK: an answer that never landed
-                // must not look like one that did, or the owner walks away from
-                // a card still waiting on him.
-                answered = answered - card
-                record(Line(false, "Antwort nicht angekommen.", nowHm(), nowDate()))
-            }
-        }
-    }
-
-    val dictate = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val text = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-            if (!text.isNullOrBlank()) ask(text.trim())
-        }
-    }
-
-    fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_PROMPT, "Frag Henry")
-    }
+    // `speak()` and `refresh()` sit ABOVE `ask()` on purpose: `ask()`'s own
+    // failure branch calls `refresh()` (the "belegte Fehlbedingung" check,
+    // see there), and Kotlin local functions - unlike top-level or member
+    // ones - are only visible from their declaration point onward in the
+    // enclosing block, so the forward reference would not compile otherwise.
 
     /** Fetch and play the clip for ONE transcript line, named by its server key.
      *
@@ -392,8 +299,13 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     //   - a turn that outlived talk()'s 4x150s patience (the message above),
     //   - a turn the owner started on the PHONE or the GLASSES,
     //   - an answer that landed while the watch screen was off.
-    suspend fun refresh() {
-        val device = DeviceStore.load(context) ?: return
+    //
+    // Returns whether the /wear/chat FETCH ITSELF succeeded (regardless of
+    // whether it found anything new) - added 2026-09-18 so ask() can use a
+    // failed refresh as the "belegte Fehlbedingung" for a real, confirmed
+    // outage instead of guessing from talk()'s own timeout.
+    suspend fun refresh(): Boolean {
+        val device = DeviceStore.load(context) ?: return false
         // ALWAYS true while this call is in flight, not just on a cold start.
         // A wake-triggered refresh used to leave `loadingHistory` false
         // because `lines` was already populated, so the old transcript sat
@@ -431,10 +343,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         loadingHistory = false
         loadingAttempt = 0
         loadingLong = false
-        if (result == null || result.first !in 200..299) return
+        if (result == null || result.first !in 200..299) return false
         val arr = runCatching {
             JSONObject(result.second).optJSONArray("messages")
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return false
         val fresh = ArrayList<Line>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
@@ -508,6 +420,181 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 if (voiceOn) speak(newestVoice)
             }
         }
+        return true
+    }
+
+    fun ask(message: String) {
+        val device = DeviceStore.load(context)
+        if (device == null) {
+            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
+            return
+        }
+        record(Line(true, message, nowHm(), nowDate()))
+        busy = true
+        suggestions = null
+        scope.launch {
+            // `voice` tells the daemon whether this wrist is LISTENING. It used
+            // to render a clip on every single turn regardless, which meant a
+            // speech round trip per answer for a toggle that defaults to OFF.
+            // An older daemon ignores the field and behaves exactly as before.
+            val body = JSONObject()
+                .put("message", message).put("voice", voiceOn).toString()
+            // talk() = long timeout + dedupe-safe retries (see RelayClient) -
+            // a Henry turn outliving one HTTP request is normal, not an error.
+            // answerCard below deliberately stays on a single authedCall: its
+            // reply_to_card path has no dedupe claim, and the daemon's own 409
+            // on a doubled answer is its correctness backstop, not a retry.
+            val result = withContext(Dispatchers.IO) {
+                RelayClient.talk(
+                    device.relayUrl, device.room, device.daemonPubB64,
+                    device.myPublicKeyB64, device.mySecretKeyB64,
+                    device.deviceToken, body)
+            }
+            // THE "NICHT VERFUEGBAR" FALSE POSITIVE (owner bug report
+            // 2026-09-18). `talk()` used to collapse EVERY failure - a plain
+            // 150s socket timeout after ~10 minutes of its own retries
+            // included - into the same "Henry nicht erreichbar" chat line,
+            // permanently written into the transcript even though the turn
+            // was still running and its real answer landed moments later via
+            // the stream below. `TalkResult` now tells the two apart:
+            when (result) {
+                is RelayClient.TalkResult.Offline -> {
+                    // The relay ITSELF confirmed the desktop is unreachable
+                    // (503) - a real, evidenced outage, not a guess.
+                    busy = false
+                    record(Line(false, "Henry nicht erreichbar - Verbindung zum Desktop verloren.", nowHm(), nowDate()))
+                }
+                is RelayClient.TalkResult.Unknown -> {
+                    // No confirmed cause. The turn may well still be running
+                    // server-side, so ONE read of the much lighter /wear/chat
+                    // endpoint (refresh(), with its own 5x backoff) is the
+                    // "belegte Fehlbedingung" the owner asked for: if THAT
+                    // also fails, the connection itself is down; if it
+                    // succeeds, the transcript is the truth - the answer is
+                    // either already in it, or the stream below will deliver
+                    // it the moment it lands, and no claim is needed either
+                    // way. `busy` stays true (keeps the screen on and the
+                    // waiting state showing) until this settles.
+                    val reachable = refresh()
+                    busy = false
+                    if (!reachable) {
+                        record(Line(false, "Henry nicht erreichbar - Verbindung verloren.", nowHm(), nowDate()))
+                    }
+                }
+                is RelayClient.TalkResult.Ok -> {
+                    busy = false
+                    val o = runCatching { JSONObject(result.body) }.getOrNull()
+                    val reply = (o?.optString("reply") ?: "").ifBlank { "(keine Antwort)" }
+                    record(Line(false, reply, nowHm(), nowDate()))
+                    suggestions = parseQuestionBlock(o?.optJSONObject("question"))
+                    // CLAIM FIRST, THEN PLAY. `voiceKey` names the line this
+                    // reply became in the server's transcript, and the same
+                    // answer is about to arrive again over refresh() (the
+                    // chat cursor moved when the daemon logged it). Recording
+                    // it here is what stops the watch saying the same
+                    // sentence twice - claimed even when nothing is played,
+                    // so switching voice on later does not replay an answer
+                    // that was already read on screen.
+                    //
+                    // A blank key means the daemon did not name the line:
+                    // either an older build (which also sends no keys on
+                    // /wear/chat, so the refresh path stays silent and this
+                    // inline clip is the only voice there is) or a talk()
+                    // RETRY collecting a settled turn (which carries no clip
+                    // either, and refresh() then speaks it). Both degrade to
+                    // exactly one utterance.
+                    val vk = o?.optString("voiceKey") ?: ""
+                    if (vk.isNotBlank()) spokenKey = vk
+                    // `voice` is ABSENT (not null) when server-side rendering
+                    // failed; the text is already on screen, so a missing
+                    // clip is silence and never an error.
+                    val v = o?.optJSONObject("voice")
+                    if (voiceOn && v != null) {
+                        VoicePlayer.play(context, v.optString("mime"), v.optString("b64"))
+                    }
+                }
+            }
+        }
+    }
+
+    /** Answer a MIRRORED card question from the wrist.
+     *
+     *  Same POST as `ask`, plus `reply_to_card` - which is what makes it reach
+     *  that card's worker (routes_wear routes it through sessions.reply_door)
+     *  instead of Henry's advisory session. Sending it as an ordinary message
+     *  would put a bare "A" in front of Henry, who cannot settle another
+     *  agent's question, while the card went on waiting.
+     *
+     *  `answered` clears the buttons immediately: the daemon rejects a second
+     *  answer to the same request_id with a 409, so leaving them tappable would
+     *  invite a guaranteed error. */
+    fun answerCard(card: String, label: String) {
+        val device = DeviceStore.load(context)
+        if (device == null) {
+            record(Line(false, "Nicht gekoppelt.", nowHm(), nowDate()))
+            return
+        }
+        record(Line(true, label, nowHm(), nowDate()))
+        answered = answered + card
+        busy = true
+        scope.launch {
+            val body = JSONObject()
+                .put("message", label).put("reply_to_card", card).toString()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    RelayClient.authedCall(
+                        device.relayUrl, device.room, device.daemonPubB64,
+                        device.myPublicKeyB64, device.mySecretKeyB64,
+                        device.deviceToken, "POST", "/wear/talk", body)
+                }.getOrNull()
+            }
+            busy = false
+            if (result == null || result.first !in 200..299) {
+                // Say so, and put the buttons BACK: an answer that never landed
+                // must not look like one that did, or the owner walks away from
+                // a card still waiting on him.
+                answered = answered - card
+                record(Line(false, "Antwort nicht angekommen.", nowHm(), nowDate()))
+            }
+        }
+    }
+
+    val dictate = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val text = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (!text.isNullOrBlank()) {
+                // QUEUE, DON'T DROP: dictating while Henry is still answering
+                // used to be impossible (the button was disabled), which read
+                // as the tap doing nothing at all. Held here and flushed by
+                // the effect below the moment `busy` frees - same shape as
+                // the phone's Composer (ui/card_composer.tsx: "send stays
+                // enabled while busy — the message is queued instead of
+                // dropped"). Last dictation wins if the owner re-records.
+                if (busy) queued = text.trim() else ask(text.trim())
+            }
+        }
+    }
+
+    // THE QUEUED MESSAGE FIRES THE MOMENT THE RUNNING TURN FREES UP. `queued`
+    // as a key (not just `busy`) means a plain busy->false with nothing held
+    // is a no-op, and a dictation that arrives AFTER busy already went false
+    // (the flush already ran) still fires on its own via the `else ask(...)`
+    // branch above - this effect only ever has to catch the case where the
+    // owner spoke WHILE busy was true.
+    LaunchedEffect(busy, queued) {
+        if (!busy) {
+            val q = queued
+            if (q != null) { queued = null; ask(q) }
+        }
+    }
+
+    fun speechIntent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "Frag Henry")
     }
 
     // RESUMED, not merely composed. A LaunchedEffect keeps running while
@@ -783,10 +870,16 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 onClick = { ask(row.label) }, enabled = !busy,
                                 modifier = Modifier.padding(4.dp)) { Text(text = row.label) }
 
+                            // ALWAYS enabled, even while `busy`: a tap while
+                            // Henry is still answering DICTATES a follow-up
+                            // and queues it (see `dictate` above) rather than
+                            // doing nothing, which is what a disabled button
+                            // looked like to the owner (bug report
+                            // 2026-09-18: "passiert sichtbar nichts").
                             is Row.Speak -> Button(
-                                onClick = { dictate.launch(speechIntent()) }, enabled = !busy,
+                                onClick = { dictate.launch(speechIntent()) },
                                 modifier = Modifier.padding(6.dp),
-                            ) { Text(if (busy) "…" else "Sprechen") }
+                            ) { Text(if (queued != null) "Wartet …" else if (busy) "…" else "Sprechen") }
 
                             is Row.VoiceToggle -> OutlinedButton(
                                 onClick = {

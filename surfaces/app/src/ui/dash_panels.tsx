@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { api, type PmBrief, type PmData } from "@/data/client";
+import { api, type PmBrief, type PmBudget, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -86,6 +86,27 @@ function totalTokens(m: Metrics): number {
   return (m.cards ?? []).reduce((a, x) => a + (x.tokens_in ?? 0) + (x.tokens_out ?? 0), 0);
 }
 
+/** ai_spend's flat-plan label, enriched with the SAME reset-projection the
+ *  Budget corner already computes (plan.budget) - no new data source, no
+ *  parallel tile (owner, 2026-09-18: "bestehende Mechanik verbessern statt
+ *  eine parallele Anzeige daneben zu stellen" - a first cut of this added a
+ *  whole separate budget_use tile, which just duplicated the % this tile
+ *  already shows via T.plan_pct). Names the DIRECTION the current pace heads
+ *  for - reusing the window's OWN flags, not a second threshold: `pacing.flag`
+ *  is the exact "burning hot" signal the Budget corner's overrun warning
+ *  already keys off, and <=70% is pm_triangle._budget_surplus' own "heading
+ *  to expire unused" threshold. Silent (just the base label) when neither -
+ *  the common on-pace case stays terse. */
+function aiSpendLabel(tr: ReturnType<typeof useT>, b: PmBudget | undefined): string {
+  const base = tr("dash.tile.aiPlanShare");
+  const pacing = b?.kind === "usage" ? b.windows?.find((w) => w.id === "weekly")?.pacing : undefined;
+  if (!pacing) return base;
+  if (pacing.flag) return base + " · " + tr("dash.tile.aiPlanShareOverrun");
+  if (pacing.projected_pct != null && pacing.projected_pct <= 70)
+    return base + " · " + tr("dash.tile.aiPlanShareSurplus", { proj: Math.round(pacing.projected_pct) });
+  return base;
+}
+
 export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
   const tr = useT();
   const flat = useAiFlat();
@@ -93,13 +114,16 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
   const [y0, y1] = m.yield_first_pass ?? [0, 0];
   const [a0, a1] = m.automation ?? [0, 0];
   const c = cur(m);
+  // Only the Budget corner's own numbers - cached, same query TriageFollowUp/
+  // StatusPanel already run, so this costs no extra fetch in practice.
+  const { data: pmData } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const byKey: Record<string, { value: string; label: string }> = {
     value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
     // flat: the SHARE OF THE SUBSCRIPTION is the cost. Tokens are the fallback
     // for when the daemon cannot calibrate (no Claude login, freshly reset week).
     ai_spend: flat
       ? (T.plan_pct != null && T.plan_pct > 0
-        ? { value: fmtPlanPct(T.plan_pct), label: tr("dash.tile.aiPlanShare") }
+        ? { value: fmtPlanPct(T.plan_pct), label: aiSpendLabel(tr, pmData?.plan?.budget) }
         : { value: fmtTok(totalTokens(m)) + " Tok", label: tr("dash.tile.aiSpendFlat") })
       : { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
     margin: { value: c + T.margin, label: tr(flat ? "dash.tile.marginFlat" : "dash.tile.margin") },
@@ -553,9 +577,25 @@ export function TriageFollowUp({ m, wide, defaultRepo, only }: {
   const reasons = plan.triage_reasons;
   const GateReason = ({ text }: { text?: string }) =>
     text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
+  // The MIRROR of GateReason, same slot (owner, 2026-09-18: same eyeshot as the
+  // overrun warning) - pm_triangle._budget_surplus only ever sets this when the
+  // corner is NOT blocked, so the two notes never compete for the same line.
+  const SurplusNote = ({ s: sur }: { s?: PmBudget["surplus"] }) =>
+    sur ? (
+      <View style={{ backgroundColor: t.ok + "14", borderColor: t.ok + "55", borderWidth: 1, borderRadius: 10, padding: 9, marginBottom: 6, gap: 2 }}>
+        <Text style={{ color: t.ok, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" }}>
+          {tr("dash.corner.surplusTitle")}
+        </Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 12, lineHeight: 16 }}>
+          {tr("dash.corner.surplusBody", { proj: Math.round(sur.projected_pct) })}
+        </Text>
+        <Text style={{ color: t.txtSecondary, fontSize: 12, lineHeight: 16 }}>{sur.suggestion}</Text>
+      </View>
+    ) : null;
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.budget} />
+      <SurplusNote s={b?.surplus} />
       {b?.kind === "usage" ? (
         <View>
           {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)

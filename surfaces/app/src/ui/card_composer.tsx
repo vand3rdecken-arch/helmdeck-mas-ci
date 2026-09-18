@@ -85,6 +85,16 @@ export function Composer({
   const t = useTheme();
   const tr = useT();
   const [text, setTextRaw] = useState("");
+  // Mirrors `text`, but written SYNCHRONOUSLY (refs aren't batched through
+  // React's commit cycle the way state is). fire() reads this, not `text`:
+  // typing fast and tapping Send in the same instant can deliver the final
+  // onChangeText and the send tap's onPress before React has committed the
+  // render from that last keystroke, so `fire`'s closure over `text` would
+  // still be the PREVIOUS render's value - the message goes out missing
+  // exactly the tail the user just typed. The ref has no such lag: its
+  // write always happens inside onChangeText, which always runs before a
+  // later tap's onPress (native events are FIFO).
+  const textRef = useRef("");
   const [model, setModel] = useState("auto");
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
@@ -103,6 +113,7 @@ export function Composer({
 
   // draft persistence — write-through on every edit, restore on mount
   function setText(v: string) {
+    textRef.current = v;
     setTextRaw(v);
     if (draftKey) saveDraft(draftKey, v);
   }
@@ -147,7 +158,7 @@ export function Composer({
   }
 
   // clear input + its persisted draft after a message leaves the composer
-  function clearInput() { setTextRaw(""); setAtts([]); if (draftKey) saveDraft(draftKey, ""); }
+  function clearInput() { textRef.current = ""; setTextRaw(""); setAtts([]); if (draftKey) saveDraft(draftKey, ""); }
 
   // -- attachments ----------------------------------------------------------
   // The daemon SILENTLY skips oversized/extra files (turnopts.save_attachments),
@@ -246,9 +257,12 @@ export function Composer({
     : model.replace("claude-", "").replace(/-\d{8}$/, "");
 
   function fire() {
+    // Read textRef, not `text` state - see the comment on textRef's
+    // declaration: a fast type-then-immediately-tap-send can otherwise send
+    // a render behind, silently dropping the tail of the sentence.
     // an attachment alone is a valid message ("look at this") - give the agent
     // a sentence so the turn is never empty prose with a dangling file list
-    const v = text.trim() || (atts.length ? tr("composer.seeAttachment") : "");
+    const v = textRef.current.trim() || (atts.length ? tr("composer.seeAttachment") : "");
     if (!v) return;
     const opts = buildOpts();
     if (busy) setQueued({ text: v, opts });   // hold until the agent is free

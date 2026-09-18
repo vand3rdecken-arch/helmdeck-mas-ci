@@ -6,7 +6,9 @@
 -- /datenschutz section 3a and ops/deploy/waitlist/src/index.js (isBot(),
 -- handleEvent(), insertEvent()). Read via ops/tools/site_stats.py.
 --
--- Apply:  cd ops/deploy/waitlist && npx wrangler d1 execute helmdeck-site-stats --remote --file=schema.sql
+-- Apply (fresh db):  cd ops/deploy/waitlist && npx wrangler d1 execute helmdeck-site-stats --remote --file=schema.sql
+-- Apply (existing db, adding a column later): put the ALTER in migrations/NNNN_*.sql
+-- and run it the same way - see migrations/0001_add_utm_content.sql for the pattern.
 
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,6 +22,7 @@ CREATE TABLE IF NOT EXISTS events (
   utm_source TEXT,
   utm_medium TEXT,
   utm_campaign TEXT,
+  utm_content TEXT,             -- per-post/per-link label, e.g. "show-hn-announce" (ops/tools/campaign_link.py)
   country TEXT,                 -- request.cf.country (Cloudflare edge geo, no IP stored)
   section TEXT,                 -- section_seen: which section; leave: last section seen
   seconds INTEGER,              -- section_seen: seconds since view; leave: time on page

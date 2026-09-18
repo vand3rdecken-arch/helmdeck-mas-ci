@@ -351,6 +351,14 @@ export interface PmBudget {
   windows?: UsageWindow[]; usage_plan?: string | null;
   // kind === "cash" (API)
   monthly_eur?: number; spent_to_date_eur?: number; cash_to_goal_eur?: number; projected_eur?: number;
+  /** the MIRROR of the overrun note above (pm_triangle._budget_surplus,
+   *  2026-09-18): present only when the weekly quota projects well under 100%
+   *  with more than a day left to spend it - unused headroom is exactly as
+   *  costly as an overrun, it just expires silently instead of blocking.
+   *  `suggestion` is plan-derived prose, never a fixed category. Usage-kind
+   *  (Max plan) only - absent entirely on a cash/API budget or when there is
+   *  no meaningful surplus. */
+  surplus?: { projected_pct: number; reset_hours_left: number; suggestion: string } | null;
 }
 /** "Der Weg" (pm-lean-advisor phase 3.1, 2026-09-04): the causal chain a
  *  senior PM reports ("X blockiert → danach Y → dann Z"), not the parallel

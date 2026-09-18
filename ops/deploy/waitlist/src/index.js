@@ -725,6 +725,7 @@ ${wl("wearables")}
         device: (window.innerWidth || 0) < 768 ? "mobile" : "desktop",
         ref: hdRefHost,
         utm_source: hdQp("utm_source"), utm_medium: hdQp("utm_medium"), utm_campaign: hdQp("utm_campaign"),
+        utm_content: hdQp("utm_content"),
         test: hdTest
       }, extra || {}));
       if (navigator.sendBeacon) navigator.sendBeacon("/api/ev", new Blob([body], { type: "text/plain" }));
@@ -1221,7 +1222,7 @@ Seitenaufrufs existiert; sie verschwindet mit dem Schließen des Tabs oder einem
 und erlaubt keine Wiedererkennung über mehrere Besuche.</p>
 <p>Erfasst werden zusätzlich: deine eingestellte Sprache, eine grobe Geräteklasse (mobil oder
 Desktop, anhand der Fensterbreite), der Referrer nur als Domainname (nicht die volle Adresse),
-utm_source/utm_medium/utm_campaign aus dem Link, sofern vorhanden, sowie dein Herkunftsland grob
+utm_source/utm_medium/utm_campaign/utm_content aus dem Link, sofern vorhanden, sowie dein Herkunftsland grob
 anhand des anfragenden Cloudflare-Rechenzentrums (ohne IP-Speicherung). Automatisiert erkannte
 Bots und Crawler werden anhand des User-Agent-Strings erkannt, der String selbst wird dabei nicht
 gespeichert, und aus der Auswertung ausgeschlossen. Für Besuche ohne JavaScript zählt diese Seite
@@ -1250,7 +1251,7 @@ anonyme Kennung, die keiner Person zugeordnet werden kann. Aufzeichnung von Bild
 Heatmaps, Umfragen und die automatische Erfassung aller Klicks sind abgeschaltet. Erfasst werden
 ausschließlich einzelne, benannte Ereignisse wie Seitenaufruf, Scrolltiefe, Klick auf einen
 Download oder Start des Wartelisten-Formulars, dazu die Herkunft eines Besuchs (utm_source,
-utm_medium, utm_campaign), sofern ein Link diese Angaben enthält.</p>
+utm_medium, utm_campaign, utm_content), sofern ein Link diese Angaben enthält.</p>
 <p>Deine IP-Adresse soll bei PostHog verworfen werden (Einstellung „Discard client IP data" im
 PostHog-Projekt). Der Stand dieser Einstellung ist noch nicht bestätigt, siehe Abschnitt 8. Die
 Speicherdauer bei PostHog richtet sich nach der Standard-Aufbewahrungsfrist des genutzten Tarifs;
@@ -1326,7 +1327,7 @@ disappears when the tab is closed or the page is reloaded, and allows no recogni
 visits.</p>
 <p>Also captured: your selected language, a rough device class (mobile or desktop, from the
 window width), the referrer as a domain name only (not the full address), utm_source/utm_medium/
-utm_campaign from the link, if present, and your country of origin roughly from the requesting
+utm_campaign/utm_content from the link, if present, and your country of origin roughly from the requesting
 Cloudflare data center (with no IP address stored). Automatically detected bots and crawlers are
 recognized from the user-agent string, the string itself is not stored, and are excluded from
 reporting. For visits without JavaScript, this site additionally counts server-side how often the
@@ -1353,7 +1354,7 @@ fresh page load gets a new, anonymous identifier that cannot be linked to a pers
 recording, heatmaps, surveys and automatic capture of every click are all turned off. Only a small
 set of named events is captured, such as a page view, scroll depth, a click on a download, or
 starting the waitlist form, together with the source of a visit (utm_source, utm_medium,
-utm_campaign) when a link carries that information.</p>
+utm_campaign, utm_content) when a link carries that information.</p>
 <p>Your IP address is meant to be discarded by PostHog (the "Discard client IP data" project
 setting). Whether that setting is currently enabled has not yet been confirmed, see section 8.
 Retention at PostHog follows the tier's default retention period; the exact figure has not yet been
@@ -1481,11 +1482,11 @@ const EVENT_TYPES = new Set([
 async function insertEvent(env, row) {
   if (!env.SITE_STATS) return; // local `wrangler dev` without D1 configured
   await env.SITE_STATS.prepare(
-    `INSERT INTO events (ts, vid, type, path, lang, device, ref_host, utm_source, utm_medium, utm_campaign, country, section, seconds, pct, label, already, bot, test)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO events (ts, vid, type, path, lang, device, ref_host, utm_source, utm_medium, utm_campaign, utm_content, country, section, seconds, pct, label, already, bot, test)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).bind(
     row.ts, row.vid, row.type, row.path, row.lang, row.device, row.ref_host,
-    row.utm_source, row.utm_medium, row.utm_campaign, row.country, row.section,
+    row.utm_source, row.utm_medium, row.utm_campaign, row.utm_content, row.country, row.section,
     row.seconds, row.pct, row.label, row.already, row.bot, row.test
   ).run();
   // Lazy retention purge: cheap enough to piggy-back on a fraction of writes
@@ -1517,6 +1518,7 @@ async function handleEvent(req, env, ctx) {
       utm_source: clip(body.utm_source, 64),
       utm_medium: clip(body.utm_medium, 64),
       utm_campaign: clip(body.utm_campaign, 64),
+      utm_content: clip(body.utm_content, 64),
       country: (req.cf && req.cf.country) || "",
       section: clip(body.section, 64),
       seconds: Number.isFinite(body.seconds) ? Math.max(0, Math.min(86400, Math.round(body.seconds))) : null,
@@ -1629,6 +1631,7 @@ export default {
         utm_source: clip(url.searchParams.get("utm_source"), 64),
         utm_medium: clip(url.searchParams.get("utm_medium"), 64),
         utm_campaign: clip(url.searchParams.get("utm_campaign"), 64),
+        utm_content: clip(url.searchParams.get("utm_content"), 64),
         country: (req.cf && req.cf.country) || "", section: null, seconds: null, pct: null, label: null, already: null,
         bot: isBot(ua) ? 1 : 0, test: url.searchParams.get("hd_test") === "1" ? 1 : 0,
       }).catch(() => {}));

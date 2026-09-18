@@ -137,6 +137,10 @@ export const board: Dict = {
   "dash.tile.yield": { de: "First-Pass-Quote ({a}/{b})", en: "first-pass yield ({a}/{b})" },
   "dash.tile.automation": { de: "Automatisierungsgrad ({a}/{b} auto)", en: "automation rate ({a}/{b} auto)" },
   "dash.tile.leverage": { de: "Wert pro Touch-Einheit", en: "value per touch unit" },
+  // ai_spend's flat-plan label, folded-in reset-projection hint (dash_panels.
+  // aiSpendLabel) - only appended when the pace is heading somewhere notable.
+  "dash.tile.aiPlanShareOverrun": { de: "droht zu überziehen", en: "heading to overrun" },
+  "dash.tile.aiPlanShareSurplus": { de: "nur {proj}% projiziert - Rest verfällt", en: "only {proj}% projected - rest expires" },
 
   // ---- dashboard customizer ----------------------------------------------
   "dash.tileName.valueDelivered": { de: "Wert geliefert", en: "Value delivered" },
@@ -241,6 +245,13 @@ export const board: Dict = {
   "dash.corner.aiPlan": { de: "KI {v} vom Abo", en: "AI {v} of plan" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
   "dash.corner.wip": { de: "Laufende Arbeit {wip}/{limit} · {n} Plätze frei", en: "Work in progress {wip}/{limit} · {n} slots free" },
+  // Budget SURPLUS note (pm_triangle._budget_surplus) - the mirror of the red
+  // overrun GateReason above, same corner, same spot, opposite direction.
+  "dash.corner.surplusTitle": { de: "Budget übrig", en: "Budget headroom" },
+  "dash.corner.surplusBody": {
+    de: "Projektion nur {proj}% zum Reset — Kontingent verfällt sonst ungenutzt.",
+    en: "Projected only {proj}% by reset — the quota otherwise expires unused.",
+  },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",

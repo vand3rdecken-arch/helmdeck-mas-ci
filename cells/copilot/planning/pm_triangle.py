@@ -105,6 +105,7 @@ def _gate_triangle(out, econ, est_turns, pace):
     else:
         tri["budget"] = "ok"
         reasons.pop("budget", None)
+    _budget_surplus(out["budget"], bstate, out)
 
     # -- Timeline: measured velocity underwrites the ETA --------------------
     out["eta"] = _eta_range(est_turns, pace)
@@ -129,6 +130,67 @@ def _gate_triangle(out, econ, est_turns, pace):
     out["plan_status"] = "blocked" if blocked else "ready"
     out["gate"] = ("; ".join(reasons.get(c, "") for c in blocked if reasons.get(c))
                    if blocked else "")
+
+
+def _budget_surplus(budget, bstate, out):
+    """The MIRROR of the overrun warning above (owner, 2026-09-18: "richtig gut
+    die Vorhersage wenn es ueberschreitet, aber noch nicht planen was passiert
+    wenn man Budget uebrig hat"). A weekly quota that projects well under 100%
+    is not "fine" - it EXPIRES unused at the reset, which is exactly as costly
+    as an overrun, just silent until now. Attaches budget['surplus'] (None
+    when there's no meaningful surplus) with the measured projection plus a
+    plan-derived suggestion for the freed capacity - never auto-files a card,
+    the owner decides.
+
+    Usage-kind (Max plan) only: a Max plan's weekly allotment genuinely
+    expires at reset; a cash/API plan's unspent euros just stay unspent, there
+    is no "verfaellt" for those, so the API side has nothing analogous to warn
+    about here.
+
+    Thresholds (owner-specified starting point): projected <= 70% of the week
+    AND more than a day left to actually spend the headroom. Mirrors
+    usage.pacing()'s own documented trap for the overrun side (a fresh reset -
+    tiny elapsed%, tiny used% - makes the projection swing wildly on rounding
+    noise) with a symmetric guard: at least ~1 day of the week must ALSO have
+    already elapsed before the projection is trusted, so this never fires in
+    the first hours after every reset."""
+    budget.pop("surplus", None)
+    if bstate == "blocked" or budget.get("kind") != "usage":
+        return
+    weekly = next((w for w in (budget.get("windows") or []) if w.get("id") == "weekly"), None)
+    pac = (weekly or {}).get("pacing") or {}
+    proj, hrs_left, elapsed = pac.get("projected_pct"), pac.get("reset_hours_left"), pac.get("elapsed_pct")
+    if proj is None or hrs_left is None or elapsed is None:
+        return
+    if not (proj <= 70.0 and hrs_left > 24.0 and elapsed >= 14.0):
+        return
+    budget["surplus"] = {"projected_pct": proj, "reset_hours_left": hrs_left,
+                          "suggestion": _surplus_suggestion(out)}
+
+
+def _surplus_suggestion(out):
+    """WHAT the freed capacity could go toward - derived from the plan's OWN
+    open items, never a fixed category (owner, 2026-09-18: the suggestion "darf
+    NICHT hart verdrahtet 'Marketing' sein"). Priority: a milestone the LLM
+    already scoped but hasn't put on the board yet (plan_items() - the exact
+    "not yet on the board" filter the night ticker uses to file cards) > the
+    oldest open item in the structural debt register > an honest "nothing
+    concrete queued" rather than inventing a category."""
+    try:
+        from cells.copilot.planning.pm import plan_items
+        items, _ = plan_items(out)
+        if items:
+            return "Naechster geplanter Meilenstein noch nicht auf dem Board: %s" % items[0]["title"]
+    except Exception:
+        pass
+    try:
+        from spine.registry import debt
+        open_debt = [d for d in debt.list_debt() if d.get("status") == "open"]
+        if open_debt:
+            return "Offener Posten im Schuldenregister: %s" % open_debt[0]["title"]
+    except Exception:
+        pass
+    return "Kein offener Vorschlag im Plan gerade - sag mir, wofuer die freie Kapazitaet gehen soll."
 
 
 def _triage_shape(plan):
