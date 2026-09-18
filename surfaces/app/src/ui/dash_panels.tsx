@@ -21,7 +21,7 @@ const isWeb = Platform.OS === "web";
 // everything - dashboard.tsx passes ALL_* for them explicitly (their payload has
 // no settings and no triage). Keys match the archived web dash.tsx so settings
 // interop.
-export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage", "budget_use"] as const;
+export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"] as const;
 export const ALL_PANELS = ["sows", "capacity", "gates", "models", "work"] as const;
 // The customizer names each tile/panel by dict key, so the chip list speaks the
 // workspace language too.
@@ -29,7 +29,6 @@ export const TILE_LABEL_KEYS: Record<string, string> = {
   value_delivered: "dash.tileName.valueDelivered", ai_spend: "dash.tileName.aiSpend",
   margin: "dash.tileName.margin", yield: "dash.tileName.yield",
   automation: "dash.tileName.automation", leverage: "dash.tileName.leverage",
-  budget_use: "dash.tileName.budgetUse",
 };
 export const PANEL_LABEL_KEYS: Record<string, string> = {
   sows: "dash.panelName.sows", capacity: "dash.panelName.capacity", gates: "dash.panelName.gates",
@@ -87,41 +86,25 @@ function totalTokens(m: Metrics): number {
   return (m.cards ?? []).reduce((a, x) => a + (x.tokens_in ?? 0) + (x.tokens_out ?? 0), 0);
 }
 
-/** The "budget_use" tile: cards' consumption of the week's budget so far, as a
- *  plain percentage, PLUS the reset projection - reusing exactly the numbers
- *  the planning triangle's Budget corner already computes (PmBudget), never a
- *  second calculation. Owner, 2026-09-18: "wieviel haben Karten bisher
- *  verbraucht vs wieviel im Budget" - today's ai_spend/margin tiles show the
- *  SPEND side; this one is the one-glance BUDGET-FIT side, with the same
- *  reset-projection the Budget corner's warning already carries.
- *
- *  Max plan (kind "usage"): the weekly window's usedPct is the headline;
- *  the "X of Y turns" line comes from the SAME pace_turns_per_day the
- *  Timeline corner already shows, scaled by that usedPct (pace*7 = the
- *  turns a full week affords at the governing pace; usedPct of that = turns
- *  spent so far) - not a new measurement, just the existing rate expressed
- *  as a count instead of a percentage. API plan (kind "cash"): € spent vs
- *  the monthly cap, same idea. */
-function budgetUseTile(b: PmBudget | undefined, tr: ReturnType<typeof useT>, c: string): { value: string; label: string } | undefined {
-  if (!b) return undefined;
-  if (b.kind === "cash") {
-    const cap = b.monthly_eur ?? 0;
-    if (!cap) return undefined;
-    const spent = b.spent_to_date_eur ?? 0;
-    const pct = Math.round((100 * spent) / cap);
-    const parts = [tr("dash.tile.budgetUseCash", { spent: c + spent.toFixed(0), cap: c + cap.toFixed(0) })];
-    if (b.projected_eur != null) parts.push(tr("dash.tile.budgetUseCashProj", { proj: c + b.projected_eur.toFixed(0) }));
-    return { value: `${pct}%`, label: parts.join(" · ") };
-  }
-  const weekly = b.windows?.find((w) => w.id === "weekly");
-  const pct = weekly?.usedPct;
-  if (pct == null) return undefined;
-  const projPct = weekly?.pacing?.projected_pct;
-  const weekTurns = b.pace_turns_per_day != null ? Math.round(b.pace_turns_per_day * 7) : null;
-  const parts: string[] = [];
-  if (weekTurns) parts.push(tr("dash.tile.budgetUseTurns", { a: Math.round((weekTurns * pct) / 100), b: weekTurns }));
-  if (projPct != null) parts.push(tr("dash.tile.budgetUseProj", { proj: Math.round(projPct) }));
-  return { value: `${Math.round(pct)}%`, label: parts.join(" · ") || tr("dash.tileName.budgetUse") };
+/** ai_spend's flat-plan label, enriched with the SAME reset-projection the
+ *  Budget corner already computes (plan.budget) - no new data source, no
+ *  parallel tile (owner, 2026-09-18: "bestehende Mechanik verbessern statt
+ *  eine parallele Anzeige daneben zu stellen" - a first cut of this added a
+ *  whole separate budget_use tile, which just duplicated the % this tile
+ *  already shows via T.plan_pct). Names the DIRECTION the current pace heads
+ *  for - reusing the window's OWN flags, not a second threshold: `pacing.flag`
+ *  is the exact "burning hot" signal the Budget corner's overrun warning
+ *  already keys off, and <=70% is pm_triangle._budget_surplus' own "heading
+ *  to expire unused" threshold. Silent (just the base label) when neither -
+ *  the common on-pace case stays terse. */
+function aiSpendLabel(tr: ReturnType<typeof useT>, b: PmBudget | undefined): string {
+  const base = tr("dash.tile.aiPlanShare");
+  const pacing = b?.kind === "usage" ? b.windows?.find((w) => w.id === "weekly")?.pacing : undefined;
+  if (!pacing) return base;
+  if (pacing.flag) return base + " · " + tr("dash.tile.aiPlanShareOverrun");
+  if (pacing.projected_pct != null && pacing.projected_pct <= 70)
+    return base + " · " + tr("dash.tile.aiPlanShareSurplus", { proj: Math.round(pacing.projected_pct) });
+  return base;
 }
 
 export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
@@ -134,20 +117,19 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
   // Only the Budget corner's own numbers - cached, same query TriageFollowUp/
   // StatusPanel already run, so this costs no extra fetch in practice.
   const { data: pmData } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
-  const byKey: Record<string, { value: string; label: string } | undefined> = {
+  const byKey: Record<string, { value: string; label: string }> = {
     value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
     // flat: the SHARE OF THE SUBSCRIPTION is the cost. Tokens are the fallback
     // for when the daemon cannot calibrate (no Claude login, freshly reset week).
     ai_spend: flat
       ? (T.plan_pct != null && T.plan_pct > 0
-        ? { value: fmtPlanPct(T.plan_pct), label: tr("dash.tile.aiPlanShare") }
+        ? { value: fmtPlanPct(T.plan_pct), label: aiSpendLabel(tr, pmData?.plan?.budget) }
         : { value: fmtTok(totalTokens(m)) + " Tok", label: tr("dash.tile.aiSpendFlat") })
       : { value: "$" + T.ai_spend.toFixed(2), label: tr("dash.tile.aiSpend") },
     margin: { value: c + T.margin, label: tr(flat ? "dash.tile.marginFlat" : "dash.tile.margin") },
     yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: tr("dash.tile.yield", { a: y0, b: y1 }) },
     automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: tr("dash.tile.automation", { a: a0, b: a1 }) },
     leverage: { value: c + T.leverage_per_touch, label: tr("dash.tile.leverage") },
-    budget_use: budgetUseTile(pmData?.plan?.budget, tr, c),
   };
   // Enabled keys drive both which tiles show and their order (missing = all).
   const keys = (tiles ?? [...ALL_TILES]).filter((k) => byKey[k]);
@@ -156,7 +138,7 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
     <View style={s.tileGrid}>
       {keys.map((k) => (
         <View key={k} style={{ width: wide ? "32%" : "48%" }}>
-          <Tile value={byKey[k]!.value} label={byKey[k]!.label} />
+          <Tile value={byKey[k].value} label={byKey[k].label} />
         </View>
       ))}
     </View>

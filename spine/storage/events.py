@@ -107,8 +107,7 @@ DEFAULTS = {
     # card/status colors stay semantic). Chat-configurable.
     "appearance": {"backdrop": "mesh"},   # mesh|aurora|ember|forest|mono
     # DASHBOARD composition - which tiles/panels the CEO view shows, in order.
-    # tiles: value_delivered, ai_spend, margin, yield, automation, leverage,
-    #        budget_use (opt-in, not in the default set below)
+    # tiles: value_delivered, ai_spend, margin, yield, automation, leverage
     # panels: capacity, gates, work
     "dashboard": {"tiles": ["value_delivered", "ai_spend", "margin",
                             "yield", "automation", "leverage"],

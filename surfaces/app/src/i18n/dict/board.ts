@@ -137,12 +137,10 @@ export const board: Dict = {
   "dash.tile.yield": { de: "First-Pass-Quote ({a}/{b})", en: "first-pass yield ({a}/{b})" },
   "dash.tile.automation": { de: "Automatisierungsgrad ({a}/{b} auto)", en: "automation rate ({a}/{b} auto)" },
   "dash.tile.leverage": { de: "Wert pro Touch-Einheit", en: "value per touch unit" },
-  // budget_use: cards' consumption of the week's quota so far (Max plan) or
-  // the euro cap (API plan), reusing exactly the Budget corner's own numbers.
-  "dash.tile.budgetUseTurns": { de: "{a} von {b} Turns", en: "{a} of {b} turns" },
-  "dash.tile.budgetUseProj": { de: "Projektion {proj}% zum Reset", en: "projected {proj}% by reset" },
-  "dash.tile.budgetUseCash": { de: "{spent} von {cap}", en: "{spent} of {cap}" },
-  "dash.tile.budgetUseCashProj": { de: "Projektion {proj}", en: "projected {proj}" },
+  // ai_spend's flat-plan label, folded-in reset-projection hint (dash_panels.
+  // aiSpendLabel) - only appended when the pace is heading somewhere notable.
+  "dash.tile.aiPlanShareOverrun": { de: "droht zu überziehen", en: "heading to overrun" },
+  "dash.tile.aiPlanShareSurplus": { de: "nur {proj}% projiziert - Rest verfällt", en: "only {proj}% projected - rest expires" },
 
   // ---- dashboard customizer ----------------------------------------------
   "dash.tileName.valueDelivered": { de: "Wert geliefert", en: "Value delivered" },
@@ -151,7 +149,6 @@ export const board: Dict = {
   "dash.tileName.yield": { de: "First-Pass-Quote", en: "First-pass yield" },
   "dash.tileName.automation": { de: "Automatisierungsgrad", en: "Automation rate" },
   "dash.tileName.leverage": { de: "Hebel pro Touch", en: "Leverage per touch" },
-  "dash.tileName.budgetUse": { de: "Budget-Verbrauch", en: "Budget use" },
   "dash.panelName.sows": { de: "SoW-Marge", en: "SoW margin" },
   "dash.panelName.capacity": { de: "Kapazitätsanzeige", en: "Capacity gauge" },
   "dash.panelName.gates": { de: "Gate-Fehler", en: "Gate failures" },
