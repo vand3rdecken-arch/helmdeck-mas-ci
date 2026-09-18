@@ -26,10 +26,10 @@
  * goes stale when a new version ships. If the GitHub fetch fails, every button
  * falls back to the releases page itself rather than a dead link.
  *
- * iOS is the one platform with no downloadable artifact: it ships as an internal
- * TestFlight group, which Apple distributes by invitation only (no public join
- * URL exists to link). Its card therefore offers a mailto that asks for the
- * tester's Apple ID - see TESTFLIGHT_REQUEST_URL.
+ * iOS is live worldwide on the App Store since 2026-09-16 (version 1.0.49,
+ * see APP_STORE_URL), the primary iOS CTA. The public TestFlight beta
+ * (TESTFLIGHT_JOIN_URL) stays as a smaller secondary line for anyone who
+ * wants pre-release builds.
  */
 
 import { ICON_SVG } from "./logo.js";
@@ -78,12 +78,14 @@ const OWNER_EMAIL = "tienduyvo@googlemail.com";
 // consent banner (ops/docs/marketing/gtm-messung-2026-09.md section 4).
 const POSTHOG_KEY = "phc_oda4H49MaYwqP2f64F8XkGuyxbsxACEeBYcb9JWhQ25D";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
-// iOS: moving from INTERNAL to EXTERNAL TestFlight (owner decision 2026-09-02),
-// which is what finally produces a public join URL - external group "Public Beta"
-// (ASC app 6801637667) exists, the build still has to clear Apple Beta App Review.
-// Until that link is live this card is INTERIM.
+// iOS is LIVE worldwide on the App Store since 2026-09-16 (version 1.0.49,
+// ASC app 6801637667) - measured via a real HTTP 200 on the storefront URL,
+// not reasoned. This is now the primary iOS CTA.
+const APP_STORE_URL = "https://apps.apple.com/app/id6801637667";
+// TESTFLIGHT_REQUEST_URL below predates the public TestFlight join link and is
+// unused by the current page; kept only as the historical fallback contact.
 //
-// What it is fixing, measured in real Chromium on 2026-09-02, not reasoned:
+// What it was fixing, measured in real Chromium on 2026-09-02, not reasoned:
 // the primary button used to be a bare mailto: and clicking it produced
 // `navigated away? False | new tabs opened: 0` - i.e. literally nothing for any
 // visitor without an OS-registered mail handler, which includes every webmail
@@ -97,15 +99,9 @@ const TESTFLIGHT_REQUEST_URL =
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
   );
-// Storefront segment is deliberate: without "/de/" Apple redirects a German
-// visitor through the US storefront, and one of those redirects served a blank
-// "An Error Occurred" page in a real browser on 2026-09-02 (title "App Store",
-// 401 chars, no app content). The error itself is intermittent Apple-side, but
-// the extra hop is not - naming the storefront removes it.
-const TESTFLIGHT_APP_URL = "https://apps.apple.com/de/app/testflight/id899247664";
-// Public TestFlight link - LIVE since 2026-09-12 (App Store Connect: build 7
+// Public TestFlight beta link - LIVE since 2026-09-12 (App Store Connect: build 7
 // approved, public link enabled; measured by ops/tools/asc_review_watch.py
-// --status). TESTFLIGHT_REQUEST_URL above stays as the fallback contact.
+// --status). Secondary now that APP_STORE_URL above is the primary iOS CTA.
 const TESTFLIGHT_JOIN_URL = "https://testflight.apple.com/join/tk6twUTh";
 // Wear OS has NO Play Store listing (measured 2026-09-10: the live app.helmdeck
 // listing only mentions "Wear OS" inside a changelog bullet describing a phone
@@ -649,11 +645,11 @@ footer a:hover{color:var(--ink-2)}
       </div>
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
-        <p class="dl-meta" data-i="dlIosMeta">Public TestFlight beta · incl. Apple Watch</p>
-        <p class="dl-note" data-i-html="dlIosNote">One tap on the link is enough, the TestFlight app has to be installed. The Apple Watch app ships in the same package, no separate download. The App Store listing follows.</p>
+        <p class="dl-meta" data-i="dlIosMeta">Live on the App Store · v1.0.49</p>
+        <p class="dl-note" data-i-html="dlIosNote">Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosJoinBtn" data-cta="ios">Join TestFlight</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_APP_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppBtn" data-cta="ios">Get the TestFlight app</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppStoreBtn" data-cta="ios">Load on the App Store · incl. Apple Watch</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosBetaBtn" data-cta="ios">Beta via TestFlight</a>
         </div>
       </div>
       <div class="dl-card">
@@ -859,7 +855,7 @@ ${wl("wearables")}
       sub:"Jede Aufgabe wird eine Karte. Jede Karte bekommt einen eigenen Agenten, der isoliert auf eurem Rechner arbeitet. Euer Team verfolgt das mit und gibt frei, vom Handy, kein Terminal nötig.",
       objection:"Kein Cloud-Account, kein Code verlässt euren Rechner, läuft mit dem Claude-Abo, das ihr schon habt.",
       heroCtaPrimary:"Loslegen",
-      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
+      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       demoTitle:"So sieht das aus", demoSub:"21 Sekunden: Aufgabe vom Handy schicken, der Agent arbeitet sie auf deinem eigenen Rechner ab, du nimmst das Ergebnis ab.",
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
       quoteBy:"Tien Duy Vo, Entwickler",
@@ -894,9 +890,9 @@ ${wl("wearables")}
       dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
-      dlIosMeta:"Öffentliche TestFlight-Beta · inkl. Apple Watch",
-      dlIosNote:"Ein Tipp auf den Link genügt, die TestFlight-App muss installiert sein. Die Apple-Watch-App ist im selben Paket, kein separater Download. Der App-Store-Eintrag folgt.",
-      dlIosJoinBtn:"TestFlight beitreten", dlIosAppBtn:"TestFlight-App laden",
+      dlIosMeta:"Live im App Store · v1.0.49",
+      dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
+      dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch", dlIosBetaBtn:"Beta via TestFlight",
       dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
@@ -928,7 +924,7 @@ ${wl("wearables")}
       sub:"Every task becomes a card. Each card gets its own agent, working in an isolated copy of your codebase. Your team follows along and approves from the phone, nobody has to open a terminal.",
       objection:"No cloud account, no code leaves your machine, works with the Claude subscription your team already has.",
       heroCtaPrimary:"Get started",
-      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
+      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       demoTitle:"Watch it work", demoSub:"21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.",
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
       quoteBy:"Tien Duy Vo, developer",
@@ -963,9 +959,9 @@ ${wl("wearables")}
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
-      dlIosMeta:"Public TestFlight beta · incl. Apple Watch",
-      dlIosNote:"One tap on the link is enough, the TestFlight app has to be installed. The Apple Watch app ships in the same package, no separate download. The App Store listing follows.",
-      dlIosJoinBtn:"Join TestFlight", dlIosAppBtn:"Get the TestFlight app",
+      dlIosMeta:"Live on the App Store · v1.0.49",
+      dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
+      dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch", dlIosBetaBtn:"Beta via TestFlight",
       dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
@@ -1002,7 +998,7 @@ ${wl("wearables")}
     if (!a) return;
     var key = null, href = null;
     if (/Android/i.test(ua)) { key = "heroCtaAndroid"; href = "${PLAY_URL}"; }
-    else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${TESTFLIGHT_JOIN_URL}"; }
+    else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${APP_STORE_URL}"; }
     else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${dlHref(macArm)}"; }
     else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${dlHref(win)}"; }
     if (key && href && href !== "#downloads") {
