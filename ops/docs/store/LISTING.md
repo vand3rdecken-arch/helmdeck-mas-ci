@@ -104,7 +104,116 @@ Screenshot-Reihenfolge im Listing = Story: 1 Board (Hero) → 2 Karten-Verlauf
 
 ---
 
-## Team-Harness-Entwurf (2026-09-18, PREPARE, NICHT eingetragen)
+## Team-Harness-Entwurf v2 (2026-09-18, PREPARE, NICHT eingetragen, im Chat freigegeben)
+
+**Ersetzt v1 unten inhaltlich** (v1 blieb stehen, nicht gelöscht, zum
+Vergleich). Owner-Nachschärfung im selben Chat: Positionierung ist Board,
+auf dem Agenten-Arbeit und Menschen-Arbeit nebeneinander laufen, Karten in
+eigenen Worktrees, Rückfrage erreicht den Entscheider auf Handy und Uhr,
+Planung gegen ein Ziel mit Budget und Tempo. Harte Regel diesmal: **keine
+Gedankenstriche als Satzzeichen** (Bindestriche in Komposita wie
+„Team-Harness"/„KI-Team" sind KEIN Gedankenstrich und bleiben), **Codex wird
+nicht erwähnt**. Zeichenzahlen unten mit `len()` nachgezählt, nicht
+geschätzt.
+
+**Wear-Realitätscheck bleibt unverändert gültig** (siehe v1 unten): kein
+Play-Eintrag für Wear OS, nur Sideload per E-Mail-Anfrage.
+
+### Kurzbeschreibung (max. 80 Zeichen)
+
+**DE** (73 Zeichen):
+
+> Board für Mensch und KI-Team, Rückfragen erreichen dich auf Handy und Uhr
+
+**EN** (70 Zeichen):
+
+> Board where people and AI work, questions reach you on phone and watch
+
+### Vollständige Beschreibung (identisch zu APPSTORE_LISTING.md, dort gepflegt)
+
+**DE:**
+
+> HelmDeck ist der Team-Harness für echte Arbeit. Auf einem Board laufen
+> Agentenarbeit und Menschenarbeit nebeneinander, jeder Auftrag ist eine
+> Karte mit eigenem Worktree und eigenem Verlauf.
+>
+> WIE DAS TEAM ARBEITET
+> • Karten anlegen mit Priorität, Wert, Kunde und Anhängen
+> • Jede Karte bekommt einen eigenen Worktree, Agenten arbeiten isoliert,
+>   nichts vermischt sich
+> • Live mitverfolgen, was der Agent gerade tut, Schritt für Schritt im
+>   Verlauf
+> • Rückfragen erreichen dich sofort, auf dem Handy und auf der Uhr, du
+>   antwortest mit einem Tipp oder per Diktat
+> • Qualitätsgate vor jeder Abnahme, Prüfungen laufen automatisch, erst
+>   deine Freigabe merged und deployt
+> • Push Benachrichtigung, sobald etwas von dir gebraucht wird oder fertig
+>   ist
+>
+> PLANUNG MIT ZIEL, BUDGET UND TEMPO
+> • Jedes Projekt hat ein Ziel, ein Budget und ein Tempo, das Dashboard
+>   zeigt den Stand in echten Zahlen
+> • Gelieferter Wert, KI Kosten und Marge je Karte auf einen Blick
+> • Du siehst sofort, ob das Team im Rahmen bleibt, nicht erst am Monatsende
+>
+> DEINE DATEN BLEIBEN DEINE
+> • Die App verbindet sich ausschließlich mit deiner eigenen HelmDeck
+>   Installation, direkt im LAN oder über ein Zero Knowledge Relay von
+>   unterwegs
+> • Ende zu Ende verschlüsselt (Curve25519/XSalsa20 Poly1305), das Relay
+>   sieht nur Chiffretext
+> • Auch Push Nachrichten sind Ende zu Ende verschlüsselt
+> • Keine Werbung, keine Analytics, kein Konto beim Entwickler
+>
+> WICHTIG
+> HelmDeck ist eine Begleit App, sie braucht eine laufende HelmDeck
+> Installation auf deinem eigenen Rechner. Kopplung dauert eine Minute, QR
+> Code auf dem Desktop scannen, fertig.
+>
+> Datenschutz: https://relay.helmdeck.de/privacy
+
+**EN:**
+
+> HelmDeck is the team harness for real work. On one board, agent work and
+> human work run side by side, every request is a card with its own
+> worktree and its own history.
+>
+> HOW THE TEAM WORKS
+> • File cards with priority, value, client and attachments
+> • Every card gets its own worktree, agents work in isolation, nothing
+>   bleeds into another card
+> • Watch live what the agent is doing, step by step in the timeline
+> • Questions reach you right away, on your phone and on your watch, you
+>   answer with a tap or by dictation
+> • Quality gate before every approval, checks run automatically, only your
+>   sign off merges and deploys
+> • Push notification the moment something needs you or is done
+>
+> PLANNING AGAINST A GOAL, A BUDGET AND A PACE
+> • Every project has a goal, a budget and a pace, the dashboard shows the
+>   real numbers
+> • Value delivered, AI cost and margin per card at a glance
+> • You see right away whether the team stays on track, not just at month
+>   end
+>
+> YOUR DATA STAYS YOURS
+> • The app talks only to your own HelmDeck installation, directly on your
+>   LAN or through a zero knowledge relay when you are away
+> • End to end encrypted (Curve25519/XSalsa20 Poly1305), the relay only
+>   ever sees ciphertext
+> • Push messages are end to end encrypted too
+> • No ads, no analytics, no developer hosted account
+>
+> NOTE
+> HelmDeck is a companion app, it needs a running HelmDeck installation on
+> your own computer. Pairing takes a minute, scan the QR code on your
+> desktop and you are in.
+>
+> Privacy policy: https://relay.helmdeck.de/privacy
+
+---
+
+## Team-Harness-Entwurf v1 (2026-09-18, PREPARE, superseded durch v2 oben)
 
 Owner-Auftrag: „Team-Harness"-Sprache draften, dem Owner zeigen, bevor
 irgendetwas in Play Console/App Store Connect eingetragen wird. Fasst

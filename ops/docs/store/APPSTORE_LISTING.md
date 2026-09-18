@@ -110,7 +110,49 @@ plattgedrücktes Phone-Bild aus, nicht wie eine echte iPad-Aufnahme. Bewusst
    Build (Info.plist-Flag), widerspricht damit „kein Re-Upload nötig" für
    den aktuellen TestFlight-Build.
 
-## Team-Harness-Entwurf: Promotional Text + nächste Versionsbeschreibung (2026-09-18, PREPARE, NICHT eingetragen)
+## Team-Harness-Entwurf v2: Subtitle + Promo Text + Keywords + Beschreibung (2026-09-18, PREPARE, im Chat freigegeben)
+
+Owner-Nachschärfung im selben Chat, nach der v1-Runde unten: Copy direkt im
+Chat zur Freigabe, mit vier konkreten Positionierungspunkten (Board, auf dem
+Agenten-Arbeit und Menschen-Arbeit nebeneinander laufen, Karten in eigenen
+Worktrees, Rückfrage erreicht den Entscheider auf Handy und Uhr, Planung
+gegen ein Ziel mit Budget und Tempo) und zwei harten Regeln: **keine
+Gedankenstriche als Satzzeichen** (Bindestriche in Komposita wie
+„Team-Harness" bleiben, das ist kein Gedankenstrich) und **Codex wird nicht
+erwähnt**. Zeichenzahlen mit Python `len()` nachgezählt.
+
+### Subtitle (max. 30 Zeichen)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | Team-Harness für dein Board | 27 |
+| EN | Team harness for your board | 27 |
+
+### Promotional Text v2 (max. 170 Zeichen, ohne neue Review änderbar)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | HelmDeck ist der Team-Harness für Arbeit. Agenten und Menschen arbeiten auf einem Board, jede Karte im eigenen Worktree. Rückfragen erreichen dich auf Handy und Uhr. | 165 |
+| EN | HelmDeck is the team harness for real work. Agents and people work on one board, every card in its own worktree. Questions reach you on your phone and your watch. | 162 |
+
+### Keywords (max. 100 Zeichen gesamt, kommagetrennt, keine Leerzeichen nach dem Komma)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | KI,Agent,Automatisierung,Karten,Worktree,Planung,Budget,Uhr,Kanban,Workflow,Produktivitaet | 90 |
+| EN | AI,agent,automation,cards,worktree,planning,budget,watch,kanban,workflow,productivity | 85 |
+
+Wörter aus Subtitle nicht wiederholt (Team, Harness, Board) — dieselbe Regel
+wie im v1-Keywords-Abschnitt oben in der Datei.
+
+### Beschreibung v2
+
+Identisch zu `LISTING.md`s „Team-Harness-Entwurf v2" (DE/EN), dort gepflegt,
+hier nicht dupliziert — dieselbe Konvention wie beim bestehenden Listing.
+
+---
+
+## Team-Harness-Entwurf v1: Promotional Text + nächste Versionsbeschreibung (2026-09-18, PREPARE, superseded durch v2 oben)
 
 Owner-Auftrag: gleicher „Team-Harness"-Sprachentwurf wie in `LISTING.md`,
 hier für die zwei ASC-Felder, um die die Karte ausdrücklich bittet:
