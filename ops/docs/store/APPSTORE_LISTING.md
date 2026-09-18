@@ -110,6 +110,127 @@ plattgedrücktes Phone-Bild aus, nicht wie eine echte iPad-Aufnahme. Bewusst
    Build (Info.plist-Flag), widerspricht damit „kein Re-Upload nötig" für
    den aktuellen TestFlight-Build.
 
+## Team-Harness-Entwurf v3: Subtitle + Promo Text + Keywords + Beschreibung (2026-09-18, PREPARE, Owner-Rohentwurf geglättet)
+
+**Ersetzt v2 unten** (v2 und v1 bleiben stehen zum Vergleich). Owner hat im
+Chat einen eigenen Rohentwurf geliefert („So in etwa"): Positionierung jetzt
+**„Projekt-Harness für dein Team"**, mobil zuerst, Ziele und Aktivitäten,
+Teammitglieder und Agenten von einem Ort aus. v3 ist dieser Rohentwurf,
+geglättet (Tippfehler, Grammatik, Zeichenlimits), inhaltlich unverändert bis
+auf eine Korrektur: „keine Analytics" wurde zu „keine Analytics ohne dein
+Opt-in", weil `surfaces/app/src/data/analytics.ts` PostHog als Opt-in (Default
+aus) enthält. Regeln bleiben: keine Gedankenstriche als Satzzeichen, Codex
+nicht erwähnt. Zeichenzahlen mit `len()` nachgezählt. NICHT eingetragen.
+
+### Subtitle (max. 30 Zeichen)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | Projekt-Harness für dein Team | 29 |
+| EN | Project harness for your team | 29 |
+
+### Promotional Text v3 (max. 170 Zeichen)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | HelmDeck ist der Projekt-Harness für dein Team. Meistere die Aufgaben und erreiche deine Ziele von einem Board aus, mit Fokus auf Handy und Uhr. | 144 |
+| EN | HelmDeck is the project harness for your team. Get the work done and reach your goals from one board, built for your phone and your watch. | 138 |
+
+### Keywords (max. 100 Zeichen, keine Wiederholung von App-Name/Subtitle-Wörtern)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | KI,Agent,Ziele,Aufgaben,Karten,Worktree,Planung,Budget,Kanban,Workflow,Produktivitaet | 85 |
+| EN | AI,agent,goals,tasks,cards,worktree,planning,budget,kanban,workflow,productivity | 80 |
+
+### Beschreibung v3
+
+Identisch zum v3-Block in `LISTING.md` (dort gepflegt, DE 1654 / EN 1535 Zeichen).
+
+## Team-Harness-Entwurf v2: Subtitle + Promo Text + Keywords + Beschreibung (2026-09-18, PREPARE, superseded durch v3 oben)
+
+Owner-Nachschärfung im selben Chat, nach der v1-Runde unten: Copy direkt im
+Chat zur Freigabe, mit vier konkreten Positionierungspunkten (Board, auf dem
+Agenten-Arbeit und Menschen-Arbeit nebeneinander laufen, Karten in eigenen
+Worktrees, Rückfrage erreicht den Entscheider auf Handy und Uhr, Planung
+gegen ein Ziel mit Budget und Tempo) und zwei harten Regeln: **keine
+Gedankenstriche als Satzzeichen** (Bindestriche in Komposita wie
+„Team-Harness" bleiben, das ist kein Gedankenstrich) und **Codex wird nicht
+erwähnt**. Zeichenzahlen mit Python `len()` nachgezählt.
+
+### Subtitle (max. 30 Zeichen)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | Team-Harness für dein Board | 27 |
+| EN | Team harness for your board | 27 |
+
+### Promotional Text v2 (max. 170 Zeichen, ohne neue Review änderbar)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | HelmDeck ist der Team-Harness für Arbeit. Agenten und Menschen arbeiten auf einem Board, jede Karte im eigenen Worktree. Rückfragen erreichen dich auf Handy und Uhr. | 165 |
+| EN | HelmDeck is the team harness for real work. Agents and people work on one board, every card in its own worktree. Questions reach you on your phone and your watch. | 162 |
+
+### Keywords (max. 100 Zeichen gesamt, kommagetrennt, keine Leerzeichen nach dem Komma)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | KI,Agent,Automatisierung,Karten,Worktree,Planung,Budget,Uhr,Kanban,Workflow,Produktivitaet | 90 |
+| EN | AI,agent,automation,cards,worktree,planning,budget,watch,kanban,workflow,productivity | 85 |
+
+Wörter aus Subtitle nicht wiederholt (Team, Harness, Board) — dieselbe Regel
+wie im v1-Keywords-Abschnitt oben in der Datei.
+
+### Beschreibung v2
+
+Identisch zu `LISTING.md`s „Team-Harness-Entwurf v2" (DE/EN), dort gepflegt,
+hier nicht dupliziert — dieselbe Konvention wie beim bestehenden Listing.
+
+---
+
+## Team-Harness-Entwurf v1: Promotional Text + nächste Versionsbeschreibung (2026-09-18, PREPARE, superseded durch v2 oben)
+
+Owner-Auftrag: gleicher „Team-Harness"-Sprachentwurf wie in `LISTING.md`,
+hier für die zwei ASC-Felder, um die die Karte ausdrücklich bittet:
+Promotional Text und die Versionsbeschreibung des nächsten Release
+(„What's New in This Version"). Dieses Skript-Feld ist NICHT dasselbe wie
+`ops/deploy/asc_metadata_draft.py`s `BUILD_WHATS_NEW` (das ist der
+TestFlight-„What to Test"-Text für Beta-Tester); hier geht es um die Notizen
+für ein tatsächliches App-Store-Release, das laut `ASC_METADATA.md` §5 und
+der Site-Kopie noch aussteht („Der App-Store-Eintrag folgt"). Reine Prosa,
+nichts davon läuft über ein Skript, damit nichts versehentlich live
+geschrieben wird, solange kein Store-Release ansteht.
+
+### Promotional Text, Team-Harness (max. 170 Zeichen, ohne neue Review änderbar)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | HelmDeck ist der Harness für dein KI-Team: mehrere Agenten erledigen echte Aufgaben, du steuerst und nimmst ab. Ende zu Ende verschlüsselt. | 139 |
+| EN | HelmDeck is the harness for your AI team: several agents get real work done while you steer and approve. End to end encrypted. | 126 |
+
+### Versionsbeschreibung für das nächste Release ("What's New in This Version")
+
+Fasst zusammen, was seit der letzten dokumentierten Versionsbeschreibung
+(§4 oben, Build für 1.0.48/versionCode 91) tatsächlich an Nutzer-sichtbaren
+Änderungen im Baum liegt, aus Commit-Historie verifiziert (nicht erfunden):
+Chat-Aufwach-/Catch-up-Fix (`d3171075`/`4a5981bf`), Henry zeigt jetzt
+eigene Hintergrund-Agenten statt Stille (`e50e6a61`/`3c1ef81f`), Hands-
+Ergebnisse erscheinen als klar abgegrenzte Ergebnis-Box statt Rohtext
+(`8eb469ce`), kleinere Wear-OS-Fixes (Ambient-Modus, Kopplungs-Screen,
+`4f360250`/`a0d88137`). Aktueller Stand laut `app.json`: Version 1.0.51,
+versionCode 94.
+
+| Sprache | Text |
+|---|---|
+| DE | Antworten kommen jetzt zuverlässig an, auch nachdem Handy, Desktop oder Uhr aufgewacht sind. Henry zeigt jetzt an, wenn er im Hintergrund weiterarbeitet, und liefert Ergebnisse aus dem Hintergrund klar aufbereitet zurück statt als Rohtext. Kleinere Verbesserungen an der Wear-OS-Uhr-App (Ambient-Modus, Kopplung). |
+| EN | Replies now arrive reliably, even after your phone, desktop or watch wakes up. Henry now shows when it keeps working in the background, and hands results come back as a clear summary instead of raw text. Small fixes to the Wear OS watch app (ambient mode, pairing). |
+
+**Hinweis für den Owner:** dieser Text ist für die ÖFFENTLICHE
+App-Store-Version geschrieben, sobald der TestFlight-Only-Stand endet — bis
+dahin bleibt `ASC_METADATA.md` §4 (TestFlight-„What to Test") die aktive
+Baustelle, dieser Absatz hier ist Vorrat für danach.
+
 ## Pricing & Availability
 
 Kostenlos, keine IAP (identisch zu Play), **weltweit verfügbar** (Owner-
