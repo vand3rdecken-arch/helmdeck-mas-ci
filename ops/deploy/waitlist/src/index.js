@@ -27,9 +27,9 @@
  * falls back to the releases page itself rather than a dead link.
  *
  * iOS is live worldwide on the App Store since 2026-09-16 (version 1.0.49,
- * see APP_STORE_URL), the primary iOS CTA. The public TestFlight beta
- * (TESTFLIGHT_JOIN_URL) stays as a smaller secondary line for anyone who
- * wants pre-release builds.
+ * see APP_STORE_URL), the only iOS CTA. The public TestFlight beta button was
+ * removed on 2026-09-18 (owner: the store link makes it redundant); the join
+ * URL stays documented in ops/docs/store/EXTERNAL_TESTFLIGHT.md.
  */
 
 import { ICON_SVG } from "./logo.js";
@@ -99,10 +99,6 @@ const TESTFLIGHT_REQUEST_URL =
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
   );
-// Public TestFlight beta link - LIVE since 2026-09-12 (App Store Connect: build 7
-// approved, public link enabled; measured by ops/tools/asc_review_watch.py
-// --status). Secondary now that APP_STORE_URL above is the primary iOS CTA.
-const TESTFLIGHT_JOIN_URL = "https://testflight.apple.com/join/tk6twUTh";
 // Wear OS has NO Play Store listing (measured 2026-09-10: the live app.helmdeck
 // listing only mentions "Wear OS" inside a changelog bullet describing a phone
 // feature, not an actual bundled/compatible form factor; :wear has never had a
@@ -649,7 +645,6 @@ footer a:hover{color:var(--ink-2)}
         <p class="dl-note" data-i-html="dlIosNote">Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppStoreBtn" data-cta="ios">Load on the App Store · incl. Apple Watch</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${TESTFLIGHT_JOIN_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosBetaBtn" data-cta="ios">Beta via TestFlight</a>
         </div>
       </div>
       <div class="dl-card">
@@ -893,7 +888,7 @@ ${wl("wearables")}
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
       dlIosMeta:"Live im App Store · v1.0.49",
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
-      dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch", dlIosBetaBtn:"Beta via TestFlight",
+      dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch",
       dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
@@ -962,7 +957,7 @@ ${wl("wearables")}
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
       dlIosMeta:"Live on the App Store · v1.0.49",
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
-      dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch", dlIosBetaBtn:"Beta via TestFlight",
+      dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch",
       dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
@@ -992,7 +987,7 @@ ${wl("wearables")}
   if (lang !== "de" && lang !== "en") lang = "en";
 
   // Platform-aware primary CTA: the visitor's own download first (Android ->
-  // Play, iPhone/iPad -> TestFlight, macOS -> arm64 dmg, Windows -> exe),
+  // Play, iPhone/iPad -> App Store, macOS -> arm64 dmg, Windows -> exe),
   // everything else scrolls to the download grid. Label follows the language.
   (function(){
     var ua = navigator.userAgent || "", a = document.getElementById("hero-dl");
