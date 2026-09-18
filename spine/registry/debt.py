@@ -49,6 +49,13 @@ DEBT = [
                "max(last native bump, last recorded OTA ref) as the diff base. "
                "Optional second belt: make request_ship_decision skip when the "
                "tree has not changed since the last ship card closed.",
+        "seen_again": "2026-09-18 12:14 - an eighth decide card shipped an OTA "
+                      "eight minutes after the seventh had correctly decided "
+                      "none. The only thing that had landed in between was the "
+                      "store.config.json accept, which ship_facts classified as "
+                      "'other' (unclassified). The card shipped to be safe. The "
+                      "classifier half is fixed (store-metadata class added), the "
+                      "marker half above is still open.",
         "since": "2026-09-18",
     },
     {

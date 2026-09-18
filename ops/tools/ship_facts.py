@@ -75,6 +75,13 @@ _CLASSES = [
      "may be native (permissions/plugins/icons) or inert (version/ios/extra) - read the diff"),
     ("native-asset", r"^surfaces/app/assets/(images/(icon|splash|adaptive|android-icon)|expo\.icon/)",
      "baked into the APK by expo prebuild - OTA cannot replace it"),
+    # BEFORE js-app on purpose: store.config.json sits in surfaces/app but is
+    # Apple listing metadata consumed by `eas metadata:push` at submit time.
+    # It never reaches a running phone, so an OTA for it is pure waste - which
+    # is exactly what happened on 2026-09-18 12:14, when it landed here as
+    # "other" and the ship card shipped an OTA to be safe.
+    ("store-metadata", r"^surfaces/app/store\.config\.json$",
+     "App Store listing text for eas metadata:push - no OTA, no build; pushed at submit time"),
     ("js-app", r"^surfaces/app/.*\.(ts|tsx|js|jsx)$", "ships fine over OTA"),
     ("js-asset", r"^surfaces/app/assets/", "ships fine over OTA"),
     ("cell-ui", r"^cells/.*/ui/", "app code - ships fine over OTA"),
