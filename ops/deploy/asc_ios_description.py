@@ -36,6 +36,30 @@ from asc_metadata_draft import APP_ID, _get, _req  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LOCALES = ("de-DE", "en-US")
 
+# "What's New in This Version" - Apple requires a non-empty value on every
+# appStoreVersionLocalization before a version can be submitted (a submit
+# attempt without it 409s with ENTITY_ERROR.ATTRIBUTE.REQUIRED on whatsNew).
+# This is the owner-drafted text from ops/docs/store/APPSTORE_LISTING.md
+# "Team-Harness-Entwurf v1" section, verified against real commit history
+# for the changes since 1.0.48 - written for exactly this moment ("sobald
+# der TestFlight-Only-Stand endet").
+WHATS_NEW = {
+    "de-DE": (
+        "Antworten kommen jetzt zuverlässig an, auch nachdem Handy, Desktop "
+        "oder Uhr aufgewacht sind. Henry zeigt jetzt an, wenn er im "
+        "Hintergrund weiterarbeitet, und liefert Ergebnisse aus dem "
+        "Hintergrund klar aufbereitet zurück statt als Rohtext. Kleinere "
+        "Verbesserungen an der Wear-OS-Uhr-App (Ambient-Modus, Kopplung)."
+    ),
+    "en-US": (
+        "Replies now arrive reliably, even after your phone, desktop or "
+        "watch wakes up. Henry now shows when it keeps working in the "
+        "background, and hands results come back as a clear summary "
+        "instead of raw text. Small fixes to the Wear OS watch app "
+        "(ambient mode, pairing)."
+    ),
+}
+
 EDITABLE_STATES = (
     "PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED",
     "METADATA_REJECTED", "WAITING_FOR_REVIEW", "INVALID_BINARY",
@@ -98,21 +122,22 @@ def cmd_apply(argv):
     existing = {loc["attributes"]["locale"]: loc for loc in _localizations(v["id"])}
     for locale in LOCALES:
         description = cfg[locale]["description"]
+        attrs = {"description": description, "whatsNew": WHATS_NEW[locale]}
         if locale in existing:
             _req("PATCH", "/v1/appStoreVersionLocalizations/%s" % existing[locale]["id"], {
                 "data": {"type": "appStoreVersionLocalizations", "id": existing[locale]["id"],
-                         "attributes": {"description": description}},
+                         "attributes": attrs},
             })
-            print("updated description for %s (%d chars)" % (locale, len(description)))
+            print("updated description+whatsNew for %s (%d chars)" % (locale, len(description)))
         else:
             _req("POST", "/v1/appStoreVersionLocalizations", {
                 "data": {
                     "type": "appStoreVersionLocalizations",
-                    "attributes": {"locale": locale, "description": description},
+                    "attributes": dict(attrs, locale=locale),
                     "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": v["id"]}}},
                 },
             })
-            print("created description for %s (%d chars)" % (locale, len(description)))
+            print("created description+whatsNew for %s (%d chars)" % (locale, len(description)))
 
 
 CMDS = {"show": cmd_show, "apply": cmd_apply}
