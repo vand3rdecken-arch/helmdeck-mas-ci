@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
-"""One event, one line, one push (owner report 2026-09-12: "viele Meldungen
-doppelt - Karte sendet Push und Henry auch").
+"""One event, one PUSH (owner report 2026-09-12: "viele Meldungen doppelt -
+Karte sendet Push und Henry auch"). The "no separate bubble at all" half of
+that fix was reversed 2026-09-18 (owner: "warum muss ich nochmal fragen" - a
+card finishing async, with nobody watching, needs Henry's own report to
+actually say what the worker did, not just that something landed); the
+double-PUSH guard this file is named for still holds and is still pinned
+below.
 
 Measured on the owner's chat of 2026-09-11 (card tbh-d, 13:30-13:35): a single
 landing produced SIX messages - the lane pipeline's "auf Review geprueft" and
@@ -9,12 +14,17 @@ lane - why" bubble, plus a ship line - and Henry's bubbles pushed the phone
 UNGATED (raw push_fcm, no presence policy) while the card's own push was
 correctly suppressed because the owner was looking at the chat.
 
-Three rules pinned here, each proven to FAIL on the pre-fix code shape:
+Rules pinned here, each proven to FAIL on the pre-fix code shape:
   1. Henry's push goes through notify.escalate (presence-gated), never raw
      push_fcm.
-  2. A successful `move` writes NO separate Henry bubble - his `why` rides
-     inside the lane pipeline's own outcome line via move_lane(note=...).
-  3. _move_lane folds that note into the success lines (review / landed).
+  2. A successful `move` DOES write a Henry bubble again (2026-09-18) - WITH
+     the worker's own reply riding along - but only pushes for `review`
+     (lanemachine's review tail has no push of its own); `done` stays
+     chat-only from Henry's side because the lane pipeline's own tail
+     (_move_lane / _accept_machine) already pushes that event once - see
+     ops/tests/test_henry_chat_full_text.py for the full-text half of this.
+  3. _move_lane still folds the mover's note into its own success lines
+     (review / landed) - Henry's bubble is additive, not a replacement.
 
 Sandboxed: no daemon, no network, no model; every sink is stubbed.
 """
@@ -88,7 +98,9 @@ check(len(said) == 1, "1. exactly one chat line")
 
 
 # ---------------------------------------------------------------------------
-# 2) _decide on a successful `move`: no Henry bubble, note handed to move_lane
+# 2) _decide on a successful `move` to REVIEW: a Henry bubble now DOES land
+# (2026-09-18), WITH a push (review has none of its own) - and the note still
+# also rides into move_lane for the lane pipeline's own line.
 class _Esc:
     def __init__(self):
         self.notes, self.decisions = [], []
@@ -134,7 +146,7 @@ hb.escalations = _Esc()
 hb._hands_on_ask = lambda *a, **k: dict(verb)
 hb._ask = lambda *a, **k: dict(verb)
 hb._audit = lambda c, n: None
-hb._notify_owner = lambda text, t: notified.append(text)
+hb._notify_owner = lambda text, t, push=True: notified.append((text, push))
 hb._find_track = lambda c: {"id": "c1", "lane": "working"} if c else None
 hb._dispatcher_privileged = lambda t: True
 hb._card_log_tail = lambda *a, **k: ""
@@ -159,7 +171,11 @@ finally:
 check(closed is True, "2. a verified move closes the escalation")
 check(moves == [("c1", "review", "henry", "Commit e926034 verifiziert, beide Defekte gefixt")],
       "2. Henry's text rides into move_lane(note=...)")
-check(notified == [], "2. NO separate Henry bubble for a move - the lane line is the report")
+check(len(notified) == 1 and "review" in notified[0][0]
+      and "Commit e926034 verifiziert" in notified[0][0],
+      "2. move to review DOES write a Henry bubble now, carrying his text")
+check(notified and notified[0][1] is True,
+      "2. ... and pushes (review has no push of its own to double up against)")
 
 # ---------------------------------------------------------------------------
 # 3) _move_lane folds the note into the pipeline's own success lines

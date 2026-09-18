@@ -1231,14 +1231,17 @@ def backfill_outcomes():
     return stamped
 
 
-def _accept_machine(t, lane, actor, log):
+def _accept_machine(t, lane, actor, log, note=""):
     """Review/Done for a machine card. There is no branch to gate or merge, so
     Review RESTS it for the owner to judge and Done records the acceptance
     economics. The repo deploy hook does NOT run for a real machine/PC-folder
     card (nothing landed in a repo) - but DOES run for a direct card (worktree
     == the live repo tree, so a Done here is the first/only time this specific
     accept path deploys it, for an owner who accepts by hand instead of
-    relying on fast-track's own auto-ship)."""
+    relying on fast-track's own auto-ship).
+
+    `note` is move_lane's own passthrough (Henry's `why`, when the accept came
+    from his `move`; '' from a plain owner click) - see the DONE branch below."""
     from spine.storage import events
     if lane == "review":
         log.log("note", "REVIEW (machine): erledigt auf dem Rechner - wartet auf deine Abnahme.")
@@ -1276,16 +1279,31 @@ def _accept_machine(t, lane, actor, log):
         # already the answer to "should this ship").
         from cells.engineer.cards.lanemachine import request_ship_decision
         request_ship_decision(t, "direct-accept")
-    # NO _say_card echo here (owner correction 2026-09-14 18:40: "doppelt
-    # gemoppelt"). needs_you already put the card's own result - now a plain-
-    # language distillation, card_mirror.mirror's KIND_RESULT - in this same
-    # Henry chat; a machine/direct card has no branch to gate or merge, so
-    # this "done" transition has literally nothing left to add beyond "it was
-    # accepted", which the owner already knows (he is either the one who just
-    # clicked accept, or an automated accept still reaches him via the
-    # push.done notification below). The card's own ActionLog note ("->
-    # verschoben nach Done von <actor>", written at the top of _move_lane) and
-    # the board's own Done column remain the record of the acceptance itself.
+    # A CONTENT echo here now (owner correction 2026-09-18: "warum muss ich
+    # nochmal fragen" - a card's async completion was landing nowhere the
+    # owner could read it). needs_you already put a plain-language
+    # DISTILLATION of the result in this chat (card_mirror.mirror's
+    # KIND_RESULT) when the worker first handed back, but that happened
+    # BEFORE this accept - often minutes or hours earlier, buried under
+    # whatever the owner did meanwhile - and this "done" transition used to
+    # add literally nothing on top, on the theory that the owner "already
+    # knows" (2026-09-14 fix note, still true for a LIVE click, false for an
+    # unattended Henry `move` closing the loop with no one watching). So the
+    # worker's own last words ride along here too, WHOLE up to
+    # outcomes.excerpt's bound, plus Henry's `note` (his `why`, threaded
+    # through move_lane -> here) when this accept came from his `move` -
+    # still ONE line, not the raw needs_you print again. The push itself
+    # stays exactly as it was (notify.card_event below) - no second push,
+    # only a second, richer chat line for the same event. The card's own
+    # ActionLog note ("-> verschoben nach Done von <actor>", written at the
+    # top of _move_lane) and the board's own Done column remain the record of
+    # the acceptance itself.
+    from spine.turn.outcomes import excerpt as _excerpt
+    _note = (note or "").strip()
+    _reply = _excerpt(t.get("last_reply"))
+    _parts = [p for p in (_note, _reply) if p]
+    if _parts:
+        _say_card(t, "\n\n".join(_parts))
     from spine.comms import notify
     notify.card_event(t, "done")
     try:

@@ -40,7 +40,7 @@ def main():
         # _hands_on_ask must still be safe, not just correctly-remembered.
         hb._HENRY_REPO_ROOT = tmp
         notified = []
-        hb._notify_owner = lambda text, t: notified.append(text)
+        hb._notify_owner = lambda text, t, push=True: notified.append(text)
 
         # -- emit + fold: append-only, state derived --------------------------
         eid = esc.emit("aborted-by-restart", card=None, detail="apk build")

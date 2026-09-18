@@ -1091,8 +1091,11 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
             tt.pop("gate_report", None); tt.pop("merge_report", None)
         return _mutate(tid, _settle) or t
     if t.get("machine") and lane in ("review", "done"):
-        # no branch, no merge - the owner's accept IS the gate (see _accept_machine)
-        return sessions._accept_machine(t, lane, actor, log)
+        # no branch, no merge - the owner's accept IS the gate (see _accept_machine).
+        # note passed through so a Henry `move`'s `why` and the worker's own
+        # last words reach the DONE announcement the same way a gated card's
+        # `_by` suffix already does further down this function.
+        return sessions._accept_machine(t, lane, actor, log, note=note)
     if lane == "done":
         # A LIVE turn writes to this same track (session_id, last_reply, status)
         # the instant it ends, on its own thread, racing whatever this call is

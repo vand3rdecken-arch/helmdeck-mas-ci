@@ -83,9 +83,11 @@ DEFAULT_POLICY = (
     "- AI-NUTZUNG: Turns, Quota, Kosten. Verschwende sie nicht - keine "
     "Blindversuche, keine unnoetigen Wiederholungen.\n"
     "- MENSCHEN UND ARBEIT: der Owner und die Karten-Worker. Fertige Arbeit "
-    "landet (move review/done - die Rails pruefen selbst), haengende wird "
-    "gesteuert. Wecke den Owner nur, wenn keine sichere Selbsthilfe "
-    "existiert - dann mit EINER konkreten Frage.\n"
+    "landet (move review/done - die Rails pruefen selbst); dein move traegt "
+    "die Antwort des Workers automatisch in den Board-Chat des Owners - kein "
+    "zusaetzliches notify_owner dafuer noetig. Haengende wird gesteuert. "
+    "Wecke den Owner nur, wenn keine sichere Selbsthilfe existiert - dann mit "
+    "EINER konkreten Frage.\n"
     "- MASCHINEN-RESSOURCEN: die Box (CPU/RAM, Builds, Emulator). Beobachten "
     "und benennen; warten vor toeten. Toete NIE fremde Prozesse und nie "
     "Arbeit, die lebt und Fortschritt macht.\n"
@@ -521,21 +523,40 @@ def _decide(esc):
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
-    # NOT for `move` (owner report 2026-09-12, "Karte sendet push und Henry
-    # auch"): a lane move is narrated by the lane pipeline itself (_say_card:
-    # "auf Review geprueft" / "abgenommen und gemergt") and pushed by
-    # card_event - the SAME event, already on the owner's screen. Henry's
-    # `why` rides INSIDE that line (move_lane's `note`, see _execute) instead
-    # of a second bubble + second push one second later. ONE event, ONE line.
-    if action in ("did", "ship", "restart", "rerun_deploy", "steer"):
+    # `move` used to be excluded whole (owner report 2026-09-12, "Karte sendet
+    # push und Henry auch": a lane move already narrates itself - _say_card's
+    # "auf Review geprueft"/"abgenommen und gemergt" - and DONE already pushes
+    # via notify.card_event, so a second push here would be the same
+    # regression again). That carve-out still holds for DONE, but the owner's
+    # 2026-09-18 complaint ("warum muss ich nochmal fragen") is that neither
+    # of those lines EVER carries what the worker actually said, only that
+    # something landed - and REVIEW gets no push AT ALL today (verified:
+    # lanemachine's review tail and _accept_machine's review branch are both
+    # chat-only). So `move` now reports back too, WITH the worker's own
+    # reply excerpt riding along - push only for review (filling a real gap,
+    # not doubling one), chat always - EXCEPT a machine/direct card's DONE,
+    # which stays dispatch._accept_machine's own job (it already gets the
+    # note/reply there - see move_lane's `note` param) so the two don't both
+    # print the same reply for the same event.
+    _machine_done = action == "move" and lane == "done" and bool(
+        (_find_track(card) or {}).get("machine"))
+    if action in ("did", "ship", "restart", "rerun_deploy", "steer") or (
+            action == "move" and not _machine_done):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
         # chat has no length budget: _notify_owner truncates for FCM alone.
         _label = action + ((" " + kind) if action == "ship" and kind else "")
+        _body = text or why
+        if action == "move":
+            from spine.turn.outcomes import excerpt
+            _reply = excerpt((_find_track(card) or {}).get("last_reply"))
+            if _reply:
+                _body = (_body + "\n\n" + _reply) if _body else _reply
         _notify_owner("Henry (%s): %s%s - %s" % (
             esc["kind"], _label, (" -> " + lane) if action == "move" else "",
-            text or why), None if action == "did" else _find_track(card))
+            _body), None if action == "did" else _find_track(card),
+            push=(action != "move" or lane == "review"))
     return True
 
 
@@ -774,12 +795,16 @@ def _audit(card, note):
         pass
 
 
-def _notify_owner(text, t):
+def _notify_owner(text, t, push=True):
     """`text` arrives WHOLE. Exactly one consumer has a length budget - the FCM
     push - and it truncates here, at its own edge. The chat and the card audit
     get the full message: callers must never pre-truncate for the push, or the
     notification's limit silently becomes the chat's (owner report 2026-08-28,
-    "Nachrichten enden mitten im Wort")."""
+    "Nachrichten enden mitten im Wort").
+
+    `push=False` for a caller whose event already pushes elsewhere (a `move`
+    landing on DONE: notify.card_event fires from the lane pipeline itself) -
+    the chat write below still happens, only the second buzz is skipped."""
     # PRESENCE-GATED, like every other harness push (owner report 2026-09-12,
     # "viele Meldungen doppelt"): this was a raw push_fcm - the ONE sender in
     # the daemon that skipped notify's 3-tier presence policy, so a Henry
@@ -788,12 +813,13 @@ def _notify_owner(text, t):
     # is the PM's path for exactly this shape - "alert whose chat line has
     # already landed" - and its dedup is the caller's job: the chat line below
     # is written once per decision, so the push is too.
-    try:
-        from spine.comms import notify
-        from spine.registry import i18n as _i18n
-        notify.escalate(_i18n.t("push.henry"), text[:230], (t or {}).get("id") or "")
-    except Exception:
-        pass
+    if push:
+        try:
+            from spine.comms import notify
+            from spine.registry import i18n as _i18n
+            notify.escalate(_i18n.t("push.henry"), text[:230], (t or {}).get("id") or "")
+        except Exception:
+            pass
     # ALSO into the board chat (owner observation 2026-08-28, "warum nichts im
     # Chat"): the push is suppressed exactly when the owner is LOOKING at the
     # app (notify's owner-presence dedup) and held in quiet hours, and the

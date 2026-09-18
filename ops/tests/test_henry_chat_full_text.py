@@ -76,7 +76,7 @@ def _decide_with(verb):
     hb._audit_context = lambda t: ""
     hb._snapshot = lambda: ""
     hb._audit = lambda c, note: s.audited.append(note)
-    hb._notify_owner = lambda text, t: s.notified.append(text)
+    hb._notify_owner = lambda text, t, push=True: s.notified.append(text)
     try:
         hb._decide(esc)
     finally:
@@ -100,12 +100,14 @@ s = _decide_with({"action": "steer", "card": "c1", "text": LONG, "why": "w"})
 check(any(LONG in n for n in s.notified), "steer: full text reaches the chat sink")
 
 # 3) `why` carries the message when there is no text - also uncut. Since
-# 2026-09-12 a move has NO Henry bubble of its own (the lane pipeline's line
-# carries his note - ops/tests/test_henry_dedup.py pins that path); the full
-# `why` must still reach the card audit note uncut.
+# 2026-09-12 a move to REVIEW/DONE had NO Henry bubble of its own (the lane
+# pipeline's line carried his note only) - reversed 2026-09-18 (owner:
+# "warum muss ich nochmal fragen"): a move now DOES report back too, full
+# text, same as every other closing action - see ops/tests/test_henry_dedup.py
+# for the push-dedup half of that change (still no SECOND push on done).
 s = _decide_with({"action": "move", "card": "c1", "lane": "review", "text": "", "why": LONG})
 check(any(LONG in n for n in s.audited), "move: full `why` reaches the card audit note")
-check(not s.notified, "move: no separate Henry bubble - the lane line is the report")
+check(any(LONG in n for n in s.notified), "move: full `why` also reaches the Henry chat bubble")
 
 # ---------------------------------------------------------------------------
 # 4) _notify_owner itself: the push is the ONLY consumer allowed to truncate.

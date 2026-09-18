@@ -66,6 +66,24 @@ def lede(reply):
     return _first_lines(head)
 
 
+def excerpt(text, max_chars=1500):
+    """The reply's own words, WHOLE up to `max_chars`, cut on a word boundary
+    with an explicit pointer past the cut. Unlike lede/extract_outcome this is
+    not a distillation - callers that want to hand the worker's actual
+    sentence to an owner-facing announcement (a card-close report riding
+    alongside Henry's own text) use this instead of a plain-language summary.
+    '' when there is nothing to show."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    if len(t) <= max_chars:
+        return t
+    cut = t[:max_chars]
+    sp = cut.rfind(" ")
+    clipped = (cut[:sp] if sp > max_chars // 2 else cut).rstrip(" ,;:-")
+    return clipped + " … (weiter im Thread)"
+
+
 def _record_outcome(tt):
     """Runs INSIDE the accept mutators. Keeps an existing outcome when the
     final reply yields nothing (e.g. a re-accept after a silent lane fix)."""

@@ -490,14 +490,20 @@ check(any(m.get("card") == "ghost" and m.get("kind") == card_mirror.KIND_CLOSED 
       "but a card-bound CLOSED entry is folded in, so the next history poll "
       "releases the ghost target instead of dead-ending on every send")
 
-# -- 10. accepting a card never prints a SECOND message for the SAME event ---
+# -- 10. accepting a card prints its own DONE line WITH the worker's reply ---
 # Owner correction 2026-09-14 18:40: for a machine/direct card, needs_you's
 # KIND_RESULT (the card's own result) used to be followed by a separate
 # dispatch._accept_machine "abgenommen und geschlossen (Maschinen-Aufgabe)"
-# board-chat line at Done - two messages for one completed unit of work. That
-# echo is deleted (dispatch.py, _accept_machine's "done" branch); exercised
-# here through the REAL move_lane/_accept_machine path, not a stub, because a
-# stubbed accept could never have caught a duplicate emitted BY that path.
+# board-chat line at Done, with no content of its own - two messages for one
+# completed unit of work, and a bare template does not carry news at least.
+# Reversed 2026-09-18 (owner: "warum muss ich nochmal fragen") - Done is often
+# the FIRST time anyone but the worker sees this card again (an unattended
+# accept, hours after needs_you), so it now DOES add a second line, but a
+# content-bearing one (the worker's own reply, via outcomes.excerpt), not the
+# needs_you distillation reprinted; still exactly one line for this event, not
+# a duplicate of needs_you's. Exercised here through the REAL
+# move_lane/_accept_machine path, not a stub, so a real double-print would
+# still be caught.
 reset()
 MACH = card(tid="c-mach", machine=True, run_dir=SANDBOX, repo=SANDBOX,
            branch=sessions.MACHINE_BRANCH, worktree=SANDBOX,
@@ -508,8 +514,11 @@ check(len(cards()) == 1, "needs_you still writes its one RESULT line")
 out = sessions.move_lane("c-mach", "done", actor="owner")
 check(out.get("status") == "accepted" and out.get("lane") == "done",
       "the accept itself still goes through")
-check(len(cards()) == 1,
-      "...but Done adds NO second board-chat line for the same card action")
+check(len(cards()) == 2,
+      "...and Done adds exactly ONE more line - the worker's own reply, not a "
+      "reprint of needs_you's distillation")
+check("Autostart-Task angelegt" in (cards()[-1].get("text") or ""),
+      "...and that line actually carries the worker's own words")
 
 print()
 if _fails:
