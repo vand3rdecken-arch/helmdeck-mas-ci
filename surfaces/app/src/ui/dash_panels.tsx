@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { api, type PmBrief, type PmData } from "@/data/client";
+import { api, type PmBrief, type PmBudget, type PmData } from "@/data/client";
 import type { EconCard, Metrics, Sow, Usage, UsageTone, UsageWindow } from "@/data/types";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -21,7 +21,7 @@ const isWeb = Platform.OS === "web";
 // everything - dashboard.tsx passes ALL_* for them explicitly (their payload has
 // no settings and no triage). Keys match the archived web dash.tsx so settings
 // interop.
-export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"] as const;
+export const ALL_TILES = ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage", "budget_use"] as const;
 export const ALL_PANELS = ["sows", "capacity", "gates", "models", "work"] as const;
 // The customizer names each tile/panel by dict key, so the chip list speaks the
 // workspace language too.
@@ -29,6 +29,7 @@ export const TILE_LABEL_KEYS: Record<string, string> = {
   value_delivered: "dash.tileName.valueDelivered", ai_spend: "dash.tileName.aiSpend",
   margin: "dash.tileName.margin", yield: "dash.tileName.yield",
   automation: "dash.tileName.automation", leverage: "dash.tileName.leverage",
+  budget_use: "dash.tileName.budgetUse",
 };
 export const PANEL_LABEL_KEYS: Record<string, string> = {
   sows: "dash.panelName.sows", capacity: "dash.panelName.capacity", gates: "dash.panelName.gates",
@@ -86,6 +87,43 @@ function totalTokens(m: Metrics): number {
   return (m.cards ?? []).reduce((a, x) => a + (x.tokens_in ?? 0) + (x.tokens_out ?? 0), 0);
 }
 
+/** The "budget_use" tile: cards' consumption of the week's budget so far, as a
+ *  plain percentage, PLUS the reset projection - reusing exactly the numbers
+ *  the planning triangle's Budget corner already computes (PmBudget), never a
+ *  second calculation. Owner, 2026-09-18: "wieviel haben Karten bisher
+ *  verbraucht vs wieviel im Budget" - today's ai_spend/margin tiles show the
+ *  SPEND side; this one is the one-glance BUDGET-FIT side, with the same
+ *  reset-projection the Budget corner's warning already carries.
+ *
+ *  Max plan (kind "usage"): the weekly window's usedPct is the headline;
+ *  the "X of Y turns" line comes from the SAME pace_turns_per_day the
+ *  Timeline corner already shows, scaled by that usedPct (pace*7 = the
+ *  turns a full week affords at the governing pace; usedPct of that = turns
+ *  spent so far) - not a new measurement, just the existing rate expressed
+ *  as a count instead of a percentage. API plan (kind "cash"): € spent vs
+ *  the monthly cap, same idea. */
+function budgetUseTile(b: PmBudget | undefined, tr: ReturnType<typeof useT>, c: string): { value: string; label: string } | undefined {
+  if (!b) return undefined;
+  if (b.kind === "cash") {
+    const cap = b.monthly_eur ?? 0;
+    if (!cap) return undefined;
+    const spent = b.spent_to_date_eur ?? 0;
+    const pct = Math.round((100 * spent) / cap);
+    const parts = [tr("dash.tile.budgetUseCash", { spent: c + spent.toFixed(0), cap: c + cap.toFixed(0) })];
+    if (b.projected_eur != null) parts.push(tr("dash.tile.budgetUseCashProj", { proj: c + b.projected_eur.toFixed(0) }));
+    return { value: `${pct}%`, label: parts.join(" · ") };
+  }
+  const weekly = b.windows?.find((w) => w.id === "weekly");
+  const pct = weekly?.usedPct;
+  if (pct == null) return undefined;
+  const projPct = weekly?.pacing?.projected_pct;
+  const weekTurns = b.pace_turns_per_day != null ? Math.round(b.pace_turns_per_day * 7) : null;
+  const parts: string[] = [];
+  if (weekTurns) parts.push(tr("dash.tile.budgetUseTurns", { a: Math.round((weekTurns * pct) / 100), b: weekTurns }));
+  if (projPct != null) parts.push(tr("dash.tile.budgetUseProj", { proj: Math.round(projPct) }));
+  return { value: `${Math.round(pct)}%`, label: parts.join(" · ") || tr("dash.tileName.budgetUse") };
+}
+
 export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: string[] }) {
   const tr = useT();
   const flat = useAiFlat();
@@ -93,7 +131,10 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
   const [y0, y1] = m.yield_first_pass ?? [0, 0];
   const [a0, a1] = m.automation ?? [0, 0];
   const c = cur(m);
-  const byKey: Record<string, { value: string; label: string }> = {
+  // Only the Budget corner's own numbers - cached, same query TriageFollowUp/
+  // StatusPanel already run, so this costs no extra fetch in practice.
+  const { data: pmData } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
+  const byKey: Record<string, { value: string; label: string } | undefined> = {
     value_delivered: { value: c + T.value_delivered, label: tr("dash.tile.valueDelivered") },
     // flat: the SHARE OF THE SUBSCRIPTION is the cost. Tokens are the fallback
     // for when the daemon cannot calibrate (no Claude login, freshly reset week).
@@ -106,6 +147,7 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
     yield: { value: y1 ? Math.round((100 * y0) / y1) + "%" : "-", label: tr("dash.tile.yield", { a: y0, b: y1 }) },
     automation: { value: a1 ? Math.round((100 * a0) / a1) + "%" : "-", label: tr("dash.tile.automation", { a: a0, b: a1 }) },
     leverage: { value: c + T.leverage_per_touch, label: tr("dash.tile.leverage") },
+    budget_use: budgetUseTile(pmData?.plan?.budget, tr, c),
   };
   // Enabled keys drive both which tiles show and their order (missing = all).
   const keys = (tiles ?? [...ALL_TILES]).filter((k) => byKey[k]);
@@ -114,7 +156,7 @@ export function Tiles({ m, wide, tiles }: { m: Metrics; wide: boolean; tiles?: s
     <View style={s.tileGrid}>
       {keys.map((k) => (
         <View key={k} style={{ width: wide ? "32%" : "48%" }}>
-          <Tile value={byKey[k].value} label={byKey[k].label} />
+          <Tile value={byKey[k]!.value} label={byKey[k]!.label} />
         </View>
       ))}
     </View>
@@ -553,9 +595,25 @@ export function TriageFollowUp({ m, wide, defaultRepo, only }: {
   const reasons = plan.triage_reasons;
   const GateReason = ({ text }: { text?: string }) =>
     text ? <Text style={{ color: t.danger, fontSize: 11.5, lineHeight: 16, marginBottom: 6 }}>⚠ {text}</Text> : null;
+  // The MIRROR of GateReason, same slot (owner, 2026-09-18: same eyeshot as the
+  // overrun warning) - pm_triangle._budget_surplus only ever sets this when the
+  // corner is NOT blocked, so the two notes never compete for the same line.
+  const SurplusNote = ({ s: sur }: { s?: PmBudget["surplus"] }) =>
+    sur ? (
+      <View style={{ backgroundColor: t.ok + "14", borderColor: t.ok + "55", borderWidth: 1, borderRadius: 10, padding: 9, marginBottom: 6, gap: 2 }}>
+        <Text style={{ color: t.ok, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" }}>
+          {tr("dash.corner.surplusTitle")}
+        </Text>
+        <Text style={{ color: t.txtPrimary, fontSize: 12, lineHeight: 16 }}>
+          {tr("dash.corner.surplusBody", { proj: Math.round(sur.projected_pct) })}
+        </Text>
+        <Text style={{ color: t.txtSecondary, fontSize: 12, lineHeight: 16 }}>{sur.suggestion}</Text>
+      </View>
+    ) : null;
   const budget = (
     <CornerPanel key="budget" label={tr("dash.triangle.budget")} state={tri?.budget} style={wide ? { flex: 1 } : undefined}>
       <GateReason text={reasons?.budget} />
+      <SurplusNote s={b?.surplus} />
       {b?.kind === "usage" ? (
         <View>
           {b.windows?.length ? b.windows.map((w) => <UsageRow key={w.id} w={w} />)

@@ -137,6 +137,12 @@ export const board: Dict = {
   "dash.tile.yield": { de: "First-Pass-Quote ({a}/{b})", en: "first-pass yield ({a}/{b})" },
   "dash.tile.automation": { de: "Automatisierungsgrad ({a}/{b} auto)", en: "automation rate ({a}/{b} auto)" },
   "dash.tile.leverage": { de: "Wert pro Touch-Einheit", en: "value per touch unit" },
+  // budget_use: cards' consumption of the week's quota so far (Max plan) or
+  // the euro cap (API plan), reusing exactly the Budget corner's own numbers.
+  "dash.tile.budgetUseTurns": { de: "{a} von {b} Turns", en: "{a} of {b} turns" },
+  "dash.tile.budgetUseProj": { de: "Projektion {proj}% zum Reset", en: "projected {proj}% by reset" },
+  "dash.tile.budgetUseCash": { de: "{spent} von {cap}", en: "{spent} of {cap}" },
+  "dash.tile.budgetUseCashProj": { de: "Projektion {proj}", en: "projected {proj}" },
 
   // ---- dashboard customizer ----------------------------------------------
   "dash.tileName.valueDelivered": { de: "Wert geliefert", en: "Value delivered" },
@@ -145,6 +151,7 @@ export const board: Dict = {
   "dash.tileName.yield": { de: "First-Pass-Quote", en: "First-pass yield" },
   "dash.tileName.automation": { de: "Automatisierungsgrad", en: "Automation rate" },
   "dash.tileName.leverage": { de: "Hebel pro Touch", en: "Leverage per touch" },
+  "dash.tileName.budgetUse": { de: "Budget-Verbrauch", en: "Budget use" },
   "dash.panelName.sows": { de: "SoW-Marge", en: "SoW margin" },
   "dash.panelName.capacity": { de: "Kapazitätsanzeige", en: "Capacity gauge" },
   "dash.panelName.gates": { de: "Gate-Fehler", en: "Gate failures" },
@@ -241,6 +248,13 @@ export const board: Dict = {
   "dash.corner.aiPlan": { de: "KI {v} vom Abo", en: "AI {v} of plan" },
   "dash.corner.margin": { de: "Marge {v}", en: "margin {v}" },
   "dash.corner.wip": { de: "Laufende Arbeit {wip}/{limit} · {n} Plätze frei", en: "Work in progress {wip}/{limit} · {n} slots free" },
+  // Budget SURPLUS note (pm_triangle._budget_surplus) - the mirror of the red
+  // overrun GateReason above, same corner, same spot, opposite direction.
+  "dash.corner.surplusTitle": { de: "Budget übrig", en: "Budget headroom" },
+  "dash.corner.surplusBody": {
+    de: "Projektion nur {proj}% zum Reset — Kontingent verfällt sonst ungenutzt.",
+    en: "Projected only {proj}% by reset — the quota otherwise expires unused.",
+  },
   "dash.usage.title": { de: "Nutzung — Claude-Abo", en: "Usage — Claude plan" },
   "dash.usage.unavailable": {
     de: "Nutzungsdaten nicht verfügbar (kein Claude-Login gefunden).",
