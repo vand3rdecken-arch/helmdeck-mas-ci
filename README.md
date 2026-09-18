@@ -1,6 +1,6 @@
 # HelmDeck
 
-**A task board where the tickets get done.** AI agents run on your own Windows PC and work through your Kanban board. Your phone is the cockpit: create tasks with photos and attachments, watch the agent work live, answer its questions in chat, approve or reject results. A PM agent keeps tasks, budgets and timelines on track.
+**The harness for your team's coding agents.** Every task becomes a card, and each card gets its own agent working in its own isolated copy of your codebase, running on your own Windows PC. Your phone is the cockpit: set goals and budgets, watch agents work live, answer their questions in chat, review and approve before anything merges or deploys. A PM agent keeps goals, budgets and timelines on track.
 
 Never sit in front of a PC again unless you want to.
 
