@@ -310,11 +310,11 @@ private fun askHenry(
                 body)
         }
         onBusy(false)
-        if (result == null || result.first !in 200..299) {
+        if (result !is RelayClient.TalkResult.Ok) {
             onReply("Henry nicht erreichbar.", null)
             return@launch
         }
-        val o = runCatching { JSONObject(result.second) }.getOrNull()
+        val o = runCatching { JSONObject(result.body) }.getOrNull()
         val reply = o?.optString("reply") ?: ""
         val q = parseQuestionBlock(o?.optJSONObject("question"))
         onReply(reply.ifBlank { "(keine Antwort)" }, q)

@@ -126,7 +126,12 @@ android {
         // (ee3761e0 backoff refresh, f06f8030/1e739c19 wake catch-up loading
         // state, 4f360250 HenryScreen ambient mode) - none of them were in
         // the vc1000005 bundle uploaded 2026-09-11.
-        versionCode 1000006
+        // 1000007: LOCAL test build only, owner 2026-09-18 - vc1000006 is
+        // mid-review on Play, so this side-loads over it via `adb install -r`
+        // to verify the four chat bugs (screen sleep, false "nicht
+        // erreichbar", blocked second message, silent send) without touching
+        // the Play submission.
+        versionCode 1000007
         versionName "1.0.0"
     }
 

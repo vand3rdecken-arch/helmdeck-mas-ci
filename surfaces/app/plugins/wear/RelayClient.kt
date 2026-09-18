@@ -157,29 +157,55 @@ object RelayClient {
      *  Blocking sleep, not delay(): every caller already runs this on
      *  Dispatchers.IO around a blocking HttpURLConnection - same thread
      *  discipline, no new suspend surface on a stdlib-style client. */
+
+    /** talk()'s outcome, once its own retries are exhausted.
+     *
+     *  Introduced 2026-09-18 (owner bug report): the old `Pair<Int,String>?`
+     *  collapsed EVERY failure into the same null - a plain 150s socket
+     *  timeout (the turn is almost certainly still running server-side, talk()
+     *  just gave up watching it) read identically to the relay's own 503
+     *  "desktop offline" (a real, evidenced outage). A caller that cannot
+     *  tell those apart has no honest way to decide whether "nicht
+     *  erreichbar" is true. */
+    sealed class TalkResult {
+        data class Ok(val status: Int, val body: String) : TalkResult()
+        /** The relay itself said the desktop is unreachable (503) - an
+         *  outage the client did not have to guess at. */
+        object Offline : TalkResult()
+        /** Every attempt failed for some other reason (timeout, a transient
+         *  relay error, ...) with nothing to confirm an outage. The turn may
+         *  still be running server-side; only a caller's own follow-up read
+         *  of a lighter endpoint can tell. */
+        object Unknown : TalkResult()
+    }
+
     fun talk(
         relayUrl: String, room: String, daemonPubB64: String,
         myPublicKeyB64: String, mySecretKeyB64: String, deviceToken: String,
         bodyStr: String,
-    ): Pair<Int, String>? {
-        var last: Pair<Int, String>? = null
+    ): TalkResult {
+        var offline = false
         for (attempt in 1..4) {
-            val r = runCatching {
+            val outcome = runCatching {
                 authedCall(
                     relayUrl, room, daemonPubB64, myPublicKeyB64, mySecretKeyB64,
                     deviceToken, "POST", "/wear/talk", bodyStr,
                     readTimeoutMs = 150_000)
-            }.getOrNull()
+            }
+            val r = outcome.getOrNull()
             if (r != null && r.first in 200..299) {
                 val o = runCatching { JSONObject(r.second) }.getOrNull()
                 val stillRunning = o?.optBoolean("duplicate") == true &&
                     (o.optString("reply").isBlank())
-                if (!stillRunning) return r
+                if (!stillRunning) return TalkResult.Ok(r.first, r.second)
             }
-            last = r
+            // STICKY, not overwritten: one confirmed "desktop offline" among
+            // four attempts is still the honest signal even if a later retry
+            // failed for some other, less specific reason.
+            offline = offline || (outcome.exceptionOrNull() as? RelayError)?.message == "desktop offline"
             if (attempt < 4) Thread.sleep(2_000)
         }
-        return last
+        return if (offline) TalkResult.Offline else TalkResult.Unknown
     }
 
     /** GET /me over the sealed relay - the exact call config.ts's onboarding
