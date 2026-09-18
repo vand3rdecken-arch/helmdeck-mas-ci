@@ -242,14 +242,14 @@ function devicesHtml(t) {
   );
 }
 const DEV_DE = {
-  devPhoneH: "Handy", devPhoneP: "Android, iPhone. Rückfragen, Freigaben, Umlenken.",
-  devDeskH: "Desktop", devDeskP: "Windows, macOS. Hier läuft der Operator mit Claude Code.",
+  devPhoneH: "Handy", devPhoneP: "Android, iPhone. Rückfragen, Freigaben, Umlenken, für jeden im Team.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. Hier arbeiten die Agenten eures Teams mit Claude Code.",
   devWatchH: "Uhr", devWatchP: "Apple Watch, Wear OS. Ja oder Nein vom Handgelenk.",
   devGlassH: "Brille", devGlassP: "Bald. Warteliste unten.",
 };
 const DEV_EN = {
-  devPhoneH: "Phone", devPhoneP: "Android, iPhone. Questions, approvals, redirects.",
-  devDeskH: "Desktop", devDeskP: "Windows, macOS. This is where the operator runs Claude Code.",
+  devPhoneH: "Phone", devPhoneP: "Android, iPhone. Questions, approvals, redirects, for anyone on the team.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. This is where your team’s agents run Claude Code.",
   devWatchH: "Watch", devWatchP: "Apple Watch, Wear OS. Yes or no from your wrist.",
   devGlassH: "Glasses", devGlassP: "Soon. Waitlist below.",
 };
@@ -323,10 +323,10 @@ function page({ rel, joined, already, err, email, product }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck: Claude Code asks. You answer from your phone.</title>
-<meta name="description" content="HelmDeck is an app for your phone and an operator for the machine that runs Claude Code. Every question lands as a push on your phone. You answer, the agent carries on. No cloud account, no code leaves your machine.">
-<meta property="og:title" content="HelmDeck: Claude Code asks. You answer from your phone.">
-<meta property="og:description" content="Every question from Claude Code as a push on your phone. You answer, the agent carries on. The machine stays home, and so does your code.">
+<title>HelmDeck: the harness for your team's coding agents.</title>
+<meta name="description" content="HelmDeck is the harness that runs your team's coding agents. Every task becomes a card, every card gets its own agent, isolated on your machine. Your team follows along and approves from the phone. No cloud account, no code leaves your machine.">
+<meta property="og:title" content="HelmDeck: the harness for your team's coding agents.">
+<meta property="og:description" content="Every task becomes a card, every card gets its own agent. Your team follows along and approves from the phone. The machine stays home, and so does your code.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -559,10 +559,10 @@ footer a:hover{color:var(--ink-2)}
 <main>
   <section class="hero" style="border-top:0; padding-top:1rem">
     <div class="hero-copy">
-    <p class="kicker" data-i="kicker">For everyone who runs Claude Code</p>
-    <h1 data-i="h1">Your assistant works the PC. You are on the move.</h1>
-    <p class="sub" data-i="sub">What a virtual assistant bills 20 an hour for, your agents do on your own computer. You only approve, from your phone.</p>
-    <p class="objection" data-i="objection">No cloud account. No code leaves your machine. Works with the Claude subscription you already have.</p>
+    <p class="kicker" data-i="kicker">For teams running Claude Code</p>
+    <h1 data-i="h1">The harness for your team's coding agents.</h1>
+    <p class="sub" data-i="sub">Every task becomes a card. Each card gets its own agent, working in an isolated copy of your codebase. Your team follows along and approves from the phone, nobody has to open a terminal.</p>
+    <p class="objection" data-i="objection">No cloud account, no code leaves your machine, works with the Claude subscription your team already has.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
     </div>
@@ -573,12 +573,12 @@ footer a:hover{color:var(--ink-2)}
   </section>
 
   <section id="problem">
-    <h2 data-i="problemTitle">The time you already lose to this</h2>
+    <h2 data-i="problemTitle">What slows a team down today</h2>
     <p class="section-sub" data-i="problemP">This is what it looks like without HelmDeck, and with it.</p>
     <div class="why">
-      <div><b data-i="problem1H">One question, one lost hour</b><p data-i="problem1P">Without HelmDeck: the agent hits a fork, asks a question, and waits until you're back at your desk, maybe an hour later. With HelmDeck: the question lands as a push, you answer in ten seconds, it keeps going.</p></div>
-      <div><b data-i="problem2H">Research and orders eat the evening</b><p data-i="problem2P">Without HelmDeck: research, forms, orders, that is desk work for the evening. With HelmDeck: the agent does it on the machine while you're out, you only review the result.</p></div>
-      <div><b data-i="problem3H">No PC, no approval</b><p data-i="problem3P">Without HelmDeck: you can only approve sitting at the machine. With HelmDeck: you approve wherever you are, the agent already did the work.</p></div>
+      <div><b data-i="problem1H">One question, one blocked agent</b><p data-i="problem1P">Without HelmDeck: an agent hits a fork, asks a question, and waits until someone is back at a desk, maybe an hour later. With HelmDeck: the question lands as a push to whoever's free, they answer in ten seconds, it keeps going.</p></div>
+      <div><b data-i="problem2H">Five agents running, nobody can tell you who's doing what</b><p data-i="problem2P">Without HelmDeck: everyone has to open a terminal to see what an agent is doing right now. With HelmDeck: every card shows live progress, questions and diff, your whole team reads it from the phone.</p></div>
+      <div><b data-i="problem3H">No desk, no approval</b><p data-i="problem3P">Without HelmDeck: only whoever is sitting at the machine can approve a result. With HelmDeck: anyone on the team approves from wherever they are, the agent already did the work.</p></div>
     </div>
   </section>
 
@@ -587,40 +587,40 @@ footer a:hover{color:var(--ink-2)}
       <p data-i="quoteP">“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”</p>
       <footer><span data-i="quoteBy">Tien Duy Vo, developer</span></footer>
     </blockquote>
-    <p class="section-sub" data-i="founderFact">Built in two months, steering the agents from a phone, not a desk.</p>
+    <p class="section-sub" data-i="founderFact">Built in two months. The same board now runs a whole team's agents, not just mine.</p>
   </section>
 
   <section id="why">
-    <h2 data-i="whyTitle">Three things you do from your phone</h2>
+    <h2 data-i="whyTitle">Three things your team does from the phone</h2>
     <div class="why">
-      <div><b data-i="why1H">Answer questions.</b><p data-i="why1P">The agent asks “A or B?”. You tap A. It keeps building. Time on the phone: ten seconds.</p></div>
-      <div><b data-i="why2H">Redirect mid-run.</b><p data-i="why2P">You see in the log that it is touching the wrong file. You write “use the other one”. It stops and uses the other one. No restart, nothing lost.</p></div>
-      <div><b data-i="why3H">Approve the result.</b><p data-i="why3P">Read the diff, tap “accept”. Merged before you are back at the machine.</p></div>
+      <div><b data-i="why1H">Answer questions.</b><p data-i="why1P">An agent asks “A or B?”. Whoever's on point taps A. It keeps building. Time on the phone: ten seconds.</p></div>
+      <div><b data-i="why2H">Redirect mid-run.</b><p data-i="why2P">Someone on the team sees in the log that it is touching the wrong file. They write “use the other one”. It stops and uses the other one. No restart, nothing lost.</p></div>
+      <div><b data-i="why3H">Approve the result.</b><p data-i="why3P">Read the diff, tap “accept”. Merged before anyone is back at a desk.</p></div>
     </div>
   </section>
 
   <section id="proof">
     <h2 data-i="proofTitle">The task is the card. There is no second tool.</h2>
-    <p class="section-sub" data-i="proofSub">In Jira you write a ticket, then you go to Claude Code and explain it again. When it is done you go back and set the ticket to “Done”. Three places, one task.</p>
-    <p class="section-sub" data-i="proofSub2">In HelmDeck the card is the task. You write it, the agent gets it, the card shows progress, questions and diff. You accept, the card is done. One place.</p>
+    <p class="section-sub" data-i="proofSub">In Jira you write a ticket, then someone goes to Claude Code and explains it again. When it's done they go back and set the ticket to “Done”. Three places, one task.</p>
+    <p class="section-sub" data-i="proofSub2">In HelmDeck the card is the task. You write it, an agent picks it up, the card shows progress, questions and diff. Your team accepts, the card is done. One place.</p>
     <div class="shots shots-2">
       <div class="shot phone">
         <figure><img src="${IMG_BOARD}" width="520" height="1125" alt="HelmDeck Board auf dem Handy: Backlog, In Arbeit, eine Karte wartet auf Antwort" loading="lazy"></figure>
-        <figcaption><b data-i="shot1H">The board on your phone</b><p data-i="shot1P">One card running, one waiting for you. Real screenshots, not mockups.</p></figcaption>
+        <figcaption><b data-i="shot1H">The board on your phone</b><p data-i="shot1P">One card running, one waiting on you. Real screenshots, not mockups.</p></figcaption>
       </div>
       <div class="shot">
         <figure><img src="${IMG_DESK}" width="1100" height="687" alt="HelmDeck Board am Desktop: Lanes Backlog, In Arbeit, Review mit Gate-Ergebnis" loading="lazy"></figure>
-        <figcaption><b data-i="shot2H">For the team, too</b><p data-i="shot2P">Colleagues and clients only get the app. They see the board, never your machine. File cards, watch progress, accept.</p></figcaption>
+        <figcaption><b data-i="shot2H">The same board, the whole team</b><p data-i="shot2P">Colleagues and clients only ever get the app. They see the board, never your machine. File cards, watch progress, accept.</p></figcaption>
       </div>
     </div>
   </section>
 
   <section id="steps">
-    <h2 data-i="stepsTitle">How to start</h2>
+    <h2 data-i="stepsTitle">How a team starts</h2>
     <div class="steps">
-      <div><b data-i="step1H">Operator on the machine</b><p data-i="step1P">On the machine with the project. Connect Claude Code. Two minutes.</p></div>
-      <div><b data-i="step2H">Scan the QR code with your phone</b><p data-i="step2P">The phone is paired. No account with us, no cloud in between.</p></div>
-      <div><b data-i="step3H">Send the first task and walk away</b><p data-i="step3P">The first question arrives as a push. If you get stuck, <a href="mailto:${OWNER_EMAIL}">write to us</a>, we help in person.</p></div>
+      <div><b data-i="step1H">Operator on the machine</b><p data-i="step1P">On the machine your team already builds on. Connect Claude Code. Two minutes.</p></div>
+      <div><b data-i="step2H">Scan the QR code with your phone</b><p data-i="step2P">You're paired. Invite your team and they see the same board from their own phones, no setup on their side.</p></div>
+      <div><b data-i="step3H">Send the first task and walk away</b><p data-i="step3P">The first question arrives as a push, to whoever's free. If you get stuck, <a href="mailto:${OWNER_EMAIL}">write to us</a>, we help in person.</p></div>
     </div>
     <h3 class="devices-h" data-i="devicesTitle">Runs on</h3>
     <div class="devices" data-i-html="devices">${devicesHtml(DEV_EN)}</div>
@@ -670,7 +670,7 @@ footer a:hover{color:var(--ink-2)}
     <div class="faq">
       <details><summary data-i="faq1Q">Does the machine have to be on?</summary><div data-i-html="faq1A">Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.</div></details>
       <details><summary data-i="faq2Q">What do the others on the team see?</summary><div data-i="faq2A">The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.</div></details>
-      <details><summary data-i="faq3Q">Which agents run inside?</summary><div data-i-html="faq3A">Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.</div></details>
+      <details><summary data-i="faq3Q">Which agents run inside?</summary><div data-i-html="faq3A">Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch, so your team can run several agents at once without them stepping on each other; before the merge a gate checks build, types and tests.</div></details>
     </div>
   </section>
 
@@ -852,43 +852,43 @@ ${wl("wearables")}
 
   var I18N = {
     de:{
-      title:"HelmDeck: Claude Code fragt. Du antwortest vom Handy.",
+      title:"HelmDeck: der Harness für die Agenten eures Teams.",
       navProof:"Was es kann", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
-      kicker:"Für alle, die Claude Code nutzen",
-      h1:"Dein Assistent arbeitet am PC. Du bist unterwegs.",
-      sub:"Was ein virtueller Assistent für 20 € die Stunde macht, erledigen deine Agenten auf deinem eigenen Rechner. Du gibst nur frei, vom Handy.",
-      objection:"Kein Cloud-Account. Kein Code verlässt deinen Rechner. Läuft mit deinem bestehenden Claude-Abo.",
+      kicker:"Für Teams, die Claude Code nutzen",
+      h1:"Der Harness für die Agenten eures Teams.",
+      sub:"Jede Aufgabe wird eine Karte. Jede Karte bekommt einen eigenen Agenten, der isoliert auf eurem Rechner arbeitet. Euer Team verfolgt das mit und gibt frei, vom Handy, kein Terminal nötig.",
+      objection:"Kein Cloud-Account, kein Code verlässt euren Rechner, läuft mit dem Claude-Abo, das ihr schon habt.",
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden (TestFlight)", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       demoTitle:"So sieht das aus", demoSub:"21 Sekunden: Aufgabe vom Handy schicken, der Agent arbeitet sie auf deinem eigenen Rechner ab, du nimmst das Ergebnis ab.",
       quoteP:"„Ich habe HelmDeck gebaut, weil ich abends am PC saß und auf die nächste Frage von Claude Code gewartet habe, während meine Kinder nebenan waren.“",
       quoteBy:"Tien Duy Vo, Entwickler",
-      founderFact:"Gebaut in zwei Monaten, weil die Agenten vom Handy liefen, nicht nur vom Schreibtisch.",
-      problemTitle:"Die Zeit, die du heute schon verlierst",
+      founderFact:"Gebaut in zwei Monaten. Dasselbe Board steuert heute die Agenten eines ganzen Teams, nicht nur meine.",
+      problemTitle:"Was ein Team heute ausbremst",
       problemP:"So läuft das ohne HelmDeck, und so läuft das mit HelmDeck.",
-      problem1H:"Eine Frage, eine verlorene Stunde",
-      problem1P:"Ohne HelmDeck: Der Agent stellt eine Frage und wartet, bis du wieder am Schreibtisch bist, manchmal eine Stunde später. Mit HelmDeck: Die Frage kommt als Push, du antwortest in zehn Sekunden, er macht weiter.",
-      problem2H:"Recherche und Bestellungen fressen den Abend",
-      problem2P:"Ohne HelmDeck: Recherche, Formulare, Bestellungen, das ist Schreibtischarbeit für den Abend. Mit HelmDeck: Der Agent erledigt das am Rechner, während du unterwegs bist, du prüfst nur das Ergebnis.",
-      problem3H:"Kein Rechner, keine Freigabe",
-      problem3P:"Ohne HelmDeck: Freigeben geht nur direkt am Gerät. Mit HelmDeck: Du gibst frei, wo du gerade bist, der Agent hat schon gearbeitet.",
-      whyTitle:"Drei Dinge, die vom Handy gehen",
-      why1H:"Rückfragen beantworten.", why1P:"Der Agent fragt „A oder B?“. Du tippst A. Er baut weiter. Zeit am Handy: zehn Sekunden.",
-      why2H:"Mitten im Lauf umlenken.", why2P:"Du siehst im Verlauf, dass er die falsche Datei anfasst. Du schreibst „nimm die andere“. Er bricht ab und nimmt die andere. Kein Neustart, nichts verloren.",
-      why3H:"Ergebnis freigeben.", why3P:"Diff lesen, „übernehmen“ tippen. Gemergt, bevor du wieder am Rechner bist.",
+      problem1H:"Eine Frage, ein blockierter Agent",
+      problem1P:"Ohne HelmDeck: Ein Agent stellt eine Frage und wartet, bis wieder jemand am Schreibtisch sitzt, manchmal eine Stunde später. Mit HelmDeck: Die Frage kommt als Push an alle, die gerade frei sind, jemand antwortet in zehn Sekunden, er macht weiter.",
+      problem2H:"Fünf Agenten laufen, keiner weiß wer was macht",
+      problem2P:"Ohne HelmDeck: Jeder muss ins Terminal schauen, um zu sehen, was ein Agent gerade tut. Mit HelmDeck: Jede Karte zeigt Fortschritt, Rückfragen und Diff live, euer ganzes Team liest das vom Handy.",
+      problem3H:"Kein Schreibtisch, keine Freigabe",
+      problem3P:"Ohne HelmDeck: Nur wer am Rechner sitzt, kann ein Ergebnis freigeben. Mit HelmDeck: Jeder im Team gibt frei, egal wo, der Agent hat schon gearbeitet.",
+      whyTitle:"Drei Dinge, die euer Team vom Handy macht",
+      why1H:"Rückfragen beantworten.", why1P:"Ein Agent fragt „A oder B?“. Wer gerade frei ist, tippt A. Er baut weiter. Zeit am Handy: zehn Sekunden.",
+      why2H:"Mitten im Lauf umlenken.", why2P:"Jemand im Team sieht im Verlauf, dass er die falsche Datei anfasst. Er schreibt „nimm die andere“. Er bricht ab und nimmt die andere. Kein Neustart, nichts verloren.",
+      why3H:"Ergebnis freigeben.", why3P:"Diff lesen, „übernehmen“ tippen. Gemergt, bevor irgendwer wieder am Schreibtisch ist.",
       proofTitle:"Die Aufgabe ist die Karte. Es gibt kein zweites Tool.",
-      proofSub:"In Jira schreibst du ein Ticket, dann gehst du zu Claude Code und erklärst es nochmal. Wenn er fertig ist, gehst du zurück und setzt das Ticket auf „Done“. Drei Orte, eine Aufgabe.",
-      proofSub2:"In HelmDeck ist die Karte die Aufgabe. Du schreibst sie, der Agent bekommt sie, die Karte zeigt Fortschritt, Rückfragen und Diff. Du nimmst ab, die Karte ist fertig. Ein Ort.",
+      proofSub:"In Jira schreibt jemand ein Ticket, dann geht er zu Claude Code und erklärt es nochmal. Wenn er fertig ist, geht er zurück und setzt das Ticket auf „Done“. Drei Orte, eine Aufgabe.",
+      proofSub2:"In HelmDeck ist die Karte die Aufgabe. Du schreibst sie, ein Agent übernimmt sie, die Karte zeigt Fortschritt, Rückfragen und Diff. Euer Team nimmt ab, die Karte ist fertig. Ein Ort.",
       shot1H:"Das Board auf dem Handy", shot1P:"Eine Karte läuft, eine wartet auf dich. Echte Screenshots, keine Mockups.",
-      shot2H:"Auch fürs Team", shot2P:"Kollegen und Auftraggeber bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.",
-      stepsTitle:"So fängst du an",
-      step1H:"Operator auf den Rechner", step1P:"Auf den Rechner mit dem Projekt. Claude Code verbinden. Zwei Minuten.",
-      step2H:"QR-Code mit dem Handy scannen", step2P:"Das Handy ist gekoppelt. Kein Account bei uns, keine Cloud dazwischen.",
-      step3H:"Erste Aufgabe schicken und weggehen", step3P:"Die erste Rückfrage kommt als Push. Wenn du hängst, schreib uns, wir helfen persönlich.",
+      shot2H:"Dasselbe Board, das ganze Team", shot2P:"Kollegen und Auftraggeber bekommen nur die App. Sie sehen das Board, nie deinen Rechner. Karten einreichen, Fortschritt sehen, abnehmen.",
+      stepsTitle:"So startet ein Team",
+      step1H:"Operator auf den Rechner", step1P:"Auf den Rechner, auf dem euer Team schon baut. Claude Code verbinden. Zwei Minuten.",
+      step2H:"QR-Code mit dem Handy scannen", step2P:"Du bist gekoppelt. Lad dein Team ein, sie sehen dasselbe Board vom eigenen Handy, ohne eigene Einrichtung.",
+      step3H:"Erste Aufgabe schicken und weggehen", step3P:"Die erste Rückfrage kommt als Push an alle, die gerade frei sind. Wenn ihr hängt, schreibt uns, wir helfen persönlich.",
       devicesTitle:"Läuft auf", devices:'${devicesHtml(DEV_DE)}',
       faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
       faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
-      faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch; vor dem Merge prüft ein Gate Build, Typen und Tests.',
+      faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind angebunden, aber noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch, damit euer Team mehrere Agenten gleichzeitig laufen lassen kann, ohne dass sie sich in die Quere kommen; vor dem Merge prüft ein Gate Build, Typen und Tests.',
       dlTitle:"Jetzt verfügbar", dlSub:"Operator für Windows und macOS. App für Android und iPhone, die Uhr-App liegt im selben Paket. Kein Account bei uns, keine Wartezeit.",
       dlBtn:"Herunterladen",
       dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
@@ -921,43 +921,43 @@ ${wl("wearables")}
       cookieDecline:"Ablehnen", cookieAccept:"Akzeptieren",
       sending:"…", toggle:"EN" },
     en:{
-      title:"HelmDeck: Claude Code asks. You answer from your phone.",
+      title:"HelmDeck: the harness for your team's coding agents.",
       navProof:"What it does", navDownloads:"Downloads", navCloud:"Cloud", navWaitlist:"Glasses",
-      kicker:"For everyone who runs Claude Code",
-      h1:"Your assistant works the PC. You are on the move.",
-      sub:"What a virtual assistant bills 20 an hour for, your agents do on your own computer. You only approve, from your phone.",
-      objection:"No cloud account. No code leaves your machine. Works with the Claude subscription you already have.",
+      kicker:"For teams running Claude Code",
+      h1:"The harness for your team's coding agents.",
+      sub:"Every task becomes a card. Each card gets its own agent, working in an isolated copy of your codebase. Your team follows along and approves from the phone, nobody has to open a terminal.",
+      objection:"No cloud account, no code leaves your machine, works with the Claude subscription your team already has.",
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone (TestFlight)", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       demoTitle:"Watch it work", demoSub:"21 seconds: file a task from your phone, the agent runs it end-to-end on your own PC, you approve the result.",
       quoteP:"“I built HelmDeck because I was sitting at the PC in the evening, waiting for the next question from Claude Code, while my kids were in the next room.”",
       quoteBy:"Tien Duy Vo, developer",
-      founderFact:"Built in two months, steering the agents from a phone, not a desk.",
-      problemTitle:"The time you already lose to this",
+      founderFact:"Built in two months. The same board now runs a whole team's agents, not just mine.",
+      problemTitle:"What slows a team down today",
       problemP:"This is what it looks like without HelmDeck, and with it.",
-      problem1H:"One question, one lost hour",
-      problem1P:"Without HelmDeck: the agent hits a fork, asks a question, and waits until you're back at your desk, maybe an hour later. With HelmDeck: the question lands as a push, you answer in ten seconds, it keeps going.",
-      problem2H:"Research and orders eat the evening",
-      problem2P:"Without HelmDeck: research, forms, orders, that is desk work for the evening. With HelmDeck: the agent does it on the machine while you're out, you only review the result.",
-      problem3H:"No PC, no approval",
-      problem3P:"Without HelmDeck: you can only approve sitting at the machine. With HelmDeck: you approve wherever you are, the agent already did the work.",
-      whyTitle:"Three things you do from your phone",
-      why1H:"Answer questions.", why1P:"The agent asks “A or B?”. You tap A. It keeps building. Time on the phone: ten seconds.",
-      why2H:"Redirect mid-run.", why2P:"You see in the log that it is touching the wrong file. You write “use the other one”. It stops and uses the other one. No restart, nothing lost.",
-      why3H:"Approve the result.", why3P:"Read the diff, tap “accept”. Merged before you are back at the machine.",
+      problem1H:"One question, one blocked agent",
+      problem1P:"Without HelmDeck: an agent hits a fork, asks a question, and waits until someone is back at a desk, maybe an hour later. With HelmDeck: the question lands as a push to whoever's free, they answer in ten seconds, it keeps going.",
+      problem2H:"Five agents running, nobody can tell you who's doing what",
+      problem2P:"Without HelmDeck: everyone has to open a terminal to see what an agent is doing right now. With HelmDeck: every card shows live progress, questions and diff, your whole team reads it from the phone.",
+      problem3H:"No desk, no approval",
+      problem3P:"Without HelmDeck: only whoever is sitting at the machine can approve a result. With HelmDeck: anyone on the team approves from wherever they are, the agent already did the work.",
+      whyTitle:"Three things your team does from the phone",
+      why1H:"Answer questions.", why1P:"An agent asks “A or B?”. Whoever's on point taps A. It keeps building. Time on the phone: ten seconds.",
+      why2H:"Redirect mid-run.", why2P:"Someone on the team sees in the log that it is touching the wrong file. They write “use the other one”. It stops and uses the other one. No restart, nothing lost.",
+      why3H:"Approve the result.", why3P:"Read the diff, tap “accept”. Merged before anyone is back at a desk.",
       proofTitle:"The task is the card. There is no second tool.",
-      proofSub:"In Jira you write a ticket, then you go to Claude Code and explain it again. When it is done you go back and set the ticket to “Done”. Three places, one task.",
-      proofSub2:"In HelmDeck the card is the task. You write it, the agent gets it, the card shows progress, questions and diff. You accept, the card is done. One place.",
-      shot1H:"The board on your phone", shot1P:"One card running, one waiting for you. Real screenshots, not mockups.",
-      shot2H:"For the team, too", shot2P:"Colleagues and clients only get the app. They see the board, never your machine. File cards, watch progress, accept.",
-      stepsTitle:"How to start",
-      step1H:"Operator on the machine", step1P:"On the machine with the project. Connect Claude Code. Two minutes.",
-      step2H:"Scan the QR code with your phone", step2P:"The phone is paired. No account with us, no cloud in between.",
-      step3H:"Send the first task and walk away", step3P:"The first question arrives as a push. If you get stuck, write to us, we help in person.",
+      proofSub:"In Jira you write a ticket, then someone goes to Claude Code and explains it again. When it's done they go back and set the ticket to “Done”. Three places, one task.",
+      proofSub2:"In HelmDeck the card is the task. You write it, an agent picks it up, the card shows progress, questions and diff. Your team accepts, the card is done. One place.",
+      shot1H:"The board on your phone", shot1P:"One card running, one waiting on you. Real screenshots, not mockups.",
+      shot2H:"The same board, the whole team", shot2P:"Colleagues and clients only ever get the app. They see the board, never your machine. File cards, watch progress, accept.",
+      stepsTitle:"How a team starts",
+      step1H:"Operator on the machine", step1P:"On the machine your team already builds on. Connect Claude Code. Two minutes.",
+      step2H:"Scan the QR code with your phone", step2P:"You're paired. Invite your team and they see the same board from their own phones, no setup on their side.",
+      step3H:"Send the first task and walk away", step3P:"The first question arrives as a push, to whoever's free. If you get stuck, write to us, we help in person.",
       devicesTitle:"Runs on", devices:'${devicesHtml(DEV_EN)}',
       faq1Q:"Does the machine have to be on?", faq1A:'Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.',
       faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.",
-      faq3Q:"Which agents run inside?", faq3A:'Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch; before the merge a gate checks build, types and tests.',
+      faq3Q:"Which agents run inside?", faq3A:'Claude Code, verified live. Codex and OpenCode are wired up but not yet tested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch, so your team can run several agents at once without them stepping on each other; before the merge a gate checks build, types and tests.',
       dlTitle:"Available now", dlSub:"Operator for Windows and macOS. App for Android and iPhone, the watch app ships in the same package. No account with us, no waiting.",
       dlBtn:"Download",
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
