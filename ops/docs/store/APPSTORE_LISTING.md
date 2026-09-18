@@ -110,6 +110,48 @@ plattgedrücktes Phone-Bild aus, nicht wie eine echte iPad-Aufnahme. Bewusst
    Build (Info.plist-Flag), widerspricht damit „kein Re-Upload nötig" für
    den aktuellen TestFlight-Build.
 
+## Team-Harness-Entwurf: Promotional Text + nächste Versionsbeschreibung (2026-09-18, PREPARE, NICHT eingetragen)
+
+Owner-Auftrag: gleicher „Team-Harness"-Sprachentwurf wie in `LISTING.md`,
+hier für die zwei ASC-Felder, um die die Karte ausdrücklich bittet:
+Promotional Text und die Versionsbeschreibung des nächsten Release
+(„What's New in This Version"). Dieses Skript-Feld ist NICHT dasselbe wie
+`ops/deploy/asc_metadata_draft.py`s `BUILD_WHATS_NEW` (das ist der
+TestFlight-„What to Test"-Text für Beta-Tester); hier geht es um die Notizen
+für ein tatsächliches App-Store-Release, das laut `ASC_METADATA.md` §5 und
+der Site-Kopie noch aussteht („Der App-Store-Eintrag folgt"). Reine Prosa,
+nichts davon läuft über ein Skript, damit nichts versehentlich live
+geschrieben wird, solange kein Store-Release ansteht.
+
+### Promotional Text, Team-Harness (max. 170 Zeichen, ohne neue Review änderbar)
+
+| Sprache | Text | Länge |
+|---|---|---|
+| DE | HelmDeck ist der Harness für dein KI-Team: mehrere Agenten erledigen echte Aufgaben, du steuerst und nimmst ab. Ende zu Ende verschlüsselt. | 139 |
+| EN | HelmDeck is the harness for your AI team: several agents get real work done while you steer and approve. End to end encrypted. | 126 |
+
+### Versionsbeschreibung für das nächste Release ("What's New in This Version")
+
+Fasst zusammen, was seit der letzten dokumentierten Versionsbeschreibung
+(§4 oben, Build für 1.0.48/versionCode 91) tatsächlich an Nutzer-sichtbaren
+Änderungen im Baum liegt, aus Commit-Historie verifiziert (nicht erfunden):
+Chat-Aufwach-/Catch-up-Fix (`d3171075`/`4a5981bf`), Henry zeigt jetzt
+eigene Hintergrund-Agenten statt Stille (`e50e6a61`/`3c1ef81f`), Hands-
+Ergebnisse erscheinen als klar abgegrenzte Ergebnis-Box statt Rohtext
+(`8eb469ce`), kleinere Wear-OS-Fixes (Ambient-Modus, Kopplungs-Screen,
+`4f360250`/`a0d88137`). Aktueller Stand laut `app.json`: Version 1.0.51,
+versionCode 94.
+
+| Sprache | Text |
+|---|---|
+| DE | Antworten kommen jetzt zuverlässig an, auch nachdem Handy, Desktop oder Uhr aufgewacht sind. Henry zeigt jetzt an, wenn er im Hintergrund weiterarbeitet, und liefert Ergebnisse aus dem Hintergrund klar aufbereitet zurück statt als Rohtext. Kleinere Verbesserungen an der Wear-OS-Uhr-App (Ambient-Modus, Kopplung). |
+| EN | Replies now arrive reliably, even after your phone, desktop or watch wakes up. Henry now shows when it keeps working in the background, and hands results come back as a clear summary instead of raw text. Small fixes to the Wear OS watch app (ambient mode, pairing). |
+
+**Hinweis für den Owner:** dieser Text ist für die ÖFFENTLICHE
+App-Store-Version geschrieben, sobald der TestFlight-Only-Stand endet — bis
+dahin bleibt `ASC_METADATA.md` §4 (TestFlight-„What to Test") die aktive
+Baustelle, dieser Absatz hier ist Vorrat für danach.
+
 ## Pricing & Availability
 
 Kostenlos, keine IAP (identisch zu Play), **weltweit verfügbar** (Owner-
