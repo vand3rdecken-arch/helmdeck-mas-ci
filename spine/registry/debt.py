@@ -10,6 +10,48 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "ota-ship-leaves-no-marker",
+        "order": -10,
+        "title": "an OTA ship writes no marker, so every later ship card re-ships the same files",
+        "status": "open",
+        "what": "ops/tools/ship_facts.py scopes 'what changed since the last "
+                "ship' against the last NATIVE ship only: it reads "
+                "ops/deploy/.native_fp and the last 'deploy: bump' commit. "
+                "ops/deploy/push_update.sh leaves nothing behind - no marker "
+                "file, no commit, no recorded ref. The module documents this "
+                "itself ('OTA ships leave no marker at all, so anything "
+                "shipped by OTA since the last NATIVE ship still appears here "
+                "as changed'), so the gap was known and reported rather than "
+                "papered over - but nothing consumes that warning.",
+        "why_it_bites": "Every accepted card files a decide ship card "
+                        "(lanemachine.request_ship_decision), whose dedup only "
+                        "skips while another ship card is still OPEN. A ship "
+                        "card closes itself in about four minutes, so the next "
+                        "landing files a fresh one, it sees the SAME js-app "
+                        "files still listed as unshipped, and pushes another "
+                        "identical OTA. Measured 2026-09-18: SIX decide cards "
+                        "between 09:56 and 11:31 (0.68 + 0.62 + 0.55 + 0.81 + "
+                        "0.61 + 0.45 = 3.72 USD), the last three all reporting "
+                        "the same ten files under surfaces/app/src and all "
+                        "deciding ota. The phones get a stream of pointless "
+                        "update publishes and the quota pays for research that "
+                        "was already done twenty minutes earlier.",
+        "trigger": "Several cards land within a few hours of each other, which "
+                   "is the normal shape of an active day - it does NOT need a "
+                   "failure to show up.",
+        "fix": "Give an OTA the same kind of trace a native ship leaves, and "
+               "scope the diff to whichever marker is newer. Concretely: have "
+               "push_update.sh record the shipped ref (a marker file next to "
+               ".native_fp, or a row in the runtime store) AFTER its own "
+               "verification succeeds, never before - a marker written for a "
+               "ship that then failed would hide real unshipped work, which is "
+               "the dangerous direction of this bug. Then ship_facts.py picks "
+               "max(last native bump, last recorded OTA ref) as the diff base. "
+               "Optional second belt: make request_ship_decision skip when the "
+               "tree has not changed since the last ship card closed.",
+        "since": "2026-09-18",
+    },
+    {
         "id": "henry-context-pull-is-prompt-enforced",
         "order": -11,
         "title": "board/plan/memory/inbox awareness is now PROMPT-enforced, not code-guaranteed",
