@@ -10,6 +10,32 @@ why the code looks the way it does)"""
 
 DEBT = [
     {
+        "id": "chain-counts-archived-card-as-live",
+        "order": -10,
+        "title": "processes.sync() reads an ARCHIVED step card's lane as live, so an archived step blocks its whole chain",
+        "status": "open",
+        "what": "sync() builds tmap from sessions._load() without looking at "
+                "t['archived']. A step whose card was archived while sitting in "
+                "review/bounced keeps state 'working' forever, and every later "
+                "step of that process stays 'waiting' - including human steps "
+                "that should surface as up_next.",
+        "why_it_bites": "2026-09-18: the invite-test step of the launch process "
+                        "(20260918-091119-419-proc) never dispatched (owner had "
+                        "tested by hand), its card was archived, and the 'Post "
+                        "Show HN' human step behind it could never become ready. "
+                        "Henry stamped the archived card done by hand to unblock "
+                        "the chain.",
+        "trigger": "Archiving a step card that is not in the done lane.",
+        "fix": "Decide the semantics once and pin them: an archived step card "
+               "either counts as done (owner closed it on purpose) or drops the "
+               "step back to proposed (card gone). The former matches how "
+               "archive is used on this board. Then sync() must read "
+               "t.get('archived') and the accept rails need a no-gate path for "
+               "a never-dispatched card whose step a human completed (today "
+               "'move done' bounces with 'never dispatched - nothing to submit').",
+        "since": "2026-09-18",
+    },
+    {
         "id": "ota-ship-leaves-no-marker",
         "order": -10,
         "title": "an OTA ship writes no marker, so every later ship card re-ships the same files",

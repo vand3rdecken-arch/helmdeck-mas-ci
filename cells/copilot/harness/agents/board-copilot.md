@@ -164,7 +164,7 @@ Action shapes (exact and complete; (*) = read `actions` first):
    {"type": "cancel_process", "process": "<id or fragment>"}  (admin) (*)
    {"type": "delete_process", "process": "<id or fragment>"}  (admin) (*)
    {"type": "add_step", "process": "<id or fragment>", "title": "...", "mode": "do|prepare|cowork|teach|human"}  (admin) (*)
-   {"type": "update_step", "process": "<id or fragment>", "step": "<title fragment>", "title": "...", "desc": "...", "mode": "...", "due": "YYYY-MM-DD", "days": 2}  (admin) (*)
+   {"type": "update_step", "process": "<id or fragment>", "step": "<title fragment>", "title": "...", "desc": "...", "mode": "...", "due": "YYYY-MM-DD", "days": 2, "not_before": "YYYY-MM-DD"}  (admin) (*)
    {"type": "remove_step", "process": "<id or fragment>", "step": "<title fragment>"}  (admin) (*)
    {"type": "move_step", "process": "<id or fragment>", "step": "<title fragment>", "direction": "up|down"}  (admin) (*)
    {"type": "clarify_goal", "text": "the fact, stated plainly"}  (*)

@@ -11,7 +11,11 @@ each accepted step becomes a normal board card with an execution mode:
   human   - a person does it; the card only tracks it
 
 Dates: the proposer estimates days per step; due dates are laid end-to-end
-from today (capped by the process due date when set). Store: db.py's
+from today (capped by the process due date when set). `due` is a DEADLINE.
+A step may also carry `not_before` (YYYY-MM-DD): the chain will not mark it
+ready before that day even when its predecessor is long done. That is what
+makes a calendar of independent, date-scheduled items expressible as a
+chain at all - without it the whole calendar fires the moment step 0 ends. Store: db.py's
 processes table (migrated from the old processes.json flat file - db.init()
 imports it once and renames it *.imported, same safeguard as tracks/events).
 Steps link to their card (track id) once accepted; the timeline groups cards
@@ -355,6 +359,14 @@ def update_step(pid, idx, patch):
                 for k in ("title", "desc", "mode", "due", "days"):
                     if k in patch:
                         s[k] = patch[k]
+                if "not_before" in patch:
+                    nb = (patch.get("not_before") or "").strip()
+                    if nb:
+                        try:
+                            time.strptime(nb, "%Y-%m-%d")
+                        except ValueError:
+                            raise RuntimeError("not_before must be YYYY-MM-DD or empty")
+                    s["not_before"] = nb
                 _save(ps)
                 return s
     raise RuntimeError("no such step")
@@ -397,6 +409,19 @@ def remove_step(pid, idx):
 # "up next" for the human. This is what links human and automatic work:
 # a human finishing their step is the trigger that starts the next agent.
 
+def _not_before_reached(s, today=None):
+    """False while a step's `not_before` (YYYY-MM-DD) lies in the future.
+    Unset/blank/malformed = no date gate (never silently block a step)."""
+    nb = (s.get("not_before") or "").strip()
+    if not nb:
+        return True
+    try:
+        time.strptime(nb, "%Y-%m-%d")
+    except ValueError:
+        return True
+    return (today or time.strftime("%Y-%m-%d")) >= nb
+
+
 def sync():
     """Reconcile step states with the board; auto-advance the chain.
     Behavior is driven by settings POLICY: which modes auto-dispatch, and
@@ -423,7 +448,13 @@ def sync():
             t = tmap.get(s.get("track"))
             done = bool(t and t.get("lane") == "done")
             s["done"] = done
-            s["ready"] = prev_done and not done and bool(t)
+            # not_before is a "not earlier than" date; a date-held step is
+            # NOT ready, so neither auto-dispatch below nor up_next fires for
+            # it. It shows as "waiting" (with `held_until` set) rather than a
+            # new state, so no surface has to learn a new word today.
+            date_ok = _not_before_reached(s)
+            s["ready"] = prev_done and not done and bool(t) and date_ok
+            s["held_until"] = (s.get("not_before") or "") if (prev_done and not done and t and not date_ok) else ""
             s["lane"] = t.get("lane") if t else None
             s["state"] = ("done" if done else
                           "working" if t and t.get("lane") in ("working", "review") else

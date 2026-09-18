@@ -759,9 +759,9 @@ def _run_action(a, actor, role="operator"):
                 return "move_step refused: %s" % e
             return "step moved %s in %s" % (direction, p["id"])
         # update_step
-        patch = {k: a[k] for k in ("title", "desc", "mode", "due", "days") if k in a}
+        patch = {k: a[k] for k in ("title", "desc", "mode", "due", "days", "not_before") if k in a}
         if not patch:
-            return "update_step: nothing to change (give title/desc/mode/due/days)"
+            return "update_step: nothing to change (give title/desc/mode/due/days/not_before)"
         processes.update_step(p["id"], idx, patch)
         return "step updated in %s: %s" % (p["id"], json.dumps(patch)[:200])
     if kind == "audit_query":
