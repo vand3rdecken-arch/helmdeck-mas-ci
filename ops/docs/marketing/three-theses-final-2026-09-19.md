@@ -36,6 +36,10 @@ This is not a tool for typing faster. This is how work is going to feel.
 
 Live at https://helmdeck.de/?utm_source=indiehackers&utm_medium=community&utm_campaign=launch&utm_content=launch-story (Android, iPhone, Windows, Mac). Tell me which thesis is wrong.
 
+Status: blocked, not published. 2026-09-19, the post page shows a banner:
+"You can't create posts yet" — new accounts need points earned from
+comments and upvotes before they can post. No text went out.
+
 ## dev.to
 
 Title:
@@ -78,3 +82,8 @@ Teams and agents at one helm, facing what comes next. You steer from whatever is
 This is not a tool for typing faster. This is how work is going to feel.
 
 Live at https://helmdeck.de/?utm_source=devto&utm_medium=community&utm_campaign=launch&utm_content=article (Android, iPhone, Windows, Mac). Tell me which thesis is wrong.
+
+Status: live. Published 2026-09-19, confirmed ~20:33 local, no moderation
+hold. URL: https://dev.to/tien_vo_2e03be0225b27e5fb/agent-harnesses-must-evolve-three-theses-1m8d
+Title on the live post: "Agent harnesses must evolve. Three theses." 4 tags.
+Logged via `campaign_link.py` (utm_content=article, post_url attached).
