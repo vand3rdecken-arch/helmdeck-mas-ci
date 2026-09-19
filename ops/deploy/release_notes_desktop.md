@@ -1,16 +1,20 @@
-# HelmDeck Desktop 0.2.21 (Windows)
+# HelmDeck Desktop 0.2.22 (Windows)
 
-## What's new since 0.2.18
+## What's new since 0.2.21
 
-- **Fixed: fresh installs since 0.2.20 failed to start the daemon**
-  (`No module named nacl`) - `daemon/requirements.txt` never declared
-  `pynacl`, which the relay's end-to-end encryption needs.
-- **Fixed: preload.js was missing from the packaged app**, which could
-  show a black window on a fresh install with no explanation. The
-  packaged build now ships it, and a failed preload now shows a
-  diagnostic page instead of a blank screen.
-- **New: native folder picker for the onboarding "repo path" step.**
-  Browse for your project folder instead of typing the path by hand.
+- **Fixed: "Relay nicht erreichbar" / "Desktop antwortet nicht" under load.**
+  Two causes in the daemon, both measured and fixed: the dashboard re-read
+  and re-parsed the whole event log on every poll (now derived once and
+  cached on the store's own change signal), and the relay bridge paused for
+  up to 12 s every minute while it re-checked the tunnel (now checked in the
+  background, the phone path never waits for it).
+- **New: the phone path has a visible budget.** Settings > System > Daemon
+  shows how often a request breached it in the last 15 minutes, and the
+  worst case.
+- **Fixed: finished cards left dev servers running for days.** A card's dev
+  port is reclaimed when the card is accepted or archived.
+- **Clearer error:** a chat message that the desktop could not answer in
+  time now says so, instead of blaming network/DNS.
 
 ## Do I need to update manually?
 
