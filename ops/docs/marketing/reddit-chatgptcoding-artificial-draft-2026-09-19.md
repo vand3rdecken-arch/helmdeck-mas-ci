@@ -268,3 +268,25 @@ whatever is blocking the automated session. If automated posting from here
 matters for future launches, that would need the browser session hardened
 against bot detection first, which is out of scope for a single launch
 post.
+
+### Third attempt (2026-09-19, later same session): flair-before-text order, still blocked
+
+Owner noted the r/SideProject card had just posted successfully via the same
+browser session and asked for one more attempt on the same path: flair set
+before filling title/text, 20 seconds wait after the submit click, then
+reload `/user/imaxalpha/submitted/`.
+
+Checked `/user/imaxalpha/submitted/?sort=new` first: no r/ChatGPTCoding post
+present, top entry still the r/SideProject one, so the owner had not posted
+it manually in the meantime. Reopened `r/ChatGPTCoding/submit`, opened the
+flair selector (`select` -> `Resources And Tips` -> `apply` button, confirmed
+"choose a flair" switched from "(none)" to "Resources And Tips"), then filled
+title and body, then clicked submit. Waited 20 seconds, reloaded the
+submitted list: still no r/ChatGPTCoding post, top entry unchanged.
+
+Per the owner's instructions for this outcome, no further attempts. Reddit's
+write path silently rejects the submission from this session regardless of
+field order; the r/SideProject success does not reproduce here (different
+subreddit, so possibly different spam-filter heuristics or account history
+per-sub, not something diagnosable from this tool). Reported to the owner:
+"Owner postet aus der App."
