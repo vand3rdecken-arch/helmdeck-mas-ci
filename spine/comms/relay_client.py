@@ -73,17 +73,54 @@ def _health(url, timeout=3):
         return None
 
 
+_base_refreshing = False
+
+
 def _resolve_base(relay):
     """The URL the bridge actually pulls from / pushes to for `relay`.
 
     Loopback iff the local relay's /health instance id equals the public one's.
-    One owner of the decision, cached LOCAL_PROBE_TTL seconds so the loop does
-    not probe twice per second; a change of verdict is logged once."""
+    One owner of the decision (_probe_base), cached LOCAL_PROBE_TTL seconds.
+
+    NEVER blocks the pull loop once a verdict exists (measured 2026-09-19
+    12:17/12:18: two stalls 67 s apart, 8-12 s each, 7 phone frames queued
+    "waiting for the bridge" while the daemon sat idle - the loop was inside
+    the public /health probe, which crosses the Cloudflare tunnel with a 6 s
+    timeout, and nobody was pulling meanwhile). A stale verdict is served as
+    is and refreshed by ONE background probe (single-flight); only the very
+    first call, with no verdict at all, probes synchronously."""
     now = time.time()
     with _base_lock:
         c = _base_cache
-        if c["public"] == relay and c["base"] and now - c["ts"] < LOCAL_PROBE_TTL:
+        fresh = c["public"] == relay and c["base"] and now - c["ts"] < LOCAL_PROBE_TTL
+        have = c["public"] == relay and c["base"]
+        if fresh:
             return c["base"]
+        if have:
+            global _base_refreshing
+            if not _base_refreshing:
+                _base_refreshing = True
+                threading.Thread(target=_probe_base_bg, args=(relay,), daemon=True).start()
+            return c["base"]
+    return _probe_base(relay)
+
+
+def _probe_base_bg(relay):
+    global _base_refreshing
+    try:
+        _probe_base(relay)
+    except Exception:
+        pass
+    finally:
+        with _base_lock:
+            _base_refreshing = False
+
+
+def _probe_base(relay):
+    """The probe itself - the ONE writer of _base_cache."""
+    now = time.time()
+    with _base_lock:
+        c = _base_cache
     local = "http://127.0.0.1:%d" % LOCAL_RELAY_PORT
     base = relay
     if not relay.startswith(local):
@@ -122,7 +159,7 @@ def _resolve_base(relay):
                 _base_cache["proven_instance"] = proven
     with _base_lock:
         changed = (c["public"] == relay and c["base"] is not None and c["base"] != base)
-        c.update(ts=now, public=relay, base=base)
+        c.update(ts=time.time(), public=relay, base=base)   # stamped when the verdict LANDS, not when the probe began
     if changed:
         try:
             from spine.storage import events
