@@ -308,6 +308,17 @@ function fmtEta(tr: ReturnType<typeof useT>, eta?: PmBrief["eta"]): string {
 /** Code-derived RAG verdict: a measured budget/timeline red is a real risk;
  *  otherwise an open owner decision means the project waits on YOU (warn,
  *  not danger - nothing is broken, it needs an answer); else on course. */
+/** First sentence of the goal, for the headline - split at the first ". ",
+ *  ":" or newline, hard-capped so one long run-on paragraph can't fill the
+ *  screen with text (owner screenshot, 2026-09-19: the whole dashboard was
+ *  a 900-char goal paragraph). Tapping the headline reveals the rest. */
+function goalHeadline(goal: string): string {
+  const cut = goal.match(/^(.*?)(?:\. |[:\n]|$)/s);
+  let head = (cut?.[1] || goal).trim() || goal.trim();
+  if (head.length > 120) head = head.slice(0, 120).trimEnd() + "…";
+  return head;
+}
+
 function verdictOf(plan: PmBrief | null | undefined): "risk" | "you" | "ok" {
   const tri = plan?.triage ?? {};
   if (tri.budget === "blocked" || tri.timeline === "blocked") return "risk";
@@ -322,8 +333,11 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
   const router = useRouter();
   const { data } = useQuery<PmData>({ queryKey: ["pmPlan"], queryFn: api.pmPlan, staleTime: 30000 });
   const [details, setDetails] = React.useState(false);
+  const [goalOpen, setGoalOpen] = React.useState(false);
   const goal = data?.goal || data?.plan?.goal;
   if (!goal) return null;
+  const goalHead = goalHeadline(goal);
+  const goalCanExpand = goalHead !== goal.trim();
   const plan = data?.plan;
   const ask = (plan?.open_questions ?? []).find((q) => q?.trim());
   const verdict = verdictOf(plan);
@@ -354,7 +368,12 @@ export function StatusPanel({ m, wide, defaultRepo }: { m: Metrics; wide: boolea
       <GlassPanel title={tr("dash.status.title")}>
         {/* goal + when the planner last actually ran */}
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-          <Text style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21, flex: 1 }}>{goal}</Text>
+          <Pressable onPress={() => goalCanExpand && setGoalOpen((o) => !o)} disabled={!goalCanExpand} style={{ flex: 1 }}>
+            <Text numberOfLines={2} style={{ color: t.txtPrimary, fontSize: 15.5, fontWeight: "700", lineHeight: 21 }}>{goalHead}</Text>
+            {goalOpen && goalCanExpand ? (
+              <Text style={{ color: t.txtSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>{goal}</Text>
+            ) : null}
+          </Pressable>
           {checkedAt ? (
             <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.triangle.checkedAt", { when: checkedAt })}</Text>
           ) : null}
