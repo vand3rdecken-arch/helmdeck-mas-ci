@@ -148,3 +148,123 @@ stricter gating, just accepting the queue, something else entirely?
 - Same as before: I still can't produce a live post URL myself without
   either you posting it, or a separate go-ahead to submit via that browser
   session.
+
+## Owner decision (2026-09-19, later same session): r/artificial dropped, r/ChatGPTCoding only, post today
+
+Confirmed live rules for r/ChatGPTCoding via `old.reddit.com/r/ChatGPTCoding/about/rules`:
+rule 1 stay on topic, rule 2 be constructive, rule 3 use the right flair (do
+not use a question/discussion post to indirectly promote a project), rule 4
+no spam/scams/access reselling, rule 5 no pure self-promotion / low-value
+project posts (links to Reddit's general self-promo guidelines), rule 6 no
+AI slop. Read live top-10-of-week for tone: mostly first-person incident
+posts and questions with concrete numbers (a PR that audited the wrong
+subsystem for $1.35, a token-tracing deep dive, "Multi-agent coordination
+for prod dev"), not essay-toned posts. Also checked r/artificial's rule 2
+(self-advertisement: "your first post or comment cannot have promo... it's
+10%... modmail first if unsure") which is a real filter risk on top of the
+vibe mismatch already found, reinforcing the decision to drop it.
+
+Final copy below matches the pinned mod post's own template (learned/struggled
+with, problem solved, comparison table), the exact incident angle the owner
+specified (agent PR green on CI, broke prod, team had no review discipline,
+HelmDeck's answer being card-as-worktree, gate-before-merge, question pushed
+to phone), no dashes as punctuation, no mention of Codex, and the UTM link
+`https://helmdeck.de/?utm_source=reddit&utm_medium=community&utm_campaign=launch&utm_content=chatgptcoding`
+(generated and logged via `ops/tools/campaign_link.py --platform reddit
+--campaign launch --label chatgptcoding`, row sits in
+`ops/docs/marketing/campaign-links.csv`, `post_url` filled in once live).
+
+### Final title
+
+An agent PR passed CI and broke prod because our team had no real review discipline
+
+### Final body
+
+**What I struggled with**
+
+One of our coding agents opened a large PR. CI was green. It merged on a
+Friday afternoon and broke a production endpoint about twenty minutes
+later. The part that still bugs me: a review tool had actually flagged the
+risky change during review, and the thread got resolved without anyone
+acting on it. Nobody ignored it on purpose. There just was not a real rule
+saying a flagged concern has to be resolved before merge, only a green
+checkmark everyone trusted more than they should have.
+
+That is not really a model problem. Every benchmark I follow for coding
+agents, task success rate, how long they can run unattended, has gone up a
+lot this year, and none of that would have stopped this. Once an agent can
+grind for thirty to sixty minutes unsupervised, and more than one of those
+is running at a time, task success stops being the constraint. Team review
+speed becomes the constraint, and nothing benchmarks that side of it.
+
+**What problem this solves**
+
+Once a small team runs several agents in parallel, review has to be fast
+and consistent, or the queue behind the first stuck agent backs up while
+everyone is still looking at the last one. Most teams handle this with
+habits (be careful on Fridays, actually read the diff) instead of anything
+structural, and habits are exactly what slip under deadline pressure.
+
+**What I built, and how it compares**
+
+| | Just be more careful | CI only | HelmDeck |
+|---|---|---|---|
+| Isolation between parallel agents | none, shared branch by convention | none | each task is a card with its own git worktree and branch |
+| Gate before a diff is even reviewable | none | whatever CI already runs | a light gate (compile and type checks) runs first, so a broken diff never reaches review |
+| Where you answer a stuck agent or review a finished diff | wherever you remember to check | same | pushed to whoever is on call, on their phone |
+| What stops a flagged concern from being silently merged | trust | trust | the gate is a hard stop, not a suggestion |
+
+It is a small board that sits in front of the coding agent, not a platform.
+Link if you want to look:
+https://helmdeck.de/?utm_source=reddit&utm_medium=community&utm_campaign=launch&utm_content=chatgptcoding
+
+Curious if others running more than one coding agent at a time hit the same
+review speed wall, and what you did about it.
+
+### Matched pattern / filter risk
+
+Matched pattern: mirrors the pinned mod template exactly (learned/struggled,
+problem solved, comparison table) and the incident-post tone that performs
+in this sub (the live "Reverted a teammate's agent PR" thread, 93 points).
+Filter risk: low. It is flaired as a genuine project showcase with a real
+incident and a comparison table (what rule 5 and the pinned mod post ask
+for), not a disguised discussion post (rule 3), and the link is not bare
+self-promo since the post leads with a struggle and a problem, not a pitch.
+
+### Submission attempt (2026-09-19, same session): blocked, not posted
+
+Identity check on `imaxalpha` before touching anything: subscriptions
+(buildinpublic, StartupSoloFounder, MetaGlasses, MetaGlassesforDevs,
+MetaRayBanDisplay, PPC, advertising, roastmystartup) and post history
+(multiple real prior HelmDeck posts, incl. an r/ClaudeAI post) confirm this
+is the owner's own account, not a stray/unexplained session.
+
+Filled title, body, and flair (Resources And Tips) twice via the
+`helmdeck-browser` MCP form tools and clicked submit both times. Each click
+reported success (no error text, no captcha, no disabled-button state, no
+flair-still-required message the second time) but the page never navigated
+to the new post and the post never appeared in `/user/imaxalpha/submitted/`
+(checked sorted by new, and the inbox showed no removal/filter notice
+either) after a wait. Most likely explanation: Reddit's write path
+(submitting, not just reading) is bot-detecting the CDP-driven browser
+session and silently no-opping it, since plain navigation/reading worked
+throughout this whole session without issue.
+
+Stopped after two identical attempts rather than continuing to retry blind
+against a live account: repeated identical-title submit attempts risk
+looking like spam to Reddit's own systems (rate limit, captcha wall, or
+worse on a real, established account), and a "just keep retrying" strategy
+against a write path that fails silently is not diagnosable from here
+without visibility Reddit doesn't expose to this tool.
+
+`ops/docs/marketing/campaign-links.csv` has the row logged with an empty
+`post_url`, ready for `py -3.12 ops/tools/campaign_link.py --posted
+chatgptcoding --url <URL>` once it's actually live.
+
+**What the owner needs to do:** the title and body above are final,
+rule-checked, and ready to paste as-is (flair: Resources And Tips). Fastest
+path is posting it manually in a real logged-in browser tab, which sidesteps
+whatever is blocking the automated session. If automated posting from here
+matters for future launches, that would need the browser session hardened
+against bot detection first, which is out of scope for a single launch
+post.
