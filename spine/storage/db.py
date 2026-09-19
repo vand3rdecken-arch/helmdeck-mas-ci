@@ -5,7 +5,7 @@ append-only table (dashboard stops re-parsing history). WAL mode so readers
 never block the writer. Existing tracks.json / events.jsonl are imported on
 first start and renamed *.imported - originals preserved, per the safeguard
 rule."""
-import json, os, sqlite3, threading
+import json, marshal, os, sqlite3, threading
 
 from daemon.paths import DAEMON_ROOT as ROOT
 DBPATH = os.path.join(ROOT, "helmdeck.db")
@@ -1049,8 +1049,38 @@ def event_insert(row):
     bump()
 
 
+# events_all() cache. ROOT CAUSE of the 2026-09-19 "Relay nicht erreichbar":
+# every dashboard poll (/dashboard/data every ~10s per device, /pm/plan three
+# metrics() passes per call) re-read ALL events and json-parsed ~3 MB, ~0.5s of
+# GIL-bound CPU per read - so three devices polling while cards streamed pushed
+# a single request past the bridge's 115s give-up, and the phone's unbounded
+# chat POST hit iOS' own 60s cutoff, reported as a network/DNS failure.
+#
+# The key is the table's OWN signal, not a stored flag or process state:
+# events is append-only by law (no UPDATE/DELETE anywhere in this module), so
+# max(seq) is a complete signature of its content, O(1) on the rowid, and it
+# moves for a writer in ANY process (ops/tools/*.py write through their own
+# connection - an in-process counter would go stale there).
+#
+# Cached as marshal bytes, not as the parsed list: marshal.loads is ~4x
+# cheaper than json.loads for this shape AND hands every caller its own
+# structure - a caller that mutates its result can never poison another's.
+_events_cache = (None, b"")      # (max(seq) at read time, marshal.dumps(list))
+_events_cache_lock = threading.Lock()
+
+def _events_signature(c):
+    r = c.execute("SELECT max(seq) FROM events").fetchone()
+    return r[0] if r else None
+
 def events_all():
-    rows = conn().execute(
+    global _events_cache
+    c = conn()
+    sig = _events_signature(c)
+    with _events_cache_lock:
+        cached_sig, blob = _events_cache
+    if sig is not None and sig == cached_sig:
+        return marshal.loads(blob)
+    rows = c.execute(
         "SELECT ts,kind,track,data FROM events ORDER BY seq").fetchall()
     out = []
     for ts, kind, track, data in rows:
@@ -1060,6 +1090,13 @@ def events_all():
         except ValueError:
             pass
         out.append(r)
+    # Re-read the signature AFTER the scan: a row appended between the two
+    # statements must not be filed under the newer key (WAL readers see a
+    # snapshot per statement, not per pair of statements).
+    sig_after = _events_signature(c)
+    if sig_after == sig:
+        with _events_cache_lock:
+            _events_cache = (sig, marshal.dumps(out))
     return out
 
 
