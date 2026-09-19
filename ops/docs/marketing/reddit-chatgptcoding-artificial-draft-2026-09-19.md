@@ -10,29 +10,64 @@ members, more skeptical of anything that reads like a startup pitch) so the
 copy below avoids Claude-specific framing where the previous draft could
 lean on it.
 
-## Research note on subreddit rules (2026-09-19)
+## Vibe check (2026-09-19, live browse via the shared HelmDeck browser session)
 
-Same limitation as the 2026-09-16 draft: direct reddit.com fetch is blocked
-in this environment and web search doesn't surface the verbatim current
-rules text. What's confirmed generically (via aggregator sites, not the
-subs' own sidebars):
+WebFetch on reddit.com is still blocked in this environment, but the
+`helmdeck-browser` MCP tool has a real logged-in Reddit session and could
+navigate old.reddit.com directly. Actually read hot/new/top for both subs
+plus a pinned mod post, rather than guessing from aggregator sites. Result:
+**the two subs are not equally good fits for this post.**
 
-- r/artificial: ~1M+ members, self-promotion tolerated only under something
-  like the community norm "10% rule" (be a real participant, not a
-  drive-by poster) and only when framed as "built this, want feedback," not
-  a pitch. Skeptical, general-AI audience — assume zero tolerance for
-  anything that reads like marketing copy.
-- r/ChatGPTCoding: ~380k+ members, discussion mix already includes a lot of
-  self-promotion and tool show-and-tell, so a build-in-public post is a
-  closer fit to what the sub already sees than in r/artificial — but that
-  also means the bar for "is this actually interesting" is higher since
-  readers have seen many tool launch posts.
-- **Before posting, open each subreddit's current sidebar/rules in a
-  logged-in browser and check flair + self-promo wording** — this could not
-  be verified from here and rules change. Also: post the two subs on
-  different days/times, not as an identical simultaneous cross-post — same
-  norm as the 2026-09-16 draft, doubly true here since r/artificial is
-  stricter.
+### r/ChatGPTCoding — good fit, confirmed
+
+- Pinned mod post, "Updated Rules for Project Posts on r/ChatGPTCoding"
+  (https://old.reddit.com/r/ChatGPTCoding/comments/1vug6d5/): "We are now
+  accepting any project showcase as long as they are genuinely useful for
+  other AI-assisted coders... make sure you have something interesting to
+  share about what you've learned or struggled with... tell us what
+  problem [it] solves... compare them and explain what makes your solution
+  different. We love comparison table." This is close to a template — the
+  post below is restructured to match it directly (learned/struggled with →
+  problem it solves → how it's different).
+- Top-of-month #4 (93 points, 85 comments): "Reverted a teammate's agent PR
+  that broke main and now I'm the asshole?"
+  (https://old.reddit.com/r/ChatGPTCoding/comments/1w9pwx3/) — a 9400-line
+  agent PR, CI green, broke staging 20 minutes after merge, a review tool
+  had actually flagged the bug and got dismissed anyway. Top comment: "Sounds
+  like your team needs some policies and procedures." This is the exact pain
+  point the team-harness angle is about, live in the sub, with real
+  engagement — strong signal the angle lands here.
+- "Resources And Tips" flair is actively used for genuine data/artifact
+  posts, e.g. "Explicit Edit Benchmarks: 6 harnesses x 11 models x 226
+  tasks" (https://old.reddit.com/r/ChatGPTCoding/comments/1wkgt35/,
+  GitHub + HuggingFace links, no sales language) — confirms the benchmark
+  framing fits the sub's norms, but the norm is data/artifact-led, not
+  essay-led.
+- Net: post here, flaired as a project showcase / Resources And Tips,
+  restructured per the mod template below.
+
+### r/artificial — poor fit, recommend dropping
+
+- Top-of-month posts are 100% general AI news/discourse: a Musk lawsuit
+  article (3159 pts), "June 2022, my first AI interaction" nostalgia post
+  (1762 pts), a Bill Gates warning article (1384 pts). Hot/new the same:
+  chip-shortage news, "AI is a better teacher than most human teachers"
+  discussion, business/labor articles. Zero indie build-in-public or
+  dev-tool showcase posts visible anywhere in hot, new, or top-of-month.
+- Sidebar states submissions are moderated by "collaborative filtering":
+  posts that get overall negative reception are removed, not just
+  rule-breaking ones. A niche dev-workflow tool post has real risk of
+  reading as off-topic to this general/skeptical ~1M-member audience and
+  getting buried or pulled, regardless of how it's worded.
+- Net: this sub is a news/discourse venue about AI as a topic, not a
+  build-showcase venue. Recommend **not** posting the launch post there as
+  scoped. If the owner still wants a presence in r/artificial, that's a
+  different post — a pure opinion/discussion piece on the benchmark-lesson
+  observation with no product mention at all — not this one.
+
+Both subs' exact current sidebar rule text (beyond what's quoted above) is
+still worth a two-minute human check before submitting — this was read live
+but not exhaustively, and rules can change.
 
 ## The angle
 
@@ -42,76 +77,74 @@ several agents in parallel on a real project for two months: past a certain
 point of unattended capability, task success rate stops being the
 bottleneck. The bottleneck becomes whether a *team* around the agent can
 review, answer, and merge fast enough to keep the queue from backing up.
-That's the benchmark blind spot — it scores the model, not the throughput of
-the humans supervising it. HelmDeck is the harness we built once we noticed
-that: every task is a card with its own git worktree/branch (isolation, no
-collision between parallel agents), a light gate before anything merges
-(compile/type checks, not a giant test suite), and every question or
-finished diff pushes to whoever's on call — on their phone, not just
-whoever's at a desk — so a small team can run several agents at once without
-either babysitting one at a time or losing review discipline.
+HelmDeck is the harness built around that gap. Restructured below to match
+r/ChatGPTCoding's own pinned-mod-post template (learned/struggled with →
+problem it solves → how it's different) instead of the essay shape from the
+first pass.
 
-## Suggested titles
+## Suggested title (r/ChatGPTCoding only — see vibe check above for why
+r/artificial is dropped from this post)
 
-r/ChatGPTCoding (technical audience, comfortable with workflow detail):
-"Benchmarks measure if the agent can do the task. They don't measure if
-your team can review it fast enough to matter — built a small harness
-around that gap"
+"What broke wasn't the model, it was our review speed — lessons from
+running several coding agents in parallel on a team, and the harness we
+built for it"
 
-r/artificial (broader, more skeptical — lead harder with the observation,
-softer on the "built a thing"):
-"The benchmark blind spot: once agents can run unattended for 30+ minutes,
-the bottleneck stops being the model and becomes the humans reviewing it"
+## Post text draft
 
-## Post text draft (core, tune per sub — see notes)
+**What we struggled with:** a coding agent turned in a huge PR, CI was
+green, it merged, and it broke something twenty minutes later that a human
+would have caught in a five-minute look — the review tooling had even
+flagged the risky part and got waved through anyway. That's not really a
+model-quality problem. Every benchmark I follow (task success rate, how
+long an agent can run unattended) has gone up a lot this year, and none of
+that stopped this from happening, because none of it measures review speed.
+Once an agent can grind for 30-60 minutes unsupervised, and you're running
+three or four of those in parallel, "someone will look at it eventually"
+stops being good enough — the queue behind the first one backs up while
+you're still at your desk from the last one.
 
-Every benchmark I follow for coding agents is basically a single-task,
-single-runner scoreboard: can it solve this, how long can it go unattended.
-Those numbers have genuinely moved a lot this year. What they don't measure
-is what happens once you put more than one agent to work at the same time
-on a real project, with a real team behind it.
+**The problem:** task success isn't the constraint anymore once agents run
+unattended for a while. Team review throughput is. A benchmark scores the
+model; nothing scores whether the humans around it can keep up once you're
+running more than one at a time.
 
-Once an agent can grind for 30, 45, 60 minutes unsupervised, task success
-stops being the constraint. The constraint becomes: can a human review the
-diff, answer the question it got stuck on, and merge it, fast enough that
-the agent isn't just sitting there finished-and-waiting? Run three or four
-of these in parallel and "fast enough" stops meaning "before I forget about
-it" and starts meaning "before the queue behind it stalls too." No
-benchmark I've seen scores that side of the equation.
+**What we built, and how it's different from just working around it:**
 
-That gap is what we ended up building a small harness around: every task
-becomes a card with its own isolated git worktree and branch, so parallel
-agents can't step on each other; a light gate (compile + type checks, not a
-full test suite) runs before anything is even reviewable; and every
-question or finished diff pushes out to whoever's on call for it — on
-their phone, not just whoever happens to be at a desk — so review isn't the
-thing that silently caps how many agents a small team can actually run at
-once.
+| | Answer at your desk when you get to it | SSH/tmux to keep sessions alive remotely | HelmDeck |
+|---|---|---|---|
+| Isolation between parallel agents | manual (branches by convention) | manual | each task is a card with its own git worktree + branch |
+| Gate before merge | whatever CI you already have | same | a light gate (compile/type checks) runs before anything is even reviewable |
+| Where you answer a stuck agent or review a diff | wherever your terminal is | wherever your terminal is | push notification to whoever's on call, from their phone |
+| Cost of running more agents at once | review backlog grows silently | same | review isn't gated on being at a specific desk |
+
+It's a small board, not a platform — the point was closing the actual gap
+above, not adding process for its own sake.
 
 Curious whether others running multiple agents in parallel have hit the
-same wall, and what you did about it — bigger review team, stricter gating,
-just accepting the queue, something else entirely?
+same review-speed wall, and what you did about it — bigger review rotation,
+stricter gating, just accepting the queue, something else entirely?
 
 ## Notes for the owner
 
-- Link is deliberately absent from the body (comment/profile only), same
-  self-promo norm as the 2026-09-16 draft — confirm against whatever each
-  sub's actual current rule says once you've checked the sidebar.
-- r/artificial: consider trimming the harness mechanism paragraph
-  (worktree/branch/gate) further if it still reads as a pitch once you
-  reread it there — that sub's tolerance is lower than r/ChatGPTCoding's.
-  The observation paragraph (benchmarks vs. team throughput) is the part
-  worth keeping intact; the "what we built" paragraph is the part to cut
-  first if length or tone is an issue.
-- r/ChatGPTCoding: the mechanism detail (worktree-per-card, light gate,
-  push-to-phone) is closer to what that sub already discusses — fine to
-  leave as-is or even expand slightly if a comment asks "how."
-- Both posts end on a genuine question (not a CTA) on purpose, same
-  reasoning as the earlier draft: keeps it a discussion post, not an
-  announcement, and is safer against mod removal in both subs.
-- I do not have a logged-in Reddit session or credentials in this
-  environment, so I can prepare text but cannot submit the post or produce
-  the live URLs myself — same shape as the X scanner card
-  (`ops/tools/x_scan_jev.mjs`, blocked on live X login). Posting needs to
-  happen from the owner's own logged-in account, in his own voice, per the
-  same reasoning as the 2026-09-16 draft.
+- Per the pinned mod post, flair this as a project showcase (or "Resources
+  And Tips," which is what similar posts use) — plain "Discussion" is a
+  weaker fit for a post that names and links a tool.
+- Link placement: the mod post's own template doesn't demand keeping the
+  link out of the body (unlike the softer r/ClaudeCode/r/ClaudeAI norm from
+  2026-09-16) — a direct link is fine here, comment or body, your call.
+- The comparison table is a direct answer to "we love comparison table" in
+  the pinned mod post — keep it, it's doing real work for this specific sub,
+  not filler.
+- r/artificial: dropped from this post per the vibe check above. If you
+  still want a presence there, it'd need to be a separate, product-free
+  discussion post — not a fit for a launch post as scoped.
+- **New finding, not something I acted on:** the `helmdeck-browser` MCP tool
+  in this environment has a live logged-in Reddit session (user
+  `imaxalpha`) that could browse and read pages — that's how this vibe
+  check was done. I did not use it to submit anything; that wasn't the
+  decision you made. If you want me to actually post from here next, that's
+  a separate call (and worth confirming it's an account you're fine posting
+  from, since I can't tell whose session this is from inside the sandbox).
+- Same as before: I still can't produce a live post URL myself without
+  either you posting it, or a separate go-ahead to submit via that browser
+  session.
