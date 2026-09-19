@@ -170,11 +170,74 @@ def test_live_invariants():
        "end-to-end, no worktree: an ordinary command gets no opinion")
 
 
+def test_hands_scope_read_repo_write_scratch():
+    """The 2026-09-19 defect: hands' scratch-folder worktree made the guard
+    deny EVERY Read outside daemon/state/hands/<id>, including the doc it was
+    sent to read (ops/docs/marketing/show-hn-final-2026-09-19.md), and the
+    run aborted. Fix: HELMDECK_TOOL_SCOPE=hands widens READ to the whole
+    repo (Read tool, and a curated `cat`-style Bash view) while WRITE and
+    package/publish verbs stay pinned to the scratch folder - see
+    _read_scope_root / _hands_bash_read_hit."""
+    scratch = os.path.join(ROOT, "daemon", "state", "hands", "_test-scratch-does-not-exist")
+    target = os.path.join(ROOT, "ops", "docs", "acceptance.md")
+    assert os.path.isfile(target), "fixture file must exist in this checkout"
+
+    def decision(tool, ti, scope="hands", worktree=scratch):
+        """None means _allow()'s silent "no opinion" (the tool call proceeds) -
+        see _allow()'s own comment. Only _deny()/_grant() print anything."""
+        env = dict(os.environ)
+        env["HELMDECK_WORKTREE"] = worktree
+        env["HELMDECK_TOOL_SCOPE"] = scope
+        payload = json.dumps({"tool_name": tool, "tool_input": ti})
+        r = subprocess.run([sys.executable, GUARD], input=payload,
+                            capture_output=True, text=True, env=env, timeout=15)
+        out = (r.stdout or "").strip()
+        if not out:
+            return None
+        return json.loads(out)["hookSpecificOutput"]["permissionDecision"]
+
+    # RED on the old code: Read on a real repo path outside the scratch
+    # folder was denied outright under scope=hands.
+    ok(decision("Read", {"file_path": target}) is None,
+       "scope=hands: Read on a repo path outside the scratch folder is allowed")
+    ok(decision("Write", {"file_path": target}) == "deny",
+       "scope=hands: Write on that same repo path stays denied")
+    ok(decision("Edit", {"file_path": target}) == "deny",
+       "scope=hands: Edit on that same repo path stays denied")
+
+    # A non-hands scope keeps the old, strict behavior unchanged.
+    ok(decision("Read", {"file_path": target}, scope="card") == "deny",
+       "scope=card (an ordinary worktree card): Read outside its own "
+       "worktree is still denied - this widening is hands-only")
+
+    # cat-style read of the same file (quoted - the real path on this
+    # machine has a space in it, same as any real caller would have to
+    # quote it) is now granted for hands...
+    quoted = '"%s"' % target
+    ok(decision("Bash", {"command": "cat %s" % quoted}) == "allow",
+       "scope=hands: a bare `cat` of a repo path outside scratch is granted")
+    # ...but a write-capable command on the same path is not, and chaining
+    # a second command behind an allowed-looking `cat` prefix is refused.
+    ok(decision("Bash", {"command": "rm %s" % quoted}) != "allow",
+       "scope=hands: `rm` outside scratch is not granted just because `cat` is")
+    ok(decision("Bash", {"command": "cat %s; rm -rf /" % quoted}) != "allow",
+       "scope=hands: a chained second command after `cat` is never granted")
+
+    # Secrets stay denied even though hands can now reach the whole repo.
+    secret = os.path.join(ROOT, "daemon", "settings.json")
+    ok(decision("Read", {"file_path": secret}) == "deny",
+       "scope=hands: Read on daemon/settings.json is denied despite the "
+       "repo-wide READ widening")
+    ok(decision("Bash", {"command": "cat \"%s\"" % secret}) != "allow",
+       "scope=hands: `cat` on daemon/settings.json is not granted either")
+
+
 def main():
     test_argv_allowlist_logic()
     test_deny_verbs_are_word_bounded()
     test_end_to_end_via_stdin()
     test_live_invariants()
+    test_hands_scope_read_repo_write_scratch()
     if _fails:
         print("\n=== FAILED: %d ===" % len(_fails))
         for f in _fails:
