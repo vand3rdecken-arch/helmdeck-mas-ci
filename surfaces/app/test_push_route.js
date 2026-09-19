@@ -77,13 +77,10 @@ const bounced = pushRoute({ track: "c-8", kind: "bounced" });
 ok(bounced && bounced.params.id === "c-8", "...and so does a bounce");
 
 const done = pushRoute({ track: "c-9", kind: "done", body: "Karte fertig  [c-9]" });
-ok(done && done.pathname === "/chat" && done.params && done.params.vq,
-   "a DONE push still opens voice mode with a question about the result " +
-   "(owner 2026-08-22) - the chat branch is checked AFTER it, so it cannot " +
-   "swallow the spoken hand-back");
-ok(done && !/\[c-9\]/.test(done.params.vq),
-   "...with the trailing card id stripped - it is useful in a written body, " +
-   "noise read aloud");
+ok(done && done.pathname === "/chat" && !(done.params && done.params.vq),
+   "a DONE push opens the board chat, where the card's result already sits " +
+   "(c50097e8), and NO longer injects a synthetic spoken question in the " +
+   "owner's name (owner 2026-09-19: 'macht das weg')");
 
 // 3) the shapes the daemon can actually emit ---------------------------------
 // notify.chat_reply sends track="" (never null/undefined) and every card push
@@ -91,9 +88,8 @@ ok(done && !/\[c-9\]/.test(done.params.vq),
 ok(pushRoute({ kind: "chat" }).pathname === "/chat",
    "an absent track routes like an empty one - the app reads the field from a " +
    "local notification's data map, where a missing key is undefined");
-ok(pushRoute({ track: "c-1", kind: "done" }).params.vq.length > 0,
-   "a DONE push with no body still asks a sensible question instead of an " +
-   "empty one");
+ok(pushRoute({ track: "c-1", kind: "done" }).pathname === "/chat",
+   "a DONE push with no body still lands in the chat and does not throw");
 
 console.log();
 if (fails.length) {

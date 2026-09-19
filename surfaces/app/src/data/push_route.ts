@@ -35,19 +35,14 @@ export function pushRoute(m: PushTarget): PushRoute | null {
   // Nothing to route on: the bundled-summary tap above. Deliberately null and
   // not a dashboard fallback - "we could not read this" is not a destination.
   if (!track && !kind) return null;
-  // A finished task SPEAKS (owner 2026-08-22): a tap on a DONE push opens voice
-  // mode and Henry says the result aloud - no reading, no navigating.
-  if (kind === "done" && track) {
-    const task = (m.body || "").replace(/\s*\[[^[\]]*\]\s*$/, "").trim();
-    return {
-      pathname: "/chat",
-      params: {
-        vq: task
-          ? `Die Aufgabe „${task.slice(0, 90)}“ ist fertig – sag mir kurz das Ergebnis.`
-          : "Die gerade fertige Aufgabe – sag mir kurz das Ergebnis.",
-      },
-    };
-  }
+  // A finished task lands in the board chat: since c50097e8 (2026-09-18) the
+  // card's own result is written there when it is accepted, so a DONE tap just
+  // opens the chat where the answer already sits. Until then it opened voice
+  // mode with a synthetic "sag mir kurz das Ergebnis" question in the owner's
+  // name (owner 2026-08-22) - now a duplicate, and one the owner asked to have
+  // removed (2026-09-19): a fake question of his plus a spoken re-summary of a
+  // result he can already read.
+  if (kind === "done" && track) return { pathname: "/chat" };
   // HENRY ANSWERED (notify.chat_reply): the news IS the chat, so land in it.
   if (kind === "chat") return { pathname: "/chat" };
   // A question/needs_you/bounced push is news in THAT CARD's chat, so land
