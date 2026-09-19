@@ -13,10 +13,20 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 const TYPESAFE_RATE_PER_MTOK = 0.042; // ops/docs/marketing/jev-hands-benchmark-2026-09.md
+
+// Haiku comparison arm (owner addendum): same posts, same 3 criteria, scored via `claude -p
+// --model claude-haiku-4-5-20251001`, cost read from the CLI's own reported total_cost_usd
+// (real billing, not estimated) - same pattern ops/docs/marketing/jev-bench/bench4.mjs uses.
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+const CLAUDE_EXE_DEFAULT = "C:\\Program Files\\nodejs\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe";
+const CLAUDE_EXE = process.env.CLAUDE_EXE || (existsSync(CLAUDE_EXE_DEFAULT) ? CLAUDE_EXE_DEFAULT : "claude");
+const HAIKU_CONCURRENCY = +(process.env.HAIKU_CONCURRENCY || 5);
 
 // The npx-installed jev-browser location isn't a repo dependency; JEV_PKG lets a caller point at
 // a different install, same convention as ops/docs/marketing/jev-bench/bench4.mjs.
@@ -58,11 +68,12 @@ const HEADED = !has("--headless"); // x.com blanks out under headless Chromium; 
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const CRITERIA = [
+const CRITERIA_LIST = [
   "(a) it describes the problem of coordinating, reviewing, approving or budgeting several coding agents / AI coding agents at once, or running more than one coding-agent session in parallel",
   "(b) it asks for tools, workflow ideas or recommendations for that problem",
   "(c) it is not itself an advertisement, product-launch/promo post, or bot-looking spam post",
-].join("; ");
+];
+const CRITERIA = CRITERIA_LIST.join("; ");
 
 async function scorePost(post) {
   const state = { post: { text: post.text, author: post.author, likes: post.likes, replies: post.replies } };
@@ -74,6 +85,76 @@ async function scorePost(post) {
     },
   });
   return { score: answers.q.noul, tokens };
+}
+
+function haikuPrompt(post) {
+  return [
+    "Score how well the X/Twitter post below matches ALL of these criteria:",
+    ...CRITERIA_LIST,
+    "",
+    `Post author: ${post.author || "unknown"}`,
+    `Post text: ${JSON.stringify(post.text)}`,
+    "",
+    'Answer with ONLY a JSON object, nothing else, no markdown fences: {"score": <number between 0 and 1>}',
+  ].join("\n");
+}
+
+const HAIKU_SYSTEM_PROMPT = "You are a strict JSON-only classifier. Reply with only the requested JSON object, nothing else.";
+
+// One claude -p call per post, no tools/MCP (--strict-mcp-config with an empty config keeps
+// startup fast - loading real MCP servers here would add ~20s/call, see
+// windows-mcp-cli-cold-start-timeout in memory). --system-prompt replaces Claude Code's default
+// harness prompt (was ~6.5k cache-creation tokens and $0.018/call in testing) with a minimal one;
+// cwd outside the repo so no CLAUDE.md gets pulled in either. --effort low still leaves some
+// thinking tokens on Haiku in practice - real measured cost, not tuned further.
+function scorePostHaiku(post, emptyMcpConfigPath) {
+  return new Promise((resolvePromise) => {
+    const t0 = Date.now();
+    const p = spawn(CLAUDE_EXE, [
+      "-p", "--model", HAIKU_MODEL, "--output-format", "json",
+      "--strict-mcp-config", "--mcp-config", emptyMcpConfigPath,
+      "--setting-sources", "", "--tools", "", "--effort", "low",
+      "--system-prompt", HAIKU_SYSTEM_PROMPT,
+    ], { stdio: ["pipe", "pipe", "pipe"], cwd: tmpdir() });
+    let out = "", err = "";
+    p.stdout.on("data", d => { out += d.toString("utf8"); });
+    p.stderr.on("data", d => { err = (err + d.toString("utf8")).slice(-500); });
+    p.on("close", () => {
+      const ms = Date.now() - t0;
+      let score = null, costUsd = 0;
+      try {
+        const result = JSON.parse(out);
+        costUsd = result.total_cost_usd || 0;
+        const text = String(result.result || "");
+        const m = text.match(/\{[^{}]*"score"[^{}]*\}/);
+        if (m) score = JSON.parse(m[0]).score;
+      } catch { /* leave score null, caller treats as a failed call */ }
+      resolvePromise({ score, costUsd, ms, err: score === null ? (err || out).slice(0, 200) : null });
+    });
+    p.stdin.end(haikuPrompt(post));
+  });
+}
+
+async function scoreAllHaiku(candidates) {
+  const cfgPath = resolve(tmpdir(), `x-scan-jev-empty-mcp-${process.pid}.json`);
+  writeFileSync(cfgPath, JSON.stringify({ mcpServers: {} }));
+  const results = new Array(candidates.length);
+  let costUsd = 0, failures = 0;
+  const t0 = Date.now();
+  let next = 0;
+  async function worker() {
+    while (next < candidates.length) {
+      const i = next++;
+      const r = await scorePostHaiku(candidates[i], cfgPath);
+      results[i] = r;
+      costUsd += r.costUsd;
+      if (r.score === null) failures++;
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(HAIKU_CONCURRENCY, candidates.length || 1) }, worker));
+  const wallMs = Date.now() - t0;
+  try { writeFileSync(cfgPath, ""); } catch { /* best effort cleanup */ }
+  return { results, costUsd: +costUsd.toFixed(6), wallMs, calls: candidates.length, failures };
 }
 
 function searchUrl(query) {
@@ -214,17 +295,73 @@ async function main() {
   const candidates = [...seen.values()];
   console.log(`\ntotal unique candidates in window: ${candidates.length}`);
   console.log("scoring with Jev...");
+  const jevT0 = Date.now();
   const scored = [];
   for (const post of candidates) {
     const score = await scoreWrap(post);
     scored.push({ ...post, score });
   }
+  const jevWallMs = Date.now() - jevT0;
 
-  const hits = scored
-    .filter(p => p.score >= THRESHOLD && (p.likes >= MIN_LIKES || p.replies >= MIN_REPLIES))
-    .sort((a, b2) => b2.score - a.score || (b2.likes + b2.replies) - (a.likes + a.replies));
+  const passMeetsBar = p => p.likes >= MIN_LIKES || p.replies >= MIN_REPLIES;
+  const jevHits = scored.filter(p => p.score >= THRESHOLD && passMeetsBar(p));
 
   const jevCostUsd = +(jevTokens / 1e6 * TYPESAFE_RATE_PER_MTOK).toFixed(6);
+
+  // Haiku comparison arm (owner addendum): same candidates, same criteria, real CLI-reported cost.
+  const haikuOn = !has("--no-haiku");
+  let haikuStats = null, comparison = null, unionHits = jevHits
+    .sort((a, b2) => b2.score - a.score || (b2.likes + b2.replies) - (a.likes + a.replies))
+    .map(p => ({ ...p, found_by: ["jev"] }));
+
+  if (haikuOn && candidates.length) {
+    console.log(`\nscoring ${candidates.length} posts with Haiku (${HAIKU_MODEL}, concurrency ${HAIKU_CONCURRENCY})...`);
+    const { results: haikuResults, costUsd: haikuCostUsd, wallMs: haikuWallMs, failures: haikuFailures } = await scoreAllHaiku(candidates);
+    const haikuScored = candidates.map((post, i) => ({ ...post, score: haikuResults[i].score, ms: haikuResults[i].ms, err: haikuResults[i].err }));
+    const haikuHits = haikuScored.filter(p => p.score !== null && p.score >= THRESHOLD && passMeetsBar(p));
+
+    // agreement at the threshold: both sides said yes/no the same way (ignore calls Haiku failed to parse)
+    let agree = 0, comparable = 0;
+    const disagreements = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const hScore = haikuResults[i].score;
+      if (hScore === null) continue;
+      comparable++;
+      const jevSide = scored[i].score >= THRESHOLD;
+      const haikuSide = hScore >= THRESHOLD;
+      if (jevSide === haikuSide) agree++;
+      else disagreements.push({
+        url: candidates[i].url, author: candidates[i].author, text: candidates[i].text,
+        jev_score: scored[i].score, haiku_score: hScore,
+      });
+    }
+    disagreements.sort((a, b2) => Math.abs(b2.jev_score - b2.haiku_score) - Math.abs(a.jev_score - a.haiku_score));
+
+    haikuStats = {
+      model: HAIKU_MODEL, calls: candidates.length, failures: haikuFailures,
+      wall_ms: haikuWallMs, cost_usd: haikuCostUsd, hits_count: haikuHits.length,
+    };
+    comparison = {
+      candidates_scanned: candidates.length,
+      jev: { wall_ms: jevWallMs, cost_usd: jevCostUsd, calls: jevCalls, hits_count: jevHits.length },
+      haiku: haikuStats,
+      agreement_at_threshold_pct: comparable ? +(100 * agree / comparable).toFixed(1) : null,
+      comparable_posts: comparable,
+      top_disagreements: disagreements.slice(0, 5),
+    };
+
+    // union hit list, marked who found it
+    const byUrl = new Map(unionHits.map(p => [p.url, p]));
+    for (const p of haikuHits) {
+      const existing = byUrl.get(p.url);
+      if (existing) existing.found_by.push("haiku");
+      else { const rec = { ...p, found_by: ["haiku"] }; byUrl.set(p.url, rec); }
+    }
+    unionHits = [...byUrl.values()].sort((a, b2) => Math.max(b2.score, 0) - Math.max(a.score, 0));
+    console.log(`Haiku: ${candidates.length} calls (${haikuFailures} failed to parse), ${haikuWallMs}ms, $${haikuCostUsd}, ${haikuHits.length} hits`);
+    console.log(`agreement at threshold ${THRESHOLD}: ${comparison.agreement_at_threshold_pct}% (${comparable} comparable posts)`);
+  }
+
   const result = {
     ran_at: new Date().toISOString(),
     queries: QUERIES,
@@ -233,16 +370,16 @@ async function main() {
     min_likes: MIN_LIKES,
     min_replies: MIN_REPLIES,
     candidates_scanned: candidates.length,
-    hits_count: hits.length,
-    jev_calls: jevCalls,
-    jev_tokens: jevTokens,
-    jev_cost_usd: jevCostUsd,
-    hits,
-    all_scored: scored,
+    jev: { calls: jevCalls, tokens: jevTokens, wall_ms: jevWallMs, cost_usd: jevCostUsd, hits_count: jevHits.length },
+    haiku: haikuStats,
+    comparison,
+    union_hits_count: unionHits.length,
+    hits: unionHits,
+    all_scored_jev: scored,
   };
   writeFileSync(OUT, JSON.stringify(result, null, 2));
-  console.log(`\n${hits.length} hits (score >= ${THRESHOLD}, likes >= ${MIN_LIKES} or replies >= ${MIN_REPLIES}) out of ${candidates.length} scanned`);
-  console.log(`Jev: ${jevCalls} calls, ${jevTokens} tokens, $${jevCostUsd}`);
+  console.log(`\n${unionHits.length} union hits (score >= ${THRESHOLD}, likes >= ${MIN_LIKES} or replies >= ${MIN_REPLIES}) out of ${candidates.length} scanned`);
+  console.log(`Jev: ${jevCalls} calls, ${jevWallMs}ms, $${jevCostUsd}, ${jevHits.length} hits`);
   console.log(`raw data written to ${OUT}`);
 }
 
