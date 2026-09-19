@@ -10,6 +10,10 @@
 // First run needs a human login in the persistent profile (JEV_BROWSER_PROFILE, default
 // %LOCALAPPDATA%/HelmDeck/jev-x-profile) - the script detects a login wall and stops rather than
 // guessing around it.
+//
+// STATUS 2026-09-19: wartet auf X-Login, headless liefert leer. Owner login did not happen
+// within the wait window, so this has never run past the login gate - no real scan data exists
+// yet. Re-run once the profile is logged in; everything past the login check is untested live.
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
