@@ -9,6 +9,7 @@ The economic model (owner decision): humans are a FIXED-capacity resource
 (hired anyway - no per-minute billing), AI is the variable cost. Human work is
 counted in touch units against a daily budget; margin per card = value - AI cost;
 the human question is utilization/headroom, not dollars."""
+import threading
 import json, os, re, secrets, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
@@ -564,7 +565,40 @@ def _completion_mode(track_events, turns):
         return "assisted"
     return "auto"
 
+# metrics() cache (2026-09-19). Every device polls /dashboard/data every ~10s,
+# /pm/plan derives metrics THREE times per call, and metrics is ~0.4s of
+# GIL-bound Python even with the events cache - so concurrent pollers still
+# serialised behind each other. Keyed on the store's own signature
+# (db.store_signature: events max(seq) + this process' write counter + SQLite's
+# data_version, which moves for a commit from ANY connection incl. other
+# processes) and bounded to METRICS_TTL seconds because a few figures are
+# clock-derived (time_in_work of a running card, today's date). Handed out as
+# marshal copies so no caller can mutate another's view.
+METRICS_TTL = 5.0
+_metrics_cache = {"sig": None, "ts": 0.0, "blob": b"", "n": 0}
+_metrics_lock = threading.Lock()
+
 def metrics(tracks):
+    """Everything the dashboard shows - derived from events + tracks, served
+    from a signature-keyed copy for METRICS_TTL seconds (see above)."""
+    import marshal
+    from spine.storage import db
+    sig = (db.store_signature(), len(tracks))
+    now = time.time()
+    with _metrics_lock:
+        c = _metrics_cache
+        if c["sig"] == sig and now - c["ts"] < METRICS_TTL and c["blob"]:
+            return marshal.loads(c["blob"])
+    m = _metrics_compute(tracks)
+    try:
+        blob = marshal.dumps(m)
+    except ValueError:
+        return m                      # non-marshalable shape: never cache, never fail
+    with _metrics_lock:
+        _metrics_cache.update(sig=sig, ts=now, blob=blob)
+    return m
+
+def _metrics_compute(tracks):
     """Everything the dashboard shows, computed fresh from events + tracks."""
     s = settings()
     ev = read_events()

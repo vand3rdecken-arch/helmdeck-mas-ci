@@ -172,6 +172,22 @@ def wait_any(board_last, chat_last, timeout=22):
 def current_version():
     return _version
 
+# A dedicated read-only connection whose PRAGMA data_version moves whenever ANY
+# OTHER connection commits (own thread-local connections included, other
+# processes included). Together with events max(seq) and this process' write
+# counter it is the store's own change signal for read-side caches.
+_sig_conn = None
+_sig_lock = threading.Lock()
+
+def store_signature():
+    global _sig_conn
+    with _sig_lock:
+        if _sig_conn is None:
+            _sig_conn = sqlite3.connect(DBPATH, timeout=15, check_same_thread=False)
+        dv = _sig_conn.execute("PRAGMA data_version").fetchone()[0]
+        mx = _sig_conn.execute("SELECT max(seq) FROM events").fetchone()[0]
+    return (mx, _version, dv)
+
 def current_chat_version():
     return _chat_version
 

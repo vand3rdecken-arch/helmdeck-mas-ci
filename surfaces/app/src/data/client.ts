@@ -12,6 +12,7 @@ import type { BgTask } from "./types";
 export interface DaemonStatus {
   pid: number; started: number; uptime_s: number; commit: string; repo_head: string;
   stale: boolean; running_turns: string[]; restart_task: boolean; last_restart: string;
+  relay_latency?: { window_min: number; slow_daemon: number; bridge_stalls: number; worst_s: number; last: string | null };
 }
 export interface DaemonRestart {
   ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;
@@ -74,6 +75,7 @@ async function relayReq(method: string, path: string, bodyStr: string, timeoutMs
   const cipher = seal(inner, mySec, daemonPub);
   const ctl = timeoutMs !== undefined ? new AbortController() : undefined;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : undefined;
+  const startedAt = Date.now();
   let r: Response;
   try {
     r = await fetch(`${relayUrl}/relay?room=${room}`, {
@@ -84,6 +86,12 @@ async function relayReq(method: string, path: string, bodyStr: string, timeoutMs
     });
   } catch (e) {
     if (ctl && (e as Error)?.name === "AbortError") throw new TransportError(t("net.relayTimeout"));
+    // The UNBOUNDED request (POST /chat) has no AbortController, so when the
+    // daemon is slow it is the OS that cuts the socket (iOS after ~60s of
+    // silence) and fetch rejects with a bare TypeError - indistinguishable
+    // from "no network" by type, but not by TIME. 2026-09-19: this label sent
+    // the owner to the relay/DNS twice while the daemon was the one stalling.
+    if (Date.now() - startedAt > 45_000) throw new TransportError(t("net.desktopTimeout"));
     throw new TransportError(t("net.relayUnreachable"));
   } finally {
     if (timer) clearTimeout(timer);

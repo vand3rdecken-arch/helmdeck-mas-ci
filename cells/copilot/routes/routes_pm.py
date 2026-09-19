@@ -25,8 +25,14 @@ def pm_plan_get(self, user):
     # the last PM briefing (cached artifact) + live economics - no LLM,
     # so the Dashboard shows instantly; /pm/report refreshes it.
     from cells.copilot.planning import pm
+    from cells.engineer.cards import sessions
+    from spine.storage import events
+    # derive the board ONCE per request (2026-09-19: three metrics() passes per
+    # call were a third of the CPU behind the 115s dashboard hang)
+    tracks = sessions.list_tracks()
+    econ = pm.economics(tracks=tracks, m=events.metrics(tracks))
     return self._send(200, json.dumps({"goal": pm.get_goal(),
-        "economics": pm.economics(), "plan": pm.live_plan(),
+        "economics": econ, "plan": pm.live_plan(econ=econ),
         "config": pm._pm(), "activity": pm.activity()}))
 
 

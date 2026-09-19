@@ -40,3 +40,50 @@ def _alloc_dev_port(exclude_tid=None):
             s.close()
         return port
     return None
+
+
+def _listeners_on(port):
+    """PIDs listening on `port` (TCP, any interface), from netstat - the only
+    port table available on the daemon's Windows PATH (no psutil, no
+    PowerShell; see memory 'powershell.exe absent from owner-box PATH')."""
+    import subprocess, os, re
+    pids = set()
+    try:
+        out = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True,
+                             text=True, timeout=20).stdout
+    except Exception:
+        return pids
+    pat = re.compile(r"^\s*TCP\s+\S+:%d\s+\S+\s+LISTENING\s+(\d+)\s*$" % port, re.M)
+    for m in pat.finditer(out):
+        pid = int(m.group(1))
+        if pid and pid != os.getpid():
+            pids.add(pid)
+    return pids
+
+
+def reclaim_dev_port(t, log=None):
+    """Kill whatever a FINISHED card left listening on its dev port.
+
+    Found live 2026-09-19: an `expo start --web --port 3891` from a card
+    accepted on 09-18 17:04 ran for three days (63 CPU-hours, 680 MB) - the
+    worktree reclaim never saw it because a DIRECT card has no worktree, and
+    nothing else owned the process. The port is the card's by allocation
+    (_alloc_dev_port), so on the card's terminal transition the listener is the
+    card's too. Kills the process TREE (the dev server spawns bundlers).
+    Best-effort: never breaks the accept/archive. Returns the PIDs killed."""
+    import subprocess
+    port = t.get("dev_port")
+    if not port:
+        return []
+    killed = []
+    for pid in sorted(_listeners_on(int(port))):
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                           capture_output=True, timeout=20)
+            killed.append(pid)
+        except Exception:
+            pass
+    if killed and log:
+        log.log("note", "DEV-PORT %s zurueckgeholt - Prozess(e) %s beendet, die Karte ist fertig."
+                % (port, ", ".join(map(str, killed))))
+    return killed

@@ -68,6 +68,8 @@ def archive_track(tid, on=True, actor="owner"):
         # construction: a dirty tree is kept, an unmerged branch is kept (only
         # the regenerable worktree of a landed/clean card goes).
         reclaim_worktree(t, log)
+        from cells.engineer.cards.devport import reclaim_dev_port
+        reclaim_dev_port(t, log)     # a direct card has no worktree, but it has a port
         _say_closed(t, "archived", actor)
     return t
 

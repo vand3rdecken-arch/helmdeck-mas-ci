@@ -100,6 +100,13 @@ export function DaemonPanel() {
           {live > 0 ? (
             <Text style={{ color: t.warn, fontSize: 12 }}>{tr("daemon.line.turns", { n: live })}</Text>
           ) : null}
+          {data.relay_latency ? (() => {
+            const rl = data.relay_latency;
+            const n = rl.slow_daemon + rl.bridge_stalls;
+            return n > 0
+              ? <Text style={{ color: t.warn, fontSize: 12 }}>{tr("daemon.line.latency", { n, min: rl.window_min, worst: rl.worst_s.toFixed(0) })}</Text>
+              : <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("daemon.line.latencyOk", { min: rl.window_min })}</Text>;
+          })() : null}
           {data.last_restart ? (
             <Text numberOfLines={2} style={{ color: t.txtTertiary, fontSize: 11 }}>{data.last_restart}</Text>
           ) : null}

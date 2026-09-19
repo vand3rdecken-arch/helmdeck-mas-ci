@@ -117,7 +117,47 @@ def status():
         "background": background_work(),
         "restart_task": _task_present(),
         "last_restart": _last_restart(),
+        "relay_latency": relay_latency(),
     }
+
+
+RELAY_LATENCY_WINDOW_MIN = 15
+
+def relay_latency(window_min=RELAY_LATENCY_WINDOW_MIN):
+    """The phone's path, judged: how often in the last `window_min` minutes a
+    request breached the bridge's budget, and the worst case. DERIVED from the
+    two measurements the bridge already writes ("daemon took Ns to answer",
+    "frame waited Ns in the relay queue") - relay_client._serve_one is their one
+    owner; nothing here is stored or guessed. 2026-09-19: both root causes of
+    "Relay nicht erreichbar" sat fully described in these rows for hours while
+    every surface showed green. A number that nobody reads is not a measurement."""
+    import json, re
+    from spine.storage import db
+    out = {"window_min": window_min, "slow_daemon": 0, "bridge_stalls": 0,
+           "worst_s": 0.0, "last": None}
+    try:
+        rows = db.conn().execute(
+            "SELECT ts, data FROM events WHERE kind='relay' AND ts >= "
+            "datetime('now','localtime', ?) ORDER BY seq DESC LIMIT 500",
+            ("-%d minutes" % int(window_min),)).fetchall()
+    except Exception:
+        return out
+    pat = re.compile(r"(daemon took|frame waited) ([\d.]+)s")
+    for ts, data in rows:
+        try:
+            msg = json.loads(data).get("msg", "")
+        except ValueError:
+            continue
+        m = pat.search(msg)
+        if not m:
+            continue
+        secs = float(m.group(2))
+        out["slow_daemon" if m.group(1) == "daemon took" else "bridge_stalls"] += 1
+        if secs > out["worst_s"]:
+            out["worst_s"] = secs
+        if out["last"] is None:
+            out["last"] = ts
+    return out
 
 
 def _run(argv):

@@ -157,13 +157,15 @@ def _role():
     return role + ("\n\n## House additions\n" + extra if extra else "")
 
 
-def economics():
-    """Real spend/token/velocity facts, so estimates are grounded in THIS board."""
+def economics(tracks=None, m=None):
+    """Real spend/token/velocity facts, so estimates are grounded in THIS board.
+    `tracks`/`m` let one request (GET /pm/plan) derive the board once and hand
+    it to every consumer instead of re-deriving it three times."""
     from cells.engineer.cards import sessions
     from spine.storage import events
     from datetime import datetime
-    tracks = sessions.list_tracks()
-    m = events.metrics(tracks)
+    tracks = sessions.list_tracks() if tracks is None else tracks
+    m = events.metrics(tracks) if m is None else m
     spend = m["totals"]["ai_spend"]
     turns = sum(t.get("turns", 0) for t in tracks)
     toks = sum((t.get("tokens_in", 0) + t.get("tokens_out", 0)) for t in tracks)

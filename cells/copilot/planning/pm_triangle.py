@@ -25,7 +25,7 @@ from cells.copilot.planning.pm_comm import _activity
 from cells.copilot.planning.pm_resolve import _resolving_lock
 
 
-def live_plan():
+def live_plan(econ=None):
     """The cached plan artifact, but with Budget/Timeline/Scope RECOMPUTED from
     LIVE economics + usage on every read. The triangle (and the budget panel)
     then always think in the CURRENT velocity/quota - not a figure frozen at
@@ -36,7 +36,7 @@ def live_plan():
     plan = latest_plan()
     if not plan:
         return plan
-    econ = economics()
+    econ = economics() if econ is None else econ
     pace = _pace(econ)
     cum = sum(int(ms.get("est_turns") or 0) for ms in plan.get("milestones", [])
               if str(ms.get("status")) != "done" and not ms.get("calendar_wait"))

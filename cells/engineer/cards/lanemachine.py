@@ -1380,6 +1380,8 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
                 log.log("note", str(e)[:400])
                 events.emit("connector", tid, action="charter_blocked", detail=str(e)[:300])
         reclaim_worktree(t, log)   # isolation reclaimed: the work is in main now
+        from cells.engineer.cards.devport import reclaim_dev_port
+        reclaim_dev_port(t, log)   # ...and so is whatever the card left serving on its port
         lane = "done"   # Review == Abnahme: a finished card lands in Done
     elif lane == "backlog":
         # Re-queueing a card IS the "run it again" instruction, so the
