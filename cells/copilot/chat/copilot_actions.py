@@ -481,6 +481,19 @@ def _run_action(a, actor, role="operator"):
             sessions.archive_track(t["id"], on=on, actor=actor)
             return ("archived card %s" if on else "unarchived card %s (back on the board)") % t["branch"]
         from spine.ops import bgthread
+        if t.get("question"):
+            # Parked on an OWNER question: steer() holds a delegated instruction
+            # instead of running it (sessions.HUMAN_SOURCES). That is instant,
+            # so run it inline and tell Henry the truth - "sent, working" here
+            # is exactly the lie that let a worker's question get eaten
+            # (2026-09-20). The owner answers; Henry brings him the question.
+            from spine.ops import ask
+            sessions.steer(t["id"], a["text"], actor=actor, source="board copilot")
+            _tag(a, t)
+            return ("HELD: card %s is parked on an OWNER question - '%s'. Your "
+                    "instruction is queued and delivered with the answer. Do not "
+                    "re-steer; bring the question to the owner, only he can answer it."
+                    % (t["branch"], ask.summary(t["question"])[:160]))
         bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
             t["id"], a["text"], actor=actor, source="board copilot"))
         _tag(a, t)

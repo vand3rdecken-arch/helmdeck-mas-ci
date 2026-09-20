@@ -324,6 +324,57 @@ def test_delivered_predicate():
           "a background wait is NOT the owner's move")
 
 
+def test_delegated_steer_held():
+    """PARKED MEANS PARKED (2026-09-20 12:25): a delegated steer - Henry's, the
+    PM's - arriving on a card that holds an OWNER question must not run and must
+    not consume the question. Before the fix, steer()'s _begin popped the
+    question for any source, the owner's tap 409'd "no pending question" and
+    the worker asked again. Fails on the old code: the question is gone and a
+    turn is spawned. The held text rides along with the answer, so nothing is
+    lost."""
+    print("delegated steer while parked on an owner question:")
+    t = _track("t-held", machine=True)
+    log = ActionLog(t["run_dir"])
+    sessions._settle_reply(t, BLOCK, log)
+    sessions._save_track(t)
+    qid = t["question"]["id"]
+
+    class _Spawn(Exception):
+        pass
+    prompts = []
+
+    def fake_turn(track, prompt, model=None, perm=None, by=None):
+        prompts.append(prompt)
+        raise _Spawn()
+    orig_turn = sessions._turn
+    sessions._turn = fake_turn
+    try:
+        # 1. Henry steers - nothing runs, the question survives, text is held
+        r = sessions.steer("t-held", "Zusatzanforderung: Fokus auf kleine Firmen",
+                           actor="owner", source="board copilot")
+        t1 = sessions.get_track("t-held")
+        check(prompts == [], "a delegated steer spawns NO turn while parked")
+        check((t1.get("question") or {}).get("id") == qid,
+              "the owner question is still pending (same request_id)")
+        check(len(t1.get("held_steers") or []) == 1
+              and t1["held_steers"][0]["source"] == "board copilot",
+              "the delegated instruction is held on the card")
+        # 2. the owner answers through the panel - the SAME question id works
+        try:
+            sessions.answer_question("t-held", {"Farbe": "Blau"}, request_id=qid)
+        except _Spawn:
+            pass
+        t2 = sessions.get_track("t-held")
+        check(len(prompts) == 1 and "Blau" in prompts[0],
+              "the answer runs the turn with the decision")
+        check("Fokus auf kleine Firmen" in prompts[0],
+              "the held instruction is delivered with the answer")
+        check(not t2.get("held_steers"), "held list consumed exactly once")
+        check("question" not in t2, "answering cleared the question")
+    finally:
+        sessions._turn = orig_turn
+
+
 test_parse()
 test_harness_turns_are_not_the_owner()
 test_delivered_predicate()
@@ -332,6 +383,7 @@ test_validate()
 test_heuristic()
 test_settle_and_repair()
 test_answer()
+test_delegated_steer_held()
 
 print()
 if _fails:

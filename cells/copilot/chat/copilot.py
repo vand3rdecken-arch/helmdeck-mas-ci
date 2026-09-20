@@ -1096,7 +1096,17 @@ def _snapshot(full=False):
         # sessions.backfill_outcomes (daemon start, agent-reviewed values) -
         # never re-derived per read, so a heuristic change can't silently
         # rewrite what a finished card is remembered for.
-        if t.get("status") == "needs_you":
+        if t.get("status") == "needs_you" and t.get("question"):
+            # PARKED ON AN OWNER QUESTION. Said in the snapshot because a steer
+            # to such a card is held, not run (sessions.HUMAN_SOURCES): Henry
+            # must bring the question to the owner, not pile work on the card.
+            try:
+                from spine.ops import ask
+                qs = ask.summary(t["question"])[:150].replace("\n", " ")
+            except Exception:
+                qs = ""
+            tail = " OWNER_QUESTION_OPEN(do not steer; only the owner answers)=" + qs
+        elif t.get("status") == "needs_you":
             tail = " last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")
         elif t.get("lane") == "done":
             o = t.get("outcome") or ""

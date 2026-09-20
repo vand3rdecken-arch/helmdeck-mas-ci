@@ -403,6 +403,11 @@ def get_track(tid):
 
 
 MODES = ("auto", "plan", "acceptEdits", "default", "bypassPermissions")
+# The steer sources that may end a pending owner question: the owner (or an
+# operator/client) typing at the card, and the answer path itself. Everything
+# else - Henry, the PM, lane pipeline, hooks, the harness - is delegated work
+# and is HELD while the card is parked on a question (see steer()).
+HUMAN_SOURCES = ("you", "answer", "gxp-rejection")
 
 def _pending_context(t):
     """Review/merge/gate checks run OUTSIDE the agent session (daemon-side, only
@@ -856,6 +861,35 @@ def steer(tid, text, perm=None, actor="owner", source="you",
             log.log("note", "/compact fehlgeschlagen: %s - wird beim naechsten Leerlauf "
                             "nachgeholt." % str(_ce)[:200])
         return t
+    # PARKED MEANS PARKED. A card holding an owner question accepts exactly two
+    # things: the answer, or the owner's own words (reply_door already turns a
+    # matching reply into an answer; free text is the owner deciding something
+    # else). A DELEGATED steer - Henry, the PM, the lane pipeline, a hook - is
+    # not an answer and must not consume the question. Measured 2026-09-20
+    # 12:25:20: the worker asked "how should I be re-dispatched?", 0.75s later
+    # Henry's queued "Zusatzanforderung" steer ran, _begin() popped the
+    # question, the owner's tap 409'd "no pending question", and the worker
+    # asked the same thing again a turn later. The instruction is HELD on the
+    # card (held_steers, written here, consumed by the steer that finally
+    # runs) so nothing is lost - it rides along with the answer.
+    if source not in HUMAN_SOURCES and t.get("question"):
+        held = {}
+
+        def _hold(tt):
+            if not tt.get("question"):
+                return False           # answered meanwhile - let it run
+            tt.setdefault("held_steers", []).append(
+                {"text": text, "source": source, "actor": actor,
+                 "ts": time.strftime("%Y-%m-%d %H:%M:%S")})
+            held["ok"] = True
+        t = _mutate(tid, _hold) or t
+        if held.get("ok"):
+            log.log("steer", text)
+            log.log("note", "HELD - die Karte wartet auf eine Antwort des Owners (%s). "
+                            "Anweisung von %s ist keine Antwort und wird mit der "
+                            "Antwort nachgereicht." % (pending_q[:120], source))
+            events.emit("touch", tid, touch="steer_held", actor=actor, source=source)
+            return t
     # A COMPACTION IS NOT A TURN TO REPLACE. It is bounded maintenance on the
     # session this very instruction needs, and cancelling it both loses the
     # compaction AND (before the fix above) taught the probe a lie. So EVERY
@@ -968,6 +1002,23 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # failed gate) so a steer like "resolve the conflict" isn't blind. The AUDIT
     # above still logs the human's original text, not this augmentation.
     prompt = _pending_context(t) + turnopts.augment_prompt(text, thinking, paths)
+    # Deliver what was HELD while the card waited on the question (see the
+    # hold above) - consumed here, once, by the steer that actually runs.
+    # The audit above logged only the human's words; the held texts were
+    # audited when they arrived.
+    held_box = {}
+    _mutate(tid, lambda tt: held_box.__setitem__("v", tt.pop("held_steers", None)) or None)
+    held_list = held_box.get("v") or []
+    if held_list:
+        prompt += "
+
+" + "
+
+".join(
+            "[Nachgereicht - kam von %s, waehrend die Karte auf die Antwort wartete:]
+%s"
+            % (h.get("source") or "?", h.get("text") or "") for h in held_list)
+        log.log("note", "%d gehaltene Anweisung(en) mit dieser Antwort nachgereicht." % len(held_list))
     # Consumed: pop the hook results now so they're told to the worker exactly
     # ONCE (this steer), not repeated on every later unrelated one.
     if t.get("deploy_hook") or t.get("preview_hook"):

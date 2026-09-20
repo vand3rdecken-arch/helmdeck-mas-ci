@@ -9,7 +9,7 @@ import { create } from "zustand";
 import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
 import { CHAT_FOCUS, usePresence } from "@/data/presence";
 import { chatFallbackInterval, ensureChatFresh, useChatCatchup, useStreamCaps } from "@/data/stream";
-import type { PendingQuestion } from "@/data/types";
+import type { PendingQuestion, Track } from "@/data/types";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
@@ -164,13 +164,24 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
  *  Deliberately ONE at a time. Several can wait at once, and a panel per
  *  question would turn the composer into a form; the owner answers the newest,
  *  and the next surfaces as soon as that one is settled. */
-function openChatQuestion(msgs: ChatMsg[]): ChatMsg | null {
+function openChatQuestion(msgs: ChatMsg[], live?: Track[]): ChatMsg | null {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
     if (!m.question) continue;
     const later = msgs.slice(i + 1);
     if (m.cls === "card" && m.kind === "question" && m.card) {
-      return later.some((x) => x.card === m.card) ? null : m;
+      if (later.some((x) => x.card === m.card)) return null;
+      // The CARD owns its question; the mirror is a copy. A steer that
+      // consumed the question writes nothing card-bound here, so the copy
+      // kept offering a panel the daemon refuses (409 "no pending question",
+      // 2026-09-20 12:25). Verified against the live track when it is loaded:
+      // same request_id or no panel. Undefined = tracks not fetched yet,
+      // keep the log-derived answer rather than flashing the panel away.
+      if (live) {
+        const k = live.find((x) => x.id === m.card);
+        if (!k || k.question?.id !== m.question.id) return null;
+      }
+      return m;
     }
     if (m.cls === "bot") {
       return later.some((x) => x.cls === "you" || x.cls === "user" || x.cls === "bot")
@@ -601,7 +612,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // notification's own buttons, and a remembered target would keep offering to
   // answer a question that is already settled - the stale-flag class this repo
   // keeps out (CLAUDE.md: derived, not stored).
-  const openQ = useMemo(() => openChatQuestion(msgs), [msgs]);
+  const openQ = useMemo(() => openChatQuestion(msgs, tracksForWelcome), [msgs, tracksForWelcome]);
   const cardRecipients = useMemo<Recipient[]>(() => openQ?.card ? [
     { id: "henry", label: tr("transcript.boardAgent"), color: t.accent2,
       icon: "sparkles-outline", hint: tr("card.chat.mentionHenry") },
