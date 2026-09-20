@@ -195,7 +195,6 @@ def _config_schema(s):
     ns = s.get("nightshift") or {}
     cap = s.get("capacity") or {}
     tar = cap.get("tariff") or {}
-    swp = pol.get("sweep") or {}
     return [
         # ---- THE MOVE (design doc section 6). These three knobs GOVERN A
         # STATION, so they belong on that station's page, not in a door named
@@ -316,20 +315,6 @@ def _config_schema(s):
          "labelKey": "cfg.webUrl", "placeholder": "http://localhost:3300",
          "value": s.get("web_url") or "",
          "door": "system", "level": "advanced", "descKey": "cfg.webUrl.desc", "scope": "system"},
-        # IDLE RESOURCE SWEEPER (owner request 2026-09-20): reclaims exactly
-        # what HelmDeck itself opened (browser tabs, dev-port listeners,
-        # worktrees, machine-global build locks) once the owner has been
-        # away past idle_minutes AND nothing is running - spine/ops/
-        # idle_sweep.py. Machine-scoped housekeeping, same door/group as
-        # web_url above.
-        {"group": "machine", "groupKey": "hub.grp.machine",
-         "path": "policy.sweep.enabled", "control": "toggle",
-         "labelKey": "cfg.sweepEnabled", "value": bool(swp.get("enabled", True)),
-         "door": "system", "level": "advanced", "descKey": "cfg.sweepEnabled.desc", "scope": "workspace"},
-        {"group": "machine", "groupKey": "hub.grp.machine",
-         "path": "policy.sweep.idle_minutes", "control": "number",
-         "labelKey": "cfg.sweepIdle", "value": swp.get("idle_minutes", 30),
-         "door": "system", "level": "advanced", "descKey": "cfg.sweepIdle.desc", "scope": "workspace"},
     ]
 
 

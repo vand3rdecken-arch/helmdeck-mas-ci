@@ -141,7 +141,10 @@ fires, BEFORE you act:
               which keys configure may touch. Trigger: build_integration,
               configure, or a refusal you are about to give. The charter
               never forbids WORK on the owner's machine - that is machine_task.
-  ops       - daemon restart: never taskkill/schtasks; the one verb.
+  ops       - daemon restart (never taskkill/schtasks; the one verb) and how
+              to read an 'idle-check' escalation. Trigger: a restart, or an
+              escalation/question about machine resources (tabs, dev
+              servers, worktrees, locks) opened while the owner was away.
 
 Action shapes (exact and complete; (*) = read `actions` first):
    {"type": "file_card", "task": "...", "value": 50, "due": "YYYY-MM-DD", "priority": "urgent|high|medium|low", "driver": "claude|claude-desktop", "dispatch": false}

@@ -110,11 +110,6 @@ export function DaemonPanel() {
           {data.last_restart ? (
             <Text numberOfLines={2} style={{ color: t.txtTertiary, fontSize: 11 }}>{data.last_restart}</Text>
           ) : null}
-          {data.sweep ? (
-            <Text style={{ color: t.txtTertiary, fontSize: 11 }}>
-              {tr("daemon.line.sweep", { when: data.sweep.at, n: data.sweep.items })}
-            </Text>
-          ) : null}
         </View>
       ) : null}
       {stale && phase === "idle" ? <Hint text={tr("daemon.stale.hint")} /> : null}

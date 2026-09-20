@@ -16,87 +16,18 @@ browser) keeps that state across runs while staying out of your main profile's w
 
 Env overrides: HELMDECK_CHROME (exe path), HELMDECK_CHROME_PORT (default 9222),
 HELMDECK_CHROME_PROFILE (default %LOCALAPPDATA%/HelmDeck/chrome-profile)."""
-import json
 import os
 import subprocess
 import sys
-import threading
 import time
 import urllib.request
 
 from playwright.sync_api import sync_playwright
 
-from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 from spine.ops.actionlog import ActionLog
 from spine.media import wincap
 
 DEFAULT_PORT = int(os.environ.get("HELMDECK_CHROME_PORT") or "9222")
-
-# TAB REGISTRY (owner request 2026-09-20, idle resource sweeper): "which tab
-# did HelmDeck itself open" for every card/hands run, so the sweeper can
-# close exactly those once the run that opened them is over - and nothing
-# else, ever (the owner's own windows-mcp-driven Chrome has no such entry).
-# ONE owner writes here: CdpTab.__init__ registers on open, CdpTab.close()
-# unregisters on close. The idle sweeper (spine/ops/idle_sweep.py) is the
-# only OTHER reader/writer, and only for an entry whose recorded pid is no
-# longer alive - the owning browser_mcp.py MCP-server subprocess already
-# died (cleanly or not), taking the registration's only other claimant with
-# it. Same durable-json-under-daemon/state/ shape as proctable.py's
-# driver_pids.json.
-_TAB_REGFILE = os.path.join(_DAEMON_ROOT, "state", "browser_tabs.json")
-_tab_reg_lock = threading.Lock()
-
-
-def _read_tab_reg():
-    try:
-        with open(_TAB_REGFILE, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def _write_tab_reg(reg):
-    try:
-        os.makedirs(os.path.dirname(_TAB_REGFILE), exist_ok=True)
-        tmp = _TAB_REGFILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(reg, f)
-        os.replace(tmp, _TAB_REGFILE)
-    except Exception:
-        pass
-
-
-def _register_tab(target_id, port, owner):
-    with _tab_reg_lock:
-        reg = _read_tab_reg()
-        reg[target_id] = {"pid": os.getpid(), "port": port, "run_id": owner,
-                          "opened_at": time.time()}
-        _write_tab_reg(reg)
-
-
-def _unregister_tab(target_id):
-    with _tab_reg_lock:
-        reg = _read_tab_reg()
-        if reg.pop(target_id, None) is not None:
-            _write_tab_reg(reg)
-
-
-def registered_tabs():
-    """{target_id: {pid, port, run_id, opened_at}} for every tab this
-    process's own CDP-attach path currently has open - read-only for every
-    caller but the idle sweeper."""
-    with _tab_reg_lock:
-        return _read_tab_reg()
-
-
-def close_target(port, target_id):
-    """Close one CDP target by id, on the HelmDeck Chrome's OWN debug port -
-    the exact same '/json/close/<id>' call CdpTab.close() makes on itself,
-    usable by the idle sweeper for a tab whose owning process is already
-    dead (so no CdpTab object exists any more to call .close() through)."""
-    req = urllib.request.Request("http://127.0.0.1:%d/json/close/%s" % (port, target_id))
-    with urllib.request.urlopen(req, timeout=5):
-        pass
 
 # token-burn-hardening Karte C: the antidote to windows-mcp's Snapshot, which
 # returned 600-700 KB of UIA tree PER CALL (the 190M-token Wear-OS turn -
@@ -421,7 +352,7 @@ class CdpTab:
     (2026-09-14). Here no foreign tab is ever contacted - create, drive and
     close touch only our own target - and every call is bounded."""
 
-    def __init__(self, port, timeout_ms=DEFAULT_ACTION_TIMEOUT_MS, owner=None):
+    def __init__(self, port, timeout_ms=DEFAULT_ACTION_TIMEOUT_MS):
         from websockets.sync.client import connect
         self._port = port
         self._timeout = timeout_ms / 1000.0
@@ -436,7 +367,6 @@ class CdpTab:
             self._http("/json/close/%s" % self.target_id)
             raise
         self.keyboard = _Keyboard(self)
-        _register_tab(self.target_id, port, owner)
 
     def _http(self, path, method="GET"):
         import json
@@ -545,10 +475,7 @@ class CdpTab:
         try:
             self._ws.close()
         finally:
-            try:
-                self._http("/json/close/%s" % self.target_id)
-            finally:
-                _unregister_tab(self.target_id)
+            self._http("/json/close/%s" % self.target_id)
 
 
 class AgentBrowser:
@@ -562,12 +489,7 @@ class AgentBrowser:
             if attach:
                 # STANDARD: our own tab in the real, persistent HelmDeck Chrome.
                 ensure_chrome(port)
-                try:
-                    from spine.ops.runs import run_id_of
-                    owner = run_id_of(run_dir)
-                except Exception:
-                    owner = None
-                self.page = CdpTab(port, owner=owner)   # our own tab; leave the owner's tabs alone
+                self.page = CdpTab(port)          # our own tab; leave the owner's tabs alone
                 # the real browser is visible, so the SCREEN recording is the evidence
                 self._cap = wincap.start(run_dir)
                 self.log.log("note", "attached to HelmDeck Chrome (CDP :%d)" % port)
