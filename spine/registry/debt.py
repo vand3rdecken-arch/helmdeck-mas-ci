@@ -5195,6 +5195,101 @@ DEBT = [
         "since": "2026-09-20",
         "order": 72,
     },
+    {
+        "id": "bg-launch-ampersand-double-run",
+        "title": "A trailing ampersand launch gives the worker no proof of life, so it relaunches",
+        "status": "open",
+        "what": "2026-09-20 20:59: the scan worker launched a 45-minute EDGAR job via "
+                "the Bash tool with a trailing '&'. The tool returned without a usable "
+                "PID or log path, the worker concluded nothing was running and at 21:00 "
+                "launched the SAME job again through the harness background mechanism "
+                "('Relaunch ... properly (no trailing ampersand)'). Both ran to completion "
+                "writing the same SQLite file; the lock contention dropped 209 and 177 "
+                "tickers respectively ('database is locked'), about ten percent each, "
+                "silently.",
+        "why_it_bites": "Every long-running data job a worker starts this way risks a "
+                        "duplicate run, double external load and silent data loss; the "
+                        "worker cannot tell from the launcher output whether its process "
+                        "lives.",
+        "trigger": "any Bash tool call whose command ends in '&' inside a card turn.",
+        "fix": "Detect a trailing '&' in the Bash tool call (PreToolUse) and either "
+               "rewrite it onto the harness background path or deny with the "
+               "instruction to use run_in_background; the harness background result "
+               "must always carry the PID and the log path; the worker briefs "
+               "(card-worker.md, machine-worker.md) must say: before relaunching any "
+               "job, read its log file, never trust the launcher output.",
+        "since": "2026-09-20",
+        "order": 73,
+    },
+    {
+        "id": "guard-process-rule-matches-prose-payload",
+        "title": "The process-termination guard rule matches the English word inside a heredoc payload",
+        "status": "open",
+        "what": "ops/tools/card_tool_guard.py _KILL_RE is a word-boundary match over the "
+                "WHOLE Bash command string and _DAEMON_RE matches 'python'. Any "
+                "'python - <<EOF ... EOF' command whose payload contains the plain "
+                "English verb (a card task text saying 'which single fact would ... the "
+                "case', a grep pattern, a debt entry) is denied with the daemon-tree "
+                "message. Hit twice on 2026-09-20 (22:03 filing a research card, 23:05 "
+                "grepping the guard itself); both had nothing to do with processes.",
+        "why_it_bites": "Henry and card workers cannot file tasks or write notes that "
+                        "use an ordinary English verb, and the deny message sends them "
+                        "chasing a restart route that is irrelevant.",
+        "trigger": "a Bash or PowerShell command containing both 'python' and the "
+                   "termination verb anywhere, including quoted or heredoc text.",
+        "fix": "Match the rule against the command's first token(s) and bare "
+               "arguments only (strip heredoc bodies and quoted strings before "
+               "matching), or require the verb to appear as the command itself "
+               "(start of line or after a pipe/semicolon), and pin both cases in "
+               "ops/tests/test_card_tool_guard.py.",
+        "since": "2026-09-20",
+        "order": 74,
+    },
+    {
+        "id": "delivered-parked-fires-while-background-runs",
+        "title": "delivered-parked escalates a progress reply while the card is waiting on background tasks",
+        "status": "open",
+        "what": "turnrunner._maybe_escalate_delivered checks is_delivered(t) on a "
+                "working card but not whether the card is waiting on background work. "
+                "On 2026-09-20 it fired three times on replies of the shape 'both scans "
+                "progressing, checking back in 15 minutes' (21:09), 'waiting on 4 "
+                "agents' (22:23) and '17 of 20 done, waiting on 2' (22:26), each while "
+                "bg_tasks were running and waiting_on was 'background'. Each cost a "
+                "Henry broker turn that ended in ignore.",
+        "why_it_bites": "Three wasted broker turns per long card, and the real "
+                        "delivered signal drowns in the false ones.",
+        "trigger": "a turn ends in needs_you with running bg_tasks or waiting_on set.",
+        "fix": "Return early when t.get('waiting_on') or any bg task is still "
+               "'running'; the background-done hook re-enters the turn anyway, so the "
+               "real delivery is caught on the next end-of-turn.",
+        "since": "2026-09-20",
+        "order": 75,
+    },
+    {
+        "id": "worker-timed-checkin-never-fires",
+        "title": "A worker that promises 'I will check back at HH:MM' parks forever",
+        "status": "open",
+        "what": "2026-09-20 21:12: after its background tasks completed, the scan worker "
+                "replied 'Waiting until 21:50 for both processes to finish, then the "
+                "mop-up pass' and ended the turn. Nothing in the harness schedules a "
+                "wake-up at a wall-clock time, so the card sat in needs_you from 21:12 "
+                "until Henry closed it at 22:03 with stages 2 to 4 never run. Same "
+                "shape as the 18.09 lesson for Henry himself (feedback-henry-never-"
+                "promise-next-turn): a promise about a future turn is a promise nobody "
+                "keeps.",
+        "why_it_bites": "Long data jobs whose completion the worker cannot observe as "
+                        "a bg task end in a silent park; the owner sees 'still not "
+                        "done?' an hour later.",
+        "trigger": "a worker reply containing a future clock time or 'check back' "
+                   "with no running bg task.",
+        "fix": "Give workers one sanctioned way to wait: a harness sleep/wake "
+               "primitive registered as a bg task (so background-done re-enters the "
+               "turn), and state in card-worker.md and machine-worker.md that a reply "
+               "must never promise a time; if the job is a detached process, wrap the "
+               "wait in a bg task that polls its log.",
+        "since": "2026-09-20",
+        "order": 76,
+    },
 ]
 
 def list_debt():
