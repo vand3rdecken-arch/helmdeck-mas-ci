@@ -1525,7 +1525,7 @@ DEBT = [
     {
         "id": "henry-memory-parallel-to-cli-automemory",
         "title": "Henry's memory is a SECOND surface beside the CLI's own auto-memory",
-        "status": "open",
+        "status": "paid",
         "what": "FURTHER CLOSED by henry-memory-db-authority + its same-day follow-up: "
                 "daemon/henry_memory/ does not exist anymore at all, not even as a "
                 "disposable cache. Henry's durable facts live only in the db (memory "
@@ -1554,11 +1554,23 @@ DEBT = [
                    "~/.claude/projects/C--Users-*-swarmdeck-daemon/, any report of Henry "
                    "remembering inconsistently, or the CLI documenting/exposing how it "
                    "derives the auto-memory path.",
-        "fix": "Tell Henry in the brief never to use the native one - now cheaper to "
-               "state truthfully than before, since our own surface is no longer a "
-               "directory he could mistake it for. Left out on purpose until the CLI's "
-               "derivation can be MEASURED rather than guessed, or a report shows him "
-               "actually reaching for it.",
+        "fix": "PAID 2026-09-20 the other way round: not 'never use the native one' "
+               "but READ IT. The report the trigger asked for arrived - the owner had "
+               "to explain three times what Jev is while the correction sat in the CLI "
+               "store and a wrong card report sat in ours. copilot_memory.all_notes() "
+               "now merges both; digest() is derived over the merge; henry_memory_get "
+               "list/get/find span both and label every hit db or cli. The derivation "
+               "worry that kept this open is answered without guessing: the path is "
+               "OBSERVED from the CLI's own init frame (memory_paths.auto, folded by "
+               "observe_auto_dir at event time, drivers.turn_active precedent) and an "
+               "unobserved path reads as ABSENT - never reconstructed from cwd, which "
+               "would have been wrong anyway (the slug is the main repo's, not the "
+               "spawn's). Reading only: card-shares-the-operators-auto-memory made that "
+               "directory unwritable for spawned agents and that stands, so Henry may "
+               "DISAGREE with an owner note in his own, never rewrite it. Pinned by "
+               "test_copilot_memory.py. STILL OPEN elsewhere, as the card "
+               "ops/docs/backlog/memory-as-knowledge-system: provenance fields, "
+               "harness-side retrieval before the turn, merge-on-write and note decay.",
         "order": 51,
     },
     {

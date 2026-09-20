@@ -2615,6 +2615,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 continue
             if typ == "system" and ev.get("session_id"):
                 got = ev["session_id"]
+                # WHERE THE CLI KEEPS ITS OWN MEMORY - taken from the CLI's own
+                # init frame, never derived from cwd (copilot_memory.auto_dir:
+                # the slug is the main repo's, not the spawn's, so any guess
+                # would be the confident-wrong reconstruction CLAUDE.md bans).
+                copilot_memory.observe_auto_dir(ev)
                 # resume-attachment evidence (drivers.py parity): a successful
                 # --resume ECHOES the asked-for id in the init event.
                 if ev.get("subtype") == "init" and sid and got == sid:
@@ -2837,8 +2842,16 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # a sentinel block never gets mistaken for prose or for the legacy
     # {"reply","actions"} blob.
     txt, _mem_muts = copilot_memory.parse(txt)
-    if _mem_muts:
-        copilot_memory.apply(_mem_muts, actor="henry")
+    _mem_rejects = copilot_memory.last_rejects()
+    _mem_done = copilot_memory.apply(_mem_muts, actor="henry") if _mem_muts else []
+    # A SILENT DROP IS THE BUG (owner 2026-09-20): a rejected save looked
+    # exactly like a successful one, so Henry kept believing he had recorded
+    # facts he had not, and told the owner the same thing three times. Every
+    # save, delete and reject now comes back on the next turn through the same
+    # seam the action results use.
+    _mem_line = copilot_memory.feedback(_mem_done, _mem_rejects)
+    if _mem_line:
+        _pending_actions.setdefault(skey, []).append(_mem_line.strip())
     sid_final = result.get("session_id") or session_id
     rotate_note = None
     if sid_final:

@@ -112,22 +112,34 @@ check("note-a" not in db.memory_all(), "delete actually removes the row")
 _after_delete = len(events.read_events())
 check(_after_delete - _after_save == 1, "delete emits its own event too")
 
-# -- digest(): index-only, never the notes themselves ------------------------
+# -- digest(): a DERIVED index, never the notes themselves ------------------
+# REWRITTEN 2026-09-20. The old contract was "digest() returns whatever Henry
+# last stored under the name MEMORY", and that contract IS the defect: the
+# stored index froze on 2026-09-15 because every rewrite exceeded
+# MAX_CONTENT_LEN and parse() drops a bad block silently, so for five days he
+# read a 40-line index of 115 notes and concluded he had never been told
+# things he had written down himself. An index is a VIEW over the notes and
+# is now computed. The invariant the old tests reached for - the NEWEST entry
+# must never be the one cut - is pinned harder here, because a derived index
+# is sorted newest-first by construction.
 print("\n[digest]")
 _reset_memory()
-check(m.digest() == "", "no digest when the db has no MEMORY index note yet")
-db.memory_put("MEMORY", "- [note-a](note-a.md) - fact a", actor="henry")
+check(m.digest() == "", "no digest when there are no notes at all")
+db.memory_put("note-a", "fact a", actor="henry")
 d = m.digest()
-check("fact a" in d, "digest carries the index body - got %r" % d)
-check("note-a.md" not in d or "fact a" in d, "digest is the index, not a note dump")
-# the index rides WHOLE: the live one was 5767 chars on 2026-09-16 and the
-# digest cut it at 4000, so the newest entries (appended at the end) were
-# exactly the ones Henry never saw again
-_big = "\n".join("- [note-%03d](note-%03d.md) - %s" % (i, i, "x" * 80) for i in range(60)) + "\n- [newest](newest.md) - IOS APPROVED"
-assert len(_big) > 5000
-db.memory_put("MEMORY", _big, actor="henry")
+check("note-a" in d, "digest lists the note - got %r" % d)
+check("fact a" in d, "digest carries each note own description line")
+db.memory_put("MEMORY", "- [hand-written](x.md) - stale, never rewritten", actor="henry")
+check("stale" not in m.digest(),
+      "a stored MEMORY note can no longer BE the index - it is ignored")
+_reset_memory()
+for i in range(60):
+    db.memory_put("note-%03d" % i, "x" * 80, actor="henry")
+db.memory_put("newest-note", "IOS APPROVED", actor="henry")
 d = m.digest()
-check("IOS APPROVED" in d, "an index past 4000 chars still carries its newest (last) entry - digest %d chars" % len(d))
+check(len(d) > 5000, "a 61-note index is big - %d chars" % len(d))
+check(all(("note-%03d" % i) in d for i in range(60)) and "newest-note" in d,
+      "every note is listed - an index cannot go stale on a note it never saw")
 
 # -- henry_memory_get.py: the only read path for a full note, no cache -------
 print("\n[henry_memory_get - read-only, no filesystem surface]")
@@ -148,7 +160,9 @@ check(rc == 0 and "real-note" in out, "list surfaces the note name - got %r" % o
 check("MEMORY" not in out.splitlines(), "list hides the index note itself")
 
 rc, out = _run("get", "real-note")
-check(rc == 0 and out.strip() == "the actual fact", "get returns the exact db content - got %r" % out)
+check(rc == 0 and "the actual fact" in out, "get returns the exact db content - got %r" % out)
+check(rc == 0 and out.splitlines()[0].startswith("[db |"),
+      "get labels WHICH store the note came from - got %r" % out.splitlines()[:1])
 
 rc, out = _run("get", "no-such-note")
 check(rc == 1, "get on a missing note exits non-zero, not a guess")
@@ -161,6 +175,83 @@ check(not any("henry_memory" in p for p in os.listdir(_tmp) if os.path.isdir(os.
 # chat-henry-kontext-pruning, "voller Umbau", 2026-09-15): digest() now has
 # exactly one caller (cells/copilot/planning/pm.py's planner context), which
 # reads it fresh every time it plans - no gate needed, nothing to test here.
+
+# ---------------------------------------------------------------------------
+# 2026-09-20, owner: "alle Infos zu Claude und db sollten zugaenglich sein".
+# Henry told the owner three times that Jev has no text API while the
+# correction sat in the CLI's own auto-memory directory and the wrong card
+# report sat in his db. Two stores, no reconciliation, and an index that had
+# been frozen since 2026-09-15 because every rewrite was silently rejected.
+# Each check below FAILS on the pre-fix code.
+print("\n-- derived index + the second store --")
+
+_reset_memory()
+for i in range(120):
+    db.memory_put("note-%03d" % i, "fact %d" % i)
+db.memory_put("MEMORY", "- [stale](old.md) - written by hand on 2026-09-15")
+_idx = m.digest()
+check(all(("note-%03d" % i) in _idx for i in range(120)),
+      "the index is DERIVED: all 120 notes appear, not the 1-line stored MEMORY note")
+check("stale" not in _idx, "the hand-written MEMORY note is no longer the index")
+rc, out = _run("get", "MEMORY")
+check(rc == 0 and "note-119" in out, "get MEMORY serves the derived index too - got %r" % out[:120])
+
+# the CLI's auto-memory: read ONLY from a path the CLI itself reported
+_auto = os.path.join(_tmp, "cli_memory")
+os.makedirs(_auto, exist_ok=True)
+with io.open(os.path.join(_auto, "jev-browser-verdict.md"), "w", encoding="utf-8") as f:
+    f.write("---\nname: jev-browser-verdict\ndescription: Jev has a score API\n---\n\nbody here\n")
+check(m.auto_dir() is None,
+      "an UNOBSERVED directory is invisible - the path is never derived from cwd")
+check(m.auto_notes() == {}, "no observation, no notes - an honest empty, not a guess")
+
+m.observe_auto_dir({"type": "system", "subtype": "init", "session_id": "s1",
+                    "memory_paths": {"auto": _auto}})
+check(m.auto_dir() == _auto, "the path is taken from the CLI's OWN init event")
+_all = m.all_notes()
+check("jev-browser-verdict" in _all, "a CLI note is now readable alongside the db")
+check(_all["jev-browser-verdict"].get("source") == "cli", "a CLI note is labelled as such")
+check("Jev has a score API" in m.digest(), "the CLI note shows up in the index")
+# ORDER IS THE WHOLE POINT OF THE OLD BUG: the stored index was APPENDED
+# to, so a length cut removed the newest entries - the ones just saved.
+# Derived, it is sorted newest-first, so a cut can only ever lose the
+# stalest. Pinned with real, distinct mtimes rather than same-second ties.
+import time as _t
+_reset_memory()   # only the CLI store in play, so the ordering is the thing tested
+for _fn, _age in (("ancient-note.md", 200000), ("fresh-note.md", 10)):
+    _fp = os.path.join(_auto, _fn)
+    with io.open(_fp, "w", encoding="utf-8") as f:
+        f.write("body of " + _fn)
+    os.utime(_fp, (_t.time() - _age, _t.time() - _age))
+_short = m.digest(limit=120)
+check("fresh-note" in _short and "ancient-note" not in _short,
+      "a truncated index keeps the NEWEST and drops the stalest - got %r" % _short[-160:])
+rc, out = _run("find", "score")
+check(rc == 0 and "jev-browser-verdict" in out, "find searches BOTH stores - got %r" % out[:160])
+
+db.memory_put("jev-browser-verdict", "db version wins")
+_all = m.all_notes()
+check(_all["jev-browser-verdict"].get("source") == "db",
+      "on a name clash the store of record wins")
+check(_all["jev-browser-verdict"].get("also_in") == "cli",
+      "the losing twin is FLAGGED, not silently dropped")
+
+m.observe_auto_dir({"type": "system", "subtype": "init",
+                    "memory_paths": {"auto": os.path.join(_tmp, "gone")}})
+check(m.auto_dir() is None, "an observed path that no longer exists reads as absent")
+m.observe_auto_dir({"type": "system", "memory_paths": {"auto": _auto}})
+
+print("\n-- the write path reports back --")
+_cleaned, _muts = m.parse('<memory-save name="huge">%s</memory-save>' % ("x" * (m.MAX_CONTENT_LEN + 1)))
+check(m.last_rejects() == ["huge"], "a rejected block is readable by the caller, not only an event")
+_line = m.feedback(_muts, m.last_rejects())
+check("VERWORFEN" in _line and "huge" in _line,
+      "the next turn is TOLD the save was dropped - got %r" % _line)
+_cleaned, _muts = m.parse('<memory-save name="kept">fact</memory-save>')
+check(m.last_rejects() == [], "a clean turn reports no rejects")
+check("gespeichert: kept" in m.feedback(_muts, m.last_rejects()),
+      "a successful save is reported too")
+check(m.feedback([], []) == "", "a turn that saved nothing adds no line")
 
 print("")
 if _fails:
