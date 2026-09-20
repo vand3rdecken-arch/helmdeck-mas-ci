@@ -68,6 +68,15 @@ import re
 import shlex
 import sys
 
+# This file always runs from the DAEMON'S OWN copy (card.json points
+# $HELMDECK_GUARD at spawnenv.tool_path's copy, never $CLAUDE_PROJECT_DIR -
+# see card.json's own comment on why). That means __file__ here IS the live
+# repo, three dirnames up from ops/tools/card_tool_guard.py - exactly the
+# tree HELMDECK_TOOL_SCOPE=hands needs read access to (hands' cwd is a
+# throwaway daemon/state/hands/<id> scratch folder, never a worktree of its
+# own; see cells/copilot/chat/hands.py).
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def _deny(reason):
     print(json.dumps({
@@ -234,6 +243,70 @@ def _outside_worktree(candidate, worktree):
     return os.path.normcase(common) != os.path.normcase(base)
 
 
+# Same secrets card.json's own permissions.deny names for the Read tool -
+# duplicated here (not imported: card.json is data, this is code) because
+# that deny list is keyed on paths RELATIVE TO THE PROJECT DIR, which for
+# hands is the scratch folder, not the repo root it just got READ access to.
+# Widening Read past the worktree without this would quietly reopen exactly
+# the hole card.json's deny block exists to close.
+_SECRET_EXACT_REL = ("daemon/settings.json", "daemon/users.json", "daemon/helmdeck.db")
+
+
+def _is_secret_path(candidate):
+    try:
+        target = candidate if os.path.isabs(candidate) else os.path.join(_REPO_ROOT, candidate)
+        target = os.path.realpath(target)
+        rel = os.path.relpath(target, _REPO_ROOT).replace("\\", "/")
+    except Exception:
+        return True   # unresolvable: treat as secret, not as safe
+    if rel in _SECRET_EXACT_REL:
+        return True
+    if os.path.basename(rel) == ".env":
+        return True
+    if rel.lower().endswith((".pem", ".keystore")):
+        return True
+    return False
+
+
+def _read_scope_root(scope, worktree):
+    """Where READ-classified tools may reach. Everything else (Write, Edit,
+    MultiEdit, NotebookEdit, and Bash's own escape check) stays pinned to
+    `worktree` regardless of scope - only reading gets the wider door."""
+    if scope == "hands":
+        return _REPO_ROOT
+    return worktree
+
+
+# Read-only shell viewers hands may point past its own scratch folder into
+# the repo (2026-09-19: a hands run needed ops/docs/marketing/show-hn-*.md
+# and had no way to reach it - see the card this fixed). Argv[0] only, no
+# subcommands, mirroring the same bar _client_allow_argv_hit already clears -
+# refuse outright on any shell metacharacter so nothing can ride in after a
+# look-alike prefix.
+_HANDS_READONLY_ARGV0 = ("cat", "head", "tail", "more", "type")
+
+
+def _hands_bash_read_hit(command, escaped_path):
+    """True if `command` is a bare read-only view of `escaped_path` (the
+    token _bash_escape_paths already flagged as outside the worktree) AND
+    that path is inside the repo, not a secret. Anything else - a second
+    command chained on, a write-capable verb, a path further out than the
+    repo itself, a secrets file - falls through to the normal deny."""
+    if any(ch in (command or "") for ch in _SHELL_METACHARS):
+        return False
+    try:
+        argv = shlex.split(command or "", posix=(os.name != "nt"))
+    except ValueError:
+        return False
+    if not argv or argv[0].lower() not in _HANDS_READONLY_ARGV0:
+        return False
+    if _outside_worktree(escaped_path, _REPO_ROOT):
+        return False
+    if _is_secret_path(escaped_path):
+        return False
+    return True
+
+
 def _bash_escape_paths(command, worktree):
     """Cheap defense-in-depth scan, NOT a shell parser: pulls out tokens that
     look like absolute paths (POSIX or Windows-drive) or contain `..`, and
@@ -289,7 +362,22 @@ def main():
         return
 
     try:
-        if tool in ("Read", "Write", "Edit", "MultiEdit", "NotebookEdit"):
+        if tool == "Read":
+            root = _read_scope_root(scope, worktree)
+            for k in _PATH_KEYS:
+                if k in ti:
+                    if _outside_worktree(ti[k], root):
+                        _deny("card_tool_guard: %s targets %r, outside this "
+                              "card's worktree" % (tool, ti[k]))
+                        return
+                    if scope == "hands" and _is_secret_path(ti[k]):
+                        _deny("card_tool_guard: %s targets %r, a "
+                              "secrets-protected path" % (tool, ti[k]))
+                        return
+            _allow()
+            return
+
+        if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
             for k in _PATH_KEYS:
                 if k in ti and _outside_worktree(ti[k], worktree):
                     _deny("card_tool_guard: %s targets %r, outside this "
@@ -302,6 +390,10 @@ def main():
             command = ti.get("command") or ""
             bad = _bash_escape_paths(command, worktree)
             if bad:
+                if scope == "hands" and _hands_bash_read_hit(command, bad):
+                    _grant("card_tool_guard: read-only view of a repo path "
+                           "outside hands' scratch folder")
+                    return
                 _deny("card_tool_guard: command references %r, outside "
                       "this card's worktree" % bad)
                 return
