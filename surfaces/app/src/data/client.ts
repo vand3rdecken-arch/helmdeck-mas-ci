@@ -13,6 +13,7 @@ export interface DaemonStatus {
   pid: number; started: number; uptime_s: number; commit: string; repo_head: string;
   stale: boolean; running_turns: string[]; restart_task: boolean; last_restart: string;
   relay_latency?: { window_min: number; slow_daemon: number; bridge_stalls: number; worst_s: number; last: string | null };
+  sweep?: { at: string; items: number } | null;
 }
 export interface DaemonRestart {
   ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;

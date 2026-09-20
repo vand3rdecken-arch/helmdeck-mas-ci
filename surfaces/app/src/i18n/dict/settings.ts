@@ -50,6 +50,7 @@ export const settings: Dict = {
   "daemon.line.turns": { de: "{n} Karte(n) mitten im Turn – Neustart würde sie abbrechen", en: "{n} card(s) mid-turn – a restart would cut them off" },
   "daemon.line.latencyOk": { de: "Handy-Pfad: keine Verzögerung in den letzten {min} min", en: "Phone path: no delays in the last {min} min" },
   "daemon.line.latency": { de: "Handy-Pfad: {n}× über Budget in {min} min (schlimmster Fall {worst} s)", en: "Phone path: {n}× over budget in {min} min (worst {worst} s)" },
+  "daemon.line.sweep": { de: "Letzter Sweep: {when} · {n} Ressource(n) zurückgeholt", en: "Last sweep: {when} · {n} resource(s) reclaimed" },
   "daemon.restart": { de: "Daemon neu starten", en: "Restart daemon" },
   "daemon.restart.waiting": { de: "Neustart ausgelöst (≈90 s)…", en: "Restart triggered (≈90 s)…" },
   "daemon.restart.busyTitle": { de: "Karten laufen noch", en: "Cards still running" },

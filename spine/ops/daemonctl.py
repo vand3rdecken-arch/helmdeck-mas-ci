@@ -118,7 +118,28 @@ def status():
         "restart_task": _task_present(),
         "last_restart": _last_restart(),
         "relay_latency": relay_latency(),
+        "sweep": _sweep_summary(),
     }
+
+
+def boot_ts():
+    """This daemon process's own start time - the idle sweeper's fallback
+    "away since" reference (spine/ops/idle_sweep.py) when no presence client
+    has ever reported this boot."""
+    return _BOOT_TS
+
+
+def _sweep_summary():
+    """The idle resource sweeper's latest run, for the Settings > System
+    panel - lazy import, same reason relay_latency lives beside status()
+    instead of the other way round: idle_sweep needs running_turns()/
+    background_work() from THIS module, so importing it at module level here
+    would be circular."""
+    try:
+        from spine.ops import idle_sweep
+        return idle_sweep.last_sweep_summary()
+    except Exception:
+        return None
 
 
 RELAY_LATENCY_WINDOW_MIN = 15

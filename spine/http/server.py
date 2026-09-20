@@ -678,6 +678,9 @@ def serve(port=8140):
         print("WINCAP: reaped %d orphan screen recorder(s) from a previous run." % rreaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
     atexit.register(drivers.shutdown_all)   # clean stop: don't orphan worker trees
+    from spine.ops import idle_sweep
+    idle_sweep.start_idle_resource_sweeper()   # reclaim HelmDeck's OWN tabs/ports/
+                                                # worktrees/locks once the owner is away
     from cells.engineer.cards import sessions
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo

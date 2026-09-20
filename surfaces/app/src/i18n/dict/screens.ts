@@ -98,6 +98,12 @@ export const screens: Dict = {
   "cfg.webUrl": { de: "Web-Oberfläche (URL)", en: "Web surface (URL)" },
   "cfg.webUrl.desc": { de: "Wohin dieser Daemon die alten Web-Pfade weiterleitet. Gilt nur für diese Maschine.",
                        en: "Where this daemon redirects the legacy web paths. This machine only." },
+  "cfg.sweepEnabled": { de: "Automatisches Aufräumen", en: "Idle resource sweep" },
+  "cfg.sweepEnabled.desc": { de: "Schließt eigene Browser-Tabs, Dev-Server, tote Worktrees und verwaiste Sperren, sobald du eine Weile weg bist und nichts läuft.",
+                             en: "Closes HelmDeck's own browser tabs, dev servers, dead worktrees and stale locks once you've been away a while and nothing is running." },
+  "cfg.sweepIdle": { de: "Leerlauf-Schwelle (Min)", en: "Idle threshold (min)" },
+  "cfg.sweepIdle.desc": { de: "So lange musst du weg sein, bevor der Aufräum-Sweep läuft.",
+                          en: "How long you must be away before the idle sweep runs." },
 
   // ---- harness (briefs, settings layers, spawn preview) --------------------
   "harness.section": { de: "Harness", en: "Harness" },

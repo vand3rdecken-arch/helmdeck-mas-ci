@@ -171,6 +171,19 @@ def snapshot(now=None):
                         for c in _live(now)]}
 
 
+def idle_s(now=None):
+    """Seconds since the most recent heartbeat across EVERY client this
+    daemon has seen (not just the fresh/live ones) - the idle-resource
+    sweeper's "has the owner been away" read (spine/ops/idle_sweep.py). None
+    if no client has ever reported (a fresh boot with nobody paired yet) -
+    the caller falls back to daemon boot time, never to "away forever"."""
+    now = now or time.time()
+    with _lock:
+        if not _clients:
+            return None
+        return now - max(c["activity"] for c in _clients.values())
+
+
 def clear():
     """Test hook."""
     with _lock:
