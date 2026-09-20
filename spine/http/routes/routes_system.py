@@ -139,7 +139,8 @@ def presence_post(self, user, body):
         user["name"], body.get("device", "app"),
         focused_card=body.get("focused_card"),
         app_visible=bool(body.get("app_visible", True)),
-        activity_at=body.get("last_activity_at"))))
+        activity_at=body.get("last_activity_at"),
+        pub=body.get("pub"))))
 
 
 def push_register_post(self, user, body):

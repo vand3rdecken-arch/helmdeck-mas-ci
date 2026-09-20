@@ -24,6 +24,12 @@ What is pinned here, in the order the news travels:
     timeline, and a notification promising the Henry chat would open a chat that
     never mentions it
  7. worker-card notifications are untouched (notify.card_event still owns them)
+ 3b. PER-DEVICE (owner report 2026-09-20): a phone reading the chat right now is
+    withheld while a watch/second phone paired on the same account still buzzes
+    - the old gate silenced every paired device whenever ANY one of them was
+    the reader, and a stale heartbeat (older than presence.READER_FRESH_S)
+    stops counting as "reading" at all, so a phone that navigated away is
+    buzzed again
 
 Self-sandboxing: temp db/events/settings/chatlog/sessions/stats + a FAKE claude
 process (stream-json lines, no model, no network, no cost). The real
@@ -230,27 +236,32 @@ check((req.body or {}).get("reply") == "Antwort ueber die echte Route.",
 # the measured cost was that every single Henry reply for a day logged
 # "suppressed (inapp)" and not one push ever left the daemon. Only the client
 # actually FOCUSED on the chat may suppress.
+#
+# 2026-09-20: chat_reply stopped asking presence.plan() (a single global
+# verdict) and asks presence.chat_readers() instead - unit-level first, since
+# that is the one call chat_reply now makes to decide anything.
 reset()
-_asked = []
-presence.plan = lambda cid: (_asked.append(cid), "silent")[1]
-turn()
-check(_asked and _asked[0] == presence.CHAT,
-      "chat_reply asks presence about the CHAT screen (%r), not about "
-      "'somewhere' - that is what makes 'focused' usable here" % presence.CHAT)
-check(not PUSHED,
-      "presence 'silent' -> no buzz: he is reading the very transcript it "
-      "lands in")
-check(any(m.get("cls") == "bot" for m in logged()),
-      "...and the answer is still IN the chat (a suppressed buzz must "
-      "never suppress the inbox)")
+check(presence.chat_readers() == (set(), False),
+      "nobody reporting -> no readers, not legacy - the ordinary 'push to "
+      "everyone' path")
+presence.clear()
+presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True,
+                pub="pub-of-the-reading-phone")
+pubs, legacy = presence.chat_readers()
+check(pubs == {"pub-of-the-reading-phone"} and not legacy,
+      "a fresh, visible, chat-focused client with a pub is a READER by its "
+      "own device identity - the one notify.recipients() can match to skip "
+      "exactly that device")
+presence.clear()
+check(presence.chat_readers() == (set(), False),
+      "presence.clear() really clears - no stale reader survives it")
 
 reset()
 presence.plan = lambda cid: "inapp"
 turn()
 check(PUSHED,
-      "presence 'inapp' DOES buzz - an app open on another screen or another "
-      "device never shows a Henry answer; suppressing there is how the whole "
-      "feature went silent")
+      "presence.plan no longer gates chat_reply at all (superseded by "
+      "chat_readers) - a stubbed 'inapp' must not stop the ordinary push")
 
 # and the same thing end-to-end through the REAL presence module: a client that
 # is visible but NOT on the chat must not be able to eat the push.
@@ -264,11 +275,48 @@ check(PUSHED,
       "phone (this is the exact live state that suppressed everything)")
 reset()
 presence.clear()
+# No `pub` on this record - the legacy shape an app build that predates the
+# per-device field still sends. Cannot be addressed individually, so this
+# falls back to the old blanket rule (silence everywhere) rather than risk
+# buzzing the very device being read.
 presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True)
 turn()
 check(not PUSHED,
-      "real presence: the same instrument goes quiet once a client reports the "
-      "chat as its focused screen")
+      "real presence: a chat-focused client with no pub (a pre-fix app build) "
+      "still goes quiet everywhere, the old behaviour, since it can't be "
+      "addressed as one specific device")
+presence.clear()
+
+# -- 3b. PER-DEVICE: chat_reply hands the reading device's pub to push_fcm as
+# an exclusion, not as a reason to skip the call outright - push_fcm (real
+# code, proven in section 9 below with real recipients) is the one that turns
+# that into "one fewer sealed message", so what belongs here is proving
+# chat_reply computes and forwards the RIGHT set.
+reset()
+presence.clear()
+presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True,
+                pub="pub-phone")
+notify.push_fcm = lambda *a, exclude_pubs=None, **k: (
+    PUSHED.append((a, k, exclude_pubs)) or True)
+turn()
+check(PUSHED and PUSHED[0][2] == {"pub-phone"},
+      "chat_reply hands push_fcm the reading device's OWN pub to exclude, not "
+      "a blanket refusal to send - a watch or second phone paired alongside "
+      "it must still be reachable")
+check(any(m.get("cls") == "bot" for m in logged()),
+      "...and the transcript still carries the answer regardless")
+notify.push_fcm = lambda *a, **k: PUSHED.append((a, k)) or True
+
+reset()
+presence.clear()
+presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True,
+                pub="pub-phone",
+                activity_at=__import__("time").time() - presence.READER_FRESH_S - 5)
+turn()
+check(PUSHED,
+      "a STALE chat-focus heartbeat (older than READER_FRESH_S) no longer "
+      "counts as reading - a phone that navigated away and stopped beating "
+      "is buzzed again, not held silent forever")
 presence.clear()
 
 # -- 4. quiet hours do NOT hold a solicited answer ---------------------------
@@ -414,6 +462,39 @@ try:
     check(all(t in json.dumps(SENT) for t in ("phone-token", "watch-token")),
           "addressed to BOTH registered tokens, so the wrist buzzes even with "
           "the phone in another room")
+
+    # -- 9. per-device exclusion on the REAL send path (task ask: prove a
+    # device with a fresh chat-foreground heartbeat is skipped and a stale one
+    # is not) - same two real paired devices, same fake transport, no stubs
+    # between chat_reply and the sealed bytes on the wire.
+    del SENT[:]
+    reset("Antwort waehrend du liest.")
+    presence.clear()
+    presence.record("owner", "phone", focused_card=presence.CHAT,
+                    app_visible=True, pub=e2ee.export_pub(pk_p))
+    turn()
+    check(len(SENT) == 1,
+          "a FRESH chat-foreground heartbeat from the phone's own pub skips "
+          "exactly that device - one sealed message left, not zero and not two")
+    only = json.loads(e2ee.open_b64(
+        (SENT[0]["message"]["data"] or {}).get("cipher"), sk_w, pk_d)) if SENT else {}
+    check("Antwort waehrend" in only.get("body", ""),
+          "...and the one message that DID go out is the real answer, sealed "
+          "to the watch's own key")
+    check("phone-token" not in json.dumps(SENT) and "watch-token" in json.dumps(SENT),
+          "the phone's token never appears on the wire; the watch's does")
+
+    del SENT[:]
+    reset("Antwort nachdem du weg bist.")
+    presence.clear()
+    presence.record("owner", "phone", focused_card=presence.CHAT,
+                    app_visible=True, pub=e2ee.export_pub(pk_p),
+                    activity_at=__import__("time").time() - presence.READER_FRESH_S - 5)
+    turn()
+    check(len(SENT) == 2,
+          "a STALE heartbeat (older than READER_FRESH_S) no longer skips the "
+          "phone - both devices are sealed a message again")
+    presence.clear()
 finally:
     notify.urllib = _urllib_before
     notify.push_fcm = lambda *a, **k: PUSHED.append((a, k)) or True
