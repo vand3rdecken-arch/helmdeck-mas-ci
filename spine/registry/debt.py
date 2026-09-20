@@ -5151,6 +5151,38 @@ DEBT = [
         "since": "2026-09-14",
         "order": 71,
     },
+    {
+        "id": "direct-card-steer-and-cancel-do-not-reach-the-worker",
+        "title": "Steer on a running direct card self-locks; cancel does not stop its worker",
+        "status": "open",
+        "what": "Two observations on DIRECT (live-tree) cards, 2026-09-20. (1) A steer "
+                "while the card's turn is running spawns a SECOND turn of the same "
+                "card that waits up to 960s on the card's own live-tree lock "
+                "(turnrunner._turn_inner direct_wait, locks._direct_lock_for) and "
+                "then bounces with 'another card is editing the same working "
+                "tree' (thread-died), setting the card bounced while the first "
+                "turn keeps working and delivers. Worktree cards soft-interrupt "
+                "instead (a36d962). (2) POST /tracks/<id>/cancel on a running "
+                "direct card returned {cancelled: true} but the worker process "
+                "kept running to completion in parallel with the re-filed card "
+                "(174527 vs 174818: both edited the same tree, the second worker "
+                "had to negotiate with the first, and the finalize autocommit of "
+                "the cancelled card swept scratch files into the owner's repo).",
+        "why_it_bites": "Henry cannot correct a running direct card: steer wedges "
+                        "for 16 minutes and reports a false failure, cancel leaves "
+                        "a ghost worker spending quota and writing into the live "
+                        "tree, so two workers collide in one repo.",
+        "trigger": "any steer or cancel on a direct/fast_track card whose "
+                   "turn_active is true.",
+        "fix": "steer on a running direct card must take the worktree path's "
+               "soft-interrupt (replace the live turn on the same session) or "
+               "refuse immediately with 'card running'; cancel must terminate the "
+               "driver process tree (driver_pids) and release the direct tree "
+               "lock before answering, and the finalize autocommit must skip a "
+               "cancelled turn.",
+        "since": "2026-09-20",
+        "order": 72,
+    },
 ]
 
 def list_debt():
