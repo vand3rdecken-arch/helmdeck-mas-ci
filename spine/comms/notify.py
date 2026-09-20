@@ -178,12 +178,20 @@ def recipients(s):
     return out
 
 
-def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
-    """Sealed data message to EVERY paired device. Best-effort like push().
+def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None,
+             exclude_pubs=None):
+    """Sealed data message to EVERY paired device, minus any in `exclude_pubs`.
+    Best-effort like push().
 
     Was phone-only until W2d; the watch is a second, independently sealed
     recipient. Returns True if at least one device took the message - a dead
     watch must never make a delivered phone push report as failure.
+
+    `exclude_pubs` withholds the push from specific devices by their pairing
+    pubkey (the same identity recipients() addresses each target with) - it is
+    how notify.chat_reply keeps a device that is demonstrably reading the
+    answer right now quiet while still buzzing every other paired one, instead
+    of the old all-or-nothing gate that silenced the watch too.
 
     `ask` is the optional ask_payload() block: it turns each device's
     notification buttons into the worker's OWN options. It rides INSIDE the
@@ -198,7 +206,18 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
         return False
     rel = s.get("relay") or {}
     targets = recipients(s)
+    excluded = 0
+    if exclude_pubs:
+        kept = [t for t in targets if t[2] not in exclude_pubs]
+        excluded = len(targets) - len(kept)
+        targets = kept
     if not (targets and os.path.exists(_SA) and rel.get("sk")):
+        if excluded and not targets:
+            # Every recipient was the device reading this - not a broken
+            # setup, so this must not read like one in the log.
+            print("notify: fcm withheld from %d device(s) reading it now, "
+                  "no other paired device to reach -" % excluded, title)
+            return False
         # Say WHICH leg is missing. This used to be a bare False - release.sh's
         # "notify" step then looked identical whether the push was sent, skipped
         # or impossible, and an unnotified phone read as "shipped fine".
@@ -397,10 +416,12 @@ def chat_reply(text):
     report 2026-08-29 18:09).
 
     PRESENCE decides, exactly as it does for a card - the same instrument, not a
-    second policy. But it is asked about the CHAT, not about "somewhere":
+    second policy. But it is asked about the CHAT, not about "somewhere", and
+    PER DEVICE, not all-or-nothing:
 
-      focused on the chat -> silent (he is reading this very transcript)
-      anything else       -> sealed FCM push to every paired device
+      focused on the chat, fresh -> that ONE device withheld, everyone else
+                                     paired (watch, a second phone) still buzzed
+      anything else              -> sealed FCM push to every paired device
 
     The first version asked presence.plan("") and stayed quiet on BOTH 'silent'
     and 'inapp', on the theory that "a client with the app visible" means "the
@@ -417,8 +438,19 @@ def chat_reply(text):
     designed instead of being collapsed into a present/absent split that cannot
     tell reading-the-answer from having-a-window-open.
 
-    An older app that never reports it simply never suppresses - the safe
-    direction presence.py names: a missed push is worse than an extra one.
+    The 'silent' verdict used to gate the WHOLE push (presence.plan), which
+    meant a phone reading the chat also silenced the watch - and, worse, a fast
+    reply could race the 15s heartbeat: the phone's freshly-opened chat screen
+    hadn't been reported yet, presence read as 'inapp' rather than 'silent',
+    and chat_reply pushed anyway to the very phone displaying the answer (owner
+    report 2026-09-20). presence.chat_readers() replaces both: a tight 30s
+    freshness window per presence.READER_FRESH_S (not the 180s FRESH_S a card's
+    in/out-app split tolerates), and the exclusion is keyed by the device's own
+    pairing pubkey, the identity notify.recipients() already addresses each
+    push to - so only the device demonstrably reading it is withheld.
+
+    An older app that never reports its pub simply cannot be addressed
+    individually; see chat_readers' `legacy` for the safe fallback.
 
     urgent=True is NOT a priority claim - it is what tells push_fcm this is
     SOLICITED. Quiet hours exist so autonomous overnight work does not buzz the
@@ -437,22 +469,33 @@ def chat_reply(text):
         return False
     from spine.comms import presence
     from spine.registry import i18n
-    decision = presence.plan(presence.CHAT)
-    if decision == "silent":
-        # Named, not counted: "why didn't my phone buzz?" must have a checkable
-        # answer in the log itself. A bare decision word is what let this
-        # suppress 100% of replies for a day without anyone being able to see
-        # WHICH window was doing the suppressing.
+    # PER-DEVICE, not all-or-nothing: a phone open on the chat screen must go
+    # quiet about its own conversation without silencing the watch or a second
+    # phone too - the old presence.plan() gate here answered a single global
+    # question ("is anyone anywhere reading?") and a "silent" verdict withheld
+    # the push from EVERY paired device, watch included, whenever the phone
+    # itself was the reader (measured 2026-09-20: the owner still got buzzed
+    # while staring at the transcript on a lone-phone workspace, because the
+    # 15s heartbeat interval hadn't yet reported the chat screen as focused
+    # when a fast reply landed - see chat_readers' READER_FRESH_S).
+    readers, legacy = presence.chat_readers()
+    if legacy:
+        # A focused-on-chat client that predates the per-device `pub` field
+        # cannot be addressed individually - fall back to the old blanket
+        # rule (silence everywhere) rather than risk buzzing the very device
+        # being read.
         who = ", ".join("%s/%s" % (c.get("device"), c.get("focused"))
                         for c in presence.snapshot()["clients"]) or "?"
-        print("notify: chat reply silent - owner is on the chat screen (%s)" % who)
+        print("notify: chat reply silent - owner is on the chat screen on a "
+              "build that can't be addressed per-device (%s)" % who)
         return False
     # kind="chat" with NO track: the app routes a trackless chat push into the
     # Henry chat instead of the dashboard its trackless branch falls back to
     # (surfaces/app/src/app/_layout.tsx). The watch needs no change at all -
     # PushService renders title/body from the same sealed payload and opens the
     # app; it never looked at `kind`.
-    return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat")
+    return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat",
+                     exclude_pubs=readers)
 
 
 def card_event(track, status):

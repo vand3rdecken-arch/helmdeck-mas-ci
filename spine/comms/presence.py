@@ -66,9 +66,18 @@ def _clip(v, n=_MAX_FIELD):
     return s[:n] if s else None
 
 
-def record(user, device, focused_card=None, app_visible=True, activity_at=None):
+def record(user, device, focused_card=None, app_visible=True, activity_at=None,
+           pub=None):
     """One heartbeat. `key` is per user+device so a phone and a desktop are two
-    independent presences, not one overwriting the other."""
+    independent presences, not one overwriting the other.
+
+    `pub` is the device's own pairing pubkey (surfaces/app's `myPub`, the SAME
+    identity notify.recipients() addresses a push to) - optional, and clipped
+    like every other client-supplied field. It is what lets a chat-reply push
+    be withheld from exactly the device reading it while still reaching the
+    others (notify.chat_reply); a client that predates this field simply
+    reports none, which the caller treats conservatively (see
+    chat_readers's `legacy`)."""
     key = "%s/%s" % (_clip(user) or "?", _clip(device) or "?")
     now = time.time()
     try:
@@ -83,7 +92,8 @@ def record(user, device, focused_card=None, app_visible=True, activity_at=None):
     with _lock:
         _clients[key] = {"user": _clip(user), "device": _clip(device),
                          "focused": _clip(focused_card),
-                         "visible": bool(app_visible), "activity": at}
+                         "visible": bool(app_visible), "activity": at,
+                         "pub": _clip(pub)}
         # drop everything long past the freshness window; it can never make a
         # notification decision again, it can only consume memory
         for k in [k for k, c in _clients.items() if now - c["activity"] > FRESH_S * 4]:
@@ -119,6 +129,36 @@ def plan(card_id, now=None):
     if card_id and any(c["focused"] == card_id for c in live):
         return "silent"
     return "inapp"
+
+
+# How fresh a heartbeat must be to prove "reading THIS right now" for the
+# per-device chat-push exclusion. Tighter than FRESH_S (which answers "is
+# anyone home at all" for the card in/out-app split): this decides whether to
+# withhold a buzz from one specific device, so it must track a beat or two
+# (BEAT_MS=15s in the app), not the multi-minute grace FRESH_S allows.
+READER_FRESH_S = 30.0
+
+
+def chat_readers(within_s=READER_FRESH_S, now=None):
+    """Devices demonstrably reading the Henry chat right now: live, visible,
+    and focused on CHAT inside `within_s`. Returns (pubs, legacy):
+      pubs   - the set of device pubkeys among them - the same identity
+               notify.recipients() addresses a push to, so notify.chat_reply
+               can withhold the push from exactly these devices while still
+               reaching every other paired one (the watch, a second phone).
+      legacy - True when such a client reported no pub (a build that predates
+               the field, see record()). The caller cannot address that
+               device individually and falls back to suppressing everywhere,
+               same as before this per-device split existed - never buzzing a
+               device that might be the one being read is the safe direction
+               to be wrong in.
+    """
+    now = now or time.time()
+    with _lock:
+        cands = [c for c in _clients.values() if c["visible"]
+                 and c["focused"] == CHAT and now - c["activity"] <= within_s]
+    return ({c["pub"] for c in cands if c.get("pub")},
+            any(not c.get("pub") for c in cands))
 
 
 def snapshot(now=None):

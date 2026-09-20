@@ -19,6 +19,17 @@ import { create } from "zustand";
 import { api } from "./client";
 import { useConfig } from "./config";
 
+/** This device's own pairing pubkey - the same identity notify.recipients()
+ *  addresses a push to (registered once at /push/register, see push.ts). It
+ *  rides on every heartbeat too so the daemon can tell WHICH paired device is
+ *  the one reading the chat right now and withhold the push from exactly
+ *  that one instead of the old all-or-nothing gate (spine/comms/notify.py
+ *  chat_reply / presence.chat_readers) - a build without a pairing key yet
+ *  (never paired) simply omits it, same as before this field existed. */
+function myPub(): string | undefined {
+  return useConfig.getState().myPub || undefined;
+}
+
 /** Daemon counts a client as present for 3 minutes after its last real
  *  activity; beat well inside that so a few dropped beats are harmless. */
 const BEAT_MS = 15_000;
@@ -42,7 +53,16 @@ interface PresenceState {
 export const usePresence = create<PresenceState>((set) => ({
   focusedCard: null,
   lastActivityAt: Date.now(),
-  setFocusedCard: (id) => set({ focusedCard: id, lastActivityAt: Date.now() }),
+  setFocusedCard: (id) => {
+    set({ focusedCard: id, lastActivityAt: Date.now() });
+    // Report the new screen NOW, not up to BEAT_MS later. The periodic timer
+    // alone left a window - open the chat, a fast Henry reply lands before
+    // the next tick - where the daemon still held the PREVIOUS screen (or
+    // none) as this device's focus and pushed to the very phone displaying
+    // the answer (owner report 2026-09-20). The screen the owner just
+    // switched to IS what he is looking at; no heuristic needed.
+    if (useConfig.getState().hydrated) void beat(true);
+  },
   noteActivity: () => set({ lastActivityAt: Date.now() }),
 }));
 
@@ -55,6 +75,7 @@ async function beat(visible: boolean): Promise<void> {
       app_visible: visible,
       // seconds, to match the daemon's time.time()
       last_activity_at: lastActivityAt / 1000,
+      pub: myPub(),
     });
   } catch {
     // Presence is an optimisation, never a user-visible failure: offline or a
