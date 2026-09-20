@@ -1010,13 +1010,8 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     _mutate(tid, lambda tt: held_box.__setitem__("v", tt.pop("held_steers", None)) or None)
     held_list = held_box.get("v") or []
     if held_list:
-        prompt += "
-
-" + "
-
-".join(
-            "[Nachgereicht - kam von %s, waehrend die Karte auf die Antwort wartete:]
-%s"
+        prompt += "\n\n" + "\n\n".join(
+            "[Nachgereicht - kam von %s, waehrend die Karte auf die Antwort wartete:]\n%s"
             % (h.get("source") or "?", h.get("text") or "") for h in held_list)
         log.log("note", "%d gehaltene Anweisung(en) mit dieser Antwort nachgereicht." % len(held_list))
     # Consumed: pop the hook results now so they're told to the worker exactly
