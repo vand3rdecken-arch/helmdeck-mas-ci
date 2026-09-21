@@ -226,6 +226,8 @@ for _fn, _age in (("ancient-note.md", 200000), ("fresh-note.md", 10)):
 _short = m.digest(limit=120)
 check("fresh-note" in _short and "ancient-note" not in _short,
       "a truncated index keeps the NEWEST and drops the stalest - got %r" % _short[-160:])
+check("HIER NICHT STEHEN" in _short,
+      "a CUT index says so - the silent short list is the whole bug")
 rc, out = _run("find", "score")
 check(rc == 0 and "jev-browser-verdict" in out, "find searches BOTH stores - got %r" % out[:160])
 

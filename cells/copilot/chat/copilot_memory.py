@@ -312,7 +312,18 @@ def digest(limit=None):
         desc = " ".join((row.get("description") or "").split())[:180]
         lines.append("- %s (%s)%s%s" % (name, (row.get("updated_at") or "")[:10],
                                         mark, (" - " + desc) if desc else ""))
-    body = "\n".join(lines)[:(limit or DIGEST_MAX)]
+    cap = limit or DIGEST_MAX
+    body = "\n".join(lines)
+    if len(body) > cap:
+        kept = body[:cap].rsplit("\n", 1)[0]
+        cut = len(lines) - (kept.count("\n") + 1)
+        # A TRUNCATION THAT DOES NOT SAY SO is the defect this whole change
+        # is about: Henry read a short index, found nothing, and told the
+        # owner he had never been told. A cut index must name its blind spot.
+        body = kept + ("\n... und %d aeltere Notizen, die HIER NICHT STEHEN - "
+                       "wenn du sie nicht siehst, heisst das NICHT, dass es "
+                       "sie nicht gibt: `find <begriff>` sucht ueber alle %d."
+                       % (cut, len(rows)))
     return ("\n\nDEIN GEDAECHTNIS (%d Notizen, Index automatisch aus beiden "
             "Speichern abgeleitet - db und dem Auto-Memory der CLI [cli]. "
             "Volle Notiz mit `py -3.12 ops/tools/henry_memory_get.py get "
