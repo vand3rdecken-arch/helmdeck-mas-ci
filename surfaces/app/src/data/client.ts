@@ -9,6 +9,26 @@ import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
 import type { BgTask } from "./types";
+export interface TakeoutBox {
+  name: string;
+  created?: string;
+  bytes?: number;
+  complete?: boolean;
+  broken?: string;
+  parts?: Record<string, { bytes?: number; files?: number; tables?: Record<string, number> }>;
+  not_included?: string[];
+}
+export interface TakeoutState {
+  ok: boolean;
+  job: { state: "idle" | "running" | "done" | "failed"; id?: string | null;
+    started?: number; finished?: number; box?: string | null; error?: string | null };
+  boxes: TakeoutBox[];
+  /** The exclusion list comes from the DAEMON (takeout.HANDOVER), never from
+   *  app copy - two lists of "what is missing" would drift, and the one the
+   *  user reads would be the wrong one. */
+  handover: { what: string; why: string }[];
+}
+
 export interface DaemonStatus {
   pid: number; started: number; uptime_s: number; commit: string; repo_head: string;
   stale: boolean; running_turns: string[]; restart_task: boolean; last_restart: string;
@@ -1035,6 +1055,15 @@ export const api = {
   daemonStatus: () => req<DaemonStatus>("GET", "/admin/daemon"),
   /** The ONE restart verb: 409 + reason "turn_active" while a card turn is live unless forced. */
   daemonRestart: (force = false) => req<DaemonRestart>("POST", "/admin/restart", { force }),
+  /** Settings > System > Umzug. GET carries the running job, the containers
+   *  already on disk AND the handover list - the exclusion list is data from
+   *  the daemon, not copy in the app, so the two can never drift. */
+  takeout: () => req<TakeoutState>("GET", "/takeout"),
+  takeoutStart: (recordings = false) =>
+    req<{ ok: boolean; id?: string; scope?: string; error?: string }>(
+      "POST", "/takeout/start", { recordings }),
+  takeoutVerify: (name: string) =>
+    req<{ ok: boolean; problems?: string[] }>("POST", "/takeout/verify", { name }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
     /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
      *  descriptors, rendered by the same BackgroundTasks line a card uses. */
