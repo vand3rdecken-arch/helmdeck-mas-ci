@@ -203,8 +203,65 @@ Fazit zur Owner-Frage: bei Paseo laesst sich fuer Gedaechtnis **nichts**
 abschauen, weil es keines hat. Fuer **Ehrlichkeit der Werkzeuge** ist es die
 beste Vorlage im Feld.
 
+### Letta / MemGPT - der beste einzelne Baustein der ganzen Recherche
+Achtung Fallstrick: es gibt ZWEI Lettas. V1 (Python, Bloecke + Archiv) liegt
+nur noch im `archive`-Branch; aktuell ist `letta-ai/letta-code`, wo das
+Gedaechtnis ein **git-gestuetztes Markdown-Dateisystem** ist. Wer nur die
+Blog-Artikel liest, beschreibt das abgeschaltete System.
+
+**Der Fund, den wir uebernehmen sollten:** Letta spielt in JEDEN Turn einen
+Block mit Metadaten UEBER das externe Gedaechtnis ein, nicht dessen Inhalt
+(`letta/prompts/prompt_generator.py`):
+
+```
+<memory_metadata>
+- 42 previous messages between you and the user are stored in recall memory
+- 156 total memories you created are stored in archival memory (use tools to access them)
+- Available archival memory tags: project_x, meeting_notes, research, ideas
+</memory_metadata>
+```
+
+Das ist das Gegengift gegen genau unseren Fehler, und es kostet fast nichts:
+das Modell weiss, DASS es 199 Notizen gibt und zu welchen Themen, ohne sie zu
+laden. "Ich weiss es nicht" wird damit zu einer nachweisbar falschen Aussage.
+Dazu stehen in jedem Block `chars_current` und `chars_limit` - der Fuellstand
+ist sichtbar, nicht zu erraten.
+
+**Signalisierung** ist bei Letta insgesamt vorbildlich und in
+`letta/constants.py` nachlesbar: gekuerzte Datei-Bloecke ("This block is
+truncated, use functions to view the full content"), gekuerzte
+Werkzeugausgaben mit Zeichenzahl, verdraengte Nachrichten mit Anzahl
+("{n} prior messages ... have been hidden ... can be viewed using
+functions"), Warnung VOR dem Ueberlauf. **Das eine Loch**, das sie selbst
+haben: eine Archivsuche ohne Treffer liefert ein blankes `[]`, waehrend die
+Gespraechssuche "No results found." sagt - dieselbe Asymmetrie, die uns
+getroffen hat.
+
+**Widerspruch:** auch hier nichts Strukturelles, nur Prosa. V1 haengt alles an
+einem Satz in der Werkzeugbeschreibung von `rethink_memory` ("not outdated or
+inconsistent"). V2 ist wenigstens ausdruecklich
+(`subagents/builtin/reflection-v2.md`): "If new information contradicts
+existing memory, fix the stale entry at the source. Do not append the new
+version alongside the old", ausgemustertes wandert als **datierter Eintrag**
+in eine `ARCHIVE.md`. Versionierung ist git, also Nachvollziehbarkeit, keine
+Invalidierungssemantik. Die Bloecke in V1 haben immerhin eine
+`BlockHistory`-Tabelle mit Checkpoint/Undo.
+
+**Aufraeumen im Hintergrund** ("sleep-time compute", jetzt "Dreaming") ist im
+Code belegt, kein Marketing: ein zweiter Agent, der **dieselben Block-Zeilen**
+teilt, ausgeloest alle 5 Schritte (`sleeptime_multi_agent_v2.py`), und in V2
+ein Subagent, der in einem **git-Worktree** arbeitet und nur bei Erfolg nach
+main merged. Bemerkenswert: solange er laeuft, verliert der Vordergrund-Agent
+seine Schreibwerkzeuge (`BASE_SLEEPTIME_CHAT_TOOLS`) - genau ein Eigentuemer
+je Mutation, unsere eigene Hausregel.
+
+**Groessen werden mechanisch erzwungen, Wahrheit nicht**: V2 haengt einen
+**git pre-commit hook** davor (`memory-constraints.ts`, `maxFileCharacters`
+20.000, `maxCoreMemoryCharacters` 65.536, `maxDepth` 2). Billig und
+nachbaubar.
+
 ### Ohne Beleg geblieben
-Letta/MemGPT (Recherche laeuft), Cursor Memories (Doku-Seiten leiten inzwischen auf
+Cursor Memories (Doku-Seiten leiten inzwischen auf
 die Rules-Seite um, Mechanik **undokumentiert**; die verbreitete Erzählung vom
 Sidecar-Modell ist Drittquelle).
 
@@ -265,7 +322,11 @@ Reihenfolge nach Nutzen je Aufwand.
    False-Success-Arbeit vermutlich besser.
 5. **Alte Notiz stempeln, nicht löschen** - Graphitis einzige unstrittig gute
    Idee, und mit unserer Append-Only-Kultur ohnehin deckungsgleich.
-6. **Nachkontrolle, welche Notiz geholfen und welche geschadet hat** - Devins
+6. **Ein Metadaten-Block ueber das Gedaechtnis in JEDEM Turn** - Lettas
+   `<memory_metadata>`. Anzahl der Notizen und die Themen, ohne Inhalt. Das
+   billigste Mittel gegen "ich weiss es nicht", und unabhaengig von (1)
+   wirksam.
+7. **Nachkontrolle, welche Notiz geholfen und welche geschadet hat** - Devins
    Useful/Misleading. Erst sinnvoll, wenn (1) steht, denn vorher gibt es keine
    Abrufe zu bewerten.
 
