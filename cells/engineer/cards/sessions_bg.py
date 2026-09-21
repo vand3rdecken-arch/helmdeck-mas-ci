@@ -129,6 +129,65 @@ def _continue_prompt():
         "entscheiden muss.")
 
 
+def _repair_bg_gate(t):
+    """Close the launch/settle RACE, and return the repaired track (or None).
+
+    bg_upsert folds a task at EVENT TIME; _settle_reply_compute reads the
+    registry once when the turn ends. A task launched in the worker's LAST
+    tool call can therefore be registered AFTER the settle already decided
+    "nothing outstanding" - the turn parks waiting_on='you', status
+    needs_you, and the card claims it needs the owner while a job of its own
+    is still running. Measured 2026-09-21 on 20260921-073824-direct: the
+    track's `updated` and the task's `since` are the SAME second (08:10:12),
+    waiting_on='you', background=None, task 'running'. Nothing repaired it:
+    _sweep_background only ever looked at cards already gated on
+    'background', so the card sat parked and the owner saw "braucht mich".
+
+    Ordering-independent by construction: this asks the live driver whether a
+    turn is in flight instead of trusting the stored status, so it is correct
+    whether the upsert lands before or after _finish_turn. A pending owner
+    question always wins - that is a real needs_you."""
+    if (t.get("waiting_on") == "background" or t.get("question")
+            or t.get("status") == "running"):
+        return None
+    reg = t.get("bg_tasks")
+    if not isinstance(reg, dict):
+        return None
+    now = time.time()
+    open_reg = [v for v in reg.values()
+                if v.get("status", "running") == "running"
+                and now - (v.get("since") or now) < _BG_MAX_WAIT_S]
+    if not open_reg:
+        return None
+    from spine.agent import drivers
+    if drivers.turn_active(t["id"]):
+        return None                  # the settle that is still to come owns it
+    from cells.engineer.cards.sessions import _mutate
+
+    def _fix(tt):
+        if (tt.get("waiting_on") == "background" or tt.get("question")
+                or tt.get("status") == "running"):
+            return False
+        tt["waiting_on"] = "background"
+        bg = dict(tt.get("background") or {})
+        bg["n"] = len(open_reg)
+        bg["names"] = [v.get("title") or v.get("desc") or "task" for v in open_reg[:4]]
+        bg.setdefault("since", min(v.get("since") or now for v in open_reg))
+        tt["background"] = bg
+    fixed = _mutate(t["id"], _fix)
+    if fixed:
+        try:
+            from spine.ops.actionlog import ActionLog
+            ActionLog(fixed["run_dir"]).log(
+                "note", "Gate korrigiert: Karte stand auf 'braucht dich', wartet aber "
+                        "auf %d Hintergrund-Task(s) - %s"
+                        % (len(open_reg),
+                           ", ".join(v.get("title") or "task" for v in open_reg[:4])[:160]))
+        except Exception:
+            pass
+    return fixed
+
+
 def _sweep_background():
     """One pass: continue every card whose background task has finished.
 
@@ -142,6 +201,7 @@ def _sweep_background():
     (drivers._running_cards), leaking the very session it no longer needed."""
     from cells.engineer.cards.sessions import _load, _find, _mutate, steer
     for t in _load():
+        t = _repair_bg_gate(t) or t
         if t.get("waiting_on") != "background" or t.get("status") == "running":
             continue
         # ORPHAN reconciliation (finishAll): a background task is a child of the
