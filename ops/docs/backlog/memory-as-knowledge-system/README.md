@@ -11,6 +11,23 @@ Line: **a memory that the model has to remember to use is not a memory.**
 Retrieval, Merge und Index gehören in den Harness, nicht in die Prosa des
 Briefs. Herkunft ist ein Feld, kein Tonfall.
 
+## Stand 2026-09-21
+
+GELANDET und live (Daemon neu gestartet, am laufenden System geprüft):
+- **A4 abgeleiteter Index** (f3eaa1ef) - Henry schreibt keinen Index mehr.
+- **A5 Rückkanal** (f3eaa1ef) - Save, Delete und Reject stehen im nächsten Turn.
+- **A6 ein Gedächtnis statt zwei** (f3eaa1ef) - db + CLI-Auto-Memory als eine
+  Sicht, Pfad aus dem init-Frame beobachtet. Schuld
+  `henry-memory-parallel-to-cli-automemory` = paid. 114 db + 89 cli live.
+- **Laute Kürzung** (3a9a4c16) - der gekürzte Index nennt seine eigene Lücke.
+
+Feldrecherche abgeschlossen: `field-survey.md`. Sie hat die Reihenfolge
+bestätigt und zwei Kriterien ergänzt (A9, A10). Kernbefund für die Planung:
+**kein einziges der untersuchten Systeme löst Widerspruch strukturell** - wer
+dort abschaut, importiert die Lücke.
+
+OFFEN, in dieser Reihenfolge: A2, A9, A1, A3, A10, A7, A8.
+
 ## Der Vorfall, in drei Fehlern
 
 **F1 - der Index war fünf Tage blind.** `memory` (db) hält 115 Notizen; die
@@ -108,6 +125,18 @@ Fakten zum ersten Mal entstehen.
 ein Datum und verschwinden aus dem Retrieval, sobald sie beantwortet sind.
 `measured` und `owner-fact` altern nicht.
 
+**A9 - ein Metadaten-Block über das Gedächtnis in JEDEM Turn.** Von Letta
+(`letta/prompts/prompt_generator.py`): Anzahl der Notizen und die
+vorkommenden Themen, nie der Inhalt. Damit ist "ich weiß es nicht" eine
+überprüfbar falsche Aussage statt eines plausiblen Schlusses. Billig, wirkt
+auch ohne A2, und deshalb direkt nach A2 einzuplanen.
+
+**A10 - Herkunft am eingespielten Text, nicht nur an der Notiz.** Von Paseo
+(`formatSystemNotificationPrompt` / `isSystemInjectedEnvelope`): jede vom
+Harness eingespielte Nachricht wird als solche gekennzeichnet, "not a user
+turn". Ein Kartenbericht darf im Turn nicht aussehen wie eine Owner-Aussage -
+das ist F2 an der Wurzel.
+
 ## Tests, die auf dem alten Code fallen müssen
 
 Owner-Dekret "Root cause, not workaround": die Tests laufen den ECHTEN
@@ -123,15 +152,18 @@ Dispatch-Pfad und müssen gegen den heutigen Stand nachweislich scheitern.
 4. **T-Widerspruch:** `card-report` "Jev hat keine Text-API" gegen bestehendes
    `measured` "Jev ist ein Score-Modell" speichern. Alt: überschreibt
    kommentarlos. Neu: Merge-Schritt, `measured` gewinnt, `open`-Frage entsteht.
-5. **T-Zugriffsfehler:** Kartenbefund "X nicht erreichbar, kein Key" speichern.
+5. **T-Leer-ist-nicht-nichts (NoMIRACL-Rezept):** eine Teilmenge von Fragen
+   bauen, zu denen es nachweislich KEINE Notiz gibt, und zählen, wie oft Henry
+   trotzdem behauptet statt zu sagen, dass er nichts findet. Kennzahl
+   FP/(FP+TN), gemessen vor und nach A2/A9. Das ist die einzige Zahl, die
+   belegt, ob der Umbau den Fehler wirklich schließt.
+6. **T-Zugriffsfehler:** Kartenbefund "X nicht erreichbar, kein Key" speichern.
    Alt: wird Fakt. Neu: wird "Karte kam nicht heran", Fähigkeit unberührt.
 
-## Sofort-Reparatur (vor dem Umbau, eigener Commit)
+## Sofort-Reparatur - ERLEDIGT 2026-09-21
 
-Der Index ist seit fünf Tagen blind und bleibt es bis A4. Bis dahin: Index aus
-der db ableiten (A4 ist ohnehin der kleinste Teil), Rejects melden (A5), `find`
-in den Chat-Brief aufnehmen. Das sind die drei Stunden, die den akuten Schaden
-stoppen; A1-A3 und A6-A8 sind die eigentliche Karte.
+Index abgeleitet, Rejects gemeldet, `find` im Brief, beide Speicher lesbar,
+Kürzung laut. Siehe Stand oben. Der Rest ist die eigentliche Karte.
 
 ## Betroffener Code
 
