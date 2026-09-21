@@ -79,8 +79,38 @@ def repo_dirs():
         return []
 
 
+def main_repo(path):
+    """The MAIN checkout for `path`, even when `path` is a worktree.
+
+    Borrowed from ai-memory's project_strategy="repo-root"
+    (github.com/akitaonrails/ai-memory): `git rev-parse --git-common-dir`
+    points at the MAIN repo's .git from inside a linked worktree, while
+    --show-toplevel points at the worktree. Measured here 2026-09-21 on a real
+    worktree, both readings.
+
+    This is not cosmetic. We spawn worktrees constantly and reclaim them
+    (spine reclaim_worktree / sweep_worktrees). A card that promoted a note
+    while working in a worktree would have written .helmdeck/knowledge/x.md
+    INTO that worktree, and the reclaim would have deleted the team's
+    knowledge with it - silently, since nothing reads a directory that is
+    gone. Everything here resolves through this first."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=path,
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return path
+    out = (r.stdout or "").strip()
+    if r.returncode != 0 or not out:
+        return path
+    if not os.path.isabs(out):
+        out = os.path.join(path, out)
+    root = os.path.dirname(os.path.abspath(out))
+    return root if os.path.isdir(root) else path
+
+
 def shared_dir(repo):
-    return os.path.join(repo, SHARED_DIR)
+    return os.path.join(main_repo(repo), SHARED_DIR)
 
 
 def _read(path):

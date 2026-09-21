@@ -121,6 +121,34 @@ check("NICHT geladen" in _ov,
       "a refused shared file is announced in the turn, not swallowed - %r"
       % _ov[-160:])
 
+
+print("\n[a worktree resolves to the MAIN repo, not to itself]")
+import subprocess as _sp
+_main = tempfile.mkdtemp(prefix="mainrepo_", dir=_tmp)
+_sp.run(["git", "init", "-q", _main], check=False)
+_sp.run(["git", "-C", _main, "config", "user.email", "t@t"], check=False)
+_sp.run(["git", "-C", _main, "config", "user.name", "t"], check=False)
+with io.open(os.path.join(_main, "x.txt"), "w") as f:
+    f.write("x")
+_sp.run(["git", "-C", _main, "add", "-A"], check=False)
+_sp.run(["git", "-C", _main, "commit", "-qm", "init"], check=False)
+_wt = os.path.join(_tmp, "wt")
+_r = _sp.run(["git", "-C", _main, "worktree", "add", "-q", "--no-track",
+              "-b", "probe", _wt, "HEAD"], capture_output=True, text=True)
+if os.path.isdir(_wt):
+    check(os.path.normcase(k.shared_dir(_wt)) == os.path.normcase(k.shared_dir(_main)),
+          "knowledge written from a worktree lands in the MAIN repo - got %r"
+          % k.shared_dir(_wt))
+    db.memory_put("from-a-worktree", "Ein Fakt, den eine Karte im Worktree lernte.",
+                  actor="henry", kind="measured")
+    k.promote("from-a-worktree", _wt)
+    check(os.path.isfile(os.path.join(k.shared_dir(_main), "from-a-worktree.md")),
+          "and the file really is in the main tree, where the reclaim cannot eat it")
+    check(not os.path.isdir(os.path.join(_wt, ".helmdeck")),
+          "nothing was written into the worktree itself")
+else:
+    check(False, "worktree fixture could not be created: %s" % (_r.stderr or "")[:80])
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))
