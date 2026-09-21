@@ -134,7 +134,12 @@ def auto_memory_dir():
         return None
 
 
-def build(out_root, with_recordings=False):
+def build(out_root, with_recordings=False, account=None):
+    """`account` narrows the db half to ONE account's rows (db_export's own
+    --account filter). None means the whole workspace and is the owner's
+    view; the HTTP feature passes the caller's own id for everyone else,
+    because a product where any operator can export every account's chat and
+    memory is a data leak with a button."""
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
     box = os.path.join(out_root, "helmdeck-takeout-%s" % stamp)
     os.makedirs(box, exist_ok=True)
@@ -147,7 +152,7 @@ def build(out_root, with_recordings=False):
     # IN-PROCESS, not a subprocess: a spawned db_export resolves its own db
     # path and would ignore a caller that repointed db.DBPATH - measured, it
     # exported the live 138 MB database from inside a sandboxed test.
-    doc = _db_tool("db_export").export()
+    doc = _db_tool("db_export").export(account=account)
     with io.open(dbj, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False)
     parts["db.json"] = {"sha256": _sha256(dbj), "bytes": os.path.getsize(dbj),
@@ -187,6 +192,7 @@ def build(out_root, with_recordings=False):
 
     man = {
         "format": FORMAT_VERSION,
+        "account": account or "workspace",
         "created": datetime.datetime.now().isoformat(timespec="seconds"),
         "source_root": ROOT,
         "schema": _schema(),

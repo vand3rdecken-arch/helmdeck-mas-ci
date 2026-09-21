@@ -200,6 +200,7 @@ def set_role_caps(role, caps, actor):
 # its old inline checks are removed (see debt.py for the ones not yet moved).
 _CAP_MODULES = (
     "routes_settings",
+    "routes_takeout",
     "routes_runs",
     "routes_audit",
     "routes_devices",

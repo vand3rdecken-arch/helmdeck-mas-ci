@@ -67,6 +67,7 @@ from spine.http.routes import routes_auth
 from spine.http.routes import routes_invites
 from spine.http.routes import routes_policy
 from spine.http.routes import routes_settings
+from spine.http.routes import routes_takeout
 from spine.http.routes import routes_glance
 from spine.http.routes import routes_info
 from cells.copilot.routes import routes_pm
@@ -360,6 +361,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_misc.GET_ROUTES[p](self, user)
             if p in routes_settings.GET_ROUTES:
                 return routes_settings.GET_ROUTES[p](self, user)
+            if p in routes_takeout.GET_ROUTES:
+                return routes_takeout.GET_ROUTES[p](self, user)
             parts = p.strip("/").split("/")
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
                 return routes_tracks.tracks_live_get(self, user, parts[1])
@@ -594,6 +597,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_control.POST_ROUTES[p](self, user, body)
             if p in routes_settings.POST_ROUTES:
                 return routes_settings.POST_ROUTES[p](self, user, body)
+            if p in routes_takeout.POST_ROUTES:
+                return routes_takeout.POST_ROUTES[p](self, user, body)
             if p in routes_system.POST_ROUTES:
                 return routes_system.POST_ROUTES[p](self, user, body)
             # --- orchestrator control ---
