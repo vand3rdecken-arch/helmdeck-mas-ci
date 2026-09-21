@@ -5290,6 +5290,64 @@ DEBT = [
         "since": "2026-09-20",
         "order": 76,
     },
+    {
+        "id": "tool-results-never-evicted-quadratic-turn-cost",
+        "title": "A turn's cost grows with the square of its tool calls: results are capped per call, never evicted",
+        "status": "open",
+        "what": "Bash output is truncated at 30k characters PER CALL, but a result "
+                "then stays in the context for the rest of the turn and is re-sent on "
+                "every later call. So an agent that develops interactively (write "
+                "script, run, read output, fix, run again) pays for all N-1 earlier "
+                "results on call N. Measured 2026-09-21 on card 20260920-230628-direct: "
+                "ONE turn, 123 tool calls (58 Bash, 22 Edit, 20 Write, 13 Read), 19.4M "
+                "input tokens against 0.10M output, a 190:1 ratio and ~2 percent of a "
+                "weekly quota to build one script. Across the seven alphaloop cards of "
+                "that night: 115.7M in, 0.72M out, 12 percent of the week in ten hours. "
+                "The harness already has the right primitive (bg tasks = start detached, "
+                "get woken on completion); the workers used it to START jobs and then "
+                "read the whole output back anyway.",
+        "why_it_bites": "Quota burn is driven by session SHAPE, not by the amount of "
+                        "work: the same pipeline costs 4x more when built in a long "
+                        "interactive turn than when written once and run detached.",
+        "trigger": "any turn that exceeds roughly 30 tool calls, or whose input/output "
+                   "token ratio exceeds about 50:1.",
+        "fix": "Partly paid 2026-09-21: card-worker.md and machine-worker.md now carry "
+               "the BUILD ONCE, THEN RUN rule (write the script, run it detached with "
+               "output to a log, read only a short report; never print a whole log, "
+               "never poll one). Still open, in order of value: (1) evict or replace a "
+               "tool result with a file reference once it is N rounds old and its file "
+               "still exists; (2) surface tool-call count and input/output ratio per "
+               "turn as a visible metric, the way Paseo measures its own tool-catalog "
+               "token cost in packages/server/scripts/measure-agent-tools-context.ts; "
+               "(3) warn on turn SHAPE (call count) separately from the existing "
+               "identical-repeat loop detector in drivers._burn_watch.",
+        "since": "2026-09-21",
+        "order": 77,
+    },
+    {
+        "id": "worker-brief-mirror-already-drifted",
+        "title": "The worker briefs and their built-in fallback constants have drifted apart",
+        "status": "open",
+        "what": "ops/tests/test_harness_layer.test_no_drift pins "
+                "cells/engineer/harness/agents/card-worker.md and machine-worker.md "
+                "byte-identical to spine/registry/harness._DEFAULT_CARD and "
+                "_DEFAULT_MACHINE. Verified 2026-09-21 at commit 25f690fa, BEFORE any "
+                "edit of mine: both already mismatched. The live .md files carry "
+                "paragraphs the constants never got (CLEAN UP AFTER YOURSELF, the "
+                "windows-mcp capability-grant paragraph). brief() reads the file, so "
+                "live behaviour is correct and only the deleted-ops/harness fallback is "
+                "stale, but the test that guards this is red and has been ignored.",
+        "why_it_bites": "The fallback is the floor for when ops/harness is missing or "
+                        "mangled; a stale floor silently drops rules that were added "
+                        "for a reason. A red test nobody looks at guards nothing.",
+        "trigger": "editing either worker brief without editing the matching constant.",
+        "fix": "Generate the constants FROM the .md files at build or import time "
+               "instead of hand-maintaining two copies, or make the test the single "
+               "writer (fail with the exact patch to apply). Then re-sync the two "
+               "paragraphs that already drifted.",
+        "since": "2026-09-21",
+        "order": 78,
+    },
 ]
 
 def list_debt():
