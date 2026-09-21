@@ -61,7 +61,7 @@ NOT_INCLUDED = "NOT-INCLUDED.md"
 # again - that is the single most expensive omission possible here, so it is
 # named first and named plainly.
 HANDOVER = [
-    ("daemon/certs/apk-signing/", "Android-Signierschluessel. UNERSETZLICH: "
+    ("daemon/certs/apk-signing/", "Android-Signierschlüssel. UNERSETZLICH: "
      "ohne ihn kann die App im Play Store nie wieder aktualisiert werden. "
      "Kopiere den Ordner getrennt und sicher."),
     ("daemon/fcm_service_account.json", "Push-Dienstkonto. Ohne das kommen "
@@ -365,7 +365,7 @@ def restore(box, merge=False, skip_memory=False):
             # exactly the case where Signal and WhatsApp refuse, and they are
             # right. We refuse too, and say what to do instead.
             steps.append("Auto-Memory NICHT ueberschrieben: unter %s liegt "
-                         "bereits ein Gedaechtnis MIT Verlauf. Zusammenfuehren "
+                         "bereits ein Gedächtnis MIT Verlauf. Zusammenführen "
                          "waere geraten. Hol die Historie bewusst: "
                          "git -C \"%s\" remote add takeout \"%s\" && "
                          "git -C \"%s\" fetch takeout" % (dest, dest, src, dest))
