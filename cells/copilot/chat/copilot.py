@@ -2442,11 +2442,20 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _pending = _pending_actions.pop(skey, [])
     action_report = ""
     if _pending:
-        action_report = ("ERGEBNIS deiner Aktionen aus dem LETZTEN Turn (daemon-"
+        # A10 (Paseo parity, formatSystemNotificationPrompt /
+        # isSystemInjectedEnvelope): everything the HARNESS puts in the turn is
+        # wrapped so it cannot read as the owner speaking. 2026-09-20 turned on
+        # exactly this confusion - a card's report ("Jev has no text API")
+        # reached Henry indistinguishable from a statement by the owner, and he
+        # repeated it to the owner as fact.
+        action_report = ("<harness-report>\n"
+                         "ERGEBNIS deiner Aktionen aus dem LETZTEN Turn (daemon-"
                          "seitig NACH deiner Antwort ausgefuehrt - du siehst sie "
                          "hier zum ersten Mal; ein Fehler heisst: die Aktion ist "
-                         "NICHT gelaufen, behaupte nichts anderes):\n- "
-                         + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _pending) + "\n\n")
+                         "NICHT gelaufen, behaupte nichts anderes. Das hier ist "
+                         "MASCHINENTEXT, keine Aussage des Owners):\n- "
+                         + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _pending)
+                         + "\n</harness-report>\n\n")
     # Turn-LOCAL first-word reminder, every message. The brief carries the same
     # law (board-copilot.md SPEED OF FIRST WORD), but system-prompt prose alone
     # measurably lost to the "look first, then speak" habit: all four owner
@@ -2461,7 +2470,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # session). Card chat-henry-kontext-pruning ("voller Umbau", 2026-09-15):
     # that push is gone; _inbox_since(user) below is its ONE remaining owner,
     # now called only from ops/tools/henry_inbox.py, on Henry's own initiative.
-    turn = (action_report + snapshot_block + focus
+    # A2 + A9 (card memory-as-knowledge-system). The memory index stopped
+    # riding the board turn with chat-henry-kontext-pruning and became a pull
+    # the brief merely ASKS for - debt henry-context-pull-is-prompt-enforced,
+    # whose own entry says a skipped pull is indistinguishable from a correct
+    # decision not to pull. On 2026-09-20 that bet lost three times on one
+    # word. The push comes back, but targeted: not the whole index (98k tokens
+    # if every note rode along), just what THIS message is about, plus a count
+    # of what exists. Both wrapped as harness text (A10), both cheap.
+    _mem_block = ""
+    try:
+        _mem_block = copilot_memory.overview() + copilot_memory.recall_block(body)
+        if _mem_block.strip():
+            _mem_block = "\n\n<harness-memory>" + _mem_block + "\n</harness-memory>"
+    except Exception as e:                                       # noqa: BLE001
+        # memory must never be able to break a turn - but a silent failure here
+        # is the very bug this card is about, so it is SAID, not swallowed.
+        print("copilot: memory recall failed - %s" % str(e)[:200], flush=True)
+        _mem_block = ("\n\n<harness-memory>\nGEDAECHTNIS NICHT LESBAR in diesem "
+                      "Turn (%s). Sag das dem Owner, statt aus dem Kopf zu "
+                      "antworten.\n</harness-memory>" % str(e)[:120])
+    turn = (action_report + snapshot_block + focus + _mem_block
             + "\n\nUSER (%s): %s" % (user, body)
             + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
               "den Owner - was du siehst oder was du pruefst -, DANN der erste "
@@ -2843,7 +2872,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # {"reply","actions"} blob.
     txt, _mem_muts = copilot_memory.parse(txt)
     _mem_rejects = copilot_memory.last_rejects()
-    _mem_done = copilot_memory.apply(_mem_muts, actor="henry") if _mem_muts else []
+    _mem_done = (copilot_memory.apply(_mem_muts, actor="henry",
+                                      source="chat:%s" % (skey or "owner"))
+                 if _mem_muts else [])
     # A SILENT DROP IS THE BUG (owner 2026-09-20): a rejected save looked
     # exactly like a successful one, so Henry kept believing he had recorded
     # facts he had not, and told the owner the same thing three times. Every

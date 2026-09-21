@@ -54,7 +54,9 @@ cleaned, muts = m.parse(
     'Repo X gehoert dem Owner.\n</memory-save>\nGern geschehen.')
 check(cleaned == "Klar, notiert.\n\nGern geschehen.",
       "save block stripped from the visible reply, prose kept - got %r" % cleaned)
-check(muts == [{"op": "save", "name": "repo-x-owner", "content": "Repo X gehoert dem Owner."}],
+check(len(muts) == 1 and muts[0]["op"] == "save"
+      and muts[0]["name"] == "repo-x-owner"
+      and muts[0]["content"] == "Repo X gehoert dem Owner.",
       "save block parsed with name + content - got %r" % muts)
 
 cleaned, muts = m.parse('Erledigt.\n<memory-delete name="repo-x-owner"/>')
@@ -254,6 +256,103 @@ check(m.last_rejects() == [], "a clean turn reports no rejects")
 check("gespeichert: kept" in m.feedback(_muts, m.last_rejects()),
       "a successful save is reported too")
 check(m.feedback([], []) == "", "a turn that saved nothing adds no line")
+
+
+# ---------------------------------------------------------------------------
+# Card memory-as-knowledge-system, A1/A2/A3/A9. Every check below fails on the
+# pre-2026-09-21 code, which had no retrieval, no provenance and no conflict
+# detection at all.
+print("\n-- A2: the harness looks it up --")
+_reset_memory()
+db.memory_put("jev-direct-api", "Jev ist ueber die API erreichbar, 761 ms je "
+              "Urteil, Score-Modell mit choice-Frage.", actor="henry",
+              kind="measured")
+db.memory_put("jev-thesis-test", "Karte ohne Key meldete, Jev habe keine "
+              "Text-API.", actor="card:x", kind="reach-fail")
+db.memory_put("relay-unreachable", "Relay nicht erreichbar hiess in Wahrheit "
+              "Daemon-Last durch events_all.", actor="henry", kind="measured")
+for i in range(40):
+    db.memory_put("filler-%03d" % i, "Ein ganz normaler Vermerk ueber "
+                  "Alltagskram Nummer %d." % i, actor="henry")
+
+_hits = [n for n, _r, _s in m.recall("Was ist Jev")]
+check(_hits and _hits[0].startswith("jev"),
+      "recall puts a Jev note first for 'Was ist Jev' - got %r" % _hits)
+check("jev-direct-api" in _hits,
+      "the MEASUREMENT is among the hits, not only the card report - %r" % _hits)
+_blk = m.recall_block("Was ist Jev")
+check("jev-direct-api" in _blk and "measured" in _blk,
+      "the recall block carries the note WITH its provenance")
+check("761 ms" in _blk, "the recall block carries the note BODY, not just names")
+check(m.recall_block("") == "", "an empty message retrieves nothing")
+check(m.recall_block("bitte") == "",
+      "a message with only common words retrieves nothing rather than noise")
+
+# the rarity weight is what makes this work - pinned, because dropping it
+# silently degrades retrieval into 'whatever shares a stopword'
+_common = [n for n, _r, _s in m.recall("ein ganz normaler Vermerk")]
+check(all(x.startswith("filler") for x in _common) or not _common,
+      "common-word query does not drag in the Jev notes - got %r" % _common)
+
+print("\n-- A9: the harness says what exists --")
+_ov = m.overview()
+check(("%d Notizen" % len(m.all_notes())) in _ov,
+      "the overview counts every note - got %r" % _ov[:120])
+check("jev" in _ov or "relay" in _ov or "filler" in _ov,
+      "the overview names the topics present")
+check("NICHT" in _ov,
+      "the overview says absence from it is not evidence of absence")
+
+print("\n-- A1: provenance is decided by the harness --")
+check(m.resolve_kind("owner-fact", "card:20260920", "Jev hat keine Text-API")
+      == "reach-fail",
+      "a card reporting an INABILITY cannot store it as an owner fact")
+check(m.resolve_kind("owner-fact", "card:x", "761 ms gemessen") == "card-report",
+      "a card cannot promote its own report to an owner fact")
+check(m.resolve_kind("owner-fact", "henry", "Owner will iOS zuerst") == "owner-fact",
+      "Henry's own board turn may record an owner fact")
+check(db.memory_rank("measured") > db.memory_rank("card-report")
+      > db.memory_rank("reach-fail"),
+      "the rank order is measurement > card report > reach failure")
+
+_cleaned, _muts = m.parse('<memory-save name="probe-1" kind="measured">'
+                          'Ein Messwert.</memory-save>')
+m.apply(_muts, actor="card:20260921", source="card:20260921")
+check(db.memory_all()["probe-1"]["kind"] == "card-report",
+      "a card's save lands as card-report even when it declares measured")
+check(db.memory_all()["probe-1"]["source"] == "card:20260921",
+      "the source is stamped by the harness")
+
+print("\n-- A3: a write cannot silently overrule a measurement --")
+_cleaned, _muts = m.parse('<memory-save name="jev-note-neu">Jev hat keine '
+                          'Text-API und ist nicht erreichbar.</memory-save>')
+_done = m.apply(_muts, actor="card:20260920", source="card:20260920")
+check(_done and _done[0]["kind"] == "reach-fail",
+      "the inability report is demoted to reach-fail - got %r"
+      % (_done[0].get("kind") if _done else None))
+check(_done[0].get("clash"),
+      "the higher-ranked Jev measurement is reported as a clash - got %r"
+      % (_done[0].get("clash"),))
+_line = m.feedback(_done, [])
+check("WIDERSPRUCH" in _line and "ZUGRIFFSFEHLER" in _line,
+      "the next turn is told BOTH that it was demoted and what it contradicts")
+check(db.memory_all()["jev-direct-api"]["content"].startswith("Jev ist ueber"),
+      "the outranked write did NOT overwrite the measurement")
+
+print("\n-- T-Leer-ist-nicht-nichts (NoMIRACL recipe) --")
+# Questions with provably no note. The harness must retrieve NOTHING and say
+# so, rather than hand over a plausible-looking near-miss that reads as an
+# answer. FP here = a block returned for a question the store cannot answer.
+_absent = ["wie hoch ist der Dachfirst", "welche Farbe hat das Segelboot",
+           "wann faehrt die Faehre nach Helgoland", "was kostet ein Zentner Hafer",
+           "wer gewann die Tour 1998"]
+_fp = [q for q in _absent if m.recall_block(q).strip()]
+check(not _fp, "no block is fabricated for a question the store cannot answer "
+      "- false positives: %r" % _fp)
+_present = ["Was ist Jev", "warum ist das relay nicht erreichbar"]
+_tp = [q for q in _present if m.recall_block(q).strip()]
+check(len(_tp) == len(_present),
+      "and the questions it CAN answer still retrieve - got %r" % _tp)
 
 print("")
 if _fails:

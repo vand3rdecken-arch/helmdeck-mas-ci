@@ -840,29 +840,63 @@ def policy_doc_put(doc):
 
 # -- memory (Henry's notes, store of record) --------------------------------
 
+# PROVENANCE RANK (migration 14). Higher wins when two notes disagree. The
+# order is a decision, not a measurement: what the owner SAID outranks what we
+# measured, because he can change his mind about his own project; a measurement
+# outranks a card's report, because a card reports what it could see from
+# inside a sandbox. `reach-fail` sits at the bottom on purpose - "I could not
+# get to X" is evidence about the card, never about X.
+MEMORY_KINDS = ("reach-fail", "card-report", "project", "measured", "owner-fact")
+
+
+def memory_rank(kind):
+    try:
+        return MEMORY_KINDS.index(kind or "project")
+    except ValueError:
+        return MEMORY_KINDS.index("project")
+
+
 def memory_all():
-    """{name: {content, updated_at, actor}} for every note. The only store -
-    the brief digest, /harness/export, and ops/tools/henry_memory_get.py all
-    read this directly; there is no filesystem cache in front of it."""
+    """{name: {content, updated_at, actor, kind, source, claim}} for every
+    note. The only store - the brief digest, /harness/export, and
+    ops/tools/henry_memory_get.py all read this directly; there is no
+    filesystem cache in front of it."""
     try:
         rows = conn().execute(
-            "SELECT name,content,updated_at,actor FROM memory").fetchall()
+            "SELECT name,content,updated_at,actor,kind,source,claim FROM memory").fetchall()
     except sqlite3.OperationalError:
-        return {}
-    return {r[0]: {"content": r[1], "updated_at": r[2], "actor": r[3]}
-            for r in rows}
+        try:                      # pre-migration-14 db (a test fixture, say)
+            rows = [(r[0], r[1], r[2], r[3], "project", "", "")
+                    for r in conn().execute(
+                        "SELECT name,content,updated_at,actor FROM memory")]
+        except sqlite3.OperationalError:
+            return {}
+    return {r[0]: {"content": r[1], "updated_at": r[2], "actor": r[3],
+                   "kind": r[4] or "project", "source": r[5] or "",
+                   "claim": r[6] or ""} for r in rows}
 
 
-def memory_put(name, content, actor="henry", account="owner"):
+def memory_put(name, content, actor="henry", account="owner",
+               kind="project", source="", claim=""):
     """`account` (ledger step 4): whose board the note belongs to. Every
     caller today is the owner's Henry; the column exists so a second account's
     notes never land in the same namespace, not because any caller passes it
-    yet."""
+    yet.
+
+    `kind`/`source`/`claim` (migration 14) are PROVENANCE and belong to the
+    caller in the harness, not to the model's prose - copilot_memory.apply()
+    resolves them from the turn it is folding, which is the only place that
+    actually knows whether this came from the owner, from a measurement or
+    from a card."""
     import datetime
     now = datetime.datetime.now().isoformat(timespec="seconds")
+    if kind not in MEMORY_KINDS:
+        kind = "project"
     with conn() as c:
-        c.execute("INSERT OR REPLACE INTO memory(name,content,updated_at,actor,account) "
-                  "VALUES(?,?,?,?,?)", (name, content, now, actor, account))
+        c.execute("INSERT OR REPLACE INTO memory"
+                  "(name,content,updated_at,actor,account,kind,source,claim) "
+                  "VALUES(?,?,?,?,?,?,?,?)",
+                  (name, content, now, actor, account, kind, source, claim))
     bump_chat()   # the memory rides Henry's stream, not the board's
 
 
@@ -2063,6 +2097,30 @@ def audit_ops_all():
         out.append(r)
     return out
 
+
+
+@_migration(14, "memory-provenance")
+def _m14(c):
+    """Card memory-as-knowledge-system, A1. A note carried only (name,
+    content, updated_at, actor, account) - no answer to "how do I know this".
+    On 2026-09-20 a card that could not REACH the TypeSafe API reported "Jev
+    has no text API"; that report overwrote Henry's own measurement from the
+    day before, and nothing in the store could tell the two apart, because
+    both were just content.
+
+    Three columns, all written by the HARNESS, never by the model's free text:
+      kind   - one of MEMORY_KINDS, the rank used when two notes disagree
+      source - where it came from (card id, chat turn, session)
+      claim  - 'reach-fail' when a card reported an inability rather than a
+               measurement; such a row may never outrank a measurement.
+    Existing rows get kind='project', the neutral middle, because their real
+    provenance is genuinely unknown and guessing it would be the confident
+    reconstruction CLAUDE.md forbids."""
+    for col, default in (("kind", "project"), ("source", ""), ("claim", "")):
+        if not _has_column(c, "memory", col):
+            c.execute("ALTER TABLE memory ADD COLUMN %s TEXT NOT NULL DEFAULT '%s'"
+                      % (col, default))
+    c.execute("CREATE INDEX IF NOT EXISTS memory_kind ON memory(kind)")
 
 def schema_head():
     """The highest ledger version this code knows - what user_version must
