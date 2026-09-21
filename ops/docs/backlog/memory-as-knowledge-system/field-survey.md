@@ -153,8 +153,58 @@ argumentiert ähnlich gegen geteilten Kontext
 (<https://cognition.com/blog/dont-build-multi-agents>): Gedächtnis als
 **Kompression einer durchgehenden Spur**, nicht als zersplitterter Speicher.
 
+### Paseo - hat GAR KEIN Gedaechtnis, und das ist der Befund
+Quelle gelesen: `Downloads/_paseo_src`.
+
+Paseo ist ein Multiplexer um fremde Agenten-CLIs und delegiert alles, was
+anderswo Gedaechtnis waere, an den Anbieter. Belege fuer die Verneinung:
+keine Einbettungen, kein Vektorspeicher (repo-weite Suche nach
+`embedding|vector|lancedb|chroma|faiss|rag` = null Treffer); im
+Werkzeugkatalog `packages/server/src/server/agent/tools/paseo-tools.ts` sind
+39 Werkzeuge registriert, alle Orchestrierung, **kein** `remember`,
+`save_note`, `search_knowledge`. Gespeichert wird nur Konfiguration und ein
+Sitzungszeiger (`agent-storage.ts`, `STORED_AGENT_SCHEMA`), **kein
+Gespraechsinhalt, keine Fakten**. Die eigene Doku sagt es (`docs/architecture.md`):
+"Timeline rows are runtime memory; provider history is the durable transcript
+authority and resumed agents rebuild from it."
+
+Kein Abruf vor dem Turn: `prompt-attachments.ts` baut den Prompt
+ausschliesslich aus dem, was Mensch oder Orchestrator ausdruecklich angehaengt
+haben. Eine `@datei`-Erwaehnung fuegt einen **Pfad** ein, nie den Inhalt.
+Keine Kompaktierung: Paseo beobachtet die des Anbieters und bildet sie auf ein
+Wire-Item ab, **schreibt aber nichts vorher heraus**. Kein Versionieren, keine
+Herkunft auf Aussagenebene; Korrektur passiert durch **Zerstoerung** (Rewind)
+oder **Fork**, nicht durch Abgleich. `CLAUDE.md` liest Paseo nie selbst, es
+waehlt nur die Quellen (`settingSources: ["user","project","local"]`).
+
+Der ehrlichste Satz der ganzen Recherche steht in Paseos Handoff-Skill:
+**"The receiving agent has zero context."** Das ist die Architektur, laut
+ausgesprochen.
+
+**Was trotzdem zu klauen ist - Paseos Ehrlichkeits-Muster:**
+
+1. **Der `<paseo-system>`-Umschlag** (`agent-prompt.ts`, `formatSystemNotificationPrompt`
+   / `isSystemInjectedEnvelope`): jede vom Harness eingespielte Nachricht wird
+   gekennzeichnet, "so the receiving agent recognizes the prompt as
+   system-injected context - not a user turn". Genau die Unterscheidung, die
+   uns gefehlt hat: ein Kartenbericht ist keine Owner-Aussage.
+2. **Kuerzung nennt Verlust UND Rettungsweg**: `[truncated ${omitted} chars;
+   use get_agent_activity for the full response]`. Unser Index-Nachtrag vom
+   21.09. hat unabhaengig dieselbe Form gefunden - hier ist der Beleg, dass sie
+   sich bewaehrt.
+3. **Fenster wird beziffert**: "Showing X of Y activities (limited to Z)".
+4. **Leer wird benannt**, nicht leer geliefert: "No activity to display."
+5. **Gegenbeispiel, das Paseo selbst nicht sauber loest**:
+   `agent-timeline-content.ts` kappt bei 64 KiB mit blankem `.slice()`, **ohne
+   Marker** - ein Orchestrator, der `get_agent_activity` aufruft, bekommt
+   still beschnittene Shell-Ausgaben.
+
+Fazit zur Owner-Frage: bei Paseo laesst sich fuer Gedaechtnis **nichts**
+abschauen, weil es keines hat. Fuer **Ehrlichkeit der Werkzeuge** ist es die
+beste Vorlage im Feld.
+
 ### Ohne Beleg geblieben
-Letta/MemGPT (läuft noch), Cursor Memories (Doku-Seiten leiten inzwischen auf
+Letta/MemGPT (Recherche laeuft), Cursor Memories (Doku-Seiten leiten inzwischen auf
 die Rules-Seite um, Mechanik **undokumentiert**; die verbreitete Erzählung vom
 Sidecar-Modell ist Drittquelle).
 
