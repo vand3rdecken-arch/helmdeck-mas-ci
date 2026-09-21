@@ -303,14 +303,55 @@ def db_notes():
     return out
 
 
+def shared_notes():
+    """The TEAM half - markdown files in each project's repo. Empty and
+    silent-free when no project has a knowledge dir yet."""
+    try:
+        from cells.copilot.chat import knowledge
+        notes, problems = knowledge.all_shared()
+    except Exception as e:                                       # noqa: BLE001
+        print("copilot: shared knowledge unreadable - %s" % str(e)[:160])
+        return {}, ["geteiltes Wissen nicht lesbar: %s" % str(e)[:120]]
+    out = {}
+    for name, row in notes.items():
+        _n, desc = _auto_meta(row.get("content") or "", name)
+        out[name] = dict(row, description=desc, kind="shared",
+                         origin="repo:%s" % (row.get("project") or "?"),
+                         updated_at=row.get("updated_at") or _mtime(row.get("path")))
+    return out, problems
+
+
+def _mtime(path):
+    try:
+        return datetime.datetime.fromtimestamp(
+            os.path.getmtime(path)).replace(microsecond=0).isoformat()
+    except (OSError, TypeError):
+        return ""
+
+
 def all_notes():
-    """BOTH stores in one dict, db first so Henry's own note wins a name
-    collision - but the loser is not dropped silently: the surviving row
-    carries also_in="cli" so a disagreement is visible instead of implicit."""
-    merged = dict(auto_notes())
+    """THREE stores in one dict, in PRECEDENCE order: shared (the team's, from
+    the project repo) first, then the CLI auto-memory, then the db LAST.
+
+    Personal wins, deliberately. Copied verbatim from Claude Code, which
+    concatenates its memory files rather than overriding and appends the
+    gitignored personal file last "so your personal notes are the last thing
+    Claude reads at that level". A shared note and a personal note about the
+    same topic must never need a merge - they need an order.
+
+    A loser is never dropped silently: the surviving row says which other
+    store also holds that name."""
+    merged = {}
+    shared, _problems = shared_notes()
+    merged.update(shared)
+    for name, row in auto_notes().items():
+        if name in merged:
+            row = dict(row, also_in="shared")
+        merged[name] = row
     for name, row in db_notes().items():
         if name in merged:
-            row = dict(row, also_in="cli", cli_updated_at=merged[name].get("updated_at"))
+            row = dict(row, also_in=merged[name].get("source") or "shared",
+                       cli_updated_at=merged[name].get("updated_at"))
         merged[name] = row
     return merged
 
@@ -478,13 +519,23 @@ def overview(rows=None):
             topics[head] = topics.get(head, 0) + 1
     top = sorted(topics.items(), key=lambda kv: -kv[1])[:12]
     ndb = sum(1 for r in rows.values() if r.get("source") == "db")
+    nshared = sum(1 for r in rows.values() if r.get("source") == "shared")
     newest = max((r.get("updated_at") or "" for r in rows.values()), default="")
-    return ("\n\nGEDAECHTNIS-STAND: %d Notizen (%d eigene, %d aus dem "
-            "Auto-Memory), neueste vom %s. Themen: %s. Du siehst hier nur die "
-            "ZAHLEN - Inhalt holst du mit `find <begriff>`. Dass eine Sache "
-            "hier nicht steht, heisst NICHT, dass es dazu nichts gibt."
-            % (len(rows), ndb, len(rows) - ndb, newest[:10],
-               ", ".join("%s (%d)" % (k, v) for k, v in top)))
+    try:
+        from cells.copilot.chat import knowledge
+        _skipped = knowledge.all_shared()[1]
+    except Exception:                                            # noqa: BLE001
+        _skipped = []
+    warn = ("" if not _skipped else
+            " ACHTUNG, geteilte Datei(en) NICHT geladen: %s."
+            % "; ".join(_skipped[:3]))
+    return ("\n\nGEDAECHTNIS-STAND: %d Notizen (%d eigene, %d geteilt im "
+            "Projekt-Repo, %d aus dem Auto-Memory), neueste vom %s. Themen: "
+            "%s. Du siehst hier nur die ZAHLEN - Inhalt holst du mit `find "
+            "<begriff>`. Dass eine Sache hier nicht steht, heisst NICHT, dass "
+            "es dazu nichts gibt.%s"
+            % (len(rows), ndb, nshared, len(rows) - ndb - nshared, newest[:10],
+               ", ".join("%s (%d)" % (k, v) for k, v in top), warn))
 
 
 # ---------------------------------------------------------------------------

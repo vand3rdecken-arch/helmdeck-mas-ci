@@ -1574,6 +1574,67 @@ DEBT = [
         "order": 51,
     },
     {
+        "id": "shared-knowledge-no-fetch",
+        "title": "the team half of the memory is read from the WORKING TREE only",
+        "status": "open",
+        "what": "cells/copilot/chat/knowledge.py reads .helmdeck/knowledge/*.md "
+                "out of each project's checkout. Nothing fetches. A colleague "
+                "who pushes a knowledge file is invisible here until somebody "
+                "runs git pull in that repo for their own reasons. This is a "
+                "CHOICE, not an oversight - the research this was built from "
+                "(ops/docs/backlog/memory-as-knowledge-system/field-survey.md) "
+                "found that every documented failure of memory-in-git is git "
+                "as an external, credentialed, lock-holding process inside an "
+                "automated loop: letta-code#4249 (a credential dialog blocks an "
+                "automated push), #3705 (ten concurrent subagents race on "
+                ".git/config.lock, all ten desync), #4266 (a stray temp file "
+                "makes `git status --porcelain` non-empty, eight days of work "
+                "force-discarded), #808 (headless exit(1) on conflict). We are "
+                "a Windows daemon that spawns concurrent worktrees. Adding an "
+                "automatic fetch would buy freshness with exactly those.",
+        "why_it_bites": "A two-person team will believe they share knowledge "
+                        "they do not yet have. The failure is quiet: the "
+                        "overview counts what is ON DISK, so a stale checkout "
+                        "reads as a small team memory rather than an old one.",
+        "trigger": "A second human actually writing into .helmdeck/knowledge, "
+                   "or any report of 'he shared it but Henry does not know it'.",
+        "fix": "A pull is an OWNER-triggered act with a visible result, never "
+               "a background job: one action that runs git pull --ff-only in "
+               "that repo, reports what arrived, and refuses on a dirty tree. "
+               "Plus a staleness line in the overview (HEAD date of the "
+               "knowledge dir) so an old checkout LOOKS old.",
+        "order": 55,
+    },
+    {
+        "id": "personal-memory-does-not-travel",
+        "title": "the personal half has no backup and no way to a second machine",
+        "status": "open",
+        "what": "Measured 2026-09-21 while answering 'wie nehme ich alles mit': "
+                "the db half round-trips fine (db_export/db_import, tested - "
+                "115 notes, 7 users, 406 cards, provenance columns included), "
+                "but the CLI auto-memory does not. 86 notes live in "
+                "~/.claude/projects/<slug>/memory/, there is no .git anywhere "
+                "under ~/.claude (checked), they are in no export, and the "
+                "slug is derived from the repo path so even a hand copy lands "
+                "in the wrong folder on a machine where the repo sits "
+                "elsewhere. Since 2026-09-21 those notes rank as owner-fact - "
+                "the HIGHEST rank we have - so this is the least replaceable "
+                "half and the only one with no copy.",
+        "why_it_bites": "A disk failure costs exactly the notes that cannot be "
+                        "reconstructed from code, cards or git history. And the "
+                        "owner asked for a takeout; this is the one part a "
+                        "takeout cannot currently include.",
+        "trigger": "Any second machine, any restore, or the takeout feature "
+                   "being built.",
+        "fix": "Include the auto-memory directory in the archive, and on "
+               "restore write it to the path the CLI ITSELF reports "
+               "(copilot_memory.observe_auto_dir already folds memory_paths.auto "
+               "from the init frame) - never to a constructed slug. Note this "
+               "needs a narrow exception to the read-only rule from "
+               "card-shares-the-operators-auto-memory, scoped to restore.",
+        "order": 56,
+    },
+    {
         "id": "autocompact-probe-process-global",
         "title": "The '/compact is supported' probe is ONE process-wide flag for the whole board",
         "status": "open",

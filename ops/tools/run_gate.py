@@ -65,6 +65,21 @@ if os.path.isdir("spine"):
     run("spine+cells wire up (import spine.http.server)",
         [PY, "-c", "import spine.http.server"])
 
+# -- SHARED KNOWLEDGE ---------------------------------------------------------
+# The team half of Henry's memory lives as markdown in this repo
+# (.helmdeck/knowledge). A file with a merge conflict, over the size cap, or
+# carrying something that looks like a credential is REFUSED at read time and
+# would otherwise just be quietly missing from every turn - the exact silence
+# card memory-as-knowledge-system exists to end. Still light: one directory
+# listing, no imports of the daemon, and a no-op until the directory exists.
+run("shared knowledge loads",
+    [PY, "-c",
+     "import sys; sys.path.insert(0,'.');"
+     "from cells.copilot.chat import knowledge as k;"
+     "p=k.lint('.');"
+     "print('; '.join(p));"
+     "sys.exit(1 if p else 0)"])
+
 if not ran:
     print("gate: nothing to run on this branch - PASS")
     sys.exit(0)

@@ -44,7 +44,8 @@ ACTION_KINDS = frozenset((
     "move", "steer", "delete", "archive", "hands", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
-    "edit_process", "cancel_process", "delete_process", "process_status"))
+    "edit_process", "cancel_process", "delete_process", "process_status",
+    "share_note"))
 
 
 def _parse_reply_actions(txt):
@@ -318,6 +319,30 @@ def _run_action(a, actor, role="operator"):
         except (ValueError, RuntimeError) as e:
             return "apply_template: %s" % e
         return _pipeline_answer(repo, "Vorlage '%s' gilt jetzt fuer %s." % (tid, repo))
+    if kind == "share_note":
+        # PERSONAL -> TEAM, and it is a MOVE (cells/copilot/chat/knowledge.py).
+        # One owner per note is the only conflict strategy that actually works:
+        # it makes a merge impossible rather than resolvable. Promoting does
+        # NOT commit - the owner reviews the working-tree change like any other
+        # edit, which is the whole reason the shared half lives in his repo.
+        from cells.copilot.chat import knowledge
+        name = (a.get("name") or "").strip()
+        repo = (a.get("repo") or events.settings().get("default_repo") or "").strip()
+        if not name:
+            return "share_note: welche Notiz? Nenn den Namen aus deinem Gedaechtnis."
+        if not repo:
+            return "share_note: in welches Repo? Sag mir den Pfad, oder setz ein default_repo."
+        try:
+            path = knowledge.promote(name, repo, actor=actor)
+        except KeyError:
+            return ("share_note: '%s' ist keine persoenliche Notiz. Steht sie "
+                    "schon im geteilten Wissen, ist sie bereits geteilt." % name)
+        except (ValueError, OSError) as e:
+            return "share_note: '%s' NICHT geteilt - %s" % (name, e)
+        return ("'%s' liegt jetzt im geteilten Wissen von %s (%s). Die "
+                "persoenliche Notiz ist weg - eine Sache, ein Ort. Noch nicht "
+                "committed: der Owner sieht die Aenderung im Arbeitsbaum."
+                % (name, repo, path))
     if kind == "set_station":
         # DELIBERATELY NOT a generic key setter. It takes a STATION NAME, maps it
         # to the one real key behind it, and refuses every fixed station BY NAME.
