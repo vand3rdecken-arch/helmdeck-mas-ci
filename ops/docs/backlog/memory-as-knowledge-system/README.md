@@ -43,7 +43,7 @@ Herkunft zwischen db und Leser, und Teilzeichenketten-Matching (wer traf in
 Werkzeug).
 
 OFFEN: A7 (sofort speichern statt erst bei der Kompaktierung), A8 (Verfall).
-Beide klein. Schuld  kann geschlossen
+Beide klein. Die Schuld henry-context-pull-is-prompt-enforced kann geschlossen
 werden, sobald A2 eine Woche ohne Beschwerde laeuft.
 
 ## Der Vorfall, in drei Fehlern
