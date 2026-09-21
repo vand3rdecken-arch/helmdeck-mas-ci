@@ -6,6 +6,8 @@ what is NOT in it.
     py -3.12 ops/tools/takeout.py --out D:/umzug       # somewhere else
     py -3.12 ops/tools/takeout.py --with-recordings    # + the voice recordings
     py -3.12 ops/tools/takeout.py --verify <dir>       # check a container
+    py -3.12 ops/tools/takeout.py --restore <dir>      # on the NEW machine
+    py -3.12 ops/tools/takeout.py --restore <dir> --merge   # into a live db
 
 SHAPE COPIED, NOT INVENTED (research:
 ops/docs/backlog/memory-as-knowledge-system/field-survey.md). Signal's
@@ -73,6 +75,23 @@ HANDOVER = [
 ]
 
 
+
+_TOOLS = {}
+
+
+def _db_tool(name):
+    """Load ops/tools/<name>.py as a module, once. These are scripts, not a
+    package, so importlib is the honest way in - and it keeps them running in
+    THIS process against THIS db."""
+    if name not in _TOOLS:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            name, os.path.join(ROOT, "ops", "tools", "%s.py" % name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _TOOLS[name] = mod
+    return _TOOLS[name]
+
 def _sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -125,13 +144,12 @@ def build(out_root, with_recordings=False):
     #    tool's own default, verified to leave no token/secret/password value
     #    in the clear.
     dbj = os.path.join(box, "db.json")
+    # IN-PROCESS, not a subprocess: a spawned db_export resolves its own db
+    # path and would ignore a caller that repointed db.DBPATH - measured, it
+    # exported the live 138 MB database from inside a sandboxed test.
+    doc = _db_tool("db_export").export()
     with io.open(dbj, "w", encoding="utf-8") as f:
-        r = subprocess.run([sys.executable, os.path.join(ROOT, "ops", "tools", "db_export.py"),
-                            "--all"], stdout=f, stderr=subprocess.PIPE,
-                           text=True, cwd=ROOT)
-    if r.returncode != 0:
-        raise RuntimeError("db_export schlug fehl: %s" % (r.stderr or "")[-400:])
-    doc = json.load(io.open(dbj, encoding="utf-8"))
+        json.dump(doc, f, ensure_ascii=False)
     parts["db.json"] = {"sha256": _sha256(dbj), "bytes": os.path.getsize(dbj),
                         "tables": {k: len(v) for k, v in doc.items()
                                    if isinstance(v, list)}}
@@ -241,12 +259,152 @@ def verify(box):
     return problems
 
 
+
+# ---------------------------------------------------------------------------
+# THE OTHER HALF. An export nobody has restored is a guess, so this is written
+# and tested against a real container, not described in a README.
+#
+# THREE RULES, each with a reason:
+#  1. VERIFY BEFORE TOUCHING ANYTHING. The completeness marker and the
+#     checksums are read first; a container that fails is refused whole.
+#     "Restore takes the whole container, not files out of it" - Signal's own
+#     instruction, because partial restore is where corruption is invented.
+#  2. EMPTY TARGET BY DEFAULT. db_import already refuses a non-empty db
+#     without --merge, and that default stays: a restore onto live data is a
+#     decision, not a default.
+#  3. THE AUTO-MEMORY PATH IS ASKED FOR, NEVER BUILT. On a new machine the
+#     daemon has not observed it yet, so we ask the CLI itself the same way
+#     the daemon does - read memory_paths.auto out of a throwaway init frame.
+#     Constructing the slug from the cwd would be wrong even here: it is
+#     derived from the MAIN repo path, not from the process's directory.
+
+
+def probe_auto_dir():
+    """Ask the claude CLI where IT keeps memory on THIS machine.
+
+    Returns (path, why_not). Never guesses: if the CLI is missing or does not
+    report a path, the caller must stop and say so rather than invent a
+    destination and write 92 notes into a folder nothing ever reads."""
+    try:
+        from spine.agent import drivers
+        from spine.registry import harness
+        from spine.agent.spawnenv import tool_path
+    except Exception as e:                                       # noqa: BLE001
+        return None, "Harness nicht ladbar (%s)" % str(e)[:80]
+    argv = [drivers.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
+            "--permission-mode", "plan", "--model", "haiku", "hi"]
+    try:
+        r = subprocess.run(drivers._cmd_line(argv), cwd=ROOT, env=tool_path(),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=240)
+    except Exception as e:                                       # noqa: BLE001
+        return None, "claude CLI nicht startbar (%s)" % str(e)[:80]
+    for line in (r.stdout or "").splitlines():
+        try:
+            ev = json.loads(line.strip())
+        except ValueError:
+            continue
+        if ev.get("type") == "system" and ev.get("subtype") == "init":
+            p = ((ev.get("memory_paths") or {}) or {}).get("auto")
+            if p:
+                return p, None
+            return None, "die CLI meldet keinen memory_paths.auto"
+    return None, "kein init-Frame von der CLI (rc=%s)" % r.returncode
+
+
+def restore(box, merge=False, skip_memory=False):
+    """[step] - what happened, in order. Raises only on a refusal that must
+    stop the whole restore."""
+    steps = []
+    problems = verify(box)
+    if problems:
+        raise RuntimeError("Archiv unvollstaendig, nichts angefasst: %s"
+                           % "; ".join(problems))
+    man = json.load(io.open(os.path.join(box, MANIFEST), encoding="utf-8"))
+    steps.append("Archiv geprueft: vollstaendig, Format %s, Schema %s"
+                 % (man.get("format"), man.get("schema")))
+
+    # -- the database ------------------------------------------------------
+    dbj = os.path.join(box, "db.json")
+    if os.path.isfile(dbj):
+        doc = json.load(io.open(dbj, encoding="utf-8"))
+        try:
+            counts = _db_tool("db_import").import_doc(doc, merge=merge)
+        except SystemExit as e:
+            # db_import is a SCRIPT and signals its two refusals (non-empty
+            # target, newer schema) with SystemExit. Uncaught, that would tear
+            # this process down mid-restore with a bare line - the half-applied
+            # restore this tool exists to prevent. Turned into a refusal.
+            raise RuntimeError(str(e))
+        except (RuntimeError, ValueError) as e:
+            raise RuntimeError("db_import: %s" % e)
+        steps.append("Datenbank importiert (%d Zeilen in %d Tabellen%s)"
+                     % (sum(counts.values()), len(counts),
+                        ", zusammengefuehrt" if merge else ""))
+
+    # -- the auto-memory ---------------------------------------------------
+    src = os.path.join(box, "auto-memory")
+    if skip_memory:
+        steps.append("Auto-Memory uebersprungen (--skip-memory)")
+    elif not os.path.isdir(src):
+        steps.append("Auto-Memory war nicht im Archiv")
+    else:
+        dest, why = probe_auto_dir()
+        if not dest:
+            steps.append("Auto-Memory NICHT wiederhergestellt: %s. Die Notizen "
+                         "liegen weiter in %s - hol sie, sobald die CLI hier "
+                         "laeuft, mit --restore erneut." % (why, src))
+        elif os.path.isdir(os.path.join(dest, ".git")):
+            # Two histories and no authority to adjudicate between them -
+            # exactly the case where Signal and WhatsApp refuse, and they are
+            # right. We refuse too, and say what to do instead.
+            steps.append("Auto-Memory NICHT ueberschrieben: unter %s liegt "
+                         "bereits ein Gedaechtnis MIT Verlauf. Zusammenfuehren "
+                         "waere geraten. Hol die Historie bewusst: "
+                         "git -C \"%s\" remote add takeout \"%s\" && "
+                         "git -C \"%s\" fetch takeout" % (dest, dest, src, dest))
+        else:
+            existing = [f for f in os.listdir(dest)] if os.path.isdir(dest) else []
+            if existing:
+                steps.append("Auto-Memory NICHT wiederhergestellt: %s ist nicht "
+                             "leer (%d Eintraege) und hat keinen Verlauf - raeum "
+                             "ihn weg oder nimm ihn in Betrieb, dann erneut."
+                             % (dest, len(existing)))
+            else:
+                n, size = _copy_tree(src, dest)
+                steps.append("Auto-Memory wiederhergestellt: %d Dateien (%.1f MB) "
+                             "nach %s" % (n, size / 1e6, dest))
+
+    # -- recordings --------------------------------------------------------
+    rec = os.path.join(box, "recordings")
+    if os.path.isdir(rec):
+        n, size = _copy_tree(rec, os.path.join(ROOT, "daemon", "recordings"))
+        steps.append("Aufnahmen wiederhergestellt: %d Dateien (%.1f MB)"
+                     % (n, size / 1e6))
+
+    steps.append("VON HAND NACHZIEHEN: " + "; ".join(h[0] for h in HANDOVER))
+    return steps
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default=os.path.join(ROOT, "daemon", "takeout"))
     ap.add_argument("--with-recordings", action="store_true")
     ap.add_argument("--verify", metavar="DIR")
+    ap.add_argument("--restore", metavar="DIR")
+    ap.add_argument("--merge", action="store_true",
+                    help="in eine NICHT leere Datenbank importieren")
+    ap.add_argument("--skip-memory", action="store_true")
     a = ap.parse_args(argv)
+    if a.restore:
+        try:
+            for step in restore(a.restore, merge=a.merge,
+                                skip_memory=a.skip_memory):
+                print("  %s" % step)
+        except RuntimeError as e:
+            print("restore ABGEBROCHEN: %s" % e)
+            return 1
+        print("restore: fertig")
+        return 0
     if a.verify:
         probs = verify(a.verify)
         for p in probs:
