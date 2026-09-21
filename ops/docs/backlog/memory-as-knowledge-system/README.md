@@ -26,7 +26,25 @@ bestätigt und zwei Kriterien ergänzt (A9, A10). Kernbefund für die Planung:
 **kein einziges der untersuchten Systeme löst Widerspruch strukturell** - wer
 dort abschaut, importiert die Lücke.
 
-OFFEN, in dieser Reihenfolge: A2, A9, A1, A3, A10, A7, A8.
+**2026-09-21 nachmittags GELANDET und live** (0b386c45, Daemon 27668 -> 44008):
+A2 (Retrieval im Harness, IDF-gewichtet ueber beide Speicher, Top 3 ganz,
+~1,9k Token), A9 (Bestandsblock nach Lettas Vorbild), A1 (Migration 14:
+kind/source/claim, Rang owner-fact > measured > card-report > reach-fail,
+vom Harness vergeben), A3 (Widerspruch wird gemeldet statt ueberschrieben,
+regelbasiert), A10 (harness-Bloecke umhuellt, Paseo-Parity).
+
+GEMESSEN auf dem echten Bestand, 8 beantwortbare gegen 10 unbeantwortbare
+Fragen: 8 Treffer, 1 Fehltreffer. Schwelle aus der Messung gewaehlt, nicht
+geraten. Die unbeantwortbare Menge ist als Test mitgeliefert.
+
+Drei echte Fehler haben die neuen Tests gefunden und sind mitgefixt: Ranking
+ohne Termgewicht mit Gleichstand-Sortierung auf die AELTESTE Notiz, verlorene
+Herkunft zwischen db und Leser, und Teilzeichenketten-Matching (wer traf in
+Werkzeug).
+
+OFFEN: A7 (sofort speichern statt erst bei der Kompaktierung), A8 (Verfall).
+Beide klein. Schuld  kann geschlossen
+werden, sobald A2 eine Woche ohne Beschwerde laeuft.
 
 ## Der Vorfall, in drei Fehlern
 
