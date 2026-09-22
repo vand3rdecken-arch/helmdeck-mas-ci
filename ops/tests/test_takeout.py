@@ -146,6 +146,30 @@ try:
 except RuntimeError as e:
     check(True, "refused without --merge - %s" % str(e)[:60])
 
+
+print("\n[a failed export is an EXCEPTION, and exceptions go to Henry]")
+# Owner 2026-09-22: "was passiert wenn ein Skript failed". Before this, a
+# failure set a flag and painted a red line in a panel nobody may be looking
+# at - and the owner wants a backup precisely when something is already wrong.
+from spine.http.routes import routes_takeout as rt                # noqa: E402
+from spine.registry import escalations                            # noqa: E402
+
+_before = len(escalations.list_open())
+rt._escalate_failure("owner", RuntimeError("Kein Platz auf dem Geraet"), None)
+_open = escalations.list_open()
+check(len(_open) == _before + 1, "the failure raises exactly one escalation")
+_e = _open[-1]
+check(_e.get("kind") == "takeout_failed",
+      "under its own kind, so the broker can route it - got %r" % _e.get("kind"))
+check("Kein Platz" in (_e.get("detail") or ""),
+      "the real error text travels, not a generic message")
+
+_f = rt._facts()
+check("disk_free_mb" in _f and "db_mb" in _f,
+      "and CODE gathers the facts a diagnosis needs - got %r" % sorted(_f))
+check(isinstance(_f.get("disk_free_mb"), int),
+      "measured, not described: free space is a number")
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

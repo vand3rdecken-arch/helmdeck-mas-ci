@@ -61,6 +61,7 @@ def _run(user, with_recordings, account):
     except Exception as e:                                       # noqa: BLE001
         with _lock:
             _job.update(state="failed", finished=time.time(), error=str(e)[:400])
+        _escalate_failure(user, e, account)
     try:
         from spine.storage import events
         events.emit("takeout", "-", op="export", actor=user,
@@ -68,6 +69,52 @@ def _run(user, with_recordings, account):
     except Exception:                                            # noqa: BLE001
         pass
 
+
+
+def _facts():
+    """What a diagnosis actually needs, gathered by CODE. Henry should reason
+    about the failure, not go hunting for the same five numbers every time -
+    and a fact the harness can measure must never be something the model
+    guesses at (EVIDENCE law)."""
+    import shutil
+    out = {}
+    root = _tool()[1]
+    try:
+        total, _used, free = shutil.disk_usage(root)
+        out["disk_free_mb"] = round(free / 1e6)
+        out["disk_total_mb"] = round(total / 1e6)
+    except OSError:
+        pass
+    try:
+        out["db_mb"] = round(os.path.getsize(
+            os.path.join(root, "daemon", "helmdeck.db")) / 1e6)
+    except OSError:
+        pass
+    box = os.path.join(root, "daemon", "takeout")
+    try:
+        out["existing_archives"] = len(os.listdir(box)) if os.path.isdir(box) else 0
+    except OSError:
+        pass
+    return out
+
+
+def _escalate_failure(user, exc, account):
+    """Hand the failure to the broker. Best-effort by contract: an escalation
+    that itself raises must not become a second, quieter failure."""
+    try:
+        from spine.registry import escalations
+        facts = _facts()
+        detail = ("Archiv-Export fehlgeschlagen fuer %s.\nFehler: %s\nFakten: %s\n"
+                  "Das Archiv ist der Umzugs- und Sicherungsweg; ein halb "
+                  "geschriebener Behaelter wird von takeout.py --verify erkannt "
+                  "(fehlender Vollstaendigkeitsmarker), ist aber NICHT brauchbar. "
+                  "Sag dem Owner in einem Satz, woran es lag und was er tun "
+                  "soll; wenn die Ursache behebbar ist (Platz, Pfad, "
+                  "gesperrte Datei), behebe sie und starte den Export neu."
+                  % (account or "den ganzen Workspace", str(exc)[:400], facts))
+        escalations.emit("takeout_failed", None, detail)
+    except Exception as e:                                       # noqa: BLE001
+        print("takeout: escalation failed - %s" % str(e)[:160])
 
 def takeout_status_get(self, user):
     """What the screen polls. Also lists the containers already on disk, so a
