@@ -102,12 +102,7 @@ class H(BaseHTTPRequestHandler):
             # definition, so this must be reachable before auth - same class
             # as /glance, self-gated by its own single-use code instead of a
             # token/cookie.
-            "/relay/pair/claim",
-            # First-run restore of a takeout archive. Same class as the two
-            # above: on a fresh machine there is no session by definition, so
-            # it cannot be token-gated. It gates ITSELF on the db having no
-            # users at all, and closes forever the moment one exists.
-            "/takeout/restore")
+            "/relay/pair/claim")
 
     def _sid(self):
         for part in (self.headers.get("Cookie") or "").split(";"):
@@ -490,6 +485,24 @@ class H(BaseHTTPRequestHandler):
                 return routes_policy.POST_ROUTES[p](self, user, body)
             if p in routes_glance.POST_ROUTES:
                 return routes_glance.POST_ROUTES[p](self, user, body)
+            # FIRST-RUN RESTORE, before the auth gate and nowhere else.
+            # The POST gate does NOT consult self.OPEN (only do_GET does), so
+            # adding the path there did nothing and the route answered "auth
+            # required" on a live machine - caught by calling it, not by
+            # reading it. Dispatched explicitly here, exactly like the glance
+            # and policy blocks above, because on a fresh machine there is no
+            # session by definition. It gates ITSELF on the database having no
+            # users at all and refuses the moment anybody exists, so opening
+            # this one path cannot widen anything else.
+            # NO function-local import here. routes_takeout is imported at
+            # module level (line ~70) and used further down in this same
+            # function; re-importing it inside one branch makes the NAME local
+            # to the whole function, so the use BEFORE this line raises
+            # UnboundLocalError - which is how this change first turned every
+            # POST /projects into a 500. The repo has a note for exactly this
+            # (python-local-import-shadows-module-scope); it caught me anyway.
+            if p == "/takeout/restore":
+                return routes_takeout.POST_ROUTES[p](self, user, body)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate (see do_GET): a POST path owned by a DISABLED agentic
