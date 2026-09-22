@@ -359,7 +359,7 @@ def _heavy_procs_line():
     purpose - _box_load_line has the percentages; this line answers WHO."""
     try:
         out = subprocess.run(["tasklist", "/FO", "CSV"], capture_output=True,
-                             text=True, timeout=15).stdout.lower()
+                             text=True, timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.lower()
         counts = {n: out.count('"%s"' % n) for n in
                   ("java.exe", "node.exe", "qemu-system-x86_64.exe", "clang++.exe")}
         busy = ", ".join("%s x%d" % (k, v) for k, v in counts.items() if v)

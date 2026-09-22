@@ -50,7 +50,7 @@ def _listeners_on(port):
     pids = set()
     try:
         out = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True,
-                             text=True, timeout=20).stdout
+                             text=True, timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
     except Exception:
         return pids
     pat = re.compile(r"^\s*TCP\s+\S+:%d\s+\S+\s+LISTENING\s+(\d+)\s*$" % port, re.M)
@@ -79,7 +79,7 @@ def reclaim_dev_port(t, log=None):
     for pid in sorted(_listeners_on(int(port))):
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                           capture_output=True, timeout=20)
+                           capture_output=True, timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             killed.append(pid)
         except Exception:
             pass

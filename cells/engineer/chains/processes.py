@@ -162,7 +162,7 @@ def _propose_steps(request_text):
                                           "--permission-mode", "plan"]),
                        input=PROPOSE_PROMPT % request_text,
                        capture_output=True, text=True, timeout=300,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     d = json.loads(r.stdout)
     txt = d.get("result", "")
     m = re.search(r"\[.*\]", txt, re.S)

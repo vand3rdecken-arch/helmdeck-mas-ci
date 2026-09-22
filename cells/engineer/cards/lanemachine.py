@@ -422,7 +422,7 @@ def _autocommit(t):
         return False
     # refuse to commit if conflict markers are still in the staged content
     chk = subprocess.run(["git", "-C", wt, "diff", "--cached", "--check"],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if "conflict marker" in (chk.stdout or "").lower():
         return "markers"
     if _git_try(wt, *AGENT_IDENT, "commit",
@@ -657,7 +657,7 @@ def _hook_kill_tree(proc):
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                           capture_output=True, timeout=15)
+                           capture_output=True, timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             proc.kill()
         proc.wait(timeout=10)
@@ -1463,7 +1463,7 @@ def park_and_retry_merge(tid, actor="owner"):
     if not repo or not is_git_repo(repo):
         return "cannot park: card '%s' has no git repo" % tid
     status = subprocess.run(["git", "-C", repo, "status", "--porcelain"],
-                            capture_output=True, text=True).stdout.strip()
+                            capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout.strip()
     parked = ""
     if status.strip():
         cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")

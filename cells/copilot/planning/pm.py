@@ -305,7 +305,7 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
     cwd = _scratch_cwd() if hands else ROOT
     try:
         p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env)
+                             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         stdout, stderr = p.communicate(input=prompt, timeout=timeout)
     finally:
         if hands:
@@ -367,7 +367,7 @@ TOOLS = os.path.join(REPO, "ops", "tools")
 
 def run(argv, cwd=None):
     r = subprocess.run(argv, cwd=cwd or REPO, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+                       encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     sys.stdout.write(r.stdout)
     if r.returncode:
         sys.stdout.write(r.stderr)

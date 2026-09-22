@@ -120,7 +120,7 @@ def _run_sandboxed(name, timeout=90):
     code = ("import json,sys;sys.path.insert(0,%r);"
             "import %s as m;print(json.dumps(m.run()))" % (CDIR, name))
     r = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                       text=True, timeout=timeout, cwd=CDIR)
+                       text=True, timeout=timeout, cwd=CDIR, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode != 0:
         raise RuntimeError("connector failed: " + (r.stderr or "").strip()[-300:])
     line = (r.stdout or "").strip().splitlines()

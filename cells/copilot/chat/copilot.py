@@ -575,7 +575,7 @@ def reap_chat_ports():
             pid = int(pid_s)
             if proctable._is_ours(pid, spawn):
                 r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                                   capture_output=True, timeout=10)
+                                   capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 if r.returncode == 0:
                     killed += 1
         except Exception:                                # noqa: BLE001
@@ -785,7 +785,7 @@ def _persist_get(skey, cli_model, sid, system):
     from spine.agent.spawnenv import tool_path
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                         text=True, encoding="utf-8", errors="replace", bufsize=1)
+                         text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     _ports_update(lambda cur: cur.__setitem__(str(p.pid), time.time()))
@@ -1530,7 +1530,7 @@ def _save_memory(user, sid):
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                             text=True, encoding="utf-8", errors="replace")
+                             text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         p.stdin.write(copilot_memory.SAVE_PROMPT); p.stdin.close()
         for _line in p.stdout:
             _line = _line.strip()
@@ -1589,7 +1589,7 @@ def _maybe_compact(user):
     try:
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
-                             stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+                             stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         p.stdin.write("/compact"); p.stdin.close()
         for line in p.stdout:
             line = line.strip()
@@ -1761,7 +1761,7 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
         p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
                              stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             text=True, encoding="utf-8", errors="replace")
+                             text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
             stdout, stderr = p.communicate(input=prompt, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -2554,7 +2554,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             from spine.agent.spawnenv import tool_path
             p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 text=True, encoding="utf-8", errors="replace")
+                                 text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except Exception:
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise

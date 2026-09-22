@@ -95,10 +95,10 @@ def delete_track(tid, actor="owner"):
         raise RuntimeError("no such track: " + tid)
     if t.get("worktree") and os.path.exists(t["worktree"]):
         subprocess.run(["git", "-C", t["repo"], "worktree", "remove", "--force",
-                        t["worktree"]], capture_output=True, text=True)
+                        t["worktree"]], capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if _branch_exists(t["repo"], t["branch"]):
         subprocess.run(["git", "-C", t["repo"], "branch", "-D", t["branch"]],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     _say_closed(t, "deleted", actor)      # before the row goes: the label needs the task text
     _db.track_delete(tid)
     events.emit("delete", tid, branch=t["branch"], task=t["task"][:80], actor=actor)

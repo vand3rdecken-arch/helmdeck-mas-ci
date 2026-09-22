@@ -97,7 +97,7 @@ def main_repo(path):
     import subprocess
     try:
         r = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=path,
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.SubprocessError):
         return path
     out = (r.stdout or "").strip()
