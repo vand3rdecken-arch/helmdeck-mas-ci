@@ -128,13 +128,60 @@ def takeout_verify_post(self, user, body):
                                       ensure_ascii=False))
 
 
-GET_ROUTES = {"/takeout": takeout_status_get}
+
+# ---------------------------------------------------------------------------
+# IMPORT FROM ANOTHER SYSTEM. Owner 2026-09-22: "if users only used claude or
+# other system let him pull this from other systems as well". This is the
+# other half of "seamless": a takeout archive covers a HelmDeck user moving
+# machines, but the far more common arrival is someone with months of Claude
+# Code or Cursor notes and no HelmDeck at all.
+
+def foreign_get(self, user):
+    """What is importable on THIS machine, and - equally - what is not.
+
+    The absent list is not padding. A Cursor user who sees no mention of
+    Cursor cannot tell whether we looked; at first run he has no way to
+    check, and a silent empty result is exactly the failure this card exists
+    to end."""
+    from spine.memory import foreign
+    from spine.storage import events
+    repo = (events.settings().get("default_repo") or "").strip() or None
+    found, absent = foreign.discover(repo=repo)
+    return self._send(200, json.dumps({"ok": True, "sources": found,
+                                       "absent": absent}, ensure_ascii=False))
+
+
+def foreign_import_post(self, user, body):
+    """Import ONE source. `dry` previews with the same code path that writes,
+    so a preview can never promise something the import does not do."""
+    from spine.memory import foreign
+    from spine.storage import events
+    want = (body.get("id") or "").strip()
+    if not want:
+        return self._send(400, json.dumps({"ok": False, "error": "welche Quelle?"}))
+    repo = (events.settings().get("default_repo") or "").strip() or None
+    found, _absent = foreign.discover(repo=repo)
+    src = next((s for s in found if s["id"] == want), None)
+    if not src:
+        return self._send(404, json.dumps(
+            {"ok": False, "error": "Quelle nicht (mehr) da: %s" % want}))
+    res = foreign.import_source(src, actor=user or "owner",
+                                dry_run=bool(body.get("dry")))
+    return self._send(200, json.dumps({"ok": True, "source": src["label"],
+                                       "result": res}, ensure_ascii=False))
+
+GET_ROUTES = {"/takeout": takeout_status_get,
+              "/memory/foreign": foreign_get}
 POST_ROUTES = {"/takeout/start": takeout_start_post,
-               "/takeout/verify": takeout_verify_post}
+               "/takeout/verify": takeout_verify_post,
+               "/memory/foreign/import": foreign_import_post}
 # settings.read is the ceiling of the closed vocabulary; the handlers narrow
 # it further themselves (scope per account, owner gets everything) exactly
 # like /harness/export does. Restoring is NOT a route: it replaces the whole
 # db and must be a deliberate act at the machine, not a button on a phone.
-GET_CAPS = {"/takeout": "settings.read"}
+GET_CAPS = {"/takeout": "settings.read",
+            "/memory/foreign": "settings.read"}
 POST_CAPS = {"/takeout/start": "settings.read",
-             "/takeout/verify": "settings.read"}
+             "/takeout/verify": "settings.read",
+             # writes into the caller own memory only
+             "/memory/foreign/import": "settings.write"}
