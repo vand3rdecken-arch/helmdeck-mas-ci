@@ -37,6 +37,7 @@ import { TeamInvite } from "@/ui/team_invite";
 import { Btn, Caption, ChipPick, confirmAsync, fieldStyle, FormGrid, Hint, isWeb, promptText, Toggle } from "@/ui/settings_sections";
 import { DesktopUpdateBanner } from "@/ui/desktop_update";
 import { DaemonPanel } from "@/ui/daemon_panel";
+import { MemoryImportPanel } from "@/ui/memory_import_panel";
 import { TakeoutPanel } from "@/ui/takeout_panel";
 import { UpdatesPanel } from "@/ui/updates_info";
 import { useResponsive } from "@/ui/responsive";
@@ -982,6 +983,7 @@ export default function Settings() {
       {/* Umzug und Sicherung. Sits under Daemon because both are "this
           machine" questions, and above Updates because a backup is what you
           want BEFORE you change anything. */}
+      <MemoryImportPanel />
       <TakeoutPanel />
       {/* App version + OTA check + update diagnostics. Also on the door list,
           but the Mehr tab deep-links INTO doors, so on the phone only this

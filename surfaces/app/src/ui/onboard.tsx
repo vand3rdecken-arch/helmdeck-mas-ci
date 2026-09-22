@@ -8,6 +8,7 @@ import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { qrDataUrl } from "@/data/qrgen";
+import { MemoryImportPanel } from "@/ui/memory_import_panel";
 import {
   setupApi, setupAvailable, useOnboard,
   type EngineStatus, type SetupLine, type SetupState,
@@ -292,6 +293,22 @@ export function Onboard() {
                 );
               })}
             </View>
+          </View>
+        ) : null}
+
+        {/* BRING YOUR MEMORY ALONG. Placed HERE, between provisioning and the
+            QR, because this is the first moment it is possible and the last
+            moment it is easy: the daemon is alive (so /memory/foreign answers)
+            and the owner is signed in, but he has not started working yet, so
+            nothing of his own can collide with what comes across. Offering it
+            later, buried in Settings, means most people never find it and
+            silently start from zero with months of notes sitting on the same
+            disk. Same component as the Settings copy - one surface, like the
+            sign-in step above. */}
+        {qr ? (
+          <View style={{ backgroundColor: t.surface1, borderRadius: 16, borderWidth: 1,
+            borderColor: t.borderSubtle, padding: 18 }}>
+            <MemoryImportPanel bare />
           </View>
         ) : null}
 

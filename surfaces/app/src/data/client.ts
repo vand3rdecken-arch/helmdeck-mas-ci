@@ -9,6 +9,11 @@ import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
 import type { BgTask } from "./types";
+export interface ForeignSource {
+  id: string; label: string; kind: string; path: string; count: number; note: string;
+}
+export interface ForeignAbsent { id: string; label: string; why: string }
+
 export interface TakeoutBox {
   name: string;
   created?: string;
@@ -1063,6 +1068,15 @@ export const api = {
   takeoutStart: (recordings = false) =>
     req<{ ok: boolean; id?: string; scope?: string; error?: string }>(
       "POST", "/takeout/start", { recordings }),
+  /** What of an EXISTING agent memory (Claude Code, Cursor, Codex, Windsurf,
+   *  skills, rules files) is importable on this machine - and, equally, which
+   *  sources were looked for and not found. */
+  foreignMemory: () => req<{ ok: boolean; sources: ForeignSource[]; absent: ForeignAbsent[] }>(
+    "GET", "/memory/foreign"),
+  foreignImport: (id: string, dry = false) =>
+    req<{ ok: boolean; source?: string;
+      result?: { imported: string[]; skipped: string[]; too_long: string[] } }>(
+      "POST", "/memory/foreign/import", { id, dry }),
   takeoutVerify: (name: string) =>
     req<{ ok: boolean; problems?: string[] }>("POST", "/takeout/verify", { name }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;

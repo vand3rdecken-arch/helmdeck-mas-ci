@@ -156,6 +156,13 @@ def main():
             check("archiv erstellen" in low or "create archive" in low,
                   "[%s] the action is reachable" % tag)
 
+            # the import panel sits right above the takeout one
+            check("gedaechtnis uebernehmen" in low or "bring your memory" in low
+                  or "gedächtnis übernehmen" in low,
+                  "[%s] the memory-import panel is on the same door" % tag)
+            check("gesucht, nicht gefunden" in low or "looked for, not found" in low,
+                  "[%s] and it NAMES the sources it looked for and did not find" % tag)
+
             keys = raw_keys_on(page)
             check(not keys, "[%s] no raw i18n key leaked as a label - %r" % (tag, keys))
             cut = clipped(page)

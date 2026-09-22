@@ -87,12 +87,47 @@ def _claude_memory(repo):
                      if f.endswith(".md") and f != "MEMORY.md"])
         except OSError:
             continue
-        if not n:
+        if not n or _throwaway(d):
             continue
-        out.append({"id": "claude-memory:" + d, "label": "Claude Code Gedaechtnis",
+        out.append({"id": "claude-memory:" + d, "label": "Claude Code Gedächtnis",
                     "kind": "owner-fact", "path": mem, "count": n,
-                    "note": d.replace("C--Users-", "").replace("-", "/")[:70]})
+                    "note": _project_label(d)})
     return out
+
+
+# Temp and worktree project dirs are SCRATCH, not memory: a sandbox daemon, an
+# e2e shim, a card's worktree. Offering "1 Eintrag aus AppData-Local-Temp-hd-
+# e2e-shim" next to "91 Eintraege aus swarmdeck" gives both the same weight and
+# buries the one that matters. Matched on the path shape the CLI itself encodes.
+_THROWAWAY = ("appdata-local-temp", "-worktrees-", "-tmp-", "appdata-roaming-temp")
+
+
+def _throwaway(slug):
+    low = slug.casefold()
+    return any(m in low for m in _THROWAWAY)
+
+
+def _project_label(slug):
+    """A SHORT, HONEST key - not a reconstructed path.
+
+    The CLI flattens both path separators AND hyphens into "-", so a slug is
+    genuinely ambiguous: "Downloads-glass-crud-harness" could be three folders
+    or one folder named glass-crud-harness. The first cut split on "-" and
+    confidently produced "crud/harness", which is a made-up path - the same
+    reconstruct-instead-of-ask mistake this whole card is about.
+
+    So: strip the prefix we can DERIVE (the user's own home directory, which
+    we know) and show the rest verbatim. It is the CLI's own project key,
+    truthfully, and short enough to read on a phone."""
+    prefix = _home().replace(":", "").replace(os.sep, "-").replace("/", "-")
+    prefix = prefix.replace(" ", "-") + "-"
+    s = slug
+    for cand in (prefix, prefix.replace("C-", "C--", 1)):
+        if s.lower().startswith(cand.lower()):
+            s = s[len(cand):]
+            break
+    s = s.strip("-") or slug
+    return s if len(s) <= 46 else s[:22] + "…" + s[-22:]
 
 
 def _md_rules(repo):
@@ -101,7 +136,7 @@ def _md_rules(repo):
     names = ("CLAUDE.md", "AGENTS.md", ".cursorrules", ".windsurfrules",
              ".clinerules", os.path.join(".github", "copilot-instructions.md"))
     out = []
-    roots = [(_home(), os.path.join(".claude", "CLAUDE.md"), "persoenlich")]
+    roots = [(_home(), os.path.join(".claude", "CLAUDE.md"), "persönlich")]
     for root, rel, where in roots:
         p = os.path.join(root, rel)
         if os.path.isfile(p) and os.path.getsize(p) > 32:
@@ -121,7 +156,7 @@ def _skills(repo):
     """SKILL.md files - the convention Devin and Amp both settled on. Scanned
     at the documented locations only."""
     out = []
-    spots = [(os.path.join(_home(), ".agents", "skills"), "persoenlich")]
+    spots = [(os.path.join(_home(), ".agents", "skills"), "persönlich")]
     if repo:
         spots += [(os.path.join(repo, ".agents", "skills"), "Projekt"),
                   (os.path.join(repo, ".claude", "skills"), "Projekt")]
@@ -164,7 +199,7 @@ def _windsurf(repo):
 
 def _cursor(repo):
     out = []
-    for base, where in ((os.path.join(_home(), ".cursor", "rules"), "persoenlich"),
+    for base, where in ((os.path.join(_home(), ".cursor", "rules"), "persönlich"),
                         (os.path.join(repo or "", ".cursor", "rules"), "Projekt")):
         if not base or not os.path.isdir(base):
             continue
@@ -217,8 +252,14 @@ def discover(repo=None):
         if got:
             found.extend(got)
         else:
-            absent.append({"id": key, "label": label,
-                           "why": "nichts gefunden an den bekannten Orten"})
+            # "nothing found" and "could not look" are DIFFERENT answers, and
+            # conflating them is the exact failure this card exists to end.
+            # Without a project, the project-scoped half was never searched.
+            project_scoped = key in ("rules", "cursor", "ai-memory")
+            why = ("nichts gefunden an den bekannten Orten"
+                   if (repo or not project_scoped) else
+                   "kein Projekt gewählt, im Projekt wurde nicht gesucht")
+            absent.append({"id": key, "label": label, "why": why})
     return found, absent
 
 
