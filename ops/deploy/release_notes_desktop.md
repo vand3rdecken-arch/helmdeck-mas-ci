@@ -1,23 +1,23 @@
-# HelmDeck Desktop 0.2.22 (Windows)
+# HelmDeck Desktop 0.2.24 (Windows)
 
-## What's new since 0.2.21
+## What's new since 0.2.23
 
-- **Fixed: "Relay nicht erreichbar" / "Desktop antwortet nicht" under load.**
-  Two causes in the daemon, both measured and fixed: the dashboard re-read
-  and re-parsed the whole event log on every poll (now derived once and
-  cached on the store's own change signal), and the relay bridge paused for
-  up to 12 s every minute while it re-checked the tunnel (now checked in the
-  background, the phone path never waits for it).
-- **New: the phone path has a visible budget.** Settings > System > Daemon
-  shows how often a request breached it in the last 15 minutes, and the
-  worst case.
-- **Fixed: finished cards left dev servers running for days.** A card's dev
-  port is reclaimed when the card is accepted or archived.
-- **Clearer error:** a chat message that the desktop could not answer in
-  time now says so, instead of blaming network/DNS.
+- **New: the shell exposes its own version.** Settings > System > App & Updates
+  can now tell the installed 0.2.x shell apart from the 1.0.x JS bundle, via a
+  small IPC call (`native:app-info`) added to the main process and preload.
+- **Fixed: the tray's relay stand-down only stopped processes it spawned
+  itself.** Once the public relay is served by the Cloudflare Worker, the
+  tray now also sweeps a `relay.py` / `cloudflared` it only *adopted* (left
+  running by an earlier tray instance or the legacy `relay_local.cmd`
+  autostart) - so nothing on this PC keeps listening for the phone after the
+  worker takes over.
+- **Packaging fix carried over from today's 0.2.23 re-release:** the daemon
+  bundle now copies only top-level `.py`/`.md` files, not every nested one -
+  closes a leak where local runtime state (memory exports, checkpoints,
+  outreach logs) could ride along in the installer.
 
 ## Do I need to update manually?
 
-No - if you're on 0.2.2 or newer, this installs itself silently on your
-next restart (auto-update). This installer is for a first install, or if
-you want it immediately.
+Only for this one - it changes the shell (`main.js`, `tray.py`, the packaging
+config), which auto-update cannot apply to itself. Every later 1.0.x-only
+change keeps riding the silent auto-update as before.
