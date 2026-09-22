@@ -15,7 +15,8 @@ export interface TakeoutBox {
   bytes?: number;
   complete?: boolean;
   broken?: string;
-  parts?: Record<string, { bytes?: number; files?: number; tables?: Record<string, number> }>;
+  parts?: Record<string, { bytes?: number; files?: number; notes?: number;
+    git_history?: boolean; tables?: Record<string, number> }>;
   not_included?: string[];
 }
 export interface TakeoutState {

@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Alert, Text, View } from "react-native";
 
-import { api } from "@/data/client";
+import { api, type TakeoutBox } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Panel, SectionLabel } from "@/ui/kit";
@@ -24,6 +24,25 @@ function mb(bytes: number | undefined): string {
   const b = bytes ?? 0;
   if (b < 1024 * 1024) return `${Math.max(1, Math.round(b / 1024))} KB`;
   return `${(b / 1e6).toFixed(1)} MB`;
+}
+
+/** One line naming what the container holds. Only rows that exist are named,
+ *  so an archive without, say, recordings simply does not mention them rather
+ *  than claiming a zero. */
+function contentLine(box: TakeoutBox, tr: (k: string, v?: Record<string, string | number>) => string): string {
+  const tables = box.parts?.["db.json"]?.tables ?? {};
+  const auto = box.parts?.["auto-memory/"];
+  const bits: string[] = [];
+  const add = (n: number | undefined, key: string) => {
+    if (n && n > 0) bits.push(tr(key, { n }));
+  };
+  add((tables.memory ?? 0) + (auto?.notes ?? 0), "takeout.cNotes");
+  add(tables.tracks, "takeout.cCards");
+  add(tables.chat, "takeout.cChat");
+  add(tables.users, "takeout.cUsers");
+  const rec = box.parts?.["recordings/"]?.files;
+  add(rec, "takeout.cRecordings");
+  return bits.join(" · ");
 }
 
 export function TakeoutPanel() {
@@ -88,6 +107,14 @@ export function TakeoutPanel() {
               when: (latest.created ?? "").slice(0, 16).replace("T", " "),
               size: mb(latest.bytes),
             })}
+          </Text>
+          {/* WHAT is in it, not just how big. "131,7 MB" tells you nothing
+              about whether your notes are safe; "115 Notizen, 406 Karten"
+              does. Counts come straight from the manifest the export already
+              wrote - nothing is recomputed here, so the line cannot claim
+              more than the container actually holds. */}
+          <Text style={{ color: t.txtTertiary, fontSize: 12, marginTop: 2 }}>
+            {contentLine(latest, tr)}
           </Text>
           {!latest.complete ? (
             <Text style={{ color: t.danger, fontSize: 12.5, marginTop: 2 }}>
