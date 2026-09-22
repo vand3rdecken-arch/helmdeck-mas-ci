@@ -22,7 +22,8 @@ from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
 CLAUDE_MODELS = [
     {"id": "claude-fable-5-1",  "label": "Fable 5.1",  "desc": "Most powerful"},
     {"id": "claude-fable-5",    "label": "Fable 5",    "desc": "Previous Fable"},
-    {"id": "claude-opus-5",     "label": "Opus 5",     "desc": "Latest · most capable", "default": True},
+    {"id": "claude-opus-5-5",   "label": "Opus 5.5",   "desc": "Newest Opus"},
+    {"id": "claude-opus-5",     "label": "Opus 5",     "desc": "Default · most capable", "default": True},
     {"id": "claude-opus-4-8",   "label": "Opus 4.8",   "desc": "Previous Opus"},
     {"id": "claude-sonnet-5",   "label": "Sonnet 5",   "desc": "Best for everyday work"},
     {"id": "claude-opus-4-7",   "label": "Opus 4.7",   "desc": "Older release"},
@@ -69,6 +70,7 @@ CTX_WINDOWS = {
     "claude-opus-4-7":   1_000_000,
     "claude-opus-4-8":   1_000_000,
     "claude-opus-5":     1_000_000,
+    "claude-opus-5-5":   1_000_000,  # measured 2026-09-22 via claude -p modelUsage.contextWindow
     "claude-fable-5":    1_000_000,
     "claude-fable-5-1":  1_000_000,
 }
