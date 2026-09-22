@@ -9,7 +9,33 @@ real Python package now, not a sys.path trick):
   python -m daemon.swarm list           runs + step counts
   python -m daemon.swarm serve [port]   local review/index server (APK + browser pull this)
 """
-import sys, time
+import os, subprocess, sys, time
+
+# ---- no console windows for children (Windows, pythonw) ---------------------
+# The daemon runs under pythonw (tray / Electron shell) = no console of its own.
+# Every console child it starts (git, taskkill, claude -p, ffmpeg, gpg, ...)
+# then gets a NEW console = a visible window that steals focus (measured
+# 2026-09-22: with Windows Terminal as the default terminal that was a full
+# terminal window per git call). ONE shim here beats a creationflags= on each
+# of ~100 call sites: subprocess.run / check_output / call all construct Popen.
+# Gated on "no console attached" so an interactive `python -m daemon.swarm
+# serve` from a terminal is untouched, and an explicit CREATE_NEW_CONSOLE from
+# a caller still wins.
+if os.name == "nt":
+    try:
+        import ctypes
+        _has_console = bool(ctypes.windll.kernel32.GetConsoleWindow())
+    except Exception:
+        _has_console = True
+    if not _has_console:
+        _Popen_init = subprocess.Popen.__init__
+
+        def _popen_init_no_window(self, *args, **kw):
+            flags = kw.get("creationflags", 0)
+            if not flags & subprocess.CREATE_NEW_CONSOLE:
+                kw["creationflags"] = flags | subprocess.CREATE_NO_WINDOW
+            _Popen_init(self, *args, **kw)
+        subprocess.Popen.__init__ = _popen_init_no_window
 
 # Line-buffer stdout/stderr regardless of launcher (Electron/tray redirect to a
 # file, which Python block-buffers by default - a crash before the buffer fills

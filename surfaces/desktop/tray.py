@@ -21,6 +21,7 @@ Later: ship as one HelmDeck.exe via PyInstaller (see build_exe.md).
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -54,9 +55,28 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 RUN_NAME = "HelmDeck"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
+# ---- local relay fallback (debt 63) ----------------------------------------
+# While the relay VM is down, surfaces/relay/relay.py + a cloudflared tunnel
+# run on this PC. Until 2026-09-22 ops/deploy/relay_local.cmd started them from
+# an HKCU Run entry as two MINIMIZED CONSOLE WINDOWS (focus-stealing at every
+# login) with no respawn. They are supervised here now like the daemon:
+# hidden, logged to daemon/relay_*.log, restarted when they die. Enabled when
+# the cloudflared binary is present; HELMDECK_LOCAL_RELAY=0 turns it off.
+RELAY_PORT = int(os.environ.get("HELMDECK_RELAY_PORT", "6790"))
+RELAY_HEALTH_URL = "http://127.0.0.1:%d/health" % RELAY_PORT
+RELAY_SCRIPT = os.path.join(ROOT, "surfaces", "relay", "relay.py")
+TUNNEL_NAME = "helmdeck-relay"
+CLOUDFLARED = os.path.join(os.path.expanduser("~"), "bin", "cloudflared.exe")
+if not os.path.exists(CLOUDFLARED):
+    CLOUDFLARED = shutil.which("cloudflared") or ""
+LOCAL_RELAY = os.environ.get("HELMDECK_LOCAL_RELAY", "1") != "0" and bool(CLOUDFLARED)
+LEGACY_RELAY_RUN_NAME = "HelmDeckRelay"      # the relay_local.cmd autostart, removed at start
+
 _proc = None                 # the daemon WE spawned (None if adopted/external)
+_relay_proc = None           # relay.py we spawned
+_tunnel_proc = None          # cloudflared we spawned
 _stop = threading.Event()
-_state = {"daemon": False, "relay": "unbekannt", "update": "prüft …"}
+_state = {"daemon": False, "relay": "unbekannt", "update": "prüft …", "local_relay": "…"}
 
 
 # ---------------------------------------------------------------- daemon health
@@ -166,6 +186,130 @@ def _supervise(icon):
             _state.update(new)
             _apply_icon(icon)
         _stop.wait(4)
+
+
+# ------------------------------------------------------------ local relay fallback
+def _relay_health():
+    try:
+        with urllib.request.urlopen(RELAY_HEALTH_URL, timeout=2):
+            return True
+    except urllib.error.HTTPError:
+        return True
+    except Exception:
+        return False
+
+
+def _open_log(name):
+    return open(os.path.join(DAEMON_DIR, name), "a", encoding="utf-8")
+
+
+def _spawn_relay():
+    return subprocess.Popen(
+        [_python_for_daemon(), RELAY_SCRIPT], cwd=ROOT,
+        creationflags=CREATE_NO_WINDOW, env=dict(os.environ, PYTHONUNBUFFERED="1"),
+        stdout=_open_log("relay_console.out.log"), stderr=_open_log("relay_console.err.log"),
+    )
+
+
+def _spawn_tunnel():
+    return subprocess.Popen(
+        [CLOUDFLARED, "tunnel", "run", TUNNEL_NAME], cwd=ROOT,
+        creationflags=CREATE_NO_WINDOW,
+        stdout=_open_log("relay_tunnel.out.log"), stderr=_open_log("relay_tunnel.err.log"),
+    )
+
+
+def _tunnel_running_elsewhere():
+    """A cloudflared connector already running OUTSIDE this supervisor (the
+    legacy relay_local.cmd window, or one started by hand): adopt it rather
+    than run a second connector for the same tunnel."""
+    try:
+        r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq cloudflared.exe", "/FO", "CSV", "/NH"],
+                           capture_output=True, text=True, timeout=10, creationflags=CREATE_NO_WINDOW)
+        return "cloudflared.exe" in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def _public_relay_is_edge():
+    """True once the PUBLIC relay URL is served by the Cloudflare Worker
+    (surfaces/relay/worker - its /health carries "edge": true). From that
+    moment the local relay.py + tunnel are obsolete: nothing on this PC must
+    listen for the phone any more (2026-09-22, the reason the worker exists).
+    Read the URL the daemon is paired to; fall back to the canonical host."""
+    url = "https://relay.helmdeck.de"
+    try:
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from spine.storage import events
+        url = (events.settings().get("relay") or {}).get("url") or url
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/health",
+                                     headers={"User-Agent": "helmdeck-tray"})
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return bool((json.loads(r.read() or b"{}") or {}).get("edge"))
+    except Exception:
+        return False
+
+
+def _supervise_relay(icon):
+    """Same contract as _supervise: relay.py by HEALTH (adopt an existing one,
+    spawn when :6790 goes quiet), cloudflared by process (adopt an external
+    one, else keep ours alive). Stands down entirely while the public relay is
+    the Cloudflare Worker (re-checked every 5 min, so a rollback to the local
+    fallback is picked up without a restart)."""
+    global _relay_proc, _tunnel_proc
+    adopted_tunnel = _tunnel_running_elsewhere()
+    edge_checked = 0.0
+    edge = False
+    while not _stop.is_set():
+        if time.time() - edge_checked > 300:
+            edge = _public_relay_is_edge()
+            edge_checked = time.time()
+        if edge:
+            _stop_relay()                       # ours, if any - the worker serves now
+            if _state["local_relay"] != "aus (Cloudflare Worker aktiv)":
+                _state["local_relay"] = "aus (Cloudflare Worker aktiv)"
+                _apply_icon(icon)
+            _stop.wait(30)
+            continue
+        up = _relay_health()
+        if not up and (_relay_proc is None or _relay_proc.poll() is not None):
+            try:
+                _relay_proc = _spawn_relay()
+            except Exception:
+                _relay_proc = None
+            for _ in range(10):
+                if _stop.is_set() or _relay_health():
+                    break
+                time.sleep(1)
+            up = _relay_health()
+        if adopted_tunnel and not _tunnel_running_elsewhere():
+            adopted_tunnel = False                # the external one went away: take over
+        ours = _tunnel_proc is not None and _tunnel_proc.poll() is None
+        if not adopted_tunnel and not ours:
+            try:
+                _tunnel_proc = _spawn_tunnel()
+                ours = True
+            except Exception:
+                _tunnel_proc = None
+        tun = adopted_tunnel or ours
+        new = "läuft" if (up and tun) else ("Relay aus" if not up else "Tunnel aus")
+        if _state["local_relay"] != new:
+            _state["local_relay"] = new
+            _apply_icon(icon)
+        _stop.wait(4)
+
+
+def _stop_relay():
+    for p in (_relay_proc, _tunnel_proc):
+        if p and p.poll() is None:
+            try:
+                p.terminate()
+            except Exception:
+                pass
 
 
 # ------------------------------------------------------------ desktop auto-update
@@ -309,6 +453,20 @@ def _autostart_cmd():
     return '"%s" "%s"' % (launcher, os.path.abspath(__file__))
 
 
+def _remove_run_value(name):
+    """Drop a legacy HKCU Run entry (the relay_local.cmd autostart, superseded
+    by _supervise_relay). Idempotent."""
+    if not winreg:
+        return
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, name)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+
 def _set_autostart(on):
     if not winreg:
         return
@@ -356,6 +514,7 @@ def _quit(icon, _item):
             _proc.terminate()
         except Exception:
             pass
+    _stop_relay()
     icon.stop()
 
 
@@ -363,6 +522,8 @@ def _menu():
     return pystray.Menu(
         pystray.MenuItem(lambda i: "Daemon: %s" % ("läuft ✓" if _state["daemon"] else "aus ✕"), None, enabled=False),
         pystray.MenuItem(lambda i: "Relay: %s" % _state["relay"], None, enabled=False),
+        pystray.MenuItem(lambda i: "Relay lokal: %s" % _state["local_relay"], None,
+                         enabled=False, visible=LOCAL_RELAY),
         pystray.MenuItem(lambda i: "Update: %s" % _state["update"], None, enabled=False),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Web-UI / Handy koppeln", _open_ui, default=True),
@@ -381,8 +542,12 @@ def main():
     # not exactly the current launch command gets rewritten.
     if _autostart_value() != _autostart_cmd():
         _set_autostart(True)
+    if LOCAL_RELAY:
+        _remove_run_value(LEGACY_RELAY_RUN_NAME)
     icon = pystray.Icon("HelmDeck", _icon_image(False), "HelmDeck", _menu())
     threading.Thread(target=_supervise, args=(icon,), daemon=True).start()
+    if LOCAL_RELAY:
+        threading.Thread(target=_supervise_relay, args=(icon,), daemon=True).start()
     threading.Thread(target=_update_loop, args=(icon,), daemon=True).start()
     icon.run()
 

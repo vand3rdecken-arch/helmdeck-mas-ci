@@ -1,0 +1,29 @@
+// HelmDeck relay as a Cloudflare Worker + one Durable Object per room.
+// Replaces surfaces/relay/relay.py on the owner's PC (2026-09-22): nothing on
+// the PC listens publicly any more, the daemon only connects OUTBOUND, and the
+// worker has no filesystem - the file-read class of bug relay.py had cannot
+// exist here. Deploy: bash ops/deploy/publish_relay_worker.sh
+{
+  "name": "helmdeck-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // OTA bundles (phone + desktop channels) ship as static assets next to the
+  // code - re-deploying the worker IS the publish. run_worker_first so every
+  // path goes through the router (the /updates/* URL shape the apps already
+  // use is kept; assets are never reachable by their raw /ota/... path).
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "Room" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    // sideload APK is >25 MB (too big for a static asset) - redirect there.
+    // publish_relay_worker.sh --apk-url overrides; Play Store is the primary channel.
+    "APK_URL": "https://github.com/Tienduyvo/helmdeck-release/releases/latest/download/helmdeck.apk"
+  },
+  "observability": { "enabled": true },
+  // CUTOVER (README "Cutover"): after the tunnel's DNS record for
+  // relay.helmdeck.de is deleted in the dashboard, uncomment and deploy -
+  // wrangler then creates the custom-domain record on the helmdeck.de zone.
+  // "routes": [{ "pattern": "relay.helmdeck.de", "custom_domain": true }],
+  "workers_dev": true
+}

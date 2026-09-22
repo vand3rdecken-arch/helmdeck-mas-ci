@@ -281,8 +281,22 @@ def _b64url_sha256(path):
 
 def _norm(rel):
     """metadata.json paths may use backslashes (Windows export) - normalise to
-    forward slashes and reject traversal."""
-    s = os.path.normpath((rel or "").replace("\\", "/")).replace("\\", "/")
+    forward slashes and reject traversal.
+
+    SECURITY (2026-09-22): the old check was `startswith("..") or
+    startswith("/")` only, which let a WINDOWS DRIVE LETTER through -
+    "C:/daemon/requirements.txt" normalises to itself, starts with neither,
+    and os.path.join(base, "C:", ...) then yields a DRIVE-RELATIVE path that
+    lands outside UPDATES_DIR (measured: /updates/assets?path=C:/... returned
+    200 with real repo files on the live relay, unauthenticated, reachable
+    through the public tunnel). A drive letter is never legal in a bundle-
+    relative asset path, so reject it outright; _update_file additionally
+    pins the RESOLVED path inside its base dir, so a future normalisation
+    quirk cannot escape either."""
+    raw = (rel or "").replace("\\", "/")
+    if os.path.splitdrive(raw)[0] or ":" in raw.split("/")[0]:
+        return None                      # C:/..., \?\C:\..., or any drive spec
+    s = os.path.normpath(raw).replace("\\", "/")
     return None if s.startswith("..") or s.startswith("/") else s
 
 def _channel_dir(channel):
@@ -300,7 +314,19 @@ def _update_file(rel, base_dir=None):
     n = _norm(rel)
     if not n:
         return None
-    fp = os.path.join(base_dir or UPDATES_DIR, *n.split("/"))
+    base = base_dir or UPDATES_DIR
+    fp = os.path.join(base, *n.split("/"))
+    # Containment is checked on the RESOLVED path, not on the input string:
+    # this is the backstop that holds even if _norm ever misses a form (it
+    # missed drive letters until 2026-09-22), and it also catches a symlink
+    # inside the updates dir pointing out of it.
+    try:
+        root = os.path.realpath(base)
+        real = os.path.realpath(fp)
+    except OSError:
+        return None
+    if os.path.commonpath([root, real]) != root:
+        return None
     return fp if os.path.isfile(fp) else None
 
 def _rollback_directive(base_dir):

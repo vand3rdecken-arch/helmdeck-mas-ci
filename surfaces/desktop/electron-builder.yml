@@ -49,8 +49,20 @@ extraResources:
     to: daemon
     filter:
       - "!**/*"
-      - "**/*.py"
-      - "**/*.md"
+      # TOP-LEVEL ONLY (2026-09-22). The recursive "**/*.py"/"**/*.md" that
+      # stood here shipped 168 RUNTIME-STATE files next to the 4 real source
+      # ones: daemon/takeout/ (93 auto-memory exports - the owner's private
+      # notes, one carrying a literal token), daemon/checkpoints/ (60),
+      # daemon/state/hands/ (outreach logs), backups/, connectors/, content/.
+      # The extension allowlist above was written to stop STATE leaking by
+      # file TYPE, but a .md/.py can BE state - measured when the 0.2.23 build
+      # was inspected before publishing (never released). daemon/ is only the
+      # thin launcher + the runtime-data home (see the two-mains split note on
+      # spine/cells below), so its real source is exactly these top-level
+      # files; a non-recursive glob is the allowlist shape that matches that
+      # fact. A future nested source dir must be added here EXPLICITLY.
+      - "*.py"
+      - "*.md"
       - "requirements.txt"
   # spine/ and cells/ live at the REPO ROOT since the two-mains split
   # (2026-08-24); daemon/ is only the thin launcher + runtime-data home. Same
