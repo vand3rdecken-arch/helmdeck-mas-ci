@@ -90,6 +90,35 @@ _t = [t for t in (db.tracks_all() or []) if t.get("id") == "card-1"]
 check(_t and _t[0].get("archived"),
       "the card still EXISTS, archived - work is never destroyed for a cleanup")
 
+
+print("%s[the REGISTRATION goes too, or the project comes straight back]" % (chr(10),))
+# The actual cause, found on the third attempt. adopt_settings_repos() sights
+# every path in pm.repos / repo_hooks / default_roject whenever a surface that
+# needs the repo list opens. A path left in the settings recreated the project
+# within seconds, three times, with no error anywhere - the record is
+# DOWNSTREAM of the registration.
+from spine.storage import events                                  # noqa: E402
+
+REPO2 = os.path.join(_tmp, "repo-y")
+os.makedirs(REPO2, exist_ok=True)
+events.save_settings({"repo_hooks": {REPO2: {"on": True}},
+                      "pm": {"repos": [REPO2]}}, actor="test")
+p2 = projects.new_project("proj-y", "fixed", fixed_price=0.0, repo=REPO2)
+r2 = projects.delete_project(p2["id"], actor="owner")
+check(sorted(r2.get("unregistered") or []) == ["pm.repos", "repo_hooks"],
+      "the delete reports which lists it removed the repo from - got %r"
+      % (r2.get("unregistered"),))
+s = events.settings()
+check(REPO2 not in (s.get("repo_hooks") or {}),
+      "repo_hooks really lost the key - save_settings MERGES, so omitting it "
+      "is a no-op and reported a removal that never happened")
+check(REPO2 not in ((s.get("pm") or {}).get("repos") or []),
+      "and pm.repos too")
+check(projects.adopt_settings_repos(actor="test") == [],
+      "so the adoption pass has nothing left to sight - got %r"
+      % projects.adopt_settings_repos(actor="test"))
+check(db.project_get(p2["id"]) is None, "and the project stays deleted")
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

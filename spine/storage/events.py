@@ -249,6 +249,42 @@ def _masked(v, key=""):
         return "***"
     return v
 
+def replace_settings(patch, actor="system", reason=""):
+    """save_settings, but the named top-level keys are REPLACED, not merged.
+
+    save_settings deep-merges dicts (`s[k].update(v)`), which means a key can
+    be added or changed but never REMOVED - omitting it from the patch leaves
+    the old one in place. Until this existed there was no way at all to drop a
+    settings subkey, and code that tried reported success and changed nothing:
+    projects.delete_project removed a repo from its copy of `repo_hooks`, said
+    "abgemeldet", and the key was still there afterwards (measured
+    2026-09-22).
+
+    Same writer, same audit event, same checkpoint as save_settings - the only
+    difference is the merge. Use it when the ABSENCE of a key is the point."""
+    before = settings()
+    s = settings()
+    for k, v in (patch or {}).items():
+        s[k] = v
+    if patch and (reason or any(k in SIGNIFICANT_SETTINGS for k in patch)):
+        try:
+            from spine.ops import checkpoints
+            checkpoints.create(actor=actor,
+                               reason=reason or ("replaced: " + ", ".join(sorted(patch))))
+        except Exception as e:                                   # noqa: BLE001
+            print("checkpoint failed:", e)
+    from spine.storage import db
+    db.workspace_config_put({k: s[k] for k in (patch or {})})
+    try:
+        changed = {k: {"before": _masked(before.get(k), k), "after": _masked(s.get(k), k)}
+                   for k in (patch or {}) if before.get(k) != s.get(k)}
+        if changed:
+            emit("settings", "-", op="replace", actor=actor, changed=changed)
+    except Exception:                                            # noqa: BLE001
+        pass
+    return s
+
+
 def save_settings(patch, actor="system", reason=""):
     significant = bool(reason) or (patch and any(k in SIGNIFICANT_SETTINGS for k in patch))
     if patch and significant:

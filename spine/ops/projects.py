@@ -203,10 +203,51 @@ def delete_project(pid, actor="owner", archive_cards=False):
             except Exception as e:                               # noqa: BLE001
                 raise RuntimeError("Karte %s liess sich nicht archivieren (%s) - "
                                    "nichts geloescht." % (cid, str(e)[:120]))
+    # THE REGISTRATION, NOT JUST THE RECORD. adopt_legacy_repos() sights every
+    # path in pm.repos / repo_hooks / default_repo whenever a surface that
+    # needs the repo list opens, so a path left in the settings recreates the
+    # project on the next board open - measured three times on 2026-09-22,
+    # each time with no error anywhere.
+    unregistered = _forget_repo(p.get("repo") or "", actor=actor)
     db.project_delete(pid)
     _audit("project_deleted", p.get("repo") or "", actor, project=pid,
-           archived_cards=len(archived))
-    return {"deleted": pid, "archived_cards": archived}
+           archived_cards=len(archived), unregistered=unregistered)
+    return {"deleted": pid, "archived_cards": archived,
+            "unregistered": unregistered}
+
+
+def _forget_repo(repo, actor="owner"):
+    """Remove a repo path from every settings list that would re-sight it.
+    Returns the list names it was actually removed from, so the caller can
+    SAY what happened rather than claim a clean delete it did not do."""
+    from spine.storage import events
+    target = norm_repo(repo)
+    if not target:
+        return []
+    s = events.settings()
+    patch, touched = {}, []
+    pm = dict(s.get("pm") or {})
+    repos = [r for r in (pm.get("repos") or []) if norm_repo(r) != target]
+    if len(repos) != len(pm.get("repos") or []):
+        pm["repos"] = repos
+        patch["pm"] = pm
+        touched.append("pm.repos")
+    hooks = dict(s.get("repo_hooks") or {})
+    for k in [k for k in hooks if norm_repo(k) == target]:
+        hooks.pop(k, None)
+        if "repo_hooks" not in patch:
+            patch["repo_hooks"] = hooks
+            touched.append("repo_hooks")
+    if norm_repo(s.get("default_repo") or "") == target:
+        patch["default_repo"] = ""
+        touched.append("default_repo")
+    if patch:
+        # REPLACE, not merge: save_settings deep-merges dicts, so dropping a
+        # key by omitting it is a no-op - it reported success and left the key
+        # in place, which is how this project came back a third time.
+        events.replace_settings(patch, actor=actor,
+                                reason="Repo %s abgemeldet" % target)
+    return touched
 
 
 # ---------------------------------------------------------------------------
