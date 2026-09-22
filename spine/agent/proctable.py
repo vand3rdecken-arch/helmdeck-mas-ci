@@ -95,14 +95,14 @@ def _tree_kill(proc, grace=2.0):
         if os.name == "nt":
             family = _descendants(pid)                      # snapshot BEFORE killing
             subprocess.run(["taskkill", "/T", "/PID", str(pid)],   # polite (WM_CLOSE)
-                           capture_output=True, timeout=10)
+                           capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             try:
                 proc.wait(timeout=grace)
             except Exception:
                 pass
             if proc.poll() is None:                          # ignored -> force
                 subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                               capture_output=True, timeout=10)
+                               capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             # confirm: reap surviving descendants one by one. Guarded by the
             # image check so a recycled pid can never hit an innocent process.
             try:
@@ -112,7 +112,7 @@ def _tree_kill(proc, grace=2.0):
             for cp in family:
                 if cp in alive and _is_agent_pid(cp):
                     subprocess.run(["taskkill", "/F", "/PID", str(cp)],
-                                   capture_output=True, timeout=10)
+                                   capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             proc.terminate()                                 # SIGTERM
             try:
@@ -264,7 +264,7 @@ def reap_orphans():
                 continue
             if os.name == "nt":
                 r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                                   capture_output=True, timeout=10)
+                                   capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 if r.returncode == 0:
                     killed += 1
             else:

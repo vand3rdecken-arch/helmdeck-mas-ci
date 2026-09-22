@@ -141,7 +141,8 @@ def _take_singleton_lock(port):
             return
         try:
             if os.name == "nt":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             else:
                 os.kill(pid, signal.SIGTERM)
             print("SINGLETON: evicted %s pid %d - taking over surfaces/relay/port %d." % (why, pid, port), flush=True)

@@ -52,7 +52,8 @@ def history_get(self, user):
         return self._send(200, json.dumps({"main": [], "branches": []}))
     def git(*args):
         r = subprocess.run(["git", "-C", repo, *args],
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, timeout=20,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return r.stdout.strip() if r.returncode == 0 else ""
     # SEP is written as an ESCAPE, never as a raw \x1f byte in the source. The
     # raw byte was here until bd260db (the two-mains split), whose text rewrite

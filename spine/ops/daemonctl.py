@@ -38,7 +38,8 @@ _BOOT_TS = time.time()
 def _git_head():
     try:
         r = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, timeout=10,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return r.stdout.strip() if r.returncode == 0 else ""
     except Exception:
         return ""

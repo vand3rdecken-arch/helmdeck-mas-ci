@@ -35,11 +35,17 @@ AGENT_IDENT = ("-c", "user.name=HelmDeck Agent",
 # remember.
 GIT_TIMEOUT_S = 60
 
+# The daemon runs under pythonw (no console). Without this flag every git call
+# allocates a NEW console, and on Windows 11 with Windows Terminal as the
+# default terminal that is a full terminal window that steals focus from the
+# user. CREATE_NO_WINDOW is Windows-only; 0 elsewhere.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 
 def _run_git(args, cwd=None, env=None):
     try:
         return subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True,
-                              timeout=GIT_TIMEOUT_S)
+                              timeout=GIT_TIMEOUT_S, creationflags=_NO_WINDOW)
     except subprocess.TimeoutExpired:
         # Duck-types a normal CompletedProcess so every existing call site's
         # `r.returncode != 0` / `(rc, out, err) = ...` handling already covers

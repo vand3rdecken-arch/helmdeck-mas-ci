@@ -117,7 +117,7 @@ def reap_orphans():
                 continue
             if os.name == "nt":
                 r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                                   capture_output=True, timeout=10)
+                                   capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 if r.returncode == 0:
                     killed += 1
             else:

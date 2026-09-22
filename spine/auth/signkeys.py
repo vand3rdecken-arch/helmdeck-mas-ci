@@ -215,13 +215,14 @@ def create_approval_tag(repo, card, seq, head_sha, signer, password, manifestati
         full += "\n"
 
     r = subprocess.run(["git", "-C", repo, "mktag"],
-                       input=full.encode("utf-8"), capture_output=True)
+                       input=full.encode("utf-8"), capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode != 0:
         raise RuntimeError("git mktag refused the tag object: %s"
                            % r.stderr.decode("utf-8", "replace")[:300])
     tag_sha = r.stdout.decode().strip()
     r = subprocess.run(["git", "-C", repo, "update-ref",
-                        "refs/tags/" + tag_name, tag_sha], capture_output=True)
+                        "refs/tags/" + tag_name, tag_sha], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode != 0:
         raise RuntimeError("git update-ref failed: %s"
                            % r.stderr.decode("utf-8", "replace")[:300])

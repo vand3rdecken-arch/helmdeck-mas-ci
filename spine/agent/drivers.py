@@ -813,7 +813,11 @@ class _ClaudeSession:
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE, env=_env(self.cfg, self.card_env),
                                      text=True, encoding="utf-8", errors="replace",
-                                     bufsize=1)
+                                     bufsize=1,
+                                     # no console: the daemon runs under pythonw,
+                                     # so without this the agent gets its own
+                                     # (empty) console window that steals focus
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.spawn_time = _time.time()
         self._spawn_resumed = self.session_id
         self._resume_echo = False
