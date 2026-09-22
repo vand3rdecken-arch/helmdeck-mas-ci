@@ -343,3 +343,172 @@ def import_source(src, actor="import", dry_run=False):
         except Exception:                                        # noqa: BLE001
             pass
     return res
+
+# ---------------------------------------------------------------------------
+# THE AGENT LOOKS TOO. Owner 2026-09-22: "einfach Claude Code setup sagen, hey
+# schaue welche harness gibt es noch auf diesen PC. Code ist anfaellig
+# gegenueber bugs".
+#
+# He is right about the part that rots. Of the seven adapters above, three were
+# checked against real files on this machine; four (Codex, Windsurf, Cursor,
+# ai-memory) are read from someone else's documentation. Those will go stale
+# SILENTLY - when a vendor renames a folder, the adapter reports "nothing found
+# at the known locations" and nobody learns that the locations are no longer
+# the known ones. That is this card's own failure mode, in slow motion.
+#
+# And it is not a new idea here: the onboarding control plane already says, in
+# its own source, that rather than hand-rolling an installer per dependency it
+# describes the goal and lets the agent do it. This is the same move for
+# discovery.
+#
+# BUT THE AGENT ONLY LOOKS. It returns CANDIDATES; code verifies every one of
+# them before anything is offered, because an LLM naming a path is a claim and
+# a path that exists is a fact. Three bounds, all enforced here:
+#   * time      - a hard timeout; onboarding must always terminate
+#   * scope     - named roots, never "the whole disk"
+#   * structure - JSON in, validated in code, discarded loudly when it is not
+AGENT_TIMEOUT_S = 150
+AGENT_MAX_HITS = 12
+
+_AGENT_PROMPT = """Hier sind Konfigurationsordner im Heimatverzeichnis eines
+Entwicklers:
+%s
+
+Welche davon gehoeren zu einem Coding-Assistenten, der Notizen, Regeln oder
+Skills des Nutzers speichert (z.B. Claude Code, Cursor, Codex, Windsurf,
+Cline, Amp, Gemini CLI, Continue)?
+
+Antworte NUR mit einem JSON-Array, ohne Prosa, ohne Code-Fence:
+[{"dir": "<genau der Ordnername aus der Liste>", "tool": "<Produktname>"}]
+Leeres Array [], wenn keiner passt."""
+
+# Directory names that mean "the user's notes live here", and names that mean
+# the opposite. Measured, not guessed: the unfiltered version offered
+# .cursor/extensions/<any-extension> and .gemini/antigravity-cli/cache.
+_MEMORY_NAMES = frozenset((
+    "memory", "memories", "rules", "notes", "knowledge", "skills", "wiki",
+    "prompts", "instructions", "agents", "commands"))
+_NOT_MEMORY = frozenset((
+    "cache", "caches", "extensions", "logs", "log", "tmp", "temp", "bin",
+    "backups", "history", "sessions", "projects", "statsig", "shell-snapshots"))
+
+
+def _config_dirs():
+    """The cheap half, done by CODE: every dotted config directory in the home
+    dir. Instant, free, and it cannot name a path that is not there."""
+    h = _home()
+    out = []
+    try:
+        for e in sorted(os.listdir(h)):
+            if e.startswith(".") and os.path.isdir(os.path.join(h, e)):
+                out.append(e)
+    except OSError:
+        pass
+    return out[:80]
+
+
+def _memory_dirs_under(root, depth=2):
+    """Markdown-bearing directories under a tool's config dir. A tool folder
+    is not itself the memory; the notes sit in memory/, rules/, notes/ or
+    similar, and which one it is differs per vendor - so we look rather than
+    assume, but only two levels down and never into build output."""
+    hits = []
+    root = os.path.abspath(root)
+    for base, dirs, files in os.walk(root):
+        rel = os.path.relpath(base, root)
+        if rel != "." and rel.count(os.sep) >= depth:
+            dirs[:] = []
+            continue
+        dirs[:] = [d for d in dirs
+                   if d not in SKIP_DIRS and d.casefold() not in _NOT_MEMORY
+                   and not d.startswith(".")][:40]
+        n = len([f for f in files if f.endswith((".md", ".mdc"))])
+        # A directory full of markdown is not automatically a memory: measured
+        # on this machine, the greedy version returned VS Code extension
+        # READMEs under .cursor/extensions and a .gemini cache as "memory".
+        # The name is the cheap signal, and getting it wrong here means
+        # offering someone his own editor's changelog as his notes.
+        if n and (rel == "." or os.path.basename(base).casefold() in _MEMORY_NAMES):
+            hits.append((base, n))
+    hits.sort(key=lambda h: -h[1])
+    return hits[:4]
+
+
+def discover_with_agent(known_paths=(), timeout=AGENT_TIMEOUT_S):
+    """([source], [problem]) - tools the ADAPTERS do not know about.
+
+    Code lists the config dirs, the model says which are coding assistants,
+    then code looks inside and verifies. Best-effort by contract: no CLI, a
+    refusal, a timeout or unparsable output all return an empty list plus a
+    problem line that says WHICH of those happened. Onboarding must never hang
+    or fail here - the adapters already cover the common cases."""
+    import json
+    import subprocess
+    entries = _config_dirs()
+    if not entries:
+        return [], ["keine Konfigurationsordner im Heimatverzeichnis"]
+    try:
+        from spine.agent import drivers
+        from spine.agent.spawnenv import tool_path
+    except Exception as e:                                       # noqa: BLE001
+        return [], ["Agentensuche nicht moeglich: %s" % str(e)[:90]]
+    prompt = _AGENT_PROMPT % "\n".join("- " + e for e in entries)
+    argv = [drivers.CLAUDE, "-p", prompt, "--permission-mode", "plan"]
+    try:
+        r = subprocess.run(drivers._cmd_line(argv), cwd=_home(), env=tool_path(),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return [], ["Agentensuche nach %ds abgebrochen" % timeout]
+    except Exception as e:                                       # noqa: BLE001
+        return [], ["Agent nicht startbar: %s" % str(e)[:90]]
+    raw = (r.stdout or "").strip()
+    # A REFUSAL and a bad answer are different facts. The first framing of this
+    # prompt read like host reconnaissance and was refused outright; reporting
+    # that as "unreadable JSON" would have sent someone hunting the parser.
+    if raw.startswith("API Error") or "safeguards flagged" in raw[:300]:
+        return [], ["Das Modell hat die Anfrage abgelehnt: %s"
+                    % raw.splitlines()[0][:150]]
+    start, end = raw.find("["), raw.rfind("]")
+    if start < 0 or end <= start:
+        return [], ["Agent antwortete nicht mit JSON (%d Zeichen): %s"
+                    % (len(raw), raw[:110])]
+    try:
+        picks = json.loads(raw[start:end + 1])
+    except ValueError as e:
+        return [], ["Agent-JSON unlesbar: %s" % str(e)[:80]]
+    if not isinstance(picks, list):
+        return [], ["Agent-JSON ist keine Liste"]
+
+    known = {os.path.normcase(os.path.abspath(p)) for p in known_paths}
+    out, problems, seen = [], [], set()
+    allowed = set(entries)
+    for p in picks[:30]:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("dir") or "")
+        # The model may only pick FROM the list it was given. Anything else is
+        # invented, and an invented path is the one thing this whole card is
+        # about.
+        if name not in allowed:
+            problems.append("nicht aus der Liste, verworfen: %r" % name[:40])
+            continue
+        tool = str(p.get("tool") or name)[:40]
+        for path, n in _memory_dirs_under(os.path.join(_home(), name)):
+            key = os.path.normcase(os.path.abspath(path))
+            if key in known or key in seen:
+                continue
+            low = path.casefold()
+            if any(m in low for m in _THROWAWAY):
+                continue
+            seen.add(key)
+            out.append({"id": "agent:" + _slug(path), "label": tool,
+                        # An agent-found store is a CANDIDATE, never assumed to
+                        # be the owner speaking - only adapters we verified
+                        # ourselves claim owner-fact.
+                        "kind": "project", "path": path, "count": n,
+                        "note": "gefunden von Claude in %s" % name,
+                        "via": "agent"})
+            if len(out) >= AGENT_MAX_HITS:
+                return out, problems
+    return out, problems

@@ -217,11 +217,29 @@ def foreign_import_post(self, user, body):
     return self._send(200, json.dumps({"ok": True, "source": src["label"],
                                        "result": res}, ensure_ascii=False))
 
+def foreign_scan_post(self, user, body):
+    """The AGENT pass, and it is EXPLICIT on purpose.
+
+    Measured 2026-09-22: ~30 s, against milliseconds for the adapters. A step
+    that slow must never sit in the fast path of a screen someone is waiting
+    on - it is an extra button, not a default. It returns only what the
+    adapters did NOT already know, so a machine we fully understand shows an
+    honest zero rather than a padded list."""
+    from spine.memory import foreign
+    from spine.storage import events
+    repo = (events.settings().get("default_repo") or "").strip() or None
+    known = [s["path"] for s in foreign.discover(repo=repo)[0]]
+    hits, problems = foreign.discover_with_agent(known_paths=known)
+    return self._send(200, json.dumps({"ok": True, "sources": hits,
+                                       "problems": problems}, ensure_ascii=False))
+
+
 GET_ROUTES = {"/takeout": takeout_status_get,
               "/memory/foreign": foreign_get}
 POST_ROUTES = {"/takeout/start": takeout_start_post,
                "/takeout/verify": takeout_verify_post,
-               "/memory/foreign/import": foreign_import_post}
+               "/memory/foreign/import": foreign_import_post,
+               "/memory/foreign/scan": foreign_scan_post}
 # settings.read is the ceiling of the closed vocabulary; the handlers narrow
 # it further themselves (scope per account, owner gets everything) exactly
 # like /harness/export does. Restoring is NOT a route: it replaces the whole
@@ -231,4 +249,6 @@ GET_CAPS = {"/takeout": "settings.read",
 POST_CAPS = {"/takeout/start": "settings.read",
              "/takeout/verify": "settings.read",
              # writes into the caller own memory only
-             "/memory/foreign/import": "settings.write"}
+             "/memory/foreign/import": "settings.write",
+             # read-only: the agent looks, it does not write
+             "/memory/foreign/scan": "settings.read"}

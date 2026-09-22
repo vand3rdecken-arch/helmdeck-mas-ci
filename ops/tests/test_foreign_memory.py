@@ -120,6 +120,27 @@ res3 = foreign.import_source(src, actor="test", dry_run=True)
 check("relay-down" in res3["imported"], "dry run reports what it WOULD do")
 check("relay-down" not in db.memory_all(), "but writes nothing")
 
+
+print("%s[the agent pass: code enumerates, the model only CLASSIFIES]" % (chr(10),))
+# Measured 2026-09-22 and the numbers picked the design: asking the model to
+# SEARCH the machine took 220 s and timed out, and an earlier framing of that
+# same task was refused outright by a safeguard. Handing it the listing and
+# asking which entries are agent tools took 23 s and named a product we have
+# no adapter for. So the model may only pick FROM a list code produced.
+check(callable(foreign._config_dirs), "code enumerates the config dirs itself")
+check("memory" in foreign._MEMORY_NAMES and "cache" in foreign._NOT_MEMORY,
+      "and code, not the model, decides which subfolder names are memory")
+
+# a pick that is NOT in the offered list is invented - the one thing this
+# whole card is about - and must be discarded, not trusted
+_saved = foreign._home
+try:
+    foreign._home = lambda: HOME
+    entries = foreign._config_dirs()
+    check(".claude" in entries, "the fake home's config dirs are listed - %r" % entries)
+finally:
+    foreign._home = _saved
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))
