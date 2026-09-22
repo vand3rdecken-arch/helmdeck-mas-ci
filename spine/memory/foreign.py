@@ -89,9 +89,15 @@ def _claude_memory(repo):
             continue
         if not n or _throwaway(d):
             continue
-        out.append({"id": "claude-memory:" + d, "label": "Claude Code Gedächtnis",
+        # THE PROJECT IS THE HEADLINE, the tool is the footnote. Owner, seeing
+        # the first build: "warum gibt es 4 mal claude code importieren". Claude
+        # Code keeps ONE memory PER PROJECT DIRECTORY, so five rows are five
+        # different memories - but labelled by the tool they all read as the
+        # same offer repeated, and the thing that actually distinguishes them
+        # sat in grey underneath. Swapped.
+        out.append({"id": "claude-memory:" + d, "label": _project_label(d),
                     "kind": "owner-fact", "path": mem, "count": n,
-                    "note": _project_label(d)})
+                    "note": "Claude Code"})
     return out
 
 
