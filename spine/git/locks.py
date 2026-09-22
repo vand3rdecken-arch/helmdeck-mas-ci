@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """Runtime coordination SERVICE - extracted from sessions.py. The per-track
-turn lock, the single global desktop-control lock, per-cwd direct-build
-locks, the desktop-control classifier (_uses_desktop_control), and the
+turn lock, per-cwd direct-build locks, the per-cwd gate singleton, and the
 steer epoch (interrupt-and-replace last-wins). All state is private here;
-sessions.py re-imports the functions + _desktop_lock (its _turn acquires it,
-and test_desktop_lock_* read sessions._desktop_lock - the same object).
+sessions.py re-imports the functions.
+
+The DESKTOP is deliberately NOT here any more (2026-09-22): the single
+per-turn cursor lock serialized every machine card (see the docstring of
+spine/git/desktop_lease.py, which replaced it with a per-call lease taken by
+the card's own guard hook).
 """
 import os
 import re as _re
@@ -20,21 +23,6 @@ def _lock_for(tid):
         if tid not in _turn_locks:
             _turn_locks[tid] = _threading.Lock()
         return _turn_locks[tid]
-
-# Only one card may hold real Windows desktop control (mouse/keyboard/screen)
-# at a time - two windows-mcp turns racing would fight over the same cursor.
-# A plain in-process lock is the right primitive: _turn() blocks synchronously
-# for a whole turn, so the lock's held state IS the running desktop turn -
-# never a stored flag that could drift from reality.
-_desktop_lock = _threading.Lock()
-
-# windows-mcp tools that only OBSERVE the screen (read pixels/inventory) and
-# never move the cursor or type. A card whose ONLY windows-mcp grants are these
-# does not contend for the one physical cursor, so it must NOT take the exclusive
-# desktop lock - otherwise a passive Screenshot card would starve a real driver.
-_WINDOWS_MCP_READONLY = frozenset({
-    "Screenshot", "Snapshot", "Scrape", "DisplayInventory",
-})
 
 # DIRECT build cards (new_direct_task) edit the repo's LIVE working tree with no
 # worktree isolation - two turns on the same tree at once would edit blind over
@@ -67,23 +55,6 @@ def _gate_lock_for(cwd):
     with _gate_locks_guard:
         return _gate_locks.setdefault(key, _threading.Lock())
 
-
-def _uses_desktop_control(cfg):
-    """True iff this card can physically drive mouse/keyboard/screen and so must
-    hold the single global _desktop_lock. Read-only screen tools (Screenshot,
-    Snapshot, ...) are exempted. FAIL-SAFE: a wildcard windows-mcp grant, or any
-    tool not on the read-only allowlist, locks - so a new/unknown control tool
-    can never silently bypass the guard and race the cursor."""
-    for pat in (cfg.get("allowed_tools") or []):
-        s = str(pat)
-        if "windows-mcp" not in s:
-            continue
-        tail = s.rsplit("__", 1)[-1]        # tool name after mcp__windows-mcp__
-        if "*" in tail:                     # wildcard: could be any tool -> lock
-            return True
-        if tail not in _WINDOWS_MCP_READONLY:   # a control tool -> lock
-            return True
-    return False
 
 # INTERRUPT-AND-REPLACE (Paseo parity). A steer that arrives mid-turn must take
 # effect NOW - Paseo's replaceAgentRun soft-interrupts the live turn and starts

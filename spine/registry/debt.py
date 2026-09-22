@@ -1921,8 +1921,8 @@ DEBT = [
     },
     {
         "id": "desktop-lock-heuristic",
-        "title": "Desktop-control mutual exclusion is a substring match + in-process lock",
-        "status": "open",
+        "title": "Desktop-control mutual exclusion is a substring match + in-process lock - PAID 2026-09-22 by the per-call desktop lease",
+        "status": "paid",
         "what": "Only one card may hold real Windows desktop control (mouse/"
                 "keyboard/screen via windows-mcp) at a time - two such turns "
                 "racing would fight over the same cursor. sessions._turn() "
@@ -1963,11 +1963,53 @@ DEBT = [
                    "don't contain the string 'windows-mcp'; a desktop turn "
                    "outlives desktop_lock_wait_s (the queued card then bounces "
                    "with the waited-and-gave-up note)",
-        "fix": "If multi-process ever happens: move the lock to a file lock "
-               "or DB row (same durable-state pattern as turn_active) instead "
-               "of in-memory. Replace the capability check with an explicit "
-               "per-driver 'desktop: true' flag in settings.json's drivers "
-               "config, checked instead of parsing allowed_tools patterns.",
+        "fix": "PAID 2026-09-22: the per-turn lock and the allowed_tools "
+               "classifier are gone. The cursor is spine/git/desktop_lease.py, "
+               "a FILE lease taken by the card's own guard hook (ops/tools/"
+               "card_tool_guard.py, PreToolUse on mcp__windows-mcp__*) per "
+               "CONTROL call and released at turn end (turnrunner finally, "
+               "hands _run finally). Measured trigger that forced it "
+               "(2026-09-19): every machine card is forced onto claude-desktop, "
+               "so an hour-long script card held the cursor while never "
+               "clicking; three siblings, one hands run and its own re-dispatch "
+               "bounced after 960s each. Cross-process by construction (file), "
+               "capability derived from the actual call, not the grant. The "
+               "one heuristic left is registered as desktop-lease-idle-grace.",
+        "order": 23,
+    },
+    {
+        "id": "desktop-lease-idle-grace",
+        "title": "Desktop lease hold-over between control calls is a fixed idle grace, not a derived 'GUI sequence'",
+        "status": "open",
+        "what": "spine/git/desktop_lease.py keeps the cursor with its owner for "
+                "GRACE_S (90s) after every control call, renewed per call, so a "
+                "card mid-dialog is not interleaved with a sibling's click. "
+                "Whether the owner is really in a sequence is not knowable from "
+                "the runtime: the CLI reports one call at a time. A wedged call "
+                "(no PostToolUse) expires after BUSY_TTL_S (330s = MCP_TOOL_TIMEOUT "
+                "+ margin). A contender waits HELMDECK_DESKTOP_WAIT_S (240s, under "
+                "the 300s hook timeout) and is then DENIED with a retry hint - the "
+                "agent, not the harness, retries.",
+        "why_it_bites": "(1) A card that clicks once every 100s loses the desktop "
+                        "between clicks; a sibling can slip a click in and the "
+                        "first card's next Type lands in the wrong window. (2) A "
+                        "card that finished its GUI part and now runs scripts "
+                        "still blocks siblings for up to 90s. (3) The deny path "
+                        "relies on the agent honouring 'retry later' - a worker "
+                        "that gives up instead files a needs_you with no harness "
+                        "retry behind it. (4) Two hooks that both see an expired "
+                        "lease race the replacement; the token read-back closes "
+                        "it to ~50ms, not to zero.",
+        "trigger": "an interleaved-click incident between two desktop cards; a "
+                   "card whose control calls are more than 90s apart; a worker "
+                   "transcript ending on the guard's 'Desktop belegt' deny",
+        "fix": "Derive the sequence from the runtime: end the hold-over when "
+               "the owner's NEXT tool call is not a windows-mcp one (the hook "
+               "sees every tool, so 'the card moved on to Bash' is an "
+               "observable event, not a timer) - keep the grace only as the "
+               "backstop. Move the wait into the daemon (a /desktop/lease "
+               "endpoint) so a contender is queued and re-dispatched by the "
+               "harness instead of retried by the agent.",
         "order": 23,
     },
     {

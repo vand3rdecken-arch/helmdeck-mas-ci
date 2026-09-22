@@ -41,10 +41,14 @@ MCP_GRANTS = ["mcp__windows-mcp__*", "mcp__helmdeck-browser__*"]
 # hands at once "in Zehner-Paketen"; all three drove the same persistent Chrome
 # and the same mouse, tabs stepped on each other, the first run's end took the
 # browser down and the other two died with "no close frame received or sent").
-# There is one desktop and one browser, so a second hands WAITS - the same
-# physical fact cards express through locks._desktop_lock, which a run holds
-# for its whole life here (cards take it non-blocking per tool call and fail
-# safe, so a long hands run never deadlocks them).
+# There is one desktop and one browser, so a second hands WAITS in this
+# module's own queue (the shared HelmDeck Chrome is the real reason: it is
+# one profile, one tab set). The cursor itself is the DESKTOP LEASE
+# (spine/git/desktop_lease.py): the guard hook takes it per windows-mcp
+# control call under HELMDECK_CARD=<hid>, and _run's finally releases whatever
+# this hands still holds when it ends - a hands run holds no lock for its
+# life, so a card's click and a hands' HTTP fetch no longer wait on each other
+# (2026-09-19: an IONOS price check sat 47 minutes behind a script card).
 
 
 def tasks(closed_within_s=3600):
@@ -86,6 +90,7 @@ def spawn(user, task, skey, card=None, why=""):
     argv += _mcp_config_arg({"allowed_tools": MCP_GRANTS}, capper=True)
     env = tool_path()
     env["HELMDECK_TOOL_SCOPE"] = "hands"
+    env["HELMDECK_CARD"] = hid                 # desktop-lease owner (card_tool_guard)
     # the card guard confines file edits to HELMDECK_WORKTREE - for hands that
     # is the scratch folder (the brief says the same in prose; this is code)
     env["HELMDECK_WORKTREE"] = scratch
@@ -129,10 +134,9 @@ def _kick():
 def _run(hid):
     global _active
     from spine.agent import proctable
-    from spine.git import locks
+    from spine.git import desktop_lease
     with _lock:
         t = dict(_tasks.get(hid) or {})
-    locks._desktop_lock.acquire()          # blocking: waits out a card's live desktop tool call
     try:
         p = _popen(t["argv"], t["cwd"], t["env"])
         with _lock:
@@ -146,7 +150,7 @@ def _run(hid):
                 _tasks[hid].update(status="failed", result="FAILED - spawn: %s" % str(e)[:300], updated=time.time())
         _land(hid, "failed", "FAILED - spawn: %s" % str(e)[:300], 0)
     finally:
-        locks._desktop_lock.release()
+        desktop_lease.release(hid)         # event-time: a finished hands never leaves a stale lease
         with _lock:
             _active = None
         _kick()

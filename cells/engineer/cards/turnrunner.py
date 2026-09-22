@@ -17,7 +17,8 @@ import time
 
 from spine.git.gitutil import _checkpoint
 from spine.storage.trackstore import _mutate, _load, _find
-from spine.git.locks import _desktop_lock, _direct_lock_for, _lock_for, _uses_desktop_control
+from spine.git.locks import _direct_lock_for, _lock_for
+from spine.git import desktop_lease
 from spine.turn.econ import _record_econ, _record_turn, _log_turn_end
 from spine.turn.blockers import blocker
 from cells.engineer.cards.devport import _alloc_dev_port
@@ -132,37 +133,17 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
             rec = wincap.start(t["run_dir"])
         except Exception as e:
             print("recorder failed to start:", e)
-    desktop = _uses_desktop_control(cfg)
-    if desktop and not _desktop_lock.acquire(blocking=False):
-        # Contended: QUEUE instead of failing fast. Dispatch/steer already run
-        # on background threads and threading.Lock has its own wait queue, so a
-        # bounded blocking acquire turns "second desktop card bounces and sits
-        # until the owner notices" into "it waits its turn and runs" - with no
-        # new state that could drift (the lock's queue IS the waiter list).
-        # Bounded because the holder can be wedged: the wait must outlive one
-        # healthy turn AND the wedge ceilings that end a sick one (5-min
-        # MCP_TOOL_TIMEOUT, 900s silence watchdog) - past that, bounce with the
-        # visible reason as before (_dispatch_failed / steer's error path).
-        try:
-            wait_s = float(events.settings().get("desktop_lock_wait_s") or 0) or 960.0
-        except Exception:
-            wait_s = 960.0
-        try:
-            from spine.ops.actionlog import ActionLog
-            ActionLog(t["run_dir"]).log(
-                "note", "Desktop control busy (another card is driving the "
-                        "screen) - queued, waiting up to %ds for it to free." % wait_s)
-        except Exception:
-            pass
-        events.emit("desktop_wait", t["id"], wait_s=wait_s)
-        if not _desktop_lock.acquire(timeout=wait_s):
-            raise RuntimeError(
-                "Desktop control (windows-mcp) is already in use by another card - "
-                "only one card may drive the mouse/keyboard/screen at a time. "
-                "Waited %ds for it to free, then gave up - retry when the other "
-                "card's turn ends." % wait_s)
+    # THE DESKTOP is NOT locked here any more (2026-09-22). It used to be: any
+    # card whose driver granted a windows-mcp control tool took the single
+    # cursor lock for its WHOLE turn, and every machine card is forced onto
+    # that driver - so an hour-long script card that never clicked starved
+    # three siblings, a hands run and its own re-dispatch (each bounced after
+    # 960s; 12 desktop_wait events on 2026-09-19). The cursor is now the
+    # DESKTOP LEASE (spine/git/desktop_lease.py), taken per control call by
+    # the card's own guard hook and released in the finally below.
+    #
     # DIRECT cards share the repo's LIVE tree - one turn per tree at a time,
-    # same bounded-queue semantics (and the same wait knob) as the desktop lock.
+    # bounded queue: wait, then bounce with a visible reason.
     dlock = _direct_lock_for(t.get("worktree") or t.get("repo")) if t.get("direct") else None
     if dlock and not dlock.acquire(blocking=False):
         try:
@@ -178,8 +159,6 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
             pass
         events.emit("direct_wait", t["id"], wait_s=wait_s)
         if not dlock.acquire(timeout=wait_s):
-            if desktop:
-                _desktop_lock.release()   # never leak the cursor lock on this bounce
             raise RuntimeError(
                 "Direct build: another card is editing the same working tree. "
                 "Waited %ds for it to finish, then gave up - retry when its "
@@ -200,8 +179,12 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
     finally:
         if dlock:
             dlock.release()
-        if desktop:
-            _desktop_lock.release()
+        try:
+            if desktop_lease.release(t["id"]):    # the turn is over: whatever it still held, hand back
+                from spine.ops.actionlog import ActionLog
+                ActionLog(t["run_dir"]).log("note", "Desktop freigegeben (Turn-Ende)")
+        except Exception:
+            pass
         if rec:
             from spine.media import wincap
             wincap.stop(rec)

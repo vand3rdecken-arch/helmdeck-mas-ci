@@ -1,47 +1,55 @@
 # -*- coding: utf-8 -*-
-"""Pins the desktop-lock QUEUE semantics (converted from fail-fast 2026-08-17).
+"""Two desktop-capable card turns run AT THE SAME TIME (2026-09-22).
 
-Live failure this pays for: a wedged COWORK desktop turn held _desktop_lock and
-a second machine card (the trooper Postgres debug) was refused OUTRIGHT at
-dispatch - "Desktop control already in use" - and sat bounced until the owner
-noticed. Dispatch/steer already run on background threads and threading.Lock
-has its own wait queue, so contention should QUEUE (bounded blocking acquire,
-settings desktop_lock_wait_s) and only bounce after the wait expires.
+This file used to pin the opposite: that a second windows-mcp card WAITS for
+the first card's whole turn (per-turn _desktop_lock, bounded queue). That
+design is what serialized Henry's fan-out on 2026-09-19 - every machine card
+is forced onto the windows-mcp driver, so an hour-long script card that never
+clicked held the cursor and bounced three siblings, one hands run and its own
+re-dispatch after 960s each. The cursor is now the per-call DESKTOP LEASE
+(spine/git/desktop_lease.py, test_desktop_lease.py); the TURN holds nothing.
 
 Pins, through the real sessions._turn with a stubbed drivers.run:
-  1. a second desktop turn WAITS while the first holds the lock, then runs
-     (serialized, both complete - no bounce);
-  2. a holder that outlives desktop_lock_wait_s bounces the waiter with the
-     visible "Waited ...s ... gave up" reason;
-  3. after any outcome the lock is FREE again (released in the finally).
+  1. a second windows-mcp card's turn starts while the first is still inside
+     its turn (no wait, no bounce) - FAILS on the old code (the waiter sat in
+     the 960s queue);
+  2. a lease the card's hook took during the turn is released when the turn
+     ends (the finally), so a finished card never leaves a stale lease;
+  3. a lease held by ANOTHER owner is left alone by the turn end.
 
 Self-sandboxing: patched events.settings/emit, stubbed drivers.run, temp
-run_dirs - no daemon, no real spawn, no board.
+run_dirs, HELMDECK_DESKTOP_LEASE in a temp dir - no daemon, no real spawn.
 
 Run: py -3.12 ops/tests/test_desktop_lock_wait.py
 """
 import os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+SANDBOX = tempfile.mkdtemp(prefix="hdlocktest-")
+os.environ["HELMDECK_DESKTOP_LEASE"] = os.path.join(SANDBOX, "desktop.lease")
+
 from spine.storage import events
 from cells.engineer.cards import sessions
 from spine.agent import drivers
+from spine.git import desktop_lease
 
 
 # --- sandbox ---------------------------------------------------------------
 SETTINGS = {
     "drivers": {"desk": {"type": "claude",
                          "allowed_tools": ["mcp__windows-mcp__*"]}},
-    "desktop_lock_wait_s": 5,
 }
 events.settings = lambda: SETTINGS
 events.emit = lambda *a, **k: None
 
 _release = threading.Event()          # test controls when the holder's turn ends
+_inside = {}                          # tid -> time the stubbed turn body started
 
 def fake_run(cfg, t, prompt, by=None):
+    _inside[t["id"]] = time.time()
     if t["id"] == "holder":
-        _release.wait(timeout=30)     # holds the desktop lock until told
+        desktop_lease.acquire("holder", tool="mcp__windows-mcp__Click")   # what its hook would do
+        _release.wait(timeout=30)     # a long turn
     return ("sid-" + t["id"], "ok", {})
 
 drivers.run = fake_run
@@ -66,36 +74,34 @@ def check(desc, ok):
     print("  ok: " + desc)
 
 
-# --- 1) contention queues, then runs --------------------------------------
+# --- 1) two desktop turns overlap -----------------------------------------
 out = {}
 th1 = turn_in_thread(track("holder"), out)
-time.sleep(0.5)                        # holder is inside its turn, lock held
-check("holder owns the lock", sessions._desktop_lock.locked())
-th2 = turn_in_thread(track("waiter"), out)
-time.sleep(0.5)
-check("waiter has NOT bounced while queued", "waiter" not in out)
-_release.set()                         # holder's turn ends
-th1.join(10); th2.join(10)
-check("holder completed", isinstance(out.get("holder"), tuple))
-check("queued waiter RAN after the lock freed (no bounce)",
-      isinstance(out.get("waiter"), tuple))
-check("lock free after both turns", not sessions._desktop_lock.locked())
+time.sleep(0.5)                        # holder is inside its turn
+check("holder is inside its turn", "holder" in _inside)
+check("holder's hook took the lease", desktop_lease.status().get("owner") == "holder")
+th2 = turn_in_thread(track("second"), out)
+th2.join(5)
+check("second desktop card RAN while the holder was still mid-turn",
+      isinstance(out.get("second"), tuple) and "holder" not in out)
+check("...it entered its turn body within a second, no queue",
+      _inside["second"] - _inside["holder"] < 3.0)
+check("the holder's lease is untouched by the sibling's turn end",
+      desktop_lease.status().get("owner") == "holder")
 
-# --- 2) a wait longer than desktop_lock_wait_s bounces visibly -------------
-SETTINGS["desktop_lock_wait_s"] = 1
-_release.clear()
-out = {}
-th1 = turn_in_thread(track("holder"), out)
-time.sleep(0.5)
-th2 = turn_in_thread(track("late"), out)
-th2.join(10)
-check("waiter past the bound got the RuntimeError",
-      isinstance(out.get("late"), RuntimeError))
-check("...with the waited-and-gave-up reason", "Waited" in str(out.get("late")))
+# --- 2) the turn end releases the card's own lease --------------------------
 _release.set()
 th1.join(10)
-check("holder still completed after the waiter gave up",
-      isinstance(out.get("holder"), tuple))
-check("lock free at the end", not sessions._desktop_lock.locked())
+check("holder completed", isinstance(out.get("holder"), tuple))
+check("holder's lease released at turn end", desktop_lease.status() == {})
+
+# --- 3) a lease of another owner survives an unrelated turn end ------------
+desktop_lease.acquire("hands-xyz", tool="mcp__windows-mcp__Type")
+out = {}
+turn_in_thread(track("third"), out).join(5)
+check("third completed", isinstance(out.get("third"), tuple))
+check("a foreign lease is not released by this card's turn end",
+      desktop_lease.status().get("owner") == "hands-xyz")
+desktop_lease.release("hands-xyz")
 
 print("PASS test_desktop_lock_wait")

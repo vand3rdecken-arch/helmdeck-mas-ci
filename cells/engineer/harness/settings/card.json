@@ -39,7 +39,14 @@
     "Its path is $HELMDECK_GUARD (spawnenv.tool_path, the running daemon's copy),",
     "NOT $CLAUDE_PROJECT_DIR: the CLI sets that to the session cwd, which is",
     "daemon/ for Henry and a foreign folder for machine/client cards - the file",
-    "was not there, python exited 2 and EVERY tool call was blocked (2026-09-12)."
+    "was not there, python exited 2 and EVERY tool call was blocked (2026-09-12).",
+    "",
+    "THE windows-mcp ENTRIES (2026-09-22) are the DESKTOP LEASE: the same guard takes",
+    "the one physical cursor per CONTROL call (PreToolUse, waits up to 240s, then",
+    "denies with a retry hint) and hands it back after (PostToolUse). The 300s hook",
+    "timeout MUST stay above the guard's wait: a hook the CLI kills for overrunning",
+    "is non-blocking, i.e. the click would go through unguarded. spine/git/",
+    "desktop_lease.py holds the rules; the turn as a whole no longer locks anything."
   ],
 
   "env": {
@@ -49,6 +56,16 @@
   "hooks": {
     "PreToolUse": [
       { "matcher": "Read|Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell|WebFetch|WebSearch",
+        "hooks": [ { "type": "command",
+                     "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
+                     "timeout": 30 } ] },
+      { "matcher": "mcp__windows-mcp__.*",
+        "hooks": [ { "type": "command",
+                     "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
+                     "timeout": 300 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "mcp__windows-mcp__.*",
         "hooks": [ { "type": "command",
                      "command": "py -3.12 \"${HELMDECK_GUARD:-$CLAUDE_PROJECT_DIR/ops/tools/card_tool_guard.py}\"",
                      "timeout": 30 } ] }

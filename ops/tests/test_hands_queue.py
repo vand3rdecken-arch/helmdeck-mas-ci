@@ -13,8 +13,9 @@ Pinned here through the REAL hands.spawn/_kick/_run path (a fake process
 stands in for claude; no model, no MCP, no browser):
  1. two hands spawned back to back: the second waits, its descriptor says so,
     and it starts only after the first has landed
- 2. the running hands holds locks._desktop_lock for its whole life, and
-    releases it when done (a card's desktop tool sees "busy", not a race)
+ 2. the running hands holds NO turn-wide lock (2026-09-22: the cursor is the
+    per-call desktop lease, see test_desktop_lease.py); a lease its hook
+    took is released when the run ends, never left behind
  3. both land in order, the queue drains, nothing is left active
  4. a spawn failure lands as FAILED and still frees the desktop
  5. browsercap._spawn_orphan starts a process whose parent is NOT us
@@ -33,9 +34,10 @@ from spine.storage import events
 events.SET = os.path.join(SANDBOX, "settings.json")
 db.init()
 
+os.environ["HELMDECK_DESKTOP_LEASE"] = os.path.join(SANDBOX, "desktop.lease")
 from cells.copilot.chat import copilot, hands
 from spine.agent import proctable
-from spine.git import locks
+from spine.git import desktop_lease
 
 hands.DAEMON_ROOT = SANDBOX
 proctable._PIDFILE = os.path.join(SANDBOX, "driver_pids.json")
@@ -87,7 +89,8 @@ TIMELINE = []          # (event, hid, t)
 
 def _fake_popen(argv, cwd, env):
     hid = os.path.basename(cwd)
-    TIMELINE.append(("start", hid, time.time(), locks._desktop_lock.locked()))
+    TIMELINE.append(("start", hid, time.time(), env.get("HELMDECK_CARD") == hid))
+    desktop_lease.acquire(hid, tool="mcp__windows-mcp__Click")   # what the run's hook would do
     return _FakeProc(hold=1.0)
 
 
@@ -104,8 +107,7 @@ check(b in hands._queue, "second spawn is queued, not started")
 check(tb["status"] == "running" and tb["result"].startswith("wartet: 1"),
       "queued descriptor says it waits behind 1 (%r)" % tb["result"])
 check(ta["result"].startswith("1 Schritte"), "running descriptor shows live steps (%r)" % ta["result"])
-check(locks._desktop_lock.locked(), "the running hands HOLDS the desktop lock")
-check(not locks._desktop_lock.acquire(blocking=False), "...so a card's desktop tool would see busy")
+check(desktop_lease.status().get("owner") == a, "the running hands' hook owns the desktop lease")
 
 for _ in range(80):
     if hands._active is None and not hands._queue:
@@ -115,12 +117,12 @@ starts = [x for x in TIMELINE if x[0] == "start"]
 check([x[1] for x in starts] == [a, b], "runs started in spawn order, one after the other")
 check(len(starts) == 2 and starts[1][2] >= starts[0][2] + 1.0,
       "second started only after the first finished (%.2fs apart)" % (starts[1][2] - starts[0][2]))
-check(all(x[3] for x in starts), "every run started while holding the desktop lock")
+check(all(x[3] for x in starts), "every run was spawned as its own lease owner (HELMDECK_CARD=<hid>)")
 check(hands.tasks()[a]["status"] == "completed" and hands.tasks()[b]["status"] == "completed",
       "both completed")
 check(len(LANDED) == 2 and "erste" in LANDED[0] and "zweite" in LANDED[1], "both landed, in order")
 check(hands._active is None and not hands._queue, "queue drained, nothing active")
-check(not locks._desktop_lock.locked(), "desktop lock released at the end")
+check(desktop_lease.status() == {}, "desktop lease released at the end")
 
 print("\nspawn failure frees the desktop")
 def _broken_popen(argv, cwd, env):
@@ -133,7 +135,7 @@ for _ in range(50):
     time.sleep(0.1)
 check(hands.tasks()[c]["status"] == "failed" and "spawn" in hands.tasks()[c]["result"],
       "spawn error lands as FAILED (%r)" % hands.tasks()[c]["result"][:60])
-check(not locks._desktop_lock.locked(), "...and the desktop lock is free again")
+check(desktop_lease.status() == {}, "...and the desktop lease is free")
 
 print("\nbrowser launcher: the browser is nobody's child")
 from spine.media import browsercap

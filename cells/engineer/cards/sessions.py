@@ -24,7 +24,7 @@ from spine.turn.econ import _record_econ, _record_turn, _log_turn_end
 from spine.git.gitutil import (_git, _git_try, _branch_exists, is_git_repo, _current_branch, _checkpoint, _seed_worktree, _repo_hash, _owned_worktree, _git_state_broken, WORKTREE_DIRNAME)
 from spine.git.gitutil import _worktree_for, _base_ref, _worktree_of_branch
 from spine.storage.trackstore import _load, _save, _save_track, _find, _slug, _unique_id, _mutate, _mutate_lock_for
-from spine.git.locks import _lock_for, _direct_lock_for, _uses_desktop_control, _desktop_lock, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
+from spine.git.locks import _lock_for, _direct_lock_for, _bump_steer_epoch, _steer_epoch_current, _drain_steer_texts
 from cells.engineer.cards.turnrunner import (_turn, _repair_question, _ask_repair_on, is_delivered, _settle_reply_compute, _settle_reply_apply, _settle_reply, _turn_checkpoint, resume_detached, _finish_turn, ZOMBIE_NOTE, RESUME_NOTE, GATE_CUT_NOTE)
 from cells.engineer.cards.lanemachine import (_gate, _merge_to_main, _autocommit, _pull_main_into_branch, _sync_base, _base_branch, dispatch_conflict_resolution, _classify_merge, _hook_kill_tree, _repo_hook, request_ship_decision, _say_card, move_lane, lane_active, _is_dirty_block, park_and_retry_merge)
 from cells.engineer.cards.dispatch import (new_track, _dispatch_failed, _start, _ensure_worktree, _start_inner, machine_policy, machine_root_ok, new_machine_task, new_direct_task, _start_machine, backfill_outcomes, _accept_machine, MACHINE_BRANCH, DIRECT_BRANCH, _OUTCOME_BACKFILL_REVIEWED, new_remote_task, claim_remote_task, submit_remote_result, reassign_remote_task, sweep_stale_device_claims, start_device_claim_sweeper, new_ship_task, _maybe_ship_card_close)

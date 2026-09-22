@@ -52,6 +52,8 @@ def _card_env(t):
     if not t:
         return {}
     out = {}
+    if t.get("id"):
+        out["HELMDECK_CARD"] = str(t["id"])     # desktop-lease owner (card_tool_guard)
     if t.get("dev_port"):
         out["HELMDECK_DEV_PORT"] = str(t["dev_port"])
     if t.get("worktree"):
@@ -145,12 +147,13 @@ def _env(cfg, card=None):
     # Per-CALL MCP tool bound (same "bound the TOOL, not the turn" rule as the
     # Bash timeouts above). A synchronous windows-mcp call that never returns - a
     # foreground `wrangler dev` launched through PowerShell, a wedged WMI query -
-    # otherwise hung the whole turn until the 900s silence watchdog, and for a
-    # DESKTOP card that whole time it holds the single _desktop_lock and starves
-    # every other desktop card (measured: a wedged COWORK turn bounced a machine
-    # card). Bounding each call kills the wedge at the TOOL layer, hands the agent
-    # an error to adapt to, and lets the turn end - releasing the lock in minutes,
-    # not the full silence window. setdefault so the daemon/driver env still wins.
+    # otherwise hung the whole turn until the 900s silence watchdog, and a wedged
+    # call keeps the desktop LEASE busy (spine/git/desktop_lease.py sizes its busy
+    # TTL to this bound) and starves every other desktop caller (measured: a
+    # wedged COWORK turn bounced a machine card). Bounding each call kills the
+    # wedge at the TOOL layer, hands the agent an error to adapt to, and lets the
+    # lease expire in minutes, not the full silence window. setdefault so the
+    # daemon/driver env still wins.
     env.setdefault("MCP_TOOL_TIMEOUT", "300000")          # 5 min ceiling per MCP tool call
     if card:
         env.update(card)                                  # per-card overlay (_card_env)

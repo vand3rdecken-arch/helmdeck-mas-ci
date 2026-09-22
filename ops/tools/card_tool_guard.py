@@ -330,6 +330,43 @@ def _bash_escape_paths(command, worktree):
     return None
 
 
+def _desktop_gate(payload, tool):
+    """PreToolUse: acquire the desktop lease for this card before a control
+    call (wait bounded by HELMDECK_DESKTOP_WAIT_S, default 240s - under the
+    300s hook timeout). PostToolUse: mark the call finished so the idle grace
+    starts. Read-only screen tools pass without a lease. The owner is the
+    card/hands id the daemon put in HELMDECK_CARD; a spawn without one (a
+    foreign harness running this hook) is keyed by its CLI process."""
+    sys.path.insert(0, _REPO_ROOT)
+    from spine.git import desktop_lease
+    owner = os.environ.get("HELMDECK_CARD") or ("pid:%d" % os.getppid())
+    event = payload.get("hook_event_name") or "PreToolUse"
+    if not desktop_lease.is_control_tool(tool):
+        _allow()
+        return
+    if event != "PreToolUse":
+        desktop_lease.touch(owner, busy=False, tool=tool)
+        _allow()
+        return
+    try:
+        wait_s = float(os.environ.get("HELMDECK_DESKTOP_WAIT_S") or 240.0)
+    except ValueError:
+        wait_s = 240.0
+    ok, cur = desktop_lease.acquire(owner, tool=tool, wait_s=wait_s, pid=os.getppid())
+    if ok:
+        _allow()
+        return
+    _deny("card_tool_guard: Desktop belegt - %s steuert gerade Maus/Tastatur. "
+          "Dieser eine Aufruf wurde NICHT ausgefuehrt. Mach solange weiter, was "
+          "keinen Desktop braucht (Dateien, Shell, HTTP), und versuch den "
+          "Desktop-Schritt nach 30-60s (Bash: sleep 45) erneut. Nichts umbauen, "
+          "keinen Workaround: der Desktop wird frei, sobald der andere Lauf "
+          "seinen Klick-Abschnitt beendet." % desktop_lease.describe_holder(cur))
+
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -351,6 +388,20 @@ def main():
         return
     if why:
         _deny("card_tool_guard: " + why)
+        return
+
+    # THE DESKTOP LEASE (spine/git/desktop_lease.py): a windows-mcp CONTROL
+    # call takes the one cursor right here, per call, and hands it back after
+    # (PostToolUse) - the turn as a whole holds nothing. Measured 2026-09-19:
+    # the old per-turn lock made an hour-long script card starve three
+    # siblings, a hands run and its own re-dispatch. The wait here is bounded
+    # BELOW the hook timeout in card.json: a hook the CLI kills for overrunning
+    # counts as non-blocking, i.e. the click would go through unguarded.
+    if tool.startswith("mcp__windows-mcp__"):
+        try:
+            _desktop_gate(payload, tool)
+        except Exception as e:                                 # noqa: BLE001
+            _deny("card_tool_guard: desktop lease error, refusing the desktop call (%s)" % str(e)[:160])
         return
 
     if not worktree:
