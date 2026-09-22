@@ -45,7 +45,13 @@ ACTION_KINDS = frozenset((
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
-    "share_note"))
+    "share_note", "delete_project",
+    # ALIASES that name their object. Paseo's catalog names the object in
+    # every verb (archive_agent BESIDE archive_workspace), which is what makes
+    # "wrong object" unreachable there rather than merely discouraged. We add
+    # the explicit names and teach only those; the bare ones keep working so
+    # nothing in flight breaks.
+    "delete_card", "archive_card", "move_card"))
 
 
 def _parse_reply_actions(txt):
@@ -71,6 +77,25 @@ def _parse_reply_actions(txt):
         except ValueError:
             pass
     return txt.strip(), []
+
+
+
+def _project_not_card(ident):
+    """A refusal string when `ident` names a PROJECT, else None."""
+    ident = (ident or "").strip()
+    if not ident:
+        return None
+    try:
+        from spine.storage import db
+        p = db.project_get(ident)
+    except Exception:                                            # noqa: BLE001
+        return None
+    if not p:
+        return None
+    return ("Das ist ein PROJEKT (%s), keine Karte. Karten-Verben fassen "
+            "Projekte nicht an - nimm {\"type\": \"delete_project\", "
+            "\"project\": \"%s\"}. Das loescht die Projektzeile und sagt dir, "
+            "was noch daran haengt." % (p.get("name") or ident, ident))
 
 
 def _find_card(frag):
@@ -343,6 +368,23 @@ def _run_action(a, actor, role="operator"):
                 "persoenliche Notiz ist weg - eine Sache, ein Ort. Noch nicht "
                 "committed: der Owner sieht die Aenderung im Arbeitsbaum."
                 % (name, repo, path))
+    if kind == "delete_project":
+        # The verb that did not exist. projects.delete_project REFUSES while
+        # live cards still carry the repo, because sight_repo() would create
+        # the project again on the next tick - measured: a bare delete came
+        # back in the same second, under a new id, with no error anywhere.
+        from spine.ops import projects
+        pid = (a.get("project") or a.get("id") or "").strip()
+        if not pid:
+            return "delete_project: welches Projekt? Nenn die Projekt-ID."
+        try:
+            r = projects.delete_project(pid, actor=actor,
+                                        archive_cards=bool(a.get("archive_cards")))
+        except RuntimeError as e:
+            return "delete_project: %s" % e
+        n = len(r.get("archived_cards") or [])
+        return ("Projekt %s geloescht%s." % (r["deleted"],
+                ", %d Karte(n) dabei archiviert" % n if n else ""))
     if kind == "set_station":
         # DELIBERATELY NOT a generic key setter. It takes a STATION NAME, maps it
         # to the one real key behind it, and refuses every fixed station BY NAME.
@@ -466,6 +508,11 @@ def _run_action(a, actor, role="operator"):
                                due=a.get("due", ""))
         _tag(a, t)
         return "filed card %s (%s)" % (t["id"], t["lane"])
+    # An explicit-object alias is the SAME verb, normalised once here so every
+    # branch below keeps one name to reason about - and so delete_card reaches
+    # the card branch at all.
+    kind = {"delete_card": "delete", "archive_card": "archive",
+            "move_card": "move"}.get(kind, kind)
     if kind in ("move", "steer", "delete", "archive"):
         t = _find_card(a.get("card", ""))
         if t is None or isinstance(t, list):
@@ -474,6 +521,15 @@ def _run_action(a, actor, role="operator"):
         # only authorized roles may (policy.chat_admin_roles, default owner+operator).
         # steer stays open (clients steer their own cards).
         if kind in ("move", "delete", "archive"):
+            # WRONG OBJECT, BY NAME. The incident this exists for: "loesch das
+            # projekt relevance feed" was served with the CARD delete, the
+            # cards went away, and the project was reported gone while its row
+            # survived. A verb that cannot do the job must say so - the same
+            # shape _station_is_law uses - instead of doing an adjacent job
+            # silently and letting the answer imply the rest.
+            wrong = _project_not_card(a.get("card", ""))
+            if wrong:
+                return wrong
             from spine.auth import auth
             admin_roles = auth.chat_admin_roles()
             if role not in admin_roles:

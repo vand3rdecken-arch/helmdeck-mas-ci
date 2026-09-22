@@ -149,11 +149,64 @@ def update_project(pid, patch, actor="owner"):
     return p
 
 
-def delete_project(pid, actor="owner"):
-    if not db.project_get(pid):
+def cards_on_repo(repo, include_archived=False):
+    """[(id, archived)] for every card pointing at this repo. The reason a
+    delete has to look: a live card's repo gets SIGHTED again on the next
+    tick, which re-creates the project the owner just removed."""
+    from spine.storage import db as _db
+    repo_n = norm_repo(repo)
+    if not repo_n:
+        return []
+    out = []
+    for t in (_db.tracks_all() or []):
+        if norm_repo(t.get("repo") or "") != repo_n:
+            continue
+        arch = bool(t.get("archived"))
+        if arch and not include_archived:
+            continue
+        out.append((t.get("id"), arch))
+    return out
+
+
+def delete_project(pid, actor="owner", archive_cards=False):
+    """Remove a project - and REFUSE while anything can resurrect it.
+
+    Measured 2026-09-22: a bare delete came back in the same second. The
+    project row went away, then sight_repo() - "THE door in", called at event
+    time by anything touching a repo path - saw one of the nine cards still
+    carrying that repo and created the project again under a new id. The owner
+    saw no error and the onboarding screen he wanted gone came straight back.
+
+    So: refuse while live cards reference the repo, and SAY HOW MANY. With
+    archive_cards=True they are archived first (archived, not deleted - work
+    is never destroyed to satisfy a cleanup) and the delete then sticks."""
+    p = db.project_get(pid)
+    if not p:
         raise RuntimeError("no such project: " + pid)
+    live = cards_on_repo(p.get("repo") or "")
+    if live and not archive_cards:
+        raise RuntimeError(
+            "Projekt %s haengt noch an %d aktiven Karte(n) (%s%s). Deren Repo "
+            "wird beim naechsten Tick wieder gesichtet und das Projekt neu "
+            "angelegt - loeschen bringt so nichts. Archiviere die Karten mit "
+            "oder archiviere sie vorher."
+            % (p.get("name") or pid, len(live),
+               ", ".join(i for i, _a in live[:3]),
+               " ..." if len(live) > 3 else ""))
+    archived = []
+    if live:
+        from cells.engineer.cards import cardadmin
+        for cid, _a in live:
+            try:
+                cardadmin.archive_track(cid, on=True, actor=actor)
+                archived.append(cid)
+            except Exception as e:                               # noqa: BLE001
+                raise RuntimeError("Karte %s liess sich nicht archivieren (%s) - "
+                                   "nichts geloescht." % (cid, str(e)[:120]))
     db.project_delete(pid)
-    return {"deleted": pid}
+    _audit("project_deleted", p.get("repo") or "", actor, project=pid,
+           archived_cards=len(archived))
+    return {"deleted": pid, "archived_cards": archived}
 
 
 # ---------------------------------------------------------------------------
