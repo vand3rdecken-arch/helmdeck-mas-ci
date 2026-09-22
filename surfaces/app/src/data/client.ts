@@ -1077,6 +1077,9 @@ export const api = {
     req<{ ok: boolean; source?: string;
       result?: { imported: string[]; skipped: string[]; too_long: string[] } }>(
       "POST", "/memory/foreign/import", { id, dry }),
+  /** The agent pass: ~30s, explicit, returns only what the adapters missed. */
+  foreignScan: () => req<{ ok: boolean; sources: ForeignSource[]; problems: string[] }>(
+    "POST", "/memory/foreign/scan", {}),
   takeoutVerify: (name: string) =>
     req<{ ok: boolean; problems?: string[] }>("POST", "/takeout/verify", { name }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;

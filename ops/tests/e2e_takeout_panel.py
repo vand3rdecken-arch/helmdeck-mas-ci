@@ -163,6 +163,9 @@ def main():
             check("gesucht, nicht gefunden" in low or "looked for, not found" in low,
                   "[%s] and it NAMES the sources it looked for and did not find" % tag)
 
+            check("mit claude suchen" in low or "search with claude" in low,
+                  "[%s] the agent pass is offered as an extra button" % tag)
+
             keys = raw_keys_on(page)
             check(not keys, "[%s] no raw i18n key leaked as a label - %r" % (tag, keys))
             cut = clipped(page)

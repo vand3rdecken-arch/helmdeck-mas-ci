@@ -26,6 +26,13 @@ export function MemoryImportPanel({ bare = false }: { bare?: boolean }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<Record<string, number>>({});
+  // The agent pass is SEPARATE state, not folded into the query: it is an
+  // explicit act with a 30-second cost (measured), and a screen that quietly
+  // did it on load would make every visit slow for a result most machines do
+  // not need.
+  const [scanning, setScanning] = useState(false);
+  const [scanned, setScanned] = useState<ForeignSource[] | null>(null);
+  const [scanProblems, setScanProblems] = useState<string[]>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["foreignMemory"],
@@ -37,7 +44,8 @@ export function MemoryImportPanel({ bare = false }: { bare?: boolean }) {
   // real screen (2026-09-22): eight identical blue "Übernehmen" buttons gave a
   // 1-entry scratch folder exactly the same weight as a 91-note memory, so the
   // list read as a wall of equal choices instead of one obvious one.
-  const sources = [...(data?.sources ?? [])].sort((a, b) => b.count - a.count);
+  const sources = [...(data?.sources ?? []), ...(scanned ?? [])]
+    .sort((a, b) => b.count - a.count);
   const absent = data?.absent ?? [];
 
   const run = async (src: ForeignSource) => {
@@ -59,6 +67,23 @@ export function MemoryImportPanel({ bare = false }: { bare?: boolean }) {
     } finally {
       setBusy(null);
       void qc.invalidateQueries({ queryKey: ["foreignMemory"] });
+    }
+  };
+
+  const scan = async () => {
+    setScanning(true);
+    setScanProblems([]);
+    try {
+      const r = await api.foreignScan();
+      setScanned(r.sources ?? []);
+      setScanProblems(r.problems ?? []);
+    } catch (e: unknown) {
+      // A refusal, a timeout and bad JSON already arrive as distinct problem
+      // lines from the daemon; this catch is only for the request itself.
+      setScanProblems([String(e).slice(0, 160)]);
+      setScanned([]);
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -99,6 +124,31 @@ export function MemoryImportPanel({ bare = false }: { bare?: boolean }) {
             onPress={() => run(s)}
           />
         </View>
+      ))}
+
+      {/* THE AGENT PASS. An extra button, never the default: 30s against the
+          adapters' milliseconds, and it only returns what they did NOT
+          already know - so on a machine we fully understand it honestly
+          reports nothing rather than padding the list. */}
+      <View style={{ height: 14 }} />
+      <Btn
+        label={scanning ? tr("mimport.scanRunning") : tr("mimport.scan")}
+        kind="ghost"
+        disabled={scanning || busy !== null}
+        onPress={scan}
+      />
+      {scanning ? <Hint text={tr("mimport.scanWait")} /> : null}
+      {scanned !== null && !scanning ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 12, marginTop: 6 }}>
+          {scanned.length
+            ? tr("mimport.scanFound", { n: scanned.length })
+            : tr("mimport.scanNothing")}
+        </Text>
+      ) : null}
+      {scanProblems.map((p, i) => (
+        <Text key={i} style={{ color: t.txtTertiary, fontSize: 12, marginTop: 3 }}>
+          {p}
+        </Text>
       ))}
 
       {absent.length ? (
