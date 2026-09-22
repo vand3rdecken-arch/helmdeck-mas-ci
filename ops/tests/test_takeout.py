@@ -170,6 +170,55 @@ check("disk_free_mb" in _f and "db_mb" in _f,
 check(isinstance(_f.get("disk_free_mb"), int),
       "measured, not described: free space is a number")
 
+
+print("%s[the restore route can ONLY run on a genuinely fresh install]" % (chr(10),))
+# The gate is a fact about the db, not a role or a flag: a fresh install has
+# no users, and the moment it has one this endpoint is closed forever. It is
+# reachable before auth (server.OPEN) for the same reason /auth/setup is -
+# on a fresh machine there is no session by definition - so the gate is the
+# ONLY thing standing between a stranger and "replace the whole database".
+from spine.auth import auth as _auth                              # noqa: E402
+
+class _Resp:
+    def __init__(self): self.code = None; self.body = None
+    def _send(self, code, body): self.code, self.body = code, body; return None
+
+_r = _Resp()
+_saved_users = _auth.list_users
+try:
+    _auth.list_users = lambda: [{"name": "duy"}]      # somebody lives here
+    rt.takeout_restore_post(_r, "anon", {"path": box2})
+    check(_r.code == 409,
+          "a workspace WITH users refuses the restore - got %r" % _r.code)
+    check("frischen Installation" in (_r.body or ""),
+          "and says why, in one sentence - got %r" % (_r.body or "")[:90])
+
+    _auth.list_users = lambda: []                     # a fresh machine
+    _r2 = _Resp()
+    rt.takeout_restore_post(_r2, "anon", {"path": os.path.join(_tmp, "nicht-da")})
+    check(_r2.code == 404, "a missing folder is a 404, not a crash - got %r" % _r2.code)
+
+    _r3 = _Resp()
+    rt.takeout_restore_post(_r3, "anon", {"path": box, "dry": True})
+    check(_r3.code == 400 and "unvollstaendig" in (_r3.body or ""),
+          "the DAMAGED container is refused even on a dry run - got %r" % _r3.code)
+finally:
+    _auth.list_users = _saved_users
+
+
+print("%s[two exports in the same second must not share a container]" % (chr(10),))
+# Found by a test that expected a damaged container and got a repaired one:
+# the stamp is second-resolution, so the second run wrote into the SAME
+# directory and overwrote db.json and the manifest. The survivor then looks
+# VALID - fresh manifest, fresh bytes - while the first run's files sit beside
+# it. Losing an export would be bad; a wrong one that verifies is worse.
+_b1, _ = takeout.build(_out)
+_b2, _ = takeout.build(_out)
+check(_b1 != _b2, "the second export gets its own directory - %r vs %r"
+      % (os.path.basename(_b1), os.path.basename(_b2)))
+check(takeout.verify(_b1) == [] and takeout.verify(_b2) == [],
+      "and both verify clean")
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

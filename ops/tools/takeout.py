@@ -141,8 +141,18 @@ def build(out_root, with_recordings=False, account=None):
     because a product where any operator can export every account's chat and
     memory is a data leak with a button."""
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    # A UNIQUE container, always. The stamp is second-resolution, so two runs
+    # in the same second shared one directory and the second silently
+    # overwrote the first's db.json and manifest - found by a test that
+    # expected a damaged container and got a repaired one. Worse than losing
+    # an export: the survivor looks VALID, because the fresh manifest matches
+    # the fresh bytes while the older run's files sit beside them.
     box = os.path.join(out_root, "helmdeck-takeout-%s" % stamp)
-    os.makedirs(box, exist_ok=True)
+    n = 2
+    while os.path.exists(box):
+        box = os.path.join(out_root, "helmdeck-takeout-%s-%d" % (stamp, n))
+        n += 1
+    os.makedirs(box)
     parts, notes = {}, []
 
     # 1. the database, as ONE json document. Masked by default - the export

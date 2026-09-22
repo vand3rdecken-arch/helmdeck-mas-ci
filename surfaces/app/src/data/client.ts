@@ -1080,6 +1080,12 @@ export const api = {
   /** The agent pass: ~30s, explicit, returns only what the adapters missed. */
   foreignScan: () => req<{ ok: boolean; sources: ForeignSource[]; problems: string[] }>(
     "POST", "/memory/foreign/scan", {}),
+  /** First-run restore. Refused by the daemon unless the workspace has NO
+   *  users at all, so it cannot touch a live installation. `dry` previews. */
+  takeoutRestore: (path: string, dry = false) =>
+    req<{ ok: boolean; error?: string; problems?: string[];
+      manifest?: unknown; steps?: string[] }>(
+      "POST", "/takeout/restore", { path, dry }),
   takeoutVerify: (name: string) =>
     req<{ ok: boolean; problems?: string[] }>("POST", "/takeout/verify", { name }),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;

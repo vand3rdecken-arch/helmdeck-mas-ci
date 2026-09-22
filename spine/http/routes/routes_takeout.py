@@ -234,12 +234,91 @@ def foreign_scan_post(self, user, body):
                                        "problems": problems}, ensure_ascii=False))
 
 
+
+def takeout_restore_post(self, user, body):
+    """Restore a container during FIRST RUN, and only then.
+
+    Yesterday this was deliberately not a route ("it replaces the whole db and
+    must be a deliberate act at the machine"). That reasoning holds for a
+    LIVING installation and does not hold for an empty one - and refusing it
+    there is what forced the owner into a developer-only ritual of clone, run,
+    restore, point.
+
+    So the route exists with the narrowest possible gate: it refuses unless
+    the workspace has NO USERS AT ALL. That is a fact about the db, not a
+    role, not a flag, not a UI state - a fresh install has nobody, and the
+    moment it has anybody this endpoint is closed forever. It NEVER merges;
+    db_import's own refusal on a non-empty db stays the second net.
+
+    Reachable before auth for the same reason /auth/setup and
+    /relay/pair/claim are: on a fresh machine there is no session by
+    definition. Self-gated instead of token-gated, exactly like those two.
+
+    ORDERING, and it is the whole point: the restore brings the OWNER ACCOUNT
+    with it. It must therefore run BEFORE an owner is created, or the user
+    makes an account and then overwrites it with his old one and wonders why
+    his password changed."""
+    from spine.auth import auth
+    if auth.list_users():
+        return self._send(409, json.dumps(
+            {"ok": False, "error": "Dieser Rechner ist schon eingerichtet. Ein "
+             "Archiv einspielen wuerde bestehende Daten ersetzen - das geht "
+             "nur auf einer frischen Installation."}, ensure_ascii=False))
+    mod, root = _tool()
+    raw = (body.get("path") or "").strip()
+    if not raw:
+        return self._send(400, json.dumps({"ok": False, "error": "welcher Archivordner?"}))
+    box = os.path.abspath(os.path.expanduser(raw))
+    if not os.path.isdir(box):
+        return self._send(404, json.dumps(
+            {"ok": False, "error": "Kein Ordner unter %s" % box}, ensure_ascii=False))
+    problems = mod.verify(box)
+    if problems:
+        return self._send(400, json.dumps(
+            {"ok": False, "error": "Archiv unvollstaendig, nichts angefasst",
+             "problems": problems}, ensure_ascii=False))
+    if body.get("dry"):
+        man = json.load(open(os.path.join(box, mod.MANIFEST), encoding="utf-8"))
+        return self._send(200, json.dumps(
+            {"ok": True, "dry": True, "manifest": man}, ensure_ascii=False))
+    try:
+        steps = mod.restore(box)
+    except RuntimeError as e:
+        return self._send(400, json.dumps({"ok": False, "error": str(e)[:400]},
+                                          ensure_ascii=False))
+    except Exception as e:                                       # noqa: BLE001
+        _escalate_restore_failure(raw, e)
+        return self._send(500, json.dumps({"ok": False, "error": str(e)[:400]},
+                                          ensure_ascii=False))
+    try:
+        from spine.storage import events
+        events.emit("takeout", "-", op="restore", actor="setup", box=box)
+    except Exception:                                            # noqa: BLE001
+        pass
+    return self._send(200, json.dumps({"ok": True, "steps": steps},
+                                      ensure_ascii=False))
+
+
+def _escalate_restore_failure(path, exc):
+    """A half-applied restore is the worst state this feature can produce, and
+    it happens on a machine whose owner has the least ability to diagnose it."""
+    try:
+        from spine.registry import escalations
+        escalations.emit("takeout_restore_failed", None,
+                         "Wiederherstellung aus %s fehlgeschlagen: %s\nFakten: %s\n"
+                         "Pruefe, ob die Datenbank halb gefuellt ist, und sag dem "
+                         "Owner in einem Satz, ob er neu anfangen muss."
+                         % (path, str(exc)[:300], _facts()))
+    except Exception:                                            # noqa: BLE001
+        pass
+
 GET_ROUTES = {"/takeout": takeout_status_get,
               "/memory/foreign": foreign_get}
 POST_ROUTES = {"/takeout/start": takeout_start_post,
                "/takeout/verify": takeout_verify_post,
                "/memory/foreign/import": foreign_import_post,
-               "/memory/foreign/scan": foreign_scan_post}
+               "/memory/foreign/scan": foreign_scan_post,
+               "/takeout/restore": takeout_restore_post}
 # settings.read is the ceiling of the closed vocabulary; the handlers narrow
 # it further themselves (scope per account, owner gets everything) exactly
 # like /harness/export does. Restoring is NOT a route: it replaces the whole
@@ -251,4 +330,8 @@ POST_CAPS = {"/takeout/start": "settings.read",
              # writes into the caller own memory only
              "/memory/foreign/import": "settings.write",
              # read-only: the agent looks, it does not write
-             "/memory/foreign/scan": "settings.read"}
+             "/memory/foreign/scan": "settings.read",
+             # OPEN before auth (see server.OPEN) and self-gated on
+             # "no users exist" - declared here so the coverage sweep
+             # still sees the route rather than finding a hole.
+             "/takeout/restore": "settings.write"}

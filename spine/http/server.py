@@ -102,7 +102,12 @@ class H(BaseHTTPRequestHandler):
             # definition, so this must be reachable before auth - same class
             # as /glance, self-gated by its own single-use code instead of a
             # token/cookie.
-            "/relay/pair/claim")
+            "/relay/pair/claim",
+            # First-run restore of a takeout archive. Same class as the two
+            # above: on a fresh machine there is no session by definition, so
+            # it cannot be token-gated. It gates ITSELF on the db having no
+            # users at all, and closes forever the moment one exists.
+            "/takeout/restore")
 
     def _sid(self):
         for part in (self.headers.get("Cookie") or "").split(";"):

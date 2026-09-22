@@ -16,6 +16,7 @@ import {
 import { useT } from "@/i18n";
 import { DiagPanel, useSecretTap } from "@/ui/diag_panel";
 import { LoginScreen } from "@/ui/login_screen";
+import { RestoreChoice } from "@/ui/restore_choice";
 import { RepoTypePicker, useRepoTypeOutstanding } from "@/ui/repo_type_picker";
 import { useTheme } from "@/theme";
 
@@ -62,6 +63,8 @@ export function Onboard() {
   const [selected, setSelected] = useState<Set<string>>(new Set(["claude"]));
   const [qr, setQr] = useState("");
   const [pairLink, setPairLink] = useState("");
+  // sticky: once he has chosen (or restored), the question is settled
+  const [restoreDecided, setRestoreDecided] = useState(false);
   const [pairErr, setPairErr] = useState("");
   // Optimistic feedback for the gap between a click and the first poll that
   // reports the run (see the tick() effect below - it hands over on the control
@@ -199,6 +202,28 @@ export function Onboard() {
   // the daemon's own setup_needed, and it is drawn on the same centered canvas.
   // Reusing it keeps ONE sign-in surface; a second copy here would be the same
   // mistake as maintaining two chat UIs.
+  // THE FIRST QUESTION, and it must come BEFORE sign-in: a takeout archive
+  // carries the owner account. Restoring after creating one means making an
+  // account, overwriting it with the old one, and wondering why the password
+  // changed. So the choice is offered while the daemon is up and nobody
+  // exists yet - which is exactly the window the restore route gates itself
+  // on ("no users at all"), so screen and route agree by construction rather
+  // than by convention.
+  if (needsAuth && !restoreDecided) {
+    return (
+      <View style={{ flex: 1,  padding: 20,
+        justifyContent: "center", gap: 14 }}>
+        <Text style={{ color: t.txtPrimary, fontSize: 20, fontWeight: "700",
+          textAlign: "center", marginBottom: 4 }}>
+          {tr("onboard.title")}
+        </Text>
+        <RestoreChoice
+          onFresh={() => setRestoreDecided(true)}
+          onRestored={() => { setRestoreDecided(true); qc.invalidateQueries(); }}
+        />
+      </View>
+    );
+  }
   if (needsAuth) return <LoginScreen />;
 
   // FOURTH STEP: which kind of repo is this?
