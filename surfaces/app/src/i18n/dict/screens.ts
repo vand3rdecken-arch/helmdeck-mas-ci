@@ -641,6 +641,21 @@ export const screens: Dict = {
     de: "App-Update {version} geladen und geprüft - liegt bereit, bis die App neu startet.",
     en: "App update {version} downloaded and verified - waiting for the app to restart.",
   },
+  // ---- desktop "App & Updates" panel (ui/desktop_update.tsx, 2026-09-22) --
+  // The desktop shows its two real update lines instead of the phone's
+  // expo-updates panel, which is inert in the web export the shell serves.
+  "updates.desktop.shell": { de: "Desktop-App", en: "Desktop app" },
+  "updates.desktop.bundle": { de: "Oberfläche (Bundle)", en: "UI bundle" },
+  "updates.desktop.note": {
+    de: "Zwei getrennte Update-Wege, beide still: die Desktop-App über den Installer-Feed (installiert sich beim Beenden), die Oberfläche über den Relay-Kanal \"desktop\" (liegt bereit, bis die App neu startet). Geprüft beim Start und alle 30 Minuten.",
+    en: "Two separate update lines, both silent: the desktop app via the installer feed (installs on quit), the UI via the relay channel \"desktop\" (staged until the app restarts). Checked on launch and every 30 minutes.",
+  },
+  "updates.desktop.shellLine": { de: "Desktop-App", en: "Desktop app" },
+  "updates.desktop.bundleLine": { de: "Oberfläche", en: "UI" },
+  "updates.desktop.shellCurrent": { de: "Aktuell - kein neuer Installer im Feed.", en: "Up to date - no newer installer in the feed." },
+  "updates.desktop.bundleCurrent": { de: "Aktuell - Relay-Kanal liefert dieselbe Version.", en: "Up to date - the relay channel serves this version." },
+  "updates.desktop.unavailable": { de: "Auto-Update in diesem Build nicht aktiv (unsignierter oder Store-Build).", en: "Auto-update inactive in this build (unsigned or store build)." },
+  "updates.desktop.unknown": { de: "Status wird geladen…", en: "Loading status…" },
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {

@@ -144,6 +144,13 @@ const nativeUpdater = createNativeUpdater({
 });
 ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());
 ipcMain.on("native-update:install", () => nativeUpdater.quitAndInstall());
+// The shell's own version for the desktop "App & Updates" panel
+// (ui/desktop_update.tsx) - the 0.2.x installer line, distinct from the JS
+// bundle's 1.0.x. The panel also reads it from the default User-Agent, so a
+// bundle that arrives before this shell ships still shows it.
+ipcMain.handle("native:app-info", () => ({
+  shellVersion: app.getVersion(), platform: process.platform, packaged: app.isPackaged,
+}));
 
 // The repo-path step (repo_type_picker.tsx) was a bare free-text field with
 // no way to browse for a folder - owner report 2026-09-14, screenshot of the

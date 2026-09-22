@@ -10,6 +10,7 @@ import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { otaPending } from "@/data/ota";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { DesktopUpdatesPanel, isDesktopShell } from "@/ui/desktop_update";
 import { DiagPanel, useSecretTap } from "@/ui/diag_panel";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
 
@@ -54,6 +55,15 @@ export function VersionFooter() {
  *  path reports inline (this is an ops surface, verifying pushes/rollbacks) but
  *  applies exactly like the silent path: reload in the background, or on tap. */
 export function UpdatesPanel() {
+  // The Electron shell serves the web export, where expo-updates is inert:
+  // everything below would show the bundle version as "the" version, an
+  // empty runtime and a check that can only say "no update". The desktop has
+  // its own two update lines - show those instead (desktop_update.tsx).
+  if (isDesktopShell()) return <DesktopUpdatesPanel />;
+  return <PhoneUpdatesPanel />;
+}
+
+function PhoneUpdatesPanel() {
   const t = useTheme();
   const tr = useT();
   const [busy, setBusy] = useState(false);

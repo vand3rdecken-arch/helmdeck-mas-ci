@@ -21,9 +21,9 @@
     "APK_URL": "https://github.com/Tienduyvo/helmdeck-release/releases/latest/download/helmdeck.apk"
   },
   "observability": { "enabled": true },
-  // CUTOVER (README "Cutover"): after the tunnel's DNS record for
-  // relay.helmdeck.de is deleted in the dashboard, uncomment and deploy -
-  // wrangler then creates the custom-domain record on the helmdeck.de zone.
-  // "routes": [{ "pattern": "relay.helmdeck.de", "custom_domain": true }],
+  // LIVE since 2026-09-22 13:5x: the tunnel's DNS record was deleted in the
+  // dashboard, this deploy created the custom-domain record (README "Cutover").
+  // Rollback = remove this line, deploy, re-add the tunnel CNAME.
+  "routes": [{ "pattern": "relay.helmdeck.de", "custom_domain": true }],
   "workers_dev": true
 }

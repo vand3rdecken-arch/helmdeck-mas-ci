@@ -40,15 +40,25 @@ export PATH="/c/Program Files/nodejs:$PATH"
 # drivers.turn_active): the moment a real relay comes back at RELAY_HOST, this
 # probe simply stops matching and the old remote path resumes untouched.
 RELAY_PORT="${HELMDECK_RELAY_PORT:-6790}"
-RELAY_LOCAL=0
+RELAY_LOCAL=0; WORKER=0
+RELAY_DOMAIN="${RELAY_DOMAIN:-relay.helmdeck.de}"
 if curl -s -m3 "http://127.0.0.1:$RELAY_PORT/health" 2>/dev/null | grep -q '"ok": *true'; then
   RELAY_LOCAL=1
   # Same default relay.py itself falls back to (HELMDECK_UPDATES_DIR unset in
   # relay_local.cmd) - os.path resolves a leading "/" against the process's
   # current drive, which MSYS bash maps to /c/opt/... for the identical target.
   LOCAL_UPDATES_DIR="${HELMDECK_UPDATES_DIR:-/c/opt/helmdeck-updates}"
-  RELAY_DOMAIN="${RELAY_DOMAIN:-relay.helmdeck.de}"
   echo "==> local relay answering on 127.0.0.1:$RELAY_PORT - publishing to $LOCAL_UPDATES_DIR (no SSH)"
+elif curl -s -m8 "https://$RELAY_DOMAIN/health" 2>/dev/null | grep -q '"edge": *true'; then
+  # CLOUDFLARE WORKER (2026-09-22, surfaces/relay/worker): the public relay is
+  # the worker, which serves OTA bundles as its own static assets. Stage into
+  # the same local channel dirs the local-relay path uses, then let
+  # publish_relay_worker.sh pack every channel and deploy - that deploy IS the
+  # upload. Same probe-not-flag rule as above: if the public URL ever answers
+  # from something else again, this branch simply stops matching.
+  RELAY_LOCAL=1; WORKER=1
+  LOCAL_UPDATES_DIR="${HELMDECK_UPDATES_DIR:-/c/opt/helmdeck-updates}"
+  echo "==> public relay is the Cloudflare worker - staging to $LOCAL_UPDATES_DIR, deploying via publish_relay_worker.sh"
 else
   : "${RELAY_HOST:?set RELAY_HOST (VM public IP) in .env, or start the local relay (ops/deploy/relay_local.cmd)}"
   RELAY_DOMAIN="${RELAY_DOMAIN:-${RELAY_HOST}.sslip.io}"
@@ -58,11 +68,16 @@ else
   TARGET="$SSH_USER@$RELAY_HOST"
 fi
 
-NO_BUILD=0; CHANNEL=""; RUNTIME=""
+NO_BUILD=0; CHANNEL=""; RUNTIME=""; DESKTOP_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) NO_BUILD=1 ;;
     --channel)  CHANNEL="${2:-}"; shift ;;
+    # --desktop-only: web export + "desktop" channel only. Phones are NOT
+    # touched - for a change that only matters in the Electron shell (the
+    # desktop settings panel, 2026-09-22) there is no reason to push a new
+    # OTA to every phone.
+    --desktop-only) DESKTOP_ONLY=1 ;;
     # --runtime X: publish THIS bundle for a STRANDED runtimeVersion X - an APK
     # still on X after app.json moved on (e.g. an iOS-only version bump). Only
     # valid when that platform's native is unchanged since X. Lands in the
@@ -87,7 +102,15 @@ fi
 # only (the stranded-APK case it was built for).
 OTA_PLATFORMS="android ios"
 [ -n "$RUNTIME" ] && OTA_PLATFORMS="android"
+[ "$DESKTOP_ONLY" = "1" ] && { OTA_PLATFORMS=""; [ -n "$RUNTIME" ] && { echo "--desktop-only and --runtime are exclusive"; exit 2; }; }
 
+# Record the runtimeVersion this bundle was exported for (policy=appVersion, so it
+# is expo.version). The relay reads this marker to VALIDATE the client's
+# expo-runtime-version instead of echoing it back - without it the crash-loop
+# protection never fires (see relay.py _bundle_rtv). Packed with the export.
+RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)}"
+
+if [ "$DESKTOP_ONLY" != "1" ]; then
 if [ "$NO_BUILD" != "1" ]; then
   echo "==> expo export ($OTA_PLATFORMS)"
   # export to a SEPARATE dir, not surfaces/app/dist: surfaces/app/dist is the WEB build the Electron
@@ -96,12 +119,6 @@ if [ "$NO_BUILD" != "1" ]; then
   ( cd surfaces/app && rm -rf dist-ota && npx expo export "${PLAT_ARGS[@]}" --output-dir dist-ota ) || exit 1
 fi
 [ -f surfaces/app/dist-ota/metadata.json ] || { echo "no surfaces/app/dist-ota/metadata.json - run without --no-build"; exit 1; }
-
-# Record the runtimeVersion this bundle was exported for (policy=appVersion, so it
-# is expo.version). The relay reads this marker to VALIDATE the client's
-# expo-runtime-version instead of echoing it back - without it the crash-loop
-# protection never fires (see relay.py _bundle_rtv). Packed with the export.
-RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)}"
 [ -n "$RTV" ] && { printf '%s' "$RTV" > surfaces/app/dist-ota/runtimeVersion; echo "==> bundle runtimeVersion marker: $RTV"; }
 
 if [ "$RELAY_LOCAL" = "1" ]; then
@@ -134,23 +151,26 @@ sudo chmod -R a+rX "$DEST"
 echo "published to $DEST: $(sudo test -f "$DEST/metadata.json" && echo ok)"
 REMOTE
 fi
+fi   # DESKTOP_ONLY
 
-echo "==> verify live manifest"
-# runtimeVersion policy is "appVersion", so the live rtv == expo.version. Derive
-# it (don't hardcode) or the verify HEAD mismatches after a native version bump.
-RTV="${RUNTIME:-$(py -3.12 -c 'import json;print(json.load(open("surfaces/app/app.json",encoding="utf-8"))["expo"]["version"])' 2>/dev/null || echo 1.0.0)}"
 # A REAL check per platform: the status code, not a piped preview (a `| head`
 # preview SIGPIPEs curl under pipefail and once had to be `|| true`'d, which is
 # how a platform that 404'd every time shipped green). Any non-200 fails the
 # run - after the desktop leg, so a phone-side miss never holds the desktop.
+# In worker mode this runs AFTER the worker deploy (that is the upload).
 VERIFY_FAILED=""
-for PLAT in $OTA_PLATFORMS; do
-  CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' -H "expo-platform: $PLAT" -H "expo-runtime-version: $RTV" \
-       -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
-       "https://$RELAY_DOMAIN/updates/manifest")
-  echo "  $PLAT @ $RTV: HTTP $CODE"
-  [ "$CODE" = "200" ] || VERIFY_FAILED="$VERIFY_FAILED $PLAT"
-done
+phone_verify() {
+  echo "==> verify live manifest"
+  local PLAT CODE
+  for PLAT in $OTA_PLATFORMS; do
+    CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' -H "expo-platform: $PLAT" -H "expo-runtime-version: $RTV" \
+         -H "expo-protocol-version: 1" ${CHANNEL:+-H "expo-channel-name: $CHANNEL"} \
+         "https://$RELAY_DOMAIN/updates/manifest")
+    echo "  $PLAT @ $RTV: HTTP $CODE"
+    [ "$CODE" = "200" ] || VERIFY_FAILED="$VERIFY_FAILED $PLAT"
+  done
+}
+[ "$WORKER" = "1" ] || phone_verify
 
 # ---- desktop channel (phone OTA above already shipped; failures here WARN) ----
 desktop_publish() {
@@ -195,6 +215,7 @@ echo "published to $DEST: $(sudo test -f "$DEST/desktop.json" && echo ok)"
 REMOTE
   fi
 
+  [ "$WORKER" = "1" ] && return 0     # verified after the worker deploy below
   echo "==> verify live desktop manifest"
   # same SIGPIPE-vs-head note as the phone verify above - cosmetic, not a check.
   curl -s -m20 "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN" | head -c 200 || true
@@ -205,6 +226,16 @@ if [ -n "$RUNTIME" ]; then
 elif ! desktop_publish; then
   echo "!!! DESKTOP OTA PUBLISH FAILED - the phone update above is live, but the"
   echo "!!! desktop stays on its old bundle until the next successful publish."
+fi
+
+if [ "$WORKER" = "1" ]; then
+  # Every channel dir under /c/opt is packed and deployed together - the ones
+  # this run did not touch simply ship again unchanged.
+  bash ops/deploy/publish_relay_worker.sh || { echo "!!! WORKER DEPLOY FAILED - nothing went live"; exit 1; }
+  phone_verify
+  DCHAN="desktop${CHANNEL:+-$CHANNEL}"
+  CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN")
+  echo "  desktop.json ($DCHAN): HTTP $CODE"
 fi
 if [ -n "$VERIFY_FAILED" ]; then
   echo "!!! PHONE OTA VERIFY FAILED for:$VERIFY_FAILED - the relay serves no update"

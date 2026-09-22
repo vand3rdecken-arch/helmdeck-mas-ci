@@ -269,8 +269,9 @@ def _supervise_relay(icon):
             edge = _public_relay_is_edge()
             edge_checked = time.time()
         if edge:
-            _stop_relay()                       # ours, if any - the worker serves now
             if _state["local_relay"] != "aus (Cloudflare Worker aktiv)":
+                _stop_relay(sweep=True)         # ours AND adopted - the worker serves now
+                adopted_tunnel = False
                 _state["local_relay"] = "aus (Cloudflare Worker aktiv)"
                 _apply_icon(icon)
             _stop.wait(30)
@@ -303,13 +304,27 @@ def _supervise_relay(icon):
         _stop.wait(4)
 
 
-def _stop_relay():
+def _stop_relay(sweep=False):
     for p in (_relay_proc, _tunnel_proc):
         if p and p.poll() is None:
             try:
                 p.terminate()
             except Exception:
                 pass
+    if sweep and os.name == "nt":
+        # Stand-down must also catch a relay.py / cloudflared this tray only
+        # ADOPTED (left by an earlier tray instance or relay_local.cmd) - it
+        # holds no handle for those, and "nothing on this PC listens for the
+        # phone" is the whole point once the worker serves the public URL.
+        ps = ("Get-CimInstance Win32_Process | Where-Object { "
+              "($_.Name -eq 'cloudflared.exe' -and $_.CommandLine -like '*tunnel run " + TUNNEL_NAME + "*') -or "
+              "($_.CommandLine -like '*" + RELAY_SCRIPT + "*') } | "   # single-quoted PS string: backslashes are literal
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+        try:
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, timeout=20, creationflags=CREATE_NO_WINDOW)
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------------ desktop auto-update

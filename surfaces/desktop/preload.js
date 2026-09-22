@@ -29,4 +29,6 @@ contextBridge.exposeInMainWorld("helmdeckNative", {
   applyJsUpdateNow: () => ipcRenderer.send("js-update:apply-now"),
 
   pickFolder: () => ipcRenderer.invoke("native:pick-folder"),
+
+  getAppInfo: () => ipcRenderer.invoke("native:app-info"),
 });
