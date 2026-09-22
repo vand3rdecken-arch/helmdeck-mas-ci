@@ -5429,13 +5429,17 @@ DEBT = [
         "fix": "Partly paid 2026-09-21: card-worker.md and machine-worker.md now carry "
                "the BUILD ONCE, THEN RUN rule (write the script, run it detached with "
                "output to a log, read only a short report; never print a whole log, "
-               "never poll one). Still open, in order of value: (1) evict or replace a "
-               "tool result with a file reference once it is N rounds old and its file "
-               "still exists; (2) surface tool-call count and input/output ratio per "
-               "turn as a visible metric, the way Paseo measures its own tool-catalog "
-               "token cost in packages/server/scripts/measure-agent-tools-context.ts; "
-               "(3) warn on turn SHAPE (call count) separately from the existing "
-               "identical-repeat loop detector in drivers._burn_watch.",
+               "never poll one). Partly paid 2026-09-22: drivers._turn_shape_watch folds "
+               "tool-call count + in/out tokens live (next to _burn_watch, not replacing "
+               "it) and writes turn_tools/turn_in/turn_out/turn_ratio/turn_ended + a "
+               "5-turn turn_history onto the card (spine/turn/econ.py "
+               "_record_turn_shape); WARN>40/ALARM>80 tool calls per turn, ALARM also "
+               "raises a Henry escalation (kind turn-shape) naming the card, call count "
+               "and ratio - never cancels the turn. surfaces/app shows the last turn's "
+               "shape next to tokens/models on the card. Still open: (1) evict or "
+               "replace a tool result with a file reference once it is N rounds old and "
+               "its file still exists - the actual fix for the cost itself, not just its "
+               "visibility.",
         "since": "2026-09-21",
         "order": 77,
     },

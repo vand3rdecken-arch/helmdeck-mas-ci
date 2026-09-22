@@ -132,6 +132,28 @@ def main():
                   "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
                   "modelUsage": {"claude-fake": {}}, "session_id": SID})
             continue
+        if text.startswith("__SHAPE__"):
+            # Synthetic per-call tool_use + usage stream for the turn-shape
+            # tripwire (order 77): n assistant frames, each ONE tool_use call
+            # plus a usage block of its own (in/out tokens), then a normal
+            # result. Lets a test dial the exact tool count and in:out ratio
+            # a real 123-call turn would have produced, without the CLI.
+            try:
+                _, n_s, in_s, out_s = text.split(":", 3)
+                n, tin, tout = int(n_s), int(in_s), int(out_s)
+            except ValueError:
+                n, tin, tout = 10, 100, 10
+            for i in range(n):
+                emit({"type": "assistant", "session_id": SID, "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "tu%d" % i, "name": "Bash",
+                                 "input": {"command": "step %d" % i}}],
+                    "usage": {"input_tokens": tin, "output_tokens": tout,
+                              "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}})
+            emit({"type": "result", "subtype": "success", "result": "shape-done",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text == "__ERR__":
             emit({"type": "result", "subtype": "error_during_execution",
                   "is_error": True, "errors": ["boom: usage limit reached"],

@@ -90,6 +90,30 @@ def _record_econ(t, meta, external=False):
     return cost
 
 
+def _record_turn_shape(t, meta):
+    """Turn-shape snapshot (order 77, measure+warn only - the eviction fix
+    itself, replacing an old tool result with a file reference, stays open
+    as debt tool-results-never-evicted-quadratic-turn-cost). turn_tools/
+    turn_in/turn_out come straight off the driver's OWN live fold
+    (drivers._turn_shape_watch, carried here via meta) - never re-derived
+    from tokens_in/out, which are cumulative across the whole card's life,
+    not this one turn. A turn with no tool call (a plain chat reply,
+    /compact) writes nothing: there is no shape to show. Keeps only the
+    last 5 turns' shape so a single outlier is visible against a pattern
+    without the list growing unbounded."""
+    tools = meta.get("turn_tools")
+    if not tools:
+        return
+    tin, tout = meta.get("turn_in", 0), meta.get("turn_out", 0)
+    ratio = round(tin / float(max(tout, 1)), 1)
+    ended = time.strftime("%Y-%m-%d %H:%M:%S")
+    t["turn_tools"], t["turn_in"], t["turn_out"] = tools, tin, tout
+    t["turn_ratio"], t["turn_ended"] = ratio, ended
+    hist = t.setdefault("turn_history", [])
+    hist.append({"tools": tools, "in": tin, "out": tout, "ratio": ratio, "ended": ended})
+    del hist[:-5]
+
+
 def _record_turn(t, meta, cp_commit=None):
     """Fold one turn's economics into the track and the event log. Runs INSIDE
     _mutate; the rewind checkpoint (a git subprocess) is computed by the caller
@@ -99,6 +123,7 @@ def _record_turn(t, meta, cp_commit=None):
     t["last_subtype"] = meta.get("subtype")
     t["last_error"] = meta.get("error") or ""
     cost = _record_econ(t, meta)
+    _record_turn_shape(t, meta)
     if cp_commit:
         t.setdefault("checkpoints", []).append(
             {"turn": t.get("turns"), "commit": cp_commit,

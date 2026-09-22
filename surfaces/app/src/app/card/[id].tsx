@@ -319,6 +319,9 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
         <KVRow k={tr("card.tech.turns")} v={`${k.turns}`} />
         <KVRow k={tr("card.tech.tokens")} v={`${(k.tokens_in ?? 0).toLocaleString()} / ${(k.tokens_out ?? 0).toLocaleString()}`} />
         {k.models?.length ? <KVRow k={tr("card.tech.models")} v={k.models.join(", ")} /> : null}
+        {k.turn_tools ? <KVRow k={tr("card.tech.turnShape")}
+          v={tr("card.tech.turnShapeVal", { n: k.turn_tools, ratio: Math.round(k.turn_ratio ?? 0) })}
+          color={k.turn_tools > 80 ? t.danger : k.turn_tools > 40 ? t.warn : undefined} /> : null}
       </Panel>
 
       {turns && turns.length > 0 ? (

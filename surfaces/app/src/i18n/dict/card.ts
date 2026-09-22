@@ -68,6 +68,8 @@ export const card: Dict = {
   "card.tech.turns": { de: "Runden", en: "Turns" },
   "card.tech.tokens": { de: "Tokens", en: "Tokens" },
   "card.tech.models": { de: "Modelle", en: "Models" },
+  "card.tech.turnShape": { de: "Letzter Turn", en: "Last turn" },
+  "card.tech.turnShapeVal": { de: "{n} Aufrufe · {ratio}:1", en: "{n} calls · {ratio}:1" },
   "card.notStarted": { de: "nicht gestartet", en: "not started" },
 
   // rewind (files only)

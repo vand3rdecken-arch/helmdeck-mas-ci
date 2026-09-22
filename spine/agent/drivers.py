@@ -295,6 +295,13 @@ _BURN_REPEATS = 5              # identical consecutive tool calls that look like
 _TURN_BURN_SOFT_PCT = 2.0      # default: %-of-weekly-quota one turn may burn before Henry sees it
 _TURN_BURN_HARD_PCT = 5.0      # default: %-of-weekly-quota one turn may burn before it self-cancels
 _TURN_BURN_REEMIT_S = 900      # a turn-burn Henry decided within this window is not re-raised (steer = new turn, same session)
+# Turn-shape tripwire (order 77, measure+warn only - debt tool-results-never-
+# evicted-quadratic-turn-cost). 40/80 are the measured incident's own numbers:
+# card 20260920-230628-direct ran 123 tool calls in one turn (19.4M in vs
+# 0.10M out, 190:1) before anything noticed - WARN at 40 catches it a third
+# of the way in, ALARM at 80 well before the invoice does.
+_TURN_TOOLS_WARN = 40
+_TURN_TOOLS_ALARM = 80
 _sweeper_started = False
 
 
@@ -1210,6 +1217,79 @@ class _ClaudeSession:
             except Exception:
                 pass
 
+    def _turn_shape_watch(self, ev, cur):
+        """Turn-shape tripwire (order 77, MEASURE + WARN only - the actual fix,
+        evicting/replacing an old tool result with a file reference, stays
+        open as debt tool-results-never-evicted-quadratic-turn-cost). Folds
+        two counts onto the turn-scoped `cur`, next to _burn_watch/
+        _turn_burn_watch, not replacing either: how many tool calls this turn
+        has made, and its running input/output split (the SAME per-call
+        usage block _turn_burn_watch sums, just kept apart instead of added
+        together, so a live ALARM can report an in:out ratio). Event-time,
+        single-owner, best-effort - never disturbs the turn."""
+        if ev.get("type") != "assistant":
+            return
+        try:
+            msg = ev.get("message") or {}
+            n_tools = sum(1 for p in (msg.get("content") or [])
+                          if isinstance(p, dict) and p.get("type") == "tool_use")
+            if n_tools:
+                cur["turn_tools"] = cur.get("turn_tools", 0) + n_tools
+            u = msg.get("usage")
+            if isinstance(u, dict) and u:
+                cur["turn_in"] = cur.get("turn_in", 0) + int(u.get("input_tokens") or 0) \
+                    + int(u.get("cache_creation_input_tokens") or 0) \
+                    + int(u.get("cache_read_input_tokens") or 0)
+                cur["turn_out"] = cur.get("turn_out", 0) + int(u.get("output_tokens") or 0)
+            if cur.get("turn_tools", 0) > _TURN_TOOLS_WARN:
+                self._turn_shape_check(cur)
+        except Exception:
+            pass
+
+    def _turn_shape_check(self, cur):
+        """Each rung fires AT MOST ONCE per turn (cur["shape_warn_fired"]/
+        ["shape_alarm_fired"]). WARN -> one note in the card's own feed (the
+        owner sees it on the card, nothing louder). ALARM -> additionally the
+        SAME Henry escalation path turn-burn/delivered-parked already use
+        (spine.registry.escalations via pm_comm._to_henry), naming the card,
+        the tool-call count and the in:out ratio. Never cancels the turn -
+        this Karte is measure-and-warn only, unlike _turn_burn_check's hard
+        rung which cooperatively cancels."""
+        n = cur.get("turn_tools", 0)
+        if n > _TURN_TOOLS_ALARM and not cur.get("shape_alarm_fired"):
+            cur["shape_alarm_fired"] = True
+            ratio = cur.get("turn_in", 0) / float(max(cur.get("turn_out", 0), 1))
+            try:
+                if self.run_dir:
+                    from spine.ops.actionlog import ActionLog
+                    ActionLog(self.run_dir).log("note",
+                        "\U0001F6A8 Turn-Form ALARM: %d Werkzeugaufrufe in diesem Turn "
+                        "(Schwelle %d), Verhaeltnis %.0f:1 Eingabe:Ausgabe - Turn laeuft "
+                        "weiter, nur gemeldet." % (n, _TURN_TOOLS_ALARM, ratio))
+            except Exception:
+                pass
+            try:
+                from cells.copilot.planning.pm_comm import _to_henry
+                _to_henry("turn-shape", card=self.tid,
+                    detail=("Karte %s: laufender Turn hat %d Werkzeugaufrufe erreicht "
+                            "(Schwelle %d), Verhaeltnis %.0f:1 Eingabe:Ausgabe. Nur eine "
+                            "Meldung - der Turn wird NICHT abgebrochen."
+                            % (self.tid, n, _TURN_TOOLS_ALARM, ratio)),
+                    feed="Turn-Form ALARM auf Karte %s: %d Aufrufe, %.0f:1"
+                         % (self.tid, n, ratio))
+            except Exception:
+                pass
+        elif n > _TURN_TOOLS_WARN and not cur.get("shape_warn_fired"):
+            cur["shape_warn_fired"] = True
+            try:
+                if self.run_dir:
+                    from spine.ops.actionlog import ActionLog
+                    ActionLog(self.run_dir).log("note",
+                        "Turn-Form WARN: %d Werkzeugaufrufe in diesem Turn (Schwelle %d)."
+                        % (n, _TURN_TOOLS_WARN))
+            except Exception:
+                pass
+
     def _on_event(self, ev):
         cur = self._cur
         if cur is not None:
@@ -1223,6 +1303,7 @@ class _ClaudeSession:
             self._burn_watch(ev, cur)
             self._turn_burn_watch(ev, cur)
             self._turn_burn_result(ev, cur)
+            self._turn_shape_watch(ev, cur)
         typ = ev.get("type")
         if typ in ("assistant", "user"):
             try:
@@ -1522,7 +1603,11 @@ class _ClaudeSession:
                 "error": _result_error(d),
                 # the LAST assistant call's usage = the real context size (the
                 # result event's usage sums every call of the turn - see _on_event)
-                "ctx_usage": cur.get("ctx_usage") or {}}
+                "ctx_usage": cur.get("ctx_usage") or {},
+                # turn-shape snapshot (order 77) - the driver's own live fold,
+                # not re-derived from cumulative tokens_in/out (_record_turn_shape).
+                "turn_tools": cur.get("turn_tools", 0),
+                "turn_in": cur.get("turn_in", 0), "turn_out": cur.get("turn_out", 0)}
         # a compaction that ran INSIDE this turn (system/compact_boundary seen
         # by the pump): {trigger, pre_tokens, post_tokens, duration_ms}. The
         # /compact turn has no assistant call of its own, so ctx_usage is empty

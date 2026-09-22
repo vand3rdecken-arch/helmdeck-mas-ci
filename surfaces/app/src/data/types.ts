@@ -65,6 +65,13 @@ export interface Track {
   status: string; turns: number; last_reply: string;
   value: number; driver: string; priority?: string; due?: string; rank?: number | null;
   ai_cost: number; tokens_in: number; tokens_out: number; models: string[];
+  /** last turn's OWN shape (order 77, not cumulative like tokens_in/out
+   *  above) - tool-call count and in:out ratio, folded live by
+   *  drivers._turn_shape_watch. turn_history keeps the last 5 turns'
+   *  shape so a single outlier reads against a pattern. */
+  turn_tools?: number; turn_in?: number; turn_out?: number; turn_ratio?: number;
+  turn_ended?: string;
+  turn_history?: { tools: number; in: number; out: number; ratio: number; ended: string }[];
   ctx_tokens?: number;   // current context-window size (last turn's input side) - for the meter
   /** the model's context WINDOW, derived daemon-side from the model id ([1m] =
    *  1M) and from evidence (a successful call proves a lower bound). The meter
