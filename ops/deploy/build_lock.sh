@@ -128,7 +128,10 @@ android_build_lock() {
   # Release only what WE own: if our lock was taken over as stale (we were
   # SIGSTOPped past the liveness check, say) the dir now belongs to someone
   # else and blowing it away would free a running build's lock.
-  trap 'android_build_unlock' EXIT
+  # The trailing `exit=<rc>` line is the completion marker for anyone tailing
+  # the build log (grep '^exit='): on 2026-09-23 a card waited 2h for a marker
+  # no build ever wrote, so nothing woke it when the AAB was done.
+  trap '_abl_rc=$?; android_build_unlock; echo "exit=$_abl_rc"' EXIT
   if [ "$waited" -gt 0 ]; then
     echo "HOOK-NOTE: Android-Build-Sperre frei nach ${waited}s - starte jetzt"
   fi
