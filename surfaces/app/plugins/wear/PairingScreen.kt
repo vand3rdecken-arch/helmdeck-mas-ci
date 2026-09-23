@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -161,14 +162,6 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
         // at all, which is why the first and last rows sat hard against the
         // bezel on a real device. Nothing here is measured or hardcoded for one
         // specific watch - that would be the opposite of responsive.
-        // ROUND SCREEN SIDE INSET on every item below, not only FieldRow's own
-        // value text - Play rejected Wear production 1000006 again on
-        // 2026-09-20 under the same font-size guideline after only FieldRow
-        // had been fixed. `status` in particular carries a full sentence
-        // ("Gekoppelt, aber der erste Abruf ist fehlgeschlagen - erneut
-        // versuchen") that wraps to several lines at a large system font
-        // scale, exactly the shape that gets clipped without this.
-        val sideInset = wearBezelInset()
         ScreenScaffold(columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
@@ -179,7 +172,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                     Text(
                         text = "HelmDeck koppeln",
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
+                        modifier = Modifier.padding(8.dp),
                     )
                 }
                 // Code first: with the address defaulted (DEFAULT_CLAIM_BASE_URL),
@@ -199,7 +192,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                 // it almost never affects, not in front of it.
                 item {
                     Button(onClick = ::submit, enabled = !busy,
-                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp)) {
+                        modifier = Modifier.padding(8.dp)) {
                         Text(if (busy) "…" else "Koppeln")
                     }
                 }
@@ -219,7 +212,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                         Text(
                             text = status ?: "",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
+                            modifier = Modifier.padding(8.dp),
                         )
                     }
                 }
@@ -259,9 +252,8 @@ private fun FieldRow(
     // (10% of screen width, same reasoning as HenryScreen/CardScreen) keeps a
     // wrapped line's first/last characters off the round bezel instead of
     // relying on ScreenScaffold's padding alone, which only protects the
-    // first/last ROW, not every side of a multi-line block. Shared with
-    // every other screen via wearBezelInset() (WearLayout.kt).
-    val sideInset = wearBezelInset()
+    // first/last ROW, not every side of a multi-line block.
+    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
     Column(
         modifier = Modifier.padding(vertical = 6.dp, horizontal = sideInset),
         horizontalAlignment = Alignment.CenterHorizontally,

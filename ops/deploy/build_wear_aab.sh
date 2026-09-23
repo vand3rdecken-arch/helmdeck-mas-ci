@@ -38,6 +38,11 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
   exit 1
 }
 
+# Provenance guard BEFORE the lock, so a dirty tree fails fast instead of
+# queueing behind another build first. See wear_build_guard.sh for the why.
+. "$(dirname "$0")/wear_build_guard.sh"
+wear_guard_check
+
 # Same machine-global Android build mutex every other build script here takes.
 . "$(dirname "$0")/build_lock.sh"
 android_build_lock "build_wear_aab.sh :wear:bundleRelease (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
@@ -67,6 +72,7 @@ WVCODE="$(grep -oE 'versionCode [0-9]+' surfaces/app/plugins/wear/build.gradle |
 SAFE=".loop/artifacts/helmdeck-wear-vc${WVCODE:-unknown}.aab"
 cp "$AAB" "$SAFE" || { echo "[build_wear_aab] WARN: artifact copy-out failed - upload from $AAB before any other build runs"; }
 echo "[build_wear_aab] AAB: $(du -h "$AAB" | cut -f1) -> $SAFE"
+wear_guard_stamp "$SAFE"
 
 # ABI CHECK - do not assume compliance, read it off the actual artifact.
 # An AAB is a zip of per-module zips; unzip lists both without needing

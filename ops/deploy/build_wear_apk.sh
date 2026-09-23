@@ -36,6 +36,8 @@ export PATH="/c/Program Files/nodejs:$JAVA_HOME/bin:$ANDROID_HOME/platform-tools
 # assembleRelease contends for exactly the resources that collided on
 # 2026-08-30. Taken after the JDK + :wear-exists checks above so both keep
 # failing fast instead of queueing behind a long build to then fail anyway.
+. "$(dirname "$0")/wear_build_guard.sh"
+wear_guard_check
 . "$(dirname "$0")/build_lock.sh"
 android_build_lock "build_wear_apk.sh :wear:assembleRelease (${HELMDECK_CARD:-manuell/kein Karten-Kontext})"
 
@@ -70,6 +72,7 @@ echo "[build_wear_apk] gradle :wear:assembleRelease (release-signed with the pho
 APK="surfaces/app/android/wear/build/outputs/apk/release/wear-release.apk"
 [ -f "$APK" ] || { echo "[build_wear_apk] no APK produced at $APK"; exit 1; }
 echo "[build_wear_apk] APK: $(du -h "$APK" | cut -f1)"
+wear_guard_stamp "$APK"
 
 # Installs onto whatever device/emulator adb currently targets - a paired
 # Wear emulator, or a real watch over adb-over-Wi-Fi (developer.android.com/

@@ -113,14 +113,6 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        // ROUND SCREEN SIDE INSET, same as CardScreen/HenryScreen/
-        // PairingScreen (wearBezelInset(), WearLayout.kt). `c.task` is
-        // backend-supplied, unbounded text - Play rejected Wear production
-        // 1000006 again on 2026-09-20 (font-size guideline) after only
-        // PairingScreen's own field had been fixed; a long task name wraps to
-        // several lines at a large system font scale and a full-width Button
-        // is cut by the round bezel exactly like a full-width Card is.
-        val sideInset = wearBezelInset()
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -134,7 +126,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     Text(
                         text = "HelmDeck",
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
+                        modifier = Modifier.padding(8.dp),
                     )
                 }
                 if (status.isNotEmpty()) {
@@ -142,14 +134,13 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         Text(
                             text = status,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
+                            modifier = Modifier.padding(8.dp),
                         )
                     }
                 }
                 for (c in cards) {
                     item {
-                        Button(onClick = { onOpenCard(c) },
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp)) {
+                        Button(onClick = { onOpenCard(c) }, modifier = Modifier.padding(4.dp)) {
                             Text(text = c.task.ifBlank { c.id })
                         }
                     }
@@ -169,13 +160,13 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         Text(
                             text = "Nur von dir startbar",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                         )
                     }
                     for (c in yours) {
                         item {
                             OutlinedButton(onClick = { onOpenCard(c) },
-                                modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp)) {
+                                modifier = Modifier.padding(4.dp)) {
                                 Text(text = c.task.ifBlank { c.id })
                             }
                         }
@@ -206,14 +197,14 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                                        "In Arbeit: ${working.total} von ${summary!!.wipLimit}"
                                    else "In Arbeit: ${working.total}",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                         )
                     }
                     for (c in working.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp)) {
+                                modifier = Modifier.padding(2.dp)) {
                                 Text(text = c.task.ifBlank { c.id })
                             }
                         }
@@ -224,14 +215,14 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         Text(
                             text = "Backlog: ${backlog.total}",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                         )
                     }
                     for (c in backlog.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp)) {
+                                modifier = Modifier.padding(2.dp)) {
                                 Text(text = c.task.ifBlank { c.id })
                             }
                         }
@@ -244,7 +235,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                             Text(
                                 text = "Stand: $age",
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                             )
                         }
                     }
@@ -256,8 +247,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // was the point of putting HelmDeck on a wrist; it must not
                 // depend on something being wrong first.
                 item {
-                    Button(onClick = { onAskHenry() },
-                        modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp)) {
+                    Button(onClick = { onAskHenry() }, modifier = Modifier.padding(6.dp)) {
                         Text("Henry fragen")
                     }
                 }
@@ -265,8 +255,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // maintenance, so it steps back to outlined. Same reasoning as
                 // HenryScreen's own three tiers.
                 item {
-                    OutlinedButton(onClick = { reload() },
-                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp)) {
+                    OutlinedButton(onClick = { reload() }, modifier = Modifier.padding(8.dp)) {
                         Text("Aktualisieren")
                     }
                 }

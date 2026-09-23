@@ -131,16 +131,17 @@ android {
         // to verify the four chat bugs (screen sleep, false "nicht
         // erreichbar", blocked second message, silent send) without touching
         // the Play submission.
-        // 1000008: Play rejected Wear production 1000006 AGAIN on 2026-09-20
-        // under "Qualitaetsrichtlinien fuer Wear-Apps: Wear OS-Schriftgroesse"
-        // - the 2026-09-17 fix (a0d88137) only removed PairingScreen's
-        // maxLines/TextOverflow clip, but every OTHER Text/Button across
-        // Board/Card/Henry screens still sat on a fixed-dp horizontal inset
-        // (or none) that the round bezel cuts into the moment its content
-        // wraps to 2+ lines at a large system font scale - same defect class,
-        // different fields (card.task, Henry's free-text reply, the question
-        // text, per-card buttons). Fixed by applying the same round-bezel
-        // side inset (wearBezelInset(), WearLayout.kt) to every screen.
+        // 1000008: clean rebuild after Play rejected Wear production 1000006
+        // (2026-09-20, "Wear OS-Schriftgroesse"). ROOT CAUSE, measured
+        // 2026-09-23: the vc1000006 AAB was built 2026-09-17 23:27 from tree
+        // 27545f98, TWO MINUTES BEFORE a0d88137 (23:29) removed PairingScreen's
+        // maxLines/TextOverflow.Ellipsis. Play reviewed a binary that still
+        // truncated the claim-URL field, the only screen a reviewer can reach
+        // (Board/Card/Henry sit behind pairing). The shipped UI code measures
+        // clean on the real Xiaomi Watch 5 at font_scale 1.3 and 2.0 (0
+        // mid-band clipped px in 39 frames). build_wear_aab.sh now refuses an
+        // uncommitted wear tree and records the commit sha, so this cannot
+        // recur.
         versionCode 1000008
         versionName "1.0.0"
     }
