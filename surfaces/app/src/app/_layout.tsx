@@ -23,10 +23,11 @@ import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { armDiagCapture } from "@/data/diag";
 import { useSilentOta } from "@/data/ota";
-import { usePresenceHeartbeat } from "@/data/presence";
+import { CHAT_FOCUS, usePresence, usePresenceHeartbeat } from "@/data/presence";
 import { warmProfileCache } from "@/data/profile";
 import { useBlockerVoice } from "@/data/blocker_voice";
 import { announceDecrypted, decryptPush, presentDecrypted, registerForPush } from "@/data/push";
+import { decideChatPush } from "@/data/push_present";
 import { pushRoute } from "@/data/push_route";
 import { t as i18nT } from "@/i18n/core";
 import { ThemeProvider } from "@/theme";
@@ -168,10 +169,27 @@ function usePushWiring() {
       if (useDemo.getState().active) queryClient.invalidateQueries();
       if (useConfig.getState().relayMode()) registerForPush();
     })();
-    // foreground: decrypt sealed data pushes and present them locally
+    // foreground: decrypt sealed data pushes and present them locally.
+    // A Henry reply gets one more call first (push_present.ts): while the
+    // owner is looking straight at the open chat, showing the OS banner too
+    // is the exact "buzzed on the very phone showing the answer" bug the
+    // WhatsApp/Slack pattern avoids - the foreground app decides, not the
+    // banner. Presence already tells the daemon to withhold this same push
+    // server-side (chat_readers, a3c66980); this is the client re-deciding it
+    // from what is certainly on screen right now, which cannot race a
+    // heartbeat. Every chat reply also wakes the chat query regardless of
+    // focus - the push itself is proof the transcript moved, and it travels
+    // over FCM, a channel that skips whatever the app's own long-poll/relay
+    // session is behind by.
     const recv = Notifications.addNotificationReceivedListener((n) => {
       const data = n.request.content.data as Record<string, string>;
-      if (data?.cipher) { presentDecrypted(data); announceDecrypted(data); }
+      if (!data?.cipher) return;
+      const m = decryptPush(data);
+      const { wake, present } = decideChatPush(
+        m?.kind, usePresence.getState().focusedCard, CHAT_FOCUS,
+        AppState.currentState === "active");
+      if (wake) void ensureChatFresh(queryClient);
+      if (present) { presentDecrypted(data); announceDecrypted(data); }
     });
     // tap: deep-link to the card (or the PM chat if the push has no card). The
     // track is sealed in the cipher (zero-knowledge), so decrypt on tap to route.
