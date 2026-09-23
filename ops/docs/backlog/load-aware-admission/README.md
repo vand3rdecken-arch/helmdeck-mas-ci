@@ -1,5 +1,26 @@
 # The box has a CPU/RAM limit and the harness doesn't know it exists
 
+**TEILWEISE GESCHLOSSEN 2026-09-23: die immer-sichere Haelfte ist gebaut.**
+Agent-Worker (und alles, was sie starten - der Gradle-Daemon eingeschlossen)
+laufen jetzt mit BELOW_NORMAL_PRIORITY_CLASS, der Daemon und Henrys
+Chat-Port bleiben auf NORMAL. EIN Besitzer des Flags:
+`spine/agent/spawnenv.worker_creationflags()`, benutzt von allen fuenf
+Treibern; Test `ops/tests/test_worker_priority.py` haelt das Flag UND die
+Naht (ein neuer Treiber mit eigenen creationflags faellt durch).
+
+Messung, die es ausgeloest hat: waehrend des AAB-Builds 14:36-15:12 hat der
+Daemon `/pm/plan` und `/dashboard/data` in 20-115s beantwortet, die
+Handy-Frames liefen der Relay-Bruecke weg, die App zeigte "Relay
+unreachable". 143 solche langsamen Antworten seit dem 19.09., **alle** in
+einem Build-Fenster, **keine** in den 3,5 ruhigen Stunden danach. Die
+Endpunkte selbst kosten ~2,5s CPU (list_tracks 0,11 + metrics 0,95 +
+live_plan 1,22 + activity 0,19) - es war Verdraengung, kein Algorithmus.
+
+OFFEN bleibt die eigentliche Karte: Zulassung nach GEMESSENER Last
+(Queueing mit sichtbarem Grund, `policy.load_admission`). Die Prioritaet
+verhindert nur, dass der Daemon verhungert - sie verhindert nicht, dass drei
+schwere Karten gleichzeitig starten.
+
 **Filed 2026-08-20 from an owner observation.** The desktop has a lock (one
 global cursor, `_uses_desktop_control`, fail-safe) because two agents driving
 the mouse COLLIDE visibly. Compute has nothing, because contention fails soft

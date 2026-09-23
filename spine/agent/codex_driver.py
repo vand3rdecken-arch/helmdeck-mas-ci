@@ -89,6 +89,7 @@ import time as _time
 
 from spine.agent import timeline_store
 from spine.agent.proctable import _tree_kill, _record_pid, _forget_pid
+from spine.agent import spawnenv   # worker_creationflags: ONE owner of the priority flag
 
 _TL_MAX_TEXT = 200_000
 _TL_MAX_THINK = 60_000
@@ -263,7 +264,7 @@ class _CodexSession:
                                      # no console: the daemon runs under pythonw,
                                      # so without this the agent gets its own
                                      # (empty) console window that steals focus
-                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                     creationflags=spawnenv.worker_creationflags())
         self.spawn_time = _time.time()
         _record_pid(self.proc.pid, self.spawn_time)
         self.err_tail = []

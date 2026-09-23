@@ -165,3 +165,37 @@ def _env(cfg, card=None):
     if prepend:
         env["PATH"] = str(prepend) + os.pathsep + env.get("PATH", "")
     return env
+
+
+# -- worker process priority (2026-09-23) -----------------------------------
+# THE DAEMON MUST OUTRANK THE WORK IT SPAWNS. Measured that day: while a card
+# built the Android AAB (14:36-15:12), the daemon answered /pm/plan and
+# /dashboard/data in 20-115s; the phone's frames sat past the relay bridge's
+# patience and the app showed "Relay unreachable". 143 such slow answers since
+# 2026-09-19 - every single one inside a heavy-build window, ZERO in the 3.5
+# quiet hours after the build died. The endpoints themselves cost ~2.5s of CPU
+# (measured: list_tracks 0.11 + metrics 0.95 + live_plan 1.22 + activity 0.19),
+# so this was starvation, not an algorithm.
+#
+# A worker and EVERYTHING IT STARTS inherit this class, so the Gradle daemon
+# the card launches inherits it too - which is the point: one flag at the one
+# spawn seam covers every build a card will ever invent, with no list of
+# "known heavy commands" to keep current. When the box is idle Windows still
+# hands a below-normal process the whole CPU, so nothing gets slower for free.
+#
+# NOT lowered: the daemon itself and Henry's chat/hands port - the owner is
+# waiting on those in person. This is the narrow, always-safe half of
+# ops/docs/backlog/load-aware-admission (admission by observed load); that
+# card stays open for the queueing half.
+BELOW_NORMAL = 0x00004000          # BELOW_NORMAL_PRIORITY_CLASS (Windows)
+
+
+def worker_creationflags():
+    """CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS on Windows, 0 elsewhere.
+    ONE owner of the flag - every agent driver's Popen reads it from here, so
+    a new driver cannot quietly ship at normal priority."""
+    import subprocess
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if os.name == "nt":
+        flags |= getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", BELOW_NORMAL)
+    return flags

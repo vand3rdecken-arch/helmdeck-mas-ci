@@ -61,6 +61,7 @@ def _text_of(content):
 
 from spine.ops import ask  # the typed question channel taught to every worker (Phase 2.4)
 from spine.registry import harness  # briefs + settings layers as data (ops/harness/), never raises
+from spine.agent import spawnenv   # worker_creationflags: ONE owner of the priority flag
 
 # CLAUDE comes from agentcli.py now (the single source - see its module
 # docstring); still a real name in THIS module's namespace via the import
@@ -824,7 +825,7 @@ class _ClaudeSession:
                                      # no console: the daemon runs under pythonw,
                                      # so without this the agent gets its own
                                      # (empty) console window that steals focus
-                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                     creationflags=spawnenv.worker_creationflags())
         self.spawn_time = _time.time()
         self._spawn_resumed = self.session_id
         self._resume_echo = False
