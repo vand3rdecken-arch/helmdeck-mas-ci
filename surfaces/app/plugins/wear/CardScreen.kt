@@ -16,7 +16,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -111,9 +110,13 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
         // the bezel, but a full-width card is still cut by the circle at
         // every height except the vertical middle (owner photo,
         // 2026-08-30: whole letters missing at the start of the wrapped
-        // lines). 10% of the screen width per side, so it scales with
-        // the device instead of being a guess about one.
-        val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
+        // lines). Shared with every screen via wearBezelInset() (WearLayout.kt)
+        // and now applied to EVERY item below, not only the Card/OutlinedCard -
+        // Play rejected Wear production 1000006 again on 2026-09-20 (font-size
+        // guideline) with this fix only on PairingScreen's field; the title
+        // (card.task, backend text) and `henryReply` (Henry's own free-text
+        // answer) are unbounded and wrap exactly the same way.
+        val sideInset = wearBezelInset()
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -127,7 +130,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                     Text(
                         text = card.task.ifBlank { card.id },
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(8.dp),
+                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
                     )
                 }
                 // "Zurück" stays directly under the title, ABOVE the content:
@@ -139,7 +142,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 item {
                     Button(
                         onClick = { VoicePlayer.stop(); onBack() },
-                        modifier = Modifier.padding(4.dp),
+                        modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp),
                     ) { Text("Zurück") }
                 }
                 // THE CARD'S OWN CONTENT - the whole reason this screen exists
@@ -161,7 +164,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             color = WearSemantics.status(
                                 card.status.ifBlank { card.reason }),
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
                         )
                     }
                 }
@@ -219,7 +222,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 val q = card.question
                 if (q != null) {
                     for (item in q.questions) {
-                        item { Text(text = item.question, modifier = Modifier.padding(8.dp)) }
+                        item {
+                            Text(text = item.question,
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp))
+                        }
                         for (opt in item.options) {
                             val selected = picks[item.header] == opt.label
                             item {
@@ -237,7 +243,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                             submitAnswer(q.id)
                                         }
                                     },
-                                    modifier = Modifier.padding(2.dp),
+                                    modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
                                 ) { Text(text = (if (selected) "> " else "") + opt.label) }
                             }
                         }
@@ -247,16 +253,22 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             Button(
                                 onClick = { submitAnswer(q.id) },
                                 enabled = q.questions.all { picks.containsKey(it.header) },
-                                modifier = Modifier.padding(8.dp),
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp),
                             ) { Text("Antworten") }
                         }
                     }
                     if (answerStatus != null) {
-                        item { Text(text = answerStatus ?: "", modifier = Modifier.padding(8.dp)) }
+                        item {
+                            Text(text = answerStatus ?: "",
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp))
+                        }
                     }
                 }
 
-                item { Text(text = "Henry fragen", modifier = Modifier.padding(8.dp)) }
+                item {
+                    Text(text = "Henry fragen",
+                        modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp))
+                }
                 item {
                     Button(
                         onClick = {
@@ -268,11 +280,19 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             dictateLauncher.launch(prompt)
                         },
                         enabled = !henryBusy,
-                        modifier = Modifier.padding(4.dp),
+                        modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp),
                     ) { Text(if (henryBusy) "…" else "Diktieren") }
                 }
                 if (henryReply != null) {
-                    item { Text(text = henryReply ?: "", modifier = Modifier.padding(8.dp)) }
+                    // Henry's own free-text answer - the exact shape (unbounded,
+                    // LLM-generated, wraps to several lines) already fixed for
+                    // card.body's Card() above. This bare Text had NO side inset
+                    // at all until now - the residual gap that kept the 2026-09-20
+                    // rejection alive after PairingScreen's own fix.
+                    item {
+                        Text(text = henryReply ?: "",
+                            modifier = Modifier.padding(horizontal = sideInset, vertical = 8.dp))
+                    }
                 }
                 henrySuggestions?.questions?.forEach { sug ->
                     for (opt in sug.options) {
@@ -283,7 +303,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                         onBusy = { henryBusy = it },
                                         onReply = { reply, more -> henryReply = reply; henrySuggestions = more })
                                 },
-                                modifier = Modifier.padding(2.dp),
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
                             ) { Text(text = opt.label) }
                         }
                     }

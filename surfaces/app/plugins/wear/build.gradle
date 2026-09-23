@@ -131,7 +131,17 @@ android {
         // to verify the four chat bugs (screen sleep, false "nicht
         // erreichbar", blocked second message, silent send) without touching
         // the Play submission.
-        versionCode 1000007
+        // 1000008: Play rejected Wear production 1000006 AGAIN on 2026-09-20
+        // under "Qualitaetsrichtlinien fuer Wear-Apps: Wear OS-Schriftgroesse"
+        // - the 2026-09-17 fix (a0d88137) only removed PairingScreen's
+        // maxLines/TextOverflow clip, but every OTHER Text/Button across
+        // Board/Card/Henry screens still sat on a fixed-dp horizontal inset
+        // (or none) that the round bezel cuts into the moment its content
+        // wraps to 2+ lines at a large system font scale - same defect class,
+        // different fields (card.task, Henry's free-text reply, the question
+        // text, per-card buttons). Fixed by applying the same round-bezel
+        // side inset (wearBezelInset(), WearLayout.kt) to every screen.
+        versionCode 1000008
         versionName "1.0.0"
     }
 

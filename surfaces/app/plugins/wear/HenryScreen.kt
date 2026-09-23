@@ -750,10 +750,13 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     //
     // Screen-relative rather than a fixed dp value: the same 10% is right
     // on a 192dp small round watch and a 227dp large one, and it is the
-    // only number here that is not a guess about one device. Applied to
-    // the CARDS rather than to the column, so the date separators and the
-    // title stay centred on the full width.
-    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
+    // only number here that is not a guess about one device. Shared with
+    // every screen via wearBezelInset() (WearLayout.kt) and now applied to
+    // EVERY row below, not only Row.Msg's TitleCard - Play rejected Wear
+    // production 1000006 again on 2026-09-20 (font-size guideline) after
+    // only PairingScreen had been fixed; Row.Hint/Row.Option/Row.Suggest all
+    // carry unbounded server/LLM text that wraps the same way.
+    val sideInset = wearBezelInset()
     // Box so the "Neueste" button below can float OVER the list. ScreenScaffold
     // keeps its own scroll indicator on the right edge, so the button sits
     // bottom-CENTRE and the two never fight for the same pixels.
@@ -811,11 +814,11 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                         when (row) {
                             is Row.Title -> Text(
                                 text = "Henry", textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 8.dp))
+                                modifier = Modifier.padding(horizontal = sideInset))
 
                             is Row.Hint -> Text(
                                 text = row.text, textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp))
 
                             // The wake-catch-up banner: transcript already has
                             // content, a refresh is in flight, and that must
@@ -825,13 +828,13 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                        else "Verlauf wird aktualisiert…",
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp))
 
                             is Row.Day -> Text(
                                 text = dayLabel(row.date),
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp))
 
                             is Row.Msg -> TitleCard(
                                 onClick = {},
@@ -859,16 +862,16 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             is Row.Option -> Button(
                                 onClick = { answerCard(row.card, row.label) },
                                 enabled = !busy,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 2.dp),
                             ) { Text(text = row.label) }
 
                             is Row.Busy -> Text(
                                 text = "Henry denkt …", textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(6.dp))
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp))
 
                             is Row.Suggest -> Button(
                                 onClick = { ask(row.label) }, enabled = !busy,
-                                modifier = Modifier.padding(4.dp)) { Text(text = row.label) }
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 4.dp)) { Text(text = row.label) }
 
                             // ALWAYS enabled, even while `busy`: a tap while
                             // Henry is still answering DICTATES a follow-up
@@ -878,7 +881,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             // 2026-09-18: "passiert sichtbar nichts").
                             is Row.Speak -> Button(
                                 onClick = { dictate.launch(speechIntent()) },
-                                modifier = Modifier.padding(6.dp),
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp),
                             ) { Text(if (queued != null) "Wartet …" else if (busy) "…" else "Sprechen") }
 
                             is Row.VoiceToggle -> OutlinedButton(
@@ -889,7 +892,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                     // sentence, not merely the next one.
                                     if (!voiceOn) VoicePlayer.stop()
                                 },
-                                modifier = Modifier.padding(6.dp),
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp),
                             ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
 
                             // Lowest emphasis, but NOT invisible. A bare
@@ -903,7 +906,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             is Row.Board -> ChildButton(
                                 onClick = { VoicePlayer.stop(); onOpenBoard() },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(6.dp)) { Text("Board") }
+                                modifier = Modifier.padding(horizontal = sideInset, vertical = 6.dp)) { Text("Board") }
                         }
                     }
                 }
