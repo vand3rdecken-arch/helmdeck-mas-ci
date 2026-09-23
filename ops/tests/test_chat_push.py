@@ -310,13 +310,31 @@ notify.push_fcm = lambda *a, **k: PUSHED.append((a, k)) or True
 reset()
 presence.clear()
 presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True,
-                pub="pub-phone",
-                activity_at=__import__("time").time() - presence.READER_FRESH_S - 5)
+                pub="pub-phone")
+for _c in presence._clients.values():
+    _c["seen"] -= presence.READER_FRESH_S + 5
 turn()
 check(PUSHED,
       "a STALE chat-focus heartbeat (older than READER_FRESH_S) no longer "
       "counts as reading - a phone that navigated away and stopped beating "
       "is buzzed again, not held silent forever")
+presence.clear()
+
+# 2026-09-23 owner report: pushed while actively reading the chat. The app
+# refreshes last_activity_at only on opening a screen, so a Henry turn longer
+# than READER_FRESH_S aged the reader out although its 15s beat kept arriving.
+reset()
+presence.clear()
+notify.push_fcm = lambda *a, exclude_pubs=None, **k: (
+    PUSHED.append((a, k, exclude_pubs)) or True)
+presence.record("owner", "phone", focused_card=presence.CHAT, app_visible=True,
+                pub="pub-phone",
+                activity_at=__import__("time").time() - 600)
+turn()
+check(PUSHED and PUSHED[0][2] == {"pub-phone"},
+      "chat opened 10 min ago but the heartbeat is fresh -> still the reader, "
+      "withheld; human activity age must not decide 'reading right now'")
+notify.push_fcm = lambda *a, **k: PUSHED.append((a, k)) or True
 presence.clear()
 
 # -- 4. quiet hours do NOT hold a solicited answer ---------------------------
@@ -488,8 +506,9 @@ try:
     reset("Antwort nachdem du weg bist.")
     presence.clear()
     presence.record("owner", "phone", focused_card=presence.CHAT,
-                    app_visible=True, pub=e2ee.export_pub(pk_p),
-                    activity_at=__import__("time").time() - presence.READER_FRESH_S - 5)
+                    app_visible=True, pub=e2ee.export_pub(pk_p))
+    for _c in presence._clients.values():
+        _c["seen"] -= presence.READER_FRESH_S + 5
     turn()
     check(len(SENT) == 2,
           "a STALE heartbeat (older than READER_FRESH_S) no longer skips the "

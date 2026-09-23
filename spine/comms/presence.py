@@ -93,7 +93,7 @@ def record(user, device, focused_card=None, app_visible=True, activity_at=None,
         _clients[key] = {"user": _clip(user), "device": _clip(device),
                          "focused": _clip(focused_card),
                          "visible": bool(app_visible), "activity": at,
-                         "pub": _clip(pub)}
+                         "seen": now, "pub": _clip(pub)}
         # drop everything long past the freshness window; it can never make a
         # notification decision again, it can only consume memory
         for k in [k for k, c in _clients.items() if now - c["activity"] > FRESH_S * 4]:
@@ -153,10 +153,18 @@ def chat_readers(within_s=READER_FRESH_S, now=None):
                device that might be the one being read is the safe direction
                to be wrong in.
     """
+    # Freshness is the HEARTBEAT's arrival ("seen"), not the human's last
+    # activity: the app refreshes activity only on opening a screen or
+    # returning to the app, so an owner who opened the chat, typed, and then
+    # read a Henry turn longer than within_s aged out of "reader" mid-read
+    # and was buzzed on the very phone showing the answer (owner report
+    # 2026-09-23, after the 2026-09-20 fix). The 15s beat is the proof the
+    # chat is still on screen.
     now = now or time.time()
     with _lock:
         cands = [c for c in _clients.values() if c["visible"]
-                 and c["focused"] == CHAT and now - c["activity"] <= within_s]
+                 and c["focused"] == CHAT
+                 and now - c.get("seen", c["activity"]) <= within_s]
     return ({c["pub"] for c in cands if c.get("pub")},
             any(not c.get("pub") for c in cands))
 
