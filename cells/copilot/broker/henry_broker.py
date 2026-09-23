@@ -197,20 +197,21 @@ def _baseline_commit():
     """Snapshot the repo BEFORE Henry's hands touch it, so a wrong 'did' has
     a clean rollback point (debt henry-direct-hands: "no snapshot to roll
     back to unless the agent commits first" - a direct-build card has the
-    same gap, unfixed; this closes it for Henry specifically). No-ops when
-    the tree is already clean - never an empty commit, never masks whose
-    change something was by committing on the owner's behalf when there is
-    nothing new to snapshot."""
-    from spine.git.gitutil import _git, _git_try, AGENT_IDENT
-    try:
-        dirty = _git(_HENRY_REPO_ROOT, "status", "--porcelain")
-    except Exception:
-        return   # not a git checkout or git unavailable - nothing to baseline
-    if not dirty:
-        return
-    _git_try(_HENRY_REPO_ROOT, *AGENT_IDENT, "add", "-A")
-    _git_try(_HENRY_REPO_ROOT, *AGENT_IDENT, "commit", "-m",
-            "Henry baseline - snapshot before hands-on judgement turn")
+    same gap, unfixed; this closes it for Henry specifically). Returns the
+    snapshot sha, or "" when the tree was clean.
+
+    IT IS NOT A COMMIT ANY MORE (owner, 2026-09-23: "Fix commits"). It used
+    to be `git add -A` + `git commit`, and on a shared live tree that
+    swallows whatever else is in flight: three times that day it took work
+    that was not Henry's - an unapproved Wear edit set, then two finished
+    changes of the owner's own - and filed all of it under "Henry baseline",
+    erasing the real messages and the authorship. A rollback point does not
+    have to be reachable from a branch, it only has to EXIST:
+    gitutil.snapshot_object writes a dangling commit from a throwaway index
+    and mutates neither HEAD nor the index nor the working tree."""
+    from spine.git.gitutil import snapshot_object
+    return snapshot_object(
+        _HENRY_REPO_ROOT, "Henry baseline - rollback point before a hands-on turn")
 
 
 def _hands_on_ask(prompt, timeout=60):
@@ -230,7 +231,17 @@ def _hands_on_ask(prompt, timeout=60):
             "henry: repo tree busy (a direct/machine card is editing it) - "
             "waited %ss, giving up this round" % timeout)
     try:
-        _baseline_commit()
+        snap = _baseline_commit()
+        if snap:
+            # The sha has to reach a human, or the rollback point is a secret:
+            # a dangling object is invisible in `git log` by design. One line,
+            # in the prompt Henry is already reading, so his own "did" report
+            # can quote it.
+            prompt += ("\n\nROLLBACK-PUNKT vor diesem Turn: %s "
+                       "(haengender Commit, nicht im Log - zurueck mit "
+                       "`git checkout %s -- .`). Nenne ihn in deinem \"did\", "
+                       "wenn du am Baum etwas geaendert hast."
+                       % (snap[:12], snap[:12]))
         return _ask(prompt, perm=None)
     finally:
         lock.release()

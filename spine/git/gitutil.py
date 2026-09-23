@@ -377,3 +377,52 @@ def _worktree_of_branch(repo, branch):
         elif line.startswith("branch ") and path and line[7:].strip() == "refs/heads/" + branch:
             return path
     return None
+
+
+def snapshot_object(repo, message="snapshot"):
+    """A DANGLING commit object capturing the full working tree - tracked
+    edits AND untracked files - without touching HEAD, the index or the
+    working tree. Returns its sha, or "" when there is nothing to snapshot.
+
+    Why not a real commit (owner, 2026-09-23: "Fix commits"): the previous
+    form of Henry's rollback point was `git add -A` + `git commit`, which on
+    a shared live tree swallows whatever ELSE is in flight. Measured that day
+    - three times: it took an unapproved Wear edit set, then two finished
+    pieces of the owner's own work, and filed all of it under "Henry baseline
+    - snapshot before hands-on judgement turn", so the real commit messages
+    (and the authorship) were gone. A rollback point does not need to be
+    reachable from a branch; it needs to EXIST. `git commit-tree` against a
+    throwaway index gives exactly that and mutates nothing.
+
+    .gitignore still applies (the temp index is fed by `add -A`), so secrets
+    stay out - same guarantee as any other commit path here."""
+    import tempfile
+    try:
+        if not _git(repo, "status", "--porcelain"):
+            return ""                       # clean tree: nothing to roll back to
+    except Exception:                                        # noqa: BLE001
+        return ""                           # not a checkout / git unavailable
+    fd, idx = tempfile.mkstemp(prefix="hd_snap_idx_")
+    os.close(fd)
+    os.unlink(idx)                          # git wants to CREATE the index file
+    env = dict(os.environ, GIT_INDEX_FILE=idx)
+
+    def g(*args):
+        r = _run_git(["git", "-C", repo, *args], env=env)
+        if r.returncode != 0:
+            raise RuntimeError("git %s: %s" % (" ".join(args), r.stderr.strip()))
+        return r.stdout.strip()
+
+    try:
+        g("read-tree", "HEAD")              # base the temp index on HEAD
+        g("add", "-A")                      # stage everything INTO THE TEMP INDEX
+        tree = g("write-tree")
+        head = _git(repo, "rev-parse", "HEAD")
+        return g(*AGENT_IDENT, "commit-tree", tree, "-p", head, "-m", message)
+    except Exception:                                        # noqa: BLE001
+        return ""                           # a snapshot is best-effort, never fatal
+    finally:
+        try:
+            os.unlink(idx)
+        except OSError:
+            pass

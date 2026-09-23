@@ -135,23 +135,30 @@ def main():
         hb._execute = orig_execute
 
     # -- 5: _baseline_commit -------------------------------------------------
+    # NOT a commit any more (owner 2026-09-23, "Fix commits"): `git add -A` on
+    # a shared live tree swallowed three unrelated changes that day and filed
+    # them under "Henry baseline". It is a dangling commit-tree object now -
+    # the rollback point exists, HEAD / index / working tree do not move.
     print("\n_baseline_commit")
     log_before = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
                                 capture_output=True, text=True).stdout
-    hb._baseline_commit()
+    ok(hb._baseline_commit() == "", "a CLEAN tree gets no snapshot (nothing to roll back to)")
     log_after = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
                                capture_output=True, text=True).stdout
-    ok(log_after == log_before, "a CLEAN tree gets no baseline commit (nothing to snapshot)")
+    ok(log_after == log_before, "...and no commit either")
 
     open(os.path.join(henry_repo, "dirty.txt"), "w").write("uncommitted work\n")
-    hb._baseline_commit()
+    snap = hb._baseline_commit()
     log2 = subprocess.run(["git", "-C", henry_repo, "log", "--oneline"],
                           capture_output=True, text=True).stdout
-    ok(log2 != log_after and "Henry baseline" in log2,
-       "a DIRTY tree gets a real baseline commit before Henry's hands touch it")
+    ok(len(snap) == 40, "a DIRTY tree gets a snapshot OBJECT (sha returned)")
+    ok(log2 == log_after, "...and NO commit lands in the log")
     status = subprocess.run(["git", "-C", henry_repo, "status", "--porcelain"],
                             capture_output=True, text=True).stdout
-    ok(status.strip() == "", "the tree is clean again after the baseline commit")
+    ok("dirty.txt" in status, "the owner's uncommitted work is still uncommitted")
+    shown = subprocess.run(["git", "-C", henry_repo, "show", "%s:dirty.txt" % snap],
+                           capture_output=True, text=True).stdout
+    ok("uncommitted work" in shown, "but the snapshot captured it - a bad 'did' stays reversible")
 
     # -- 6: _hands_on_ask - lock + baseline wrap the privileged path ---------
     print("\n_hands_on_ask")
@@ -162,7 +169,8 @@ def main():
         ok(result == {"perm_seen": None}, "calls the real _ask with perm=None")
         status = subprocess.run(["git", "-C", henry_repo, "status", "--porcelain"],
                                 capture_output=True, text=True).stdout
-        ok(status.strip() == "", "the dirty file got baseline-committed before _ask ran")
+        ok("dirty2.txt" in status,
+           "_ask ran with the file STILL dirty - the baseline never commits it")
     finally:
         hb._ask = orig_ask
 
