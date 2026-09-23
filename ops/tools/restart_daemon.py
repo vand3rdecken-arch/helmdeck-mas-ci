@@ -98,7 +98,10 @@ def main():
     flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0   # DETACHED_PROCESS | NEW_PROCESS_GROUP
     out = open(os.path.join(ROOT, "daemon", "restart_stdout.log"), "ab")
     err = open(os.path.join(ROOT, "daemon", "restart_stderr.log"), "ab")
-    subprocess.Popen([sys.executable, "-m", "daemon.swarm", "serve"], cwd=ROOT,
+    # --takeover: this tool IS the explicit restart verb, so it may depose the
+    # running daemon. A supervisor spawning without it exits 3 instead
+    # (spine/http/startup.py, the daemon mutex).
+    subprocess.Popen([sys.executable, "-m", "daemon.swarm", "serve", "--takeover"], cwd=ROOT,
                      stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags)
     deadline = time.time() + 90
     while time.time() < deadline:

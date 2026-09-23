@@ -16,7 +16,7 @@ export function HealthBanner() {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
-  const { status, detail } = useHealth();
+  const { status, detail, verdictKey } = useHealth();
   const visible = status !== "ok";
   const offline = status === "offline";
   const anim = useRef(new Animated.Value(0)).current;
@@ -43,8 +43,14 @@ export function HealthBanner() {
           <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>
             {tr(offline ? "health.offline" : "health.reconnecting")}
           </Text>
-          {offline && detail ? (
-            <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11.5 }}>{detail}</Text>
+          {/* The DIAGNOSED leg wins over the raw transport sentence: "Relay
+              unreachable" covered the phone's network, a starved daemon and
+              two daemons on one port within a single day (2026-09-23), while
+              the verdict from data/connection_check.ts names one of them. */}
+          {offline && (verdictKey || detail) ? (
+            <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11.5 }}>
+              {verdictKey ? tr(verdictKey) : detail}
+            </Text>
           ) : null}
         </View>
       </View>

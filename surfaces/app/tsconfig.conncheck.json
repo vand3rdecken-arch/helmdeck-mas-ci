@@ -1,0 +1,39 @@
+{
+  // Standalone compile config for src/data/__connection_check_selftest__.ts (card 4,
+  // ops/docs/backlog/rbac-gxp) - the role x screen nav test the plan called
+  // for. Zero-dependency, same idea as src/kernel/tsconfig.selftest.json,
+  // but that one is scoped to rootDir "src/kernel" only; this test also
+  // imports plain-data files under src/app/ and src/plugins/ (the nav
+  // tables, split out specifically so they're importable here without
+  // pulling in react-native/expo), so rootDir widens to "src" and "files"
+  // pins the ONE entry point rather than "include"-sweeping every .tsx
+  // under src/ (which would drag in real RN screens and fail to compile
+  // outside the Metro/Expo runtime).
+  //
+  // Run: npx tsc -p tsconfig.capstest.json && node .conncheck-out/kernel/__caps_selftest__.js
+  // Deliberately NOT extending ./tsconfig.json (same reasoning as
+  // src/kernel/tsconfig.selftest.json): the base config's expo/tsconfig.base
+  // sets customConditions, which requires moduleResolution "bundler"/
+  // "node16"/"nodenext" - incompatible with plain "node" resolution + a
+  // real commonjs emit for a bare `node` run.
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "target": "es2019",
+    "lib": ["es2019"],
+    "outDir": "./.conncheck-out",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": false,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
+    }
+  },
+  "include": [],
+  "files": ["src/data/__connection_check_selftest__.ts"]
+}

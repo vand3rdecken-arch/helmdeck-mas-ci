@@ -91,7 +91,10 @@ if (-not $up) {
   $py = 'python.exe'
   if ($before.Count -gt 0 -and $before[0].CommandLine -match '^"([^"]+)"') { $py = $matches[1] }
   Say ("    python  : {0}" -f $py)
-  Start-Process -FilePath $py -ArgumentList '-m', 'daemon.swarm', 'serve' `
+  # --takeover: the scheduled task is the other explicit restart verb, so it
+  # may depose a running daemon. A plain supervisor spawn exits 3 instead
+  # (spine/http/startup.py, the daemon mutex).
+  Start-Process -FilePath $py -ArgumentList '-m', 'daemon.swarm', 'serve', '--takeover' `
     -WorkingDirectory $root -WindowStyle Hidden `
     -RedirectStandardOutput (Join-Path $root 'daemon\restart_stdout.log') `
     -RedirectStandardError  (Join-Path $root 'daemon\restart_stderr.log')

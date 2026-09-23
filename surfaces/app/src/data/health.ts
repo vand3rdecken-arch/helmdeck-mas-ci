@@ -23,8 +23,17 @@ interface HealthState {
   failures: number;      // consecutive transport failures
   lastOkAt: number;      // ms epoch of the last successful round-trip (0 = never)
   firstFailAt: number;   // ms epoch the current failure streak started (0 = none)
+  // The last DIAGNOSIS (data/connection_check.ts): an i18n key naming WHICH
+  // leg is broken - phone network, relay, daemon, or this device's pairing.
+  // This store stays the one owner of "what is the connection state" (owner
+  // 2026-09-23: "ist aber nicht health verantwortlich fuer diagnose"); the
+  // check is a PROBE that feeds it, not a second source of truth. reportOk
+  // clears it, because a working round-trip outranks any older verdict.
+  verdictKey: string;
+  verdictAt: number;
   reportOk: () => void;
   reportFail: (detail: string) => void;
+  reportCheck: (verdictKey: string) => void;
 }
 
 export const useHealth = create<HealthState>((set, get) => ({
@@ -33,8 +42,10 @@ export const useHealth = create<HealthState>((set, get) => ({
   failures: 0,
   lastOkAt: 0,
   firstFailAt: 0,
+  verdictKey: "",
+  verdictAt: 0,
   reportOk: () => {
-    if (get().status !== "ok" || !get().lastOkAt) set({ status: "ok", detail: "", failures: 0, firstFailAt: 0, lastOkAt: Date.now() });
+    if (get().status !== "ok" || !get().lastOkAt) set({ status: "ok", detail: "", failures: 0, firstFailAt: 0, lastOkAt: Date.now(), verdictKey: "", verdictAt: 0 });
     else set({ lastOkAt: Date.now() });
   },
   reportFail: (detail) => set((s) => {
@@ -45,4 +56,12 @@ export const useHealth = create<HealthState>((set, get) => ({
       elapsed < RECONNECT_GRACE_MS ? "ok" : elapsed < OFFLINE_AFTER_MS ? "reconnecting" : "offline";
     return { status, detail, failures: s.failures + 1, firstFailAt };
   }),
+  // Written by the diagnosis panel only. It does NOT move `status`: whether
+  // the app can talk to the daemon is decided by real traffic, never by a
+  // probe's opinion - the check's own sealed round-trip goes through the
+  // ordinary client, so a passing check clears the banner via reportOk by
+  // itself. This only makes the banner SAY which leg, instead of repeating
+  // the generic transport sentence that covered three different causes in
+  // one day.
+  reportCheck: (verdictKey) => set({ verdictKey, verdictAt: Date.now() }),
 }));

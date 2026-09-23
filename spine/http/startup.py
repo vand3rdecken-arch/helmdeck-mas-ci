@@ -126,15 +126,87 @@ def _hydrate_registry_env():
               % ", ".join(sorted(added)), flush=True)
 
 
-def _take_singleton_lock(port):
-    """One daemon per machine. A restart used to race the old instance: the new
-    process couldn't bind the port until the old one died, and in that gap the
-    RELAY reverse-tunnel poll dropped - the phone showed "paired but takes very
-    long" until a poll re-established. So on start we cleanly evict a prior
-    daemon (pidfile + tree-kill) and wait for the port to actually free before
-    binding, making restart deterministic instead of a bind race."""
+# THE ONE AUTHORITY over "may this process become the daemon" (owner,
+# 2026-09-23: "keine zentrale Steuerung von deamon"). Held for the whole life
+# of the winning process; the kernel releases it when that process dies, so a
+# crash cannot wedge the machine.
+#
+# WHY A MUTEX AND NOT THE PORT CHECK: the port check is a CHECK, and a check
+# loses a race. Measured that day - two daemons started 19:23:20 and 19:23:21,
+# each ran `netstat` before the other had bound, each saw only the OLD daemon,
+# each evicted it, and both bound successfully (Python's HTTPServer sets
+# SO_REUSEADDR, and on Windows that lets a second process bind the SAME
+# addr:port instead of failing EADDRINUSE). Two daemons then bridged the same
+# relay room and wrote the same db for half an hour. A named mutex is settled
+# inside the kernel: exactly one caller can hold it, no matter how close the
+# starts are.
+_MUTEX_HANDLE = None          # module-global so the handle outlives this call
+
+
+def _acquire_daemon_mutex(port, wait_ms):
+    """True when THIS process now owns the right to serve `port`.
+    Windows: a named mutex. Elsewhere: no-op True (the double-bind this
+    guards against is a Windows SO_REUSEADDR behaviour; POSIX already fails
+    the second bind with EADDRINUSE)."""
+    global _MUTEX_HANDLE
+    if os.name != "nt":
+        return True
+    if _MUTEX_HANDLE:
+        return True
+    import ctypes
+    k = ctypes.windll.kernel32
+    # Local\ (not Global\): every supervisor runs in the owner's own session,
+    # and Global\ needs privileges a login-time tray may not have.
+    h = k.CreateMutexW(None, False, r"Local\HelmDeckDaemon-%d" % port)
+    if not h:
+        return True               # cannot create it -> do not block the boot
+    r = k.WaitForSingleObject(h, int(wait_ms))
+    if r in (0, 0x80):            # 0 = acquired, 0x80 = abandoned by a dead owner
+        _MUTEX_HANDLE = h
+        return True
+    k.CloseHandle(h)
+    return False
+
+
+def _refuse_start(port, why):
+    """A second daemon must die LOUDLY and distinguishably - exit code 3, one
+    line, one event. Silence here is what let two of them coexist unnoticed."""
+    print("SINGLETON: %s - this process will NOT become a second daemon on "
+          "port %d (exit 3). Use ops/tools/restart_daemon.py to take over."
+          % (why, port), flush=True)
+    try:
+        from spine.storage import events
+        events.log("daemon", "start refused: %s (port %d)" % (why, port))
+    except Exception:                                        # noqa: BLE001
+        pass
+    raise SystemExit(3)
+
+
+def _take_singleton_lock(port, takeover=False):
+    """One daemon per machine, enforced by the kernel, not by a scan.
+
+    `takeover=False` (every SUPERVISOR: tray, Electron shell, login task) means
+    "make sure one is running" - if one already is, this process exits 3 and
+    the running daemon is left alone. `takeover=True` is the explicit restart
+    verb (ops/tools/restart_daemon.py, restart_helmdeck.ps1): evict what is
+    there, then take the lock. That split IS the central control - a
+    supervisor can no longer replace a healthy daemon by accident, and only
+    one code path may ever depose one.
+
+    A restart used to race the old instance: the new process couldn't bind the
+    port until the old one died, and in that gap the RELAY reverse-tunnel poll
+    dropped - the phone showed "paired but takes very long" until a poll
+    re-established. So on takeover we cleanly evict a prior daemon (pidfile +
+    tree-kill) and wait for the port to actually free before binding."""
     import socket, subprocess, time, signal
     pidfile = os.path.join(_DAEMON_ROOT, "daemon.pid")
+
+    # THE GATE. A supervisor that loses it is not the daemon and says so; only
+    # an explicit takeover may evict the holder (killing it releases the mutex
+    # in the kernel, so the second attempt is the one that wins).
+    if not _acquire_daemon_mutex(port, 2000):
+        if not takeover:
+            _refuse_start(port, "another daemon already holds this machine's daemon lock")
 
     def _kill(pid, why):
         if not pid or pid == os.getpid():
@@ -223,6 +295,12 @@ def _take_singleton_lock(port):
         except OSError:
             s.close()
             time.sleep(0.1)
+    # The holder is dead now, so its mutex is free: this is the takeover path's
+    # second (and last) attempt. 10s, because taskkill /T on a tree with live
+    # children is not instant.
+    if not _acquire_daemon_mutex(port, 10000):
+        _refuse_start(port, "evicted the old daemon but a THIRD process took "
+                            "the lock first")
     try:
         open(pidfile, "w").write(str(os.getpid()))
         import atexit

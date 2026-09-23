@@ -661,10 +661,22 @@ class H(BaseHTTPRequestHandler):
 from spine.http.startup import _tls_config, _hydrate_windows_path, _hydrate_registry_env, _take_singleton_lock
 
 
-def serve(port=8140):
+class _Daemon(ThreadingHTTPServer):
+    """SO_REUSEADDR OFF - the belt to the mutex's braces (owner, 2026-09-23:
+    "keine zentrale Steuerung von deamon"). Python's HTTPServer sets
+    allow_reuse_address = 1 by default, and on WINDOWS that does not merely
+    relax TIME_WAIT as it does on POSIX: it lets a second process bind the
+    SAME addr:port and silently share it. That is how two daemons served
+    :8140 together on 2026-09-23 (started 19:23:20 and 19:23:21), each with
+    its own relay bridge on the same room. With this off, a second bind fails
+    EADDRINUSE - the OS states the invariant instead of us checking it."""
+    allow_reuse_address = False
+
+
+def serve(port=8140, takeover=False):
     _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail
     _hydrate_registry_env()      # + JAVA_HOME/ANDROID_HOME/user-PATH from the registry (build env)
-    _take_singleton_lock(port)   # evict a prior daemon so the relay poll never races a restart
+    _take_singleton_lock(port, takeover=takeover)   # THE gate: mutex, then (takeover only) evict
     from spine.storage import db
     # role="daemon": loading the store AS THE DAEMON structurally devalues any
     # persisted 'running'/'gating' (db._devalue_persisted_running - the old
@@ -816,7 +828,17 @@ def serve(port=8140):
             print("KEEPALIVE: not started (%s)" % str(e)[:120], flush=True)
     threading.Timer(3.0, _warm_henry).start()
     try:
-        ThreadingHTTPServer((bind, port), H).serve_forever()
+        try:
+            srv = _Daemon((bind, port), H)
+        except OSError as e:
+            # Reached only if something bound the port between the mutex and
+            # here - a foreign process, not a HelmDeck daemon (those lose the
+            # mutex first). Say which, and exit 3 like every other refusal.
+            print("SINGLETON: cannot bind %s:%d (%s) - another process owns "
+                  "the port. NOT starting a second daemon (exit 3)."
+                  % (bind, port, e), flush=True)
+            raise SystemExit(3)
+        srv.serve_forever()
     finally:
         drivers.shutdown_all()   # tree-kill live worker sessions on stop (Ctrl-C included)
 

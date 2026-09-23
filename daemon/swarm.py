@@ -98,7 +98,12 @@ def main():
                   (m["id"], m["kind"], m["status"], n, m["title"]))
     elif cmd == "serve":
         from spine.http import server
-        server.serve(int(sys.argv[2]) if len(sys.argv) > 2 else 8140)
+        # --takeover: the ONLY way to depose a running daemon (restart_daemon.py
+        # and restart_helmdeck.ps1 pass it). A supervisor without it exits 3
+        # when one is already running instead of becoming a second.
+        args = [a for a in sys.argv[2:] if a != "--takeover"]
+        server.serve(int(args[0]) if args else 8140,
+                     takeover="--takeover" in sys.argv[2:])
     else:
         print(__doc__)
 

@@ -5,6 +5,49 @@ import type { Dict } from "../core";
  *  Every failure mode keeps its own message - "offline", "timeout", "wrong
  *  keys" and "no network" need different actions from the owner. */
 export const net: Dict = {
+  // ---- connection check (data/connection_check.ts, ui/connection_check.tsx) --
+  // Owner 2026-09-23: "Haupt problem ist fehlender Diagnose". One line per leg,
+  // each naming WHO is broken and WHAT the owner can do - the old single
+  // "Relay unreachable" covered three different causes in one day.
+  "check.title": { de: "Verbindung testen", en: "Test connection" },
+  "check.run": { de: "Testen", en: "Run test" },
+  "check.running": { de: "Teste…", en: "Testing…" },
+  "check.leg.network": { de: "Netz des Handys", en: "Phone network" },
+  "check.leg.relay": { de: "Relay", en: "Relay" },
+  "check.leg.daemon": { de: "Daemon am Raum", en: "Daemon on the room" },
+  "check.leg.e2e": { de: "Verschlüsselte Anfrage", en: "Sealed request" },
+  "check.networkOk": { de: "erreicht {0}", en: "reaches {0}" },
+  "check.networkFail": {
+    de: "Das Handy erreicht den Relay nicht. WLAN/Mobilfunk, DNS oder eine veraltete Relay-Adresse.",
+    en: "The phone cannot reach the relay: WiFi/cellular, DNS, or a stale relay address.",
+  },
+  "check.relayOk": { de: "antwortet", en: "answering" },
+  "check.relayFail": {
+    de: "Der Relay antwortet, aber fehlerhaft. Das ist nichts, was du am Handy lösen kannst.",
+    en: "The relay answers, but with an error. Nothing you can fix from the phone.",
+  },
+  "check.daemonOk": { de: "holt Anfragen ab", en: "is pulling requests" },
+  "check.daemonOffline": {
+    de: "Kein Daemon an deinem Raum. Läuft HelmDeck am PC? (Neustart dauert ~1 Minute.)",
+    en: "No daemon on your room. Is HelmDeck running on the PC? (A restart takes ~1 minute.)",
+  },
+  "check.daemonProbeFail": { de: "Prüfung fehlgeschlagen", en: "probe failed" },
+  "check.e2eOk": { de: "beantwortet", en: "answered" },
+  "check.e2eFail": {
+    de: "Der Daemon ist da, aber die Anfrage scheitert - meist passen die Schlüssel nicht mehr. Neu koppeln.",
+    en: "The daemon is there but the request fails - usually stale keys. Pair again.",
+  },
+  "check.skipped": { de: "übersprungen", en: "skipped" },
+  "check.notPaired": {
+    de: "Kein Relay eingerichtet - dieses Gerät ist nicht gekoppelt.",
+    en: "No relay configured - this device is not paired.",
+  },
+  "check.verdict.ok": { de: "Alles in Ordnung.", en: "All good." },
+  "check.verdict.network": { de: "Es liegt am Netz dieses Handys.", en: "It is this phone's network." },
+  "check.verdict.relay": { de: "Es liegt am Relay.", en: "It is the relay." },
+  "check.verdict.daemon": { de: "Es liegt am PC - dort läuft kein Daemon.", en: "It is the PC - no daemon is running." },
+  "check.verdict.e2e": { de: "Es liegt an der Kopplung dieses Geräts.", en: "It is this device's pairing." },
+
   "net.relayUnreachable": {
     de: "Relay nicht erreichbar (Netzwerk/DNS)",
     en: "Relay unreachable (network/DNS)",

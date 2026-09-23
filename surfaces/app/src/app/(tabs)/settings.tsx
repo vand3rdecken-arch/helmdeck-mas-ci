@@ -27,6 +27,7 @@ import { Chip, Panel, ScreenHeader, SectionLabel } from "@/ui/kit";
 import { HenryChat } from "@/ui/henry_chat";
 import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
+import { ConnectionCheck } from "@/ui/connection_check";
 import { EnginesSection } from "@/ui/engines_section";
 import { UsagePanel } from "@/ui/dash_panels";
 // import { HarnessSection } from "@/ui/harness_section";  // commented out with its render below
@@ -846,6 +847,14 @@ export default function Settings() {
             <ScopeBadge scope="device" />
           </View>
           <Hint text={tr("settings.pair.hint")} />
+          {/* THE DIAGNOSIS, on the device that is complaining (owner
+              2026-09-23: "Haupt problem ist fehlender Diagnose"). Sits above
+              the relay URL on purpose: when the phone says it cannot reach
+              the desktop, this is the first thing to press, and the URL it
+              tests is the one shown right below. */}
+          <Caption text={tr("check.title")} />
+          <ConnectionCheck />
+          <View style={{ height: 14 }} />
           <Caption text={tr("settings.pair.relayUrl")} />
           <View style={{ flexDirection: "row", gap: 8 }}>
             <TextInput value={relayUrl} onChangeText={setRelayUrl} autoCapitalize="none" placeholder="https://relay.example.com"
