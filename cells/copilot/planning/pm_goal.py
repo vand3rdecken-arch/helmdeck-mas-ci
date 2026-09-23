@@ -43,26 +43,27 @@ def _goal_process(pm, st):
     # (missing deadline/scope/budget/recruitment is surfaced there); we don't commit a
     # process on a shaky plan. This is the fix for "the process came from the dumb proposer":
     # the steps ARE the vetted, dated milestones now, not a context-blind checklist.
+    # A vetted plan for THIS goal (manual make_plan / clarify_goal) still gives
+    # the best steps. Without one - the nightly plan is gone since 2026-09-23
+    # (owner: "lese ich nicht - weg") - the goal itself is the request and the
+    # background proposer breaks it down; the push sweep (pm_push) then asks
+    # the owner to start it instead of leaving it on `ready` forever, which is
+    # exactly what happened to the goal process filed on 2026-09-19.
     plan = latest_plan() or {}
-    if plan.get("goal") != goal or not _triage_green(plan):
-        return
-    mss = [m for m in (plan.get("milestones") or []) if str(m.get("status")) != "done"]
-    if not mss:
-        return
-    pace = _pace(plan.get("economics") or {})
     steps = []
-    for m in mss:
-        title = re.sub(r"^\s*M\d+\s*[:\-]\s*", "", (m.get("name") or "").strip())
-        if not title:
-            continue
-        steps.append({"title": title[:120], "desc": _epic_description(m), "mode": "do",
-                      "days": max(1, _days(int(m.get("est_turns") or 0), pace)),
-                      "status": "proposed", "track": None, "due": ""})
-    if not steps:
-        return
+    if plan.get("goal") == goal and _triage_green(plan):
+        mss = [m for m in (plan.get("milestones") or []) if str(m.get("status")) != "done"]
+        pace = _pace(plan.get("economics") or {})
+        for m in mss:
+            title = re.sub(r"^\s*M\d+\s*[:\-]\s*", "", (m.get("name") or "").strip())
+            if not title:
+                continue
+            steps.append({"title": title[:120], "desc": _epic_description(m), "mode": "do",
+                          "days": max(1, _days(int(m.get("est_turns") or 0), pace)),
+                          "status": "proposed", "track": None, "due": ""})
     try:
         from cells.engineer.chains import processes
-        p = processes.create(goal, client="", due="", actor="pm", steps=steps)
+        p = processes.create(goal, client="", due="", actor="pm", steps=steps or None)
     except Exception as e:
         print("PM goal_process error:", e)
         return
@@ -71,8 +72,12 @@ def _goal_process(pm, st):
     # STAYS in the chat (owner decree 2026-08-30): the steps are 'proposed' and
     # nothing dispatches until he accepts them, so this genuinely is his move -
     # but as ONE sentence naming that move, not three explaining the triage.
-    _say("Ziel-Plan steht: %d datierte Schritte im Prozesse-Tab warten auf deine "
-         "Abnahme, dann laufen die Ziel-Karten." % len(steps))
+    if steps:
+        _say("Ziel-Plan steht: %d datierte Schritte im Prozesse-Tab warten auf deine "
+             "Abnahme, dann laufen die Ziel-Karten." % len(steps))
+    else:
+        _say("Ziel notiert - ich lasse die Schritte vorschlagen und frage dich dann, "
+             "was starten soll.")
 
 
 def _goal_process_status(st):

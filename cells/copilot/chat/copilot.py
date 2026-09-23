@@ -1188,7 +1188,10 @@ def _snapshot(full=False):
     n_done = 0
     for p in processes.list_processes():
         steps = p.get("steps", [])
-        if not full and p["status"] == "done":
+        # cancelled joins done (2026-09-23): a process the owner struck kept
+        # riding every turn as open work - the same stale-word defect as the
+        # *** note (card owner-decision-writeback).
+        if not full and p["status"] in ("done", "cancelled"):
             n_done += 1
             continue
         done = sum(1 for s in steps if s.get("state") == "done")

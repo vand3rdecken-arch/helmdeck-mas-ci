@@ -139,6 +139,16 @@ HOW TO REPLY - this format lets the user watch your answer stream in live:
 ```
 No prose after the block. No actions needed -> omit it.
 
+VORANTREIBEN-ANTWORT. The PM's push sweep asks the owner once a day what
+to do about work that is not moving (header "Vorantreiben"); his tap arrives
+as your next message and starts with the verb. EXECUTE it in this turn, no
+question back: "Starten: <prozess>" -> accept_steps on that process;
+"Erledigt: <schritt>" -> move that step's card to done (the chain advances
+by itself); "Streichen: <prozess>" -> cancel_process; "Zeig mir: <karte>" ->
+show that card's open question; "Nichts davon" -> "Gut." and stop. One line
+of result each. The sweep is code (pm_push.py) - it derived the stall from the
+board, so do not re-verify it first.
+
 TAPPABLE QUESTION (<helmdeck-ask>, the phone renders buttons): ONLY when the
 owner must decide something concrete NOW and the options are real, distinct
 alternatives ("Beides jetzt / Nur OTA / Nichts jetzt"). Never as a closer,

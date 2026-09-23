@@ -1434,30 +1434,14 @@ def _state():
            for t in tracks):
         return ("NOTIFY", "Fertige/haengende Karten melden (mit Vorschlag).")
     acting = _in_window(pm) and _board_idle(pm)          # you're away -> may act
-    if st.get("last_plan_day") != _today():
-        return ("PLAN", "Tagesplanung steht aus.") if acting else ("WAIT", "Tagesplan faellig, aber du bist da.")
-    plan = latest_plan()
-    if plan and _overview_stale(plan, tracks):
-        return ("OVERVIEW", "Dashboard + Timeline aus dem Plan bauen.") if acting else ("WAIT", "Uebersicht veraltet, aber du bist da.")
+    # PLAN / OVERVIEW / TRIAGE / ASK are gone (owner decree 2026-09-23, see
+    # _tick): they all hung on the nightly plan, and a stale plan held ALL
+    # dispatch behind a red gate nobody re-derived. What remains judges the
+    # live board only.
     # COORDINATOR: unblock what's stuck (delegate + re-submit, bis zu
     # _RESOLVE_MAX Anlaeufe mit anderem Ansatz) BEFORE starting new work
     if pm.get("autonomy", "act") == "act" and _bounced_to_resolve(tracks, pm, day):
         return ("RESOLVE", "Gebouncte Karte entstoeren (delegieren + neu einreichen).") if acting else ("WAIT", "Bounce zu fixen, aber du bist da.")
-    # HARD GATE: a goal exists but its plan hasn't passed the golden triage
-    # (Budget/Timeline/Scope green) -> hold ALL dispatch and surface the gate. Ranks
-    # after PLAN (today's plan runs first) and RESOLVE (unblocking stuck work still runs).
-    if get_goal() and not _triage_green(latest_plan()):
-        return ("TRIAGE", "Gate rot: Budget/Timeline/Scope nicht gruen - kein Dispatch, ich kläre/frage.") \
-            if acting else ("WAIT", "Plan-Gate rot, aber du bist da.")
-    # HARD GATE 2 (owner decree 2026-08-22: "ohne die Haupt-Info sollte er
-    # nicht arbeiten"): the plan still carries OPEN QUESTIONS to the owner ->
-    # no new dispatch on assumptions. Answering in chat (clarify_goal) folds
-    # the answer in and re-plans immediately, which clears this hold.
-    if get_goal() and any(isinstance(q, str) and q.strip()
-                          for q in ((latest_plan() or {}).get("open_questions") or [])):
-        return ("ASK", "Offene Schlüsselfragen an dich - kein Dispatch auf Annahmen, "
-                       "bitte kurz im Chat beantworten.") \
-            if acting else ("WAIT", "Fragen an dich offen, aber du bist da.")
     paused = day.get("paused_at") and time.time() - day["paused_at"] < 5 * 3600
     if not paused and len(day.get("dispatched", [])) < pm.get("max_dispatch_per_day", 3) and _backlog(tracks, pm, day):
         return ("DISPATCH", "Naechste Karte starten.") if acting else ("WAIT", "Arbeit da, aber du bist da.")
@@ -1524,13 +1508,21 @@ def _position(tracks, plan):
 
 
 def _tick():
-    """ONE loop, four phases (the owner's model):
-        1 GATHER    all info: board, plan, economics/quota
-        2 STAND     read the last plan + chat -> where we are
-        3 TRIANGLE  judge Budget/Timeline/Scope (measured, in the plan)
-        4 DELTA     communicate ONLY when the position changed
-    then the acting states run - but only while you are away. Proactive on/off +
-    the notify/ask/act ladder is a Settings control now, not a dashboard one."""
+    """ONE loop: deliveries + burn guard (event-driven), the PUSH sweep
+    (pm_push - is the filed work actually moving, ask the owner if not), then
+    the acting states RESOLVE / DISPATCH while you are away.
+
+    THE PLAN HALF IS GONE (owner decree 2026-09-23: "Naechtlicher Plan lese
+    ich nicht - weg" / "Henry ist kein PM, er pusht nichts"). Measured that
+    day: the nightly plan, the plan gate, the triangle watch and the
+    stakeholder update produced 29 notices in a week and moved nothing -
+    6 of 16 processes had never had a step accepted, 3 sat on a human step
+    nobody was reminded of, 2 pointed at deleted/archived cards. make_plan/
+    brief/_triangle_watch/_stakeholder_update/_plan_gate_notice/
+    _needs_from_owner/_launch_checkin STAY DEFINED for the manual routes
+    (routes_pm, clarify_goal) and their tests, but nothing here calls them
+    any more. Proactive on/off + the notify/ask/act ladder is a Settings
+    control now, not a dashboard one."""
     # 1 - GATHER
     from spine.registry import cells
     # "copilot", NOT "pm": the pm cell merged into copilot (2026-09-03) and
@@ -1548,7 +1540,6 @@ def _tick():
     day = st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
     from cells.engineer.cards import sessions
     tracks = sessions.list_tracks()
-    plan = latest_plan()
 
     # deliveries are EVENT-driven (a card just finished/bounced), not a position
     # delta - always run, they dedup internally.
@@ -1559,22 +1550,25 @@ def _tick():
     # WHILE the owner was present and steering it.
     _cost_watch(st, tracks)
 
-    # 2+3 - STAND, judged by the TRIANGLE
-    pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], plan)
-    _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)
+    # THE PUSH SWEEP - every tick, its own once-a-day latch inside. NOT behind
+    # the position-delta gate below: a board where nothing moves has no delta,
+    # and "nothing moves" is exactly the state this exists to surface. Asks
+    # the owner (tap-with-options) regardless of presence - a question is
+    # what he asked for, silence is what he had.
+    try:
+        from cells.copilot.planning import pm_push
+        pm_push.sweep(st)
+        st = _loopstate()                    # sweep may have written the latch
+    except Exception as e:                                   # noqa: BLE001
+        print("PM push sweep error:", e)
 
-    # 4 - COMMUNICATE ONLY ON DELTA. Persist the new digest FIRST so a substep
-    # that re-reads loopstate can't lose it, then run the (internally-deduped)
-    # communication paths. Nothing changed -> the loop stays quiet.
+    # COMMUNICATE ONLY ON DELTA (position = live cards, no plan any more).
+    pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], None)
+    _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)
     if st.get("pos_digest") != _pkey:
         st["pos_digest"] = _pkey
         _save_loopstate(st)
-        _launch_checkin(pm, st)      # ask launch prereqs once
         _goal_process(pm, st)        # new goal -> process (epic) + intake
-        _triangle_watch(st)          # escalate when a corner tilts
-        _plan_gate_notice(st)        # honest "blocked" over a shallow estimate
-        _needs_from_owner(st)        # surface missing-info questions
-        _stakeholder_update(st)      # goal vs budget, keep the owner informed
         # Phase 3 (pm-lean-advisor, narrowest safe slice): PURE CODE, zero
         # model cost, only on a real board change - never autonomous, always
         # a tap-with-options via _ask_owner, and cooled down per pair.
@@ -1585,18 +1579,7 @@ def _tick():
     state, _reason = _state()
     auto = pm.get("autonomy", "act")
     try:
-        if state == "PLAN":
-            brief() if auto == "notify" else make_plan(actor="pm")
-            st = _loopstate(); st["last_plan_ts"] = time.time()
-            st["last_plan_day"] = _today()          # daily planning cadence
-            st.pop("scope_baseline", None)          # today's plan re-baselines the triangle
-            shape = _triage_shape(live_plan())      # re-baseline the flip detector too
-            if shape:
-                st["plan_triage_shape"] = shape
-            _save_loopstate(st)
-        elif state == "OVERVIEW":
-            _build_overview(latest_plan() or {})         # build Dashboard + Timeline
-        elif state == "RESOLVE" and auto == "act":
+        if state == "RESOLVE" and auto == "act":
             _resolve_next(pm, st, day)                   # coordinator: delegate the fix
         elif state == "DISPATCH" and auto == "act":
             _dispatch_next(pm, st, day)
