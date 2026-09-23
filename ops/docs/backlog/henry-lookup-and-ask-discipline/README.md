@@ -1,5 +1,22 @@
 # henry-lookup-and-ask-discipline - Henry schlaegt einen Grund nicht nach, obwohl er kann, und seine Rueckfragen folgen keiner Regel
 
+**Status 2026-09-23 (owner: "Das direkt fixen"): GEFIXT in place, drei Teile.**
+1. Brief-Regel REASON BEFORE BUILD (`board-copilot.md`, vor FIRST WORD) - lebt
+   sofort, kein Neustart (Brief-Fingerprint).
+2. Brief-Regel TAPPABLE QUESTION (`board-copilot.md`, unter HOW TO REPLY):
+   Ask-Block nur bei echter Entscheidung, nie als Abschluss, nie "Noch etwas?",
+   nie zwei Turns hintereinander ohne Substanz - lebt sofort.
+3. Overlay-Widerruf: `chat(..., overlay=)` von den drei Routen gesetzt
+   (`routes_wear.py`, `routes_glance.py`, `routes_copilot.py`);
+   `copilot._surface_switch()` ist der EINE Schreiber von `_device_ovl_last`
+   und stellt dem ersten getippten Turn nach einem Geraete-Turn eine
+   Widerrufszeile voran. Die drei Overlays tragen zusaetzlich "THIS ONE REPLY
+   ONLY" im ersten Satz. Test: `ops/tests/test_copilot_surface_switch.py`
+   (9 Checks). BRAUCHT DAEMON-NEUSTART - Routen und copilot.py sind beim Start
+   importiert.
+Nicht gefixt (bewusst): die Lean-Chat-Entscheidung (kein MCP im Chat-Port)
+bleibt - sie war nicht die Ursache.
+
 **Owner, 2026-09-23 15:2x:** "Das problem ist das Henry erstmal 3 mal weigert
 fuer mich Grund zu schauen und dann 3 mal unsinnige Fragen stellen"
 
