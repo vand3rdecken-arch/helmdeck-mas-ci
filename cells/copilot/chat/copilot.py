@@ -127,6 +127,32 @@ _snap_seen = {}
 # still carries whatever overlay text an earlier turn of THIS session sent,
 # no separate timestamp/reset plumbing needed.
 _ovl_seen = {}
+# skey -> the DEVICE overlay ("wear" / "glass" / "voice") the previous turn of
+# this persistent session carried, "" when it was a plain typed turn. Overlays
+# ride INSIDE the turn text (see the persistable branch), so they stay in the
+# transcript: one watch turn's "you MUST end every reply with an ask block"
+# shaped every typed phone reply that followed (owner, 2026-09-23: three
+# content-free "Noch etwas?" questions in a row - card
+# henry-lookup-and-ask-discipline). Folded at event time, one owner: the turn
+# that switches surface prepends a one-line revocation; nothing else reads it.
+_device_ovl_last = {}
+_DEVICE_OVL_REVOKE = (
+    "GETIPPTER TURN (Telefon/Desktop). Die Geraete-Regeln deiner vorherigen "
+    "Antwort (%s-Overlay: Pflicht-Rueckfrage mit Optionen bzw. keine Tools) "
+    "gelten fuer diese Antwort NICHT - es gilt allein dein Board-Brief: Tools "
+    "erlaubt, Rueckfrage nur bei einer echten Entscheidung.")
+
+
+def _surface_switch(skey, overlay, fresh):
+    """The revocation line for THIS turn ("" when none is due), and the one
+    place _device_ovl_last is written. A fresh process has no previous turn
+    to revoke; a device turn following a device turn carries its own overlay
+    and needs nothing; only typed-after-device gets the line."""
+    prev = "" if fresh else _device_ovl_last.get(skey, "")
+    _device_ovl_last[skey] = overlay or ""
+    if prev and not overlay:
+        return _DEVICE_OVL_REVOKE % prev
+    return ""
 # Per-card cost drifts on every turn a worker runs and changed the snapshot
 # hash each time - the one thing that made "unchanged" never match. Stripped
 # from the HASHED/DIFFED text only; every full snapshot still carries it.
@@ -2202,7 +2228,7 @@ def build_argv(cli_model, sid, system):
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
          client_msg_id="", announce=True, _retried=False, model_source="user", mode="",
-         harness_note=""):
+         harness_note="", overlay=""):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -2217,6 +2243,12 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     extra_system is appended to the resolved system brief, for a surface with a
     hard shape requirement (the lens: short prose, always end in tappable
     options) that the shared board brief should not have to carry.
+
+    overlay names WHICH device overlay extra_system is ("wear", "glass",
+    "voice"; "" = a plain typed turn). The persistent session keeps the overlay
+    text in its transcript, so the next turn from a different surface prepends
+    a revocation - see _device_ovl_last. The routes set it; the retry path
+    carries it through.
 
     announce=False silences the finished answer's NOTIFICATION (notify.chat_reply
     below). For a door whose own response IS the delivery - the watch and the
@@ -2543,6 +2575,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # et al) ride inside the turn text so voice<->typed does not respawn.
             base_system = harness.brief("board-copilot")
             p, _fresh = _persist_get(skey, cli_model, sid, base_system)
+            # SURFACE SWITCH: the previous turn's device overlay is still in the
+            # transcript; a typed turn must say so or it inherits the watch's
+            # "MUST end every reply with options" / the voice turn's "do NOT run
+            # commands". Derived from what THIS session was last told, never
+            # from a stored setting; a fresh process has no previous turn.
+            _revoke = _surface_switch(skey, overlay, _fresh)
+            if _revoke:
+                turn = _revoke + "\n\n" + turn
             prompt = (extra_system + "\n\n" + turn) if extra_system else turn
         else:
             argv, _role = build_argv(cli_model, sid, system)
@@ -2979,7 +3019,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     extra_system=(extra_system + "\n\nDeine letzte Antwort war eine "
                                   "leere Floskel ohne Inhalt. Beantworte jetzt die "
                                   "eigentliche Frage des Owners.").strip(),
-                    voice_stream=voice_stream, announce=announce,
+                    voice_stream=voice_stream, announce=announce, overlay=overlay,
                     # carried through the retry: dropping it here would log the
                     # message WITHOUT its client id, and the app would silently
                     # fall back to position matching for exactly the turns that

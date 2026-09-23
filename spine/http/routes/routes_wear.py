@@ -527,7 +527,7 @@ def wear_talk_post(self, user, body):
              "refused": out.get("refused") or [], "duplicate": True}))
     try:
         out = copilot.chat(user["name"], msg, role=user["role"],
-                           allow_actions=True, extra_system=wear_brief(),
+                           allow_actions=True, extra_system=wear_brief(), overlay="wear",
                            # This response IS the delivery: the reply comes back
                            # in `resp` below and is ALWAYS spoken (see the voice
                            # note further down). A notification would buzz the

@@ -284,7 +284,8 @@ def chat_post(self, user, body):
             client_msg_id=str(body.get("mid") or "")[:64],
             # spoken turns get the hard brevity overlay - a minute of options
             # read aloud is not an answer (owner report 2026-08-21)
-            extra_system=copilot.voice_style() if want_voice else "")
+            extra_system=copilot.voice_style() if want_voice else "",
+            overlay="voice" if want_voice else "")
         turn_ok = True
         # VOICE MODE (phone). The client asks per-request rather than
         # by a server setting, because it is the client that knows

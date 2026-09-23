@@ -170,7 +170,7 @@ def glance_talk(self, user, body):
     glassturn.thinking()
     try:
         out = copilot.chat("owner", msg, role="owner",
-                           allow_actions=False, extra_system=glass_brief(),
+                           allow_actions=False, extra_system=glass_brief(), overlay="glass",
                            # This response IS the delivery - the lens shows the
                            # reply and plays it aloud (below). Buzzing the phone
                            # about an answer already in the owner's ear is the
