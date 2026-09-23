@@ -126,8 +126,16 @@ SURFACE_FILES = {
 # charter moved to its own section, the EVIDENCE law added. Every {{rule:}} slot
 # and every action verb was checked present before the move; audit + mapping in
 # ops/docs/backlog/henry-brief-thinning/README.md.
+# `pm` moved 2026-09-23 (owner decree, after presence-fix a3c66980 rebuilt a
+# bespoke heartbeat instead of the WhatsApp/Slack standard pattern): a new
+# STANDARD FIRST paragraph tells Henry to check how established apps solve a
+# problem before a fix is designed, and say so if a quick patch diverges from
+# the standard. To keep the core under its 15k-char cap (test_brief_sections),
+# three unrelated tool-list/AUF-ABRUF descriptions were tightened in the same
+# edit - no meaning or trigger dropped, `git diff` shows exactly those four
+# spots.
 EXPECTED = {
-    "pm": "571de32c36982e369f2b0b2d9400cdb99436f0534995123d82fe19a3291f5166",
+    "pm": "2eb6ee228ffa00d42551ebe8bd0c74f4813a6de19c452f6a82223387525b0b7a",
     "voice": "0b0e859a96711ab6c0733a92dc2cf6993008dc4b141df43ae97ad2eb9f8f51f9",
     "wear": "dbc084339e0a88466a924a1ea74d5e10ba6ed3f3eb42c0ba9a5bb2f9cb5989f2",
     "glass": "6c8aced6297bfc068b2b293ab857cc07ec15941780daa98cef8a9c77686f2fff",
