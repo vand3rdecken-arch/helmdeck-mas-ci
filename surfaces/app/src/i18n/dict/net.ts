@@ -45,6 +45,10 @@ export const net: Dict = {
   "check.verdict.ok": { de: "Alles in Ordnung.", en: "All good." },
   "check.verdict.network": { de: "Es liegt am Netz dieses Handys.", en: "It is this phone's network." },
   "check.verdict.relay": { de: "Es liegt am Relay.", en: "It is the relay." },
+  "check.verdict.pcGone": {
+    de: "Der PC ist nicht mit dem Relay verbunden - aus, im Standby oder ohne Netz.",
+    en: "The PC is not connected to the relay - off, asleep or offline.",
+  },
   "check.verdict.daemon": { de: "Es liegt am PC - dort läuft kein Daemon.", en: "It is the PC - no daemon is running." },
   "check.verdict.e2e": { de: "Es liegt an der Kopplung dieses Geräts.", en: "It is this device's pairing." },
 

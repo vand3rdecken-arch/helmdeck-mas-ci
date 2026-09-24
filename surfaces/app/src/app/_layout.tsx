@@ -17,6 +17,7 @@ import type { Kernel } from "@/kernel";
 import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
+import { useHealth } from "@/data/health";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, useStreamCaps } from "@/data/stream";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
@@ -155,6 +156,8 @@ function useRelaySocket() {
     });
     return () => relaySocket.stop();
   }, [relayUrl, room, daemonPub, mySec, myPub]);
+  // null (no phone socket) is "unknown", not "PC gone": real traffic decides then.
+  useEffect(() => relaySocket.onDaemon((up) => useHealth.getState().reportDaemon(up !== false)), []);
 }
 
 // Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.

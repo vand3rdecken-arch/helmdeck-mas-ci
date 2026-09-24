@@ -81,8 +81,8 @@ _base_cache = {"ts": 0.0, "public": None, "base": None}
 # route (surfaces/relay/relay.py, an older worker) answers the upgrade with
 # 404/426 and the bridge pulls exactly as before; a box without the
 # `websockets` package pulls too.
-WS_PING_EVERY = 30.0            # s between PROTOCOL pings (answered at the edge, DO stays asleep)
-WS_PING_TIMEOUT = 20.0          # no pong within this -> the library closes, the loop reconnects
+WS_PING_EVERY = 20.0            # s between PROTOCOL pings (answered at the edge, DO stays asleep)
+WS_PING_TIMEOUT = 10.0          # no pong within this -> the library closes, the loop reconnects
 WS_MAX_REPLY = 900 * 1024       # bigger replies go over /tunnel/push (same waiting id)
 WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame at 4 MB
 WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
@@ -270,6 +270,12 @@ def _ws_session(relay, room, sk, port, serve=None):
                                  kwargs={"send": send}, daemon=True).start()
             elif kind == "client":
                 events.announce(data.get("pub") or "")
+            elif kind == "probe":
+                # The room saw no reaction to a phone's request and asks if
+                # anyone still reads this socket (surfaces/relay/worker/src/
+                # room.js expectDaemon). Answer at once, on the reader thread -
+                # silence gets this socket closed by the room.
+                send_obj({"kind": "alive"})
     finally:
         events.stop()
         try:

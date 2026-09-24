@@ -32,12 +32,39 @@
 // hibernation. HTTP callers keep their in-memory waiter: their open request
 // holds the object awake. The payloads stay NaCl-sealed end to end; the room
 // learns only which device key a message is for, which it already knew.
+//
+// THE ROOM OWNS DAEMON LIVENESS (2026-09-24, owner: "wenn weg, dann muss
+// Handy bzw. Relay den PC wecken koennen"). It is the only party that sees
+// both legs: the phone's own "ping" is answered by the runtime, so it proves
+// phone<->relay and nothing about the PC. And a HALF-OPEN daemon socket is
+// invisible from here - Cloudflare accepts writes into it although nobody
+// reads (2026-09-24 21:17 the daemon's socket died without a close frame).
+// So, like Paseo's nudgeOrResetControlForConnection: whenever a phone wants
+// something, the room expects a reaction from the daemon; none within
+// PROBE_NUDGE_MS -> {kind:"probe"}, which a live daemon answers at once
+// ({kind:"alive"}); still nothing after PROBE_RESET_MS -> force-close the
+// daemon socket, and the daemon redials. Idle PCs are never probed: no phone
+// request, no probe, no invocation.
+//   room -> phone  {kind:"daemon", up}   on join and on every change
+// A daemon that drops (or is reset) is expected back within HOLD_MS: phone
+// requests arriving meanwhile are HELD and handed to the new socket instead
+// of failing with 503 - a redial takes ~0.5 s, the phone never sees it.
+// Frames already written into a socket that then fails the probe were never
+// read (the probe went down the same ordered socket after them and got no
+// answer), so they are handed to the new socket as well - UNACKED frames,
+// cleared by their reply or by an "alive" that proves they were read.
+// Only a reply or "alive" counts as a reaction: a daemon event proves the
+// daemon can WRITE, not that it reads what the phone sent.
 
 const PULL_TIMEOUT_MS = 25_000;   // daemon long-poll (relay.py PULL_TIMEOUT)
 const REPLY_TIMEOUT_MS = 120_000; // phone waits for the daemon's reply (REPLY_TIMEOUT)
 const DAEMON_STALE_MS = (25 + 15) * 1000; // no pull for this long = "no daemon connected"
 const MAX_QUEUE = 64;             // frames queued but not yet pulled
 const MAX_WAITING = 64;           // phone requests awaiting a reply
+const PROBE_NUDGE_MS = 8_000;     // no daemon reaction this long after a phone asked -> probe
+const PROBE_RESET_MS = 5_000;     // no answer to the probe this long -> the socket is dead, close it
+const HOLD_MS = 15_000;           // phone requests wait this long for a dropped daemon to redial
+const MAX_HELD = 64;
 const PUB_RE = /^[A-Za-z0-9+/=_-]{16,128}$/;   // a device public key (base64, 32 bytes = 44)
 
 function json(code, obj) {
@@ -53,6 +80,12 @@ export class Room {
     this.waiting = new Map();    // id -> resolve(replyObj)
     this.pullers = [];           // resolve(frame|null) for parked /pull calls
     this.lastPull = 0;
+    this.daemonAckAt = 0;        // last REACTION from the daemon (a reply or "alive")
+    this.unacked = new Map();    // id -> {frame, http, at}: written to the daemon, not yet read-proven
+    this.probeAt = 0;
+    this.probing = false;        // a liveness check is running
+    this.held = [];              // [{frame, http}] waiting for a daemon to come back
+    this.holdTimer = null;       // set while a dropped daemon is expected back
     // The daemon's keepalive is answered by the RUNTIME, not by this code: the
     // object is not woken, so an idle PC costs no duration and no request. The
     // constructor runs again after every wake; setting the same pair again is
@@ -87,6 +120,15 @@ export class Room {
     }
     this.state.acceptWebSocket(server, ["daemon"]);
     server.serializeAttachment({ role: "daemon" });
+    this.daemonAckAt = Date.now();
+    this.broadcastDaemon(true);
+    // requests held while the daemon was away go to the new socket first
+    const held = this.held;
+    this.held = [];
+    if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
+    for (const h of held) {
+      try { server.send(JSON.stringify({ kind: "frame", ...h.frame })); this.track(h.frame, h.http); } catch {}
+    }
     // Tell the NEW daemon who is already listening, so it can send each of
     // them the current state at once instead of on the next change.
     for (const c of this.state.getWebSockets("client")) {
@@ -111,13 +153,99 @@ export class Room {
     // ignores the unknown kind - and THAT silence is how the phone knows to
     // stay on its long-poll: it switches only after the first event arrives).
     const d = this.daemonSocket();
-    if (d) { try { d.send(JSON.stringify({ kind: "client", pub })); } catch {} }
+    try { server.send(JSON.stringify({ kind: "daemon", up: !!d })); } catch {}
+    if (d) {
+      try { d.send(JSON.stringify({ kind: "client", pub })); } catch {}
+      this.expectDaemon();
+    }
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // Every phone socket learns at once when the PC leaves or comes back.
+  broadcastDaemon(up) {
+    for (const c of this.state.getWebSockets("client")) {
+      try { c.send(JSON.stringify({ kind: "daemon", up })); } catch {}
+    }
+  }
+
+  // A frame went down the daemon socket: remember it until it is read-proven.
+  track(frame, http) {
+    const now = Date.now();
+    for (const [id, u] of this.unacked) {
+      if (now - u.at > REPLY_TIMEOUT_MS) this.unacked.delete(id);
+    }
+    this.unacked.set(frame.id, { frame, http, at: now });
+  }
+
+  // A phone asked for something: the daemon must REACT soon (a reply, or
+  // "alive" to the probe) - otherwise its socket is half-open.
+  expectDaemon() {
+    if (this.probing) return;
+    this.probing = true;
+    const since = Date.now();
+    setTimeout(() => {
+      if (this.daemonAckAt >= since || !this.daemonSocket()) { this.probing = false; return; }
+      const nudged = Date.now();
+      this.probeAt = nudged;
+      for (const d of this.state.getWebSockets("daemon")) {
+        try { d.send(JSON.stringify({ kind: "probe" })); } catch {}
+      }
+      setTimeout(() => {
+        this.probing = false;
+        if (this.daemonAckAt >= nudged) return;
+        // Half-open: writes are accepted, nobody reads. Close it so the
+        // daemon's side errors out and redials - the "wake the PC" step.
+        const dead = this.state.getWebSockets("daemon");
+        for (const d of dead) {
+          try { d.close(1011, "no reaction to probe - reconnect"); } catch {}
+        }
+        // what was written into it was never read: give it to the next socket
+        for (const [, u] of this.unacked) {
+          if (this.held.length < MAX_HELD) this.held.push({ frame: u.frame, http: u.http });
+        }
+        this.unacked.clear();
+        if (dead.length) this.daemonDown();
+      }, PROBE_RESET_MS);
+    }, PROBE_NUDGE_MS);
+  }
+
+  // The last daemon socket is gone: tell the phones, and keep the object
+  // awake for HOLD_MS so held requests can still meet the redialing daemon.
+  daemonDown() {
+    this.broadcastDaemon(false);
+    if (this.holdTimer) clearTimeout(this.holdTimer);
+    this.holdTimer = setTimeout(() => this.releaseHeld(), HOLD_MS);
+  }
+
+  // Grace is over and no daemon came back: every held request fails NOW, with
+  // the honest answer, instead of hanging until its own timeout.
+  releaseHeld() {
+    this.holdTimer = null;
+    if (this.daemonSocket()) return;
+    const held = this.held;
+    this.held = [];
+    for (const h of held) {
+      if (h.http) {
+        const resolve = this.waiting.get(h.frame.id);
+        if (resolve) resolve({ offline: true });
+      } else {
+        for (const c of this.state.getWebSockets("pub:" + h.frame.pub)) {
+          try { c.send(JSON.stringify({ kind: "res", id: h.frame.id, status: 503,
+                                         error: "no daemon connected for this room" })); } catch {}
+        }
+      }
+    }
+  }
+
+  // A daemon left moments ago and is expected back -> hold instead of failing.
+  canHold() {
+    return this.holdTimer !== null && this.held.length < MAX_HELD;
   }
 
   // Deliver a daemon reply: the HTTP waiter if one holds this id (it keeps the
   // object awake), else the phone socket(s) the reply is addressed to.
   routeReply(data) {
+    this.unacked.delete(data.id);
     const resolve = this.waiting.get(data.id);
     if (resolve) { resolve(data); return; }
     if (typeof data.to !== "string" || !data.to) return;
@@ -146,6 +274,11 @@ export class Room {
     if (!data || typeof data.kind !== "string") return;
     const me = attachment(ws) || {};
     if (me.role === "daemon") {
+      if (data.kind === "reply" || data.kind === "alive") this.daemonAckAt = Date.now();
+      if (data.kind === "alive") {
+        // it read the probe, so it read everything written before the probe
+        for (const [id, u] of this.unacked) { if (u.at <= this.probeAt) this.unacked.delete(id); }
+      }
       if (data.kind === "reply" && typeof data.id === "string") this.routeReply(data);
       else if (data.kind === "event" && typeof data.to === "string") {
         for (const c of this.state.getWebSockets("pub:" + data.to)) {
@@ -163,14 +296,21 @@ export class Room {
         // not find this socket - so hand the request back to HTTP, which that
         // daemon does serve. No daemon at all -> say so, like /relay's 503.
         const fresh = Date.now() - this.lastPull <= DAEMON_STALE_MS;
+        if (!fresh && this.canHold()) {
+          this.held.push({ frame: { id: data.id, pub: me.pub, cipher: data.cipher,
+                                    t: Date.now() / 1000, via: "ws" }, http: false });
+          return;
+        }
         ws.send(JSON.stringify(fresh
           ? { kind: "res", id: data.id, retry: "http" }
           : { kind: "res", id: data.id, status: 503, error: "no daemon connected for this room" }));
         return;
       }
       try {
-        d.send(JSON.stringify({ kind: "frame", id: data.id, pub: me.pub, cipher: data.cipher,
-                                t: Date.now() / 1000, via: "ws" }));
+        const frame = { id: data.id, pub: me.pub, cipher: data.cipher, t: Date.now() / 1000, via: "ws" };
+        d.send(JSON.stringify({ kind: "frame", ...frame }));
+        this.track(frame, false);
+        this.expectDaemon();
       } catch {
         ws.send(JSON.stringify({ kind: "res", id: data.id, retry: "http" }));
       }
@@ -179,10 +319,21 @@ export class Room {
 
   async webSocketClose(ws, code) {
     try { ws.close(code === 1005 ? 1000 : code, "closing"); } catch {}
+    this.socketGone(ws);
   }
 
   async webSocketError(ws) {
     try { ws.close(1011, "error"); } catch {}
+    this.socketGone(ws);
+  }
+
+  // A daemon socket closed. Replaced by a newer one (ws() closes the old
+  // with 1012) is not "gone" - only the LAST daemon socket leaving is.
+  socketGone(ws) {
+    const me = attachment(ws) || {};
+    if (me.role !== "daemon") return;
+    if (this.state.getWebSockets("daemon").some((d) => d !== ws)) return;
+    this.daemonDown();
   }
 
   // daemon -> next queued frame, or 204 after PULL_TIMEOUT
@@ -206,7 +357,8 @@ export class Room {
   // phone -> queue a frame, wait for the daemon's reply
   async relay(request) {
     const sock = this.daemonSocket();
-    if (!sock && Date.now() - this.lastPull > DAEMON_STALE_MS) {
+    const pulling = Date.now() - this.lastPull <= DAEMON_STALE_MS;
+    if (!sock && !pulling && !this.canHold()) {
       return json(503, { error: "no daemon connected for this room" });
     }
     let data;
@@ -225,7 +377,10 @@ export class Room {
     // through to the long-poll path, which a reconnecting daemon drains.
     let sent = false;
     if (sock) {
-      try { sock.send(JSON.stringify({ kind: "frame", ...frame })); sent = true; } catch {}
+      try { sock.send(JSON.stringify({ kind: "frame", ...frame })); sent = true; this.track(frame, true); this.expectDaemon(); } catch {}
+    } else if (!pulling) {
+      this.held.push({ frame, http: true });      // canHold(): the daemon is expected back
+      sent = true;
     }
     if (!sent) {
       // hand straight to a parked puller if one is waiting, else queue
@@ -236,6 +391,7 @@ export class Room {
     const timeout = new Promise((resolve) => setTimeout(() => resolve(null), REPLY_TIMEOUT_MS));
     const resp = await Promise.race([reply, timeout]);
     this.waiting.delete(id);
+    if (resp && resp.offline) return json(503, { error: "no daemon connected for this room" });
     if (!resp) return json(504, { error: "daemon offline or slow" });
     return json(200, { cipher: typeof resp.cipher === "string" ? resp.cipher : "" });
   }

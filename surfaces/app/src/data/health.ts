@@ -17,6 +17,14 @@ export type ConnStatus = "ok" | "reconnecting" | "offline";
 const RECONNECT_GRACE_MS = 5_000;    // silent below this - status stays "ok"
 const OFFLINE_AFTER_MS = 20_000;     // amber below this, red "offline" above
 
+// The PC's side, as the relay room reports it (relay_socket.ts `daemonUp`).
+// Same proportionate loudness: the daemon redials in ~0.5 s and the room holds
+// requests meanwhile, so a drop is SILENT; "away" (amber) only if the PC is
+// still gone after the grace, "gone" (red, with the cause) after the offline
+// threshold. A room that says "PC is back" clears it at once.
+export type PcState = "present" | "away" | "gone";
+let pcTimers: ReturnType<typeof setTimeout>[] = [];
+
 interface HealthState {
   status: ConnStatus;
   detail: string;        // last transport error, human-readable (German, UI-ready)
@@ -31,6 +39,8 @@ interface HealthState {
   // clears it, because a working round-trip outranks any older verdict.
   verdictKey: string;
   verdictAt: number;
+  pcState: PcState;
+  reportDaemon: (up: boolean) => void;
   reportOk: () => void;
   reportFail: (detail: string) => void;
   reportCheck: (verdictKey: string) => void;
@@ -44,6 +54,16 @@ export const useHealth = create<HealthState>((set, get) => ({
   firstFailAt: 0,
   verdictKey: "",
   verdictAt: 0,
+  pcState: "present",
+  reportDaemon: (up) => {
+    for (const t of pcTimers) clearTimeout(t);
+    pcTimers = [];
+    if (up) { if (get().pcState !== "present") set({ pcState: "present" }); return; }
+    pcTimers = [
+      setTimeout(() => set({ pcState: "away" }), RECONNECT_GRACE_MS),
+      setTimeout(() => set({ pcState: "gone" }), OFFLINE_AFTER_MS),
+    ];
+  },
   reportOk: () => {
     if (get().status !== "ok" || !get().lastOkAt) set({ status: "ok", detail: "", failures: 0, firstFailAt: 0, lastOkAt: Date.now(), verdictKey: "", verdictAt: 0 });
     else set({ lastOkAt: Date.now() });

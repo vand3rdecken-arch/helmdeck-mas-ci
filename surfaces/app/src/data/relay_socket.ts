@@ -63,6 +63,7 @@ export class RelaySocket {
   private pending = new Map<string, Pending>();
   private eventFns = new Set<(e: RelayEvent) => void>();
   private liveFns = new Set<(live: boolean) => void>();
+  private daemonFns = new Set<(up: boolean | null) => void>();
   private backoff = 1000;
   private lastRx = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -71,6 +72,10 @@ export class RelaySocket {
   private seq = 0;
   state: "off" | "connecting" | "open" = "off";
   eventsLive = false;
+  /** The ROOM's word on the PC: true/false as it last said, null = no socket, unknown.
+   *  The phone's own "ping" is answered by the relay and proves nothing about
+   *  the PC - only the room sees the daemon's socket come and go. */
+  daemonUp: boolean | null = null;
 
   start(deps: SocketDeps) {
     this.stop();
@@ -102,6 +107,17 @@ export class RelaySocket {
   onEvent(fn: (e: RelayEvent) => void) {
     this.eventFns.add(fn);
     return () => { this.eventFns.delete(fn); };
+  }
+
+  onDaemon(fn: (up: boolean | null) => void) {
+    this.daemonFns.add(fn);
+    return () => { this.daemonFns.delete(fn); };
+  }
+
+  private setDaemon(up: boolean | null) {
+    if (this.daemonUp === up) return;
+    this.daemonUp = up;
+    for (const fn of [...this.daemonFns]) fn(up);
   }
 
   onLive(fn: (live: boolean) => void) {
@@ -182,7 +198,9 @@ export class RelaySocket {
       if (typeof m.data !== "string" || m.data === "pong") return;
       let d: { kind?: string; id?: string; cipher?: string; retry?: string; status?: number; error?: string };
       try { d = JSON.parse(m.data); } catch { return; }
-      if (d.kind === "event" && typeof d.cipher === "string") {
+      if (d.kind === "daemon") {
+        this.setDaemon(!!(d as { up?: boolean }).up);
+      } else if (d.kind === "event" && typeof d.cipher === "string") {
         let ev: RelayEvent;
         try { ev = JSON.parse(deps.open(d.cipher)); } catch { return; }
         this.setLive(true);
@@ -221,6 +239,7 @@ export class RelaySocket {
     }
     this.pending.clear();
     this.setLive(false);
+    this.setDaemon(null);
   }
 
   private scheduleRetry() {

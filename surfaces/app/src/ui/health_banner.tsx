@@ -16,9 +16,13 @@ export function HealthBanner() {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
-  const { status, detail, verdictKey } = useHealth();
-  const visible = status !== "ok";
-  const offline = status === "offline";
+  const { status, detail, verdictKey, pcState } = useHealth();
+  // Two sources, one banner: failing requests (status) and the relay's word
+  // that the PC's connection is gone (pcState). The louder one wins.
+  const visible = status !== "ok" || pcState !== "present";
+  const offline = status === "offline" || pcState === "gone";
+  const pcAway = !offline && pcState === "away";
+  const reason = verdictKey || (pcState === "gone" ? "check.verdict.pcGone" : "");
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -41,15 +45,15 @@ export function HealthBanner() {
         <Ionicons name={offline ? "cloud-offline-outline" : "sync-outline"} size={15} color={tint} />
         <View style={{ flexShrink: 1 }}>
           <Text style={{ color: t.txtPrimary, fontSize: 12.5, fontWeight: "600" }}>
-            {tr(offline ? "health.offline" : "health.reconnecting")}
+            {tr(offline ? "health.offline" : pcAway ? "health.pcAway" : "health.reconnecting")}
           </Text>
           {/* The DIAGNOSED leg wins over the raw transport sentence: "Relay
               unreachable" covered the phone's network, a starved daemon and
               two daemons on one port within a single day (2026-09-23), while
               the verdict from data/connection_check.ts names one of them. */}
-          {offline && (verdictKey || detail) ? (
+          {offline && (reason || detail) ? (
             <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 11.5 }}>
-              {verdictKey ? tr(verdictKey) : detail}
+              {reason ? tr(reason) : detail}
             </Text>
           ) : null}
         </View>

@@ -666,6 +666,7 @@ export const screens: Dict = {
     de: "Keine Verbindung zum Desktop.",
     en: "No connection to the desktop.",
   },
+  "health.pcAway": { de: "PC verbindet neu…", en: "PC reconnecting…" },
   "health.unreachable": { de: "Desktop nicht erreichbar.", en: "Desktop unreachable." },
 
   // ---- modules & rules (the plugin kernel surface) ------------------------
