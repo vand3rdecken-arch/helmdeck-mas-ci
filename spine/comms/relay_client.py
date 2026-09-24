@@ -87,6 +87,9 @@ WS_MAX_REPLY = 900 * 1024       # bigger replies go over /tunnel/push (same wait
 WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame at 4 MB
 WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
 WS_TRANSIENT_MAX = 3            # consecutive transient WS failures before a pull detour
+WS_REDIAL_S = 0.5               # an ESTABLISHED socket that drops redials at once, no backoff
+WS_STABLE_S = 10.0              # ...if it lived this long; a relay that closes every socket at
+                                # once stays on the backoff (0.5 s redials = ~170k requests/day)
 _ws_state = {"unsupported_until": 0.0, "fails": 0, "mode": "starting", "since": 0.0,
              "reason": ""}
 
@@ -243,6 +246,7 @@ def _ws_session(relay, room, sk, port, serve=None):
     events = _EventPublisher(sk, send_obj)
     events.start()
     _ws_state["fails"] = 0
+    _ws_state["opened"] = time.time()
     _set_mode("websocket")
     try:
         while not _stop:
@@ -270,6 +274,18 @@ def _ws_session(relay, room, sk, port, serve=None):
             ws.close()
         except Exception:                                    # noqa: BLE001
             pass
+
+
+def _log_drop(up_s, err):
+    """Every drop of an established bridge socket, with how long it lived and
+    why - the evidence for 'Desktop offline' that the failure log never had."""
+    code = getattr(getattr(err, "rcvd", None), "code", None)
+    why = ("close %s" % code) if code else (type(err).__name__ + ": " + str(err)[:120])
+    try:
+        from spine.storage import events
+        events.log("relay", "bridge socket dropped after %ds (%s) - redialing" % (up_s, why))
+    except Exception:
+        pass
 
 
 def _health(url, timeout=3):
@@ -695,13 +711,26 @@ def _loop(port):
                 except Exception:
                     pass
             if _ws_wanted(relay):
+                t0 = time.time()
                 try:
                     _ws_session(relay, room, sk, port)   # blocks while connected
                 except _WSUnsupported as e:
                     _ws_state["unsupported_until"] = time.time() + WS_UNSUPPORTED_S
                     _set_mode("long-poll", "relay has no websocket: %s" % e)
                     continue                             # straight to the pull path
-                except Exception:
+                except Exception as e:
+                    if (_ws_state.get("opened", 0) >= t0
+                            and time.time() - _ws_state["opened"] >= WS_STABLE_S):
+                        # The socket WAS up and then closed - the normal life
+                        # of a long-lived socket (edge restart, ping timeout),
+                        # not a failed attempt. Counting it as one grew the
+                        # backoff with every drop of the day until each cost
+                        # 60 s of "Desktop offline" on the phone (2026-09-24),
+                        # and the sparse failure log hid all of it.
+                        _log_drop(time.time() - _ws_state["opened"], e)
+                        errs, delay = 0, 3
+                        time.sleep(WS_REDIAL_S)
+                        continue
                     _ws_state["fails"] += 1
                     if _ws_state["fails"] >= WS_TRANSIENT_MAX:
                         # Something between us and the relay may block
