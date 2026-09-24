@@ -579,8 +579,8 @@ footer a:hover{color:var(--ink-2)}
   </section>
 
   <section id="theses">
-    <h2 data-i="thesesTitle">Agent harnesses must evolve. Three theses.</h2>
-    <p class="section-sub" data-i="thesesSub">HelmDeck is built to test them. Each one comes with what happened when we used it on HelmDeck itself.</p>
+    <h2 data-i="thesesTitle">Three theses</h2>
+    <p class="section-sub" data-i="thesesSub">They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.</p>
     <div class="theses">
       <div class="thesis"><span class="n">1</span><h3 data-i="th1H">Mobile is the interface.</h3><p data-i="th1P">HelmDeck itself was built in two months, steered from the phone. An agent filled in the Play Store and App Store listings and handled the certificates in the browser. The founder answered its questions and cleared its blockers.</p></div>
       <div class="thesis"><span class="n">2</span><h3 data-i="th2H">Goals replace prompts.</h3><p data-i="th2P">You set goal, budget and deadline. Henry, the planner inside HelmDeck, lays out timeline and scope against the founder's measured velocity, and pushed back when the Android review turned out to take fourteen days.</p></div>
@@ -840,8 +840,8 @@ ${wl("wearables")}
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
-      thesesTitle:"Agent Harnesses müssen sich weiterentwickeln. Drei Thesen.",
-      thesesSub:"HelmDeck ist gebaut, um sie zu testen. Zu jeder steht, was passiert ist, als wir sie an HelmDeck selbst ausprobiert haben.",
+      thesesTitle:"Drei Thesen",
+      thesesSub:"Sie beruhen auf eigenen Erfahrungen und Beobachtungen beim Bau von HelmDeck. Zu jeder steht, was wir dabei gesehen haben.",
       th1H:"Mobil ist die Oberfläche.",
       th1P:"HelmDeck selbst ist in zwei Monaten entstanden, gesteuert vom Handy. Ein Agent hat die Einträge in Play Store und App Store und die Zertifikate im Browser erledigt. Der Gründer hat seine Rückfragen beantwortet und Blocker geräumt.",
       th2H:"Ziele ersetzen Prompts.",
@@ -908,8 +908,8 @@ ${wl("wearables")}
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
-      thesesTitle:"Agent harnesses must evolve. Three theses.",
-      thesesSub:"HelmDeck is built to test them. Each one comes with what happened when we used it on HelmDeck itself.",
+      thesesTitle:"Three theses",
+      thesesSub:"They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.",
       th1H:"Mobile is the interface.",
       th1P:"HelmDeck itself was built in two months, steered from the phone. An agent filled in the Play Store and App Store listings and handled the certificates in the browser. The founder answered its questions and cleared its blockers.",
       th2H:"Goals replace prompts.",
