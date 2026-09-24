@@ -229,9 +229,32 @@ if [ "$FILTER" = "1" ]; then
   rm -rf "$TMP" || fail "could not clear $TMP"
   git clone -q --single-branch --branch "$BRANCH" --no-local "file://$ROOT" "$TMP" \
     || fail "clone failed"
+  # The owner's PRIVATE life also lands in tracked prose - a card that quotes
+  # his depot decisions is source to us and nobody's business on a public
+  # mirror. What to strip is itself private, so the list lives OUTSIDE the
+  # repo: ~/.helmdeck/publish_private.txt, one entry per line -
+  #   path:<repo path>   dropped from the mirror's whole history
+  #   <word>             replaced by *** in every blob (case-insensitive)
+  PRIV="${HELMDECK_PUBLISH_PRIVATE:-$HOME/.helmdeck/publish_private.txt}"
+  EXTRA=(); TERMS=()
+  if [ -f "$PRIV" ]; then
+    while IFS= read -r l || [ -n "$l" ]; do
+      l="${l%$'\r'}"; case "$l" in ''|'#'*) continue ;; esac
+      case "$l" in path:*) EXTRA+=(--path "${l#path:}") ;; *) TERMS+=("$l") ;; esac
+    done < "$PRIV"
+    say "private list: ${#EXTRA[@]} path(s) dropped, ${#TERMS[@]} term(s) redacted"
+  fi
+  REPL="$TMP.replace.txt"; : > "$REPL"
+  for t in "${TERMS[@]}"; do printf 'regex:(?i)%s==>***\n' "$t" >> "$REPL"; done
+  RT=(); [ -s "$REPL" ] && RT=(--replace-text "$REPL")
   ( cd "$TMP" && "$PY" -3.12 -m git_filter_repo \
-      --path .attachments --path .copilot_attachments --invert-paths --force ) \
+      --path .attachments --path .copilot_attachments "${EXTRA[@]}" --invert-paths \
+      "${RT[@]}" --force ) \
     || fail "filter-repo failed"
+  for t in "${TERMS[@]}"; do
+    ( cd "$TMP" && git log --all -p -i -G "$t" --format=%h | grep -q . ) \
+      && fail "mirror STILL contains a private term from $PRIV - not pushing"
+  done
   # prove it, do not trust it: the mirror must contain ZERO private paths and
   # must still carry the workflow the whole exercise exists to run.
   LEFT="$( cd "$TMP" && git log --all --pretty=format: --name-only | sort -u \
