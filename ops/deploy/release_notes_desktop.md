@@ -1,4 +1,6 @@
-# HelmDeck Desktop 0.2.25 (Windows + macOS)
+# HelmDeck Desktop 0.2.25 (Windows)
+
+macOS stays on 0.2.24 for now - its 0.2.25 build follows.
 
 ## What's new since 0.2.24
 
