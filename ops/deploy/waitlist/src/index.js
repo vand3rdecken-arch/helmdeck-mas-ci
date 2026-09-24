@@ -114,7 +114,8 @@ const WEAR_REQUEST_URL =
   );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
-// Demo video (brag.mp4, 21.5s). Served same-origin via the Worker's static
+// Demo video (demo-en.mp4, 30s, English voiceover, exported from the Arcade
+// project "HelmDeck - Mobile AI Orchestration"). Served same-origin via the Worker's static
 // assets binding (ops/deploy/waitlist/public/) rather than linked at the
 // GitHub release CDN: GitHub forces every release asset to
 // `Content-Disposition: attachment` + `Content-Type: application/octet-stream`
@@ -123,8 +124,8 @@ const RELEASE_CACHE_TTL = 3600;
 // desktop Chrome happened to content-sniff around it during testing, hiding
 // the bug until a real phone hit it, 2026-09-16). Same-origin assets get a
 // correct Content-Type from their extension and no forced disposition.
-const DEMO_VIDEO_URL = "/brag.mp4";
-const DEMO_POSTER_URL = "/brag.jpg";
+const DEMO_VIDEO_URL = "/demo-en.mp4";
+const DEMO_POSTER_URL = "/demo-en.jpg";
 
 // Real app screenshots (Expo web, demo mode, German, dark) - the proof strip.
 // Inlined as webp data URIs: this worker has no asset bucket and the three
@@ -488,7 +489,7 @@ footer a:hover{color:var(--ink-2)}
 .shots{display:grid; grid-template-columns:1fr; gap:1.2rem; margin-top:1.6rem}
 @media (min-width:46rem){.shots{grid-template-columns:1fr 1fr}}
 @media (min-width:64rem){.shots{grid-template-columns:1fr 1fr 1.6fr; align-items:start}}
-.demo-shot{margin:0; border:1px solid var(--border-strong); border-radius:18px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45); max-width:44rem}
+.demo-shot{margin:1.6rem auto 0; border:1px solid var(--border-strong); border-radius:18px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45); max-width:60rem}
 .demo-shot video{display:block; width:100%; height:auto; aspect-ratio:16/9; background:#000}
 .shot{display:flex; flex-direction:column; gap:.7rem}
 .shot figure{margin:0; border:1px solid var(--border-strong); border-radius:18px; overflow:hidden;
@@ -652,7 +653,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <p class="objection" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
     <div class="hero-actions">
       <a class="btn btn-primary btn-lg" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
-      <a class="btn btn-ghost btn-lg" href="#theses" data-i="heroCtaTheses">Read the three theses</a>
+      <a class="btn btn-ghost btn-lg" href="#demo" data-i="heroCtaDemo">Watch the 30 second demo</a>
     </div>
     <div class="badges">
       <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
@@ -666,6 +667,12 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 </section>
 <main>
   <p class="objection objection-m" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
+
+  <section id="demo">
+    <h2 data-i="demoTitle">HelmDeck in 30 seconds</h2>
+    <p class="section-sub" data-i="demoSub">From the board to the agent's question to the answer from your phone. Narrated in English.</p>
+    <figure class="demo-shot"><video controls playsinline preload="none" poster="${DEMO_POSTER_URL}" width="1920" height="1080"><source src="${DEMO_VIDEO_URL}" type="video/mp4"></video></figure>
+  </section>
 
   <section id="theses">
     <h2 data-i="thesesTitle">Three theses</h2>
@@ -941,6 +948,9 @@ ${wl("wearables")}
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
+      heroCtaDemo:"Demo ansehen, 30 Sekunden",
+      demoTitle:"HelmDeck in 30 Sekunden",
+      demoSub:"Vom Board über die Frage des Agenten bis zur Antwort vom Handy. Auf Englisch vertont.",
       badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei",
       heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Karten warten auf eine Antwort",
       thesesTitle:"Drei Thesen",
@@ -1011,6 +1021,9 @@ ${wl("wearables")}
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
+      heroCtaDemo:"Watch the 30 second demo",
+      demoTitle:"HelmDeck in 30 seconds",
+      demoSub:"From the board to the agent's question to the answer from your phone. Narrated in English.",
       badgeIosSmall:"Download on the", badgePlaySmall:"Get it on",
       heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer",
       thesesTitle:"Three theses",
