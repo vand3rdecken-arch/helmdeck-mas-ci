@@ -382,7 +382,8 @@ h3{margin:0; font-size:1.08rem; font-weight:700}
 .hero-actions{display:flex; gap:.8rem; flex-wrap:wrap}
 .hero .objection{margin:-.9rem 0 1.6rem; font-size:.9rem; color:var(--ink-3)}
 .hero-shot{margin-top:2.2rem}
-.hero-shot figure{margin:0; border:1px solid var(--border-strong); border-radius:20px; overflow:hidden; background:var(--surface); box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.hero-shot figure{margin:0 auto; width:min(100%,15rem); padding:.45rem; border:1px solid var(--border-strong); border-radius:2.1rem; background:#0B0C0D; box-shadow:0 20px 50px rgba(0,0,0,.45)}
+.hero-shot img{border-radius:1.65rem}
 .hero-shot img,.hero-shot video{display:block; width:100%; height:auto}
 .quote{margin:0; padding:1.2rem 1.4rem; border-left:3px solid var(--accent-hi); background:var(--surface); border-radius:0 14px 14px 0; max-width:44rem}
 .quote p{margin:0 0 .5rem; font-size:1.02rem; line-height:1.55; color:var(--ink-2); text-wrap:pretty}
@@ -401,9 +402,8 @@ a.device:hover{border-color:var(--border-strong)}
 @media (min-width:46rem){.shots.shots-2{grid-template-columns:17rem 1fr; align-items:start}}
 @media (min-width:64rem){.shots.shots-2{grid-template-columns:19rem 1fr}}
 @media (min-width:64rem){
-  .hero{display:grid; grid-template-columns:minmax(0,1fr) 19rem; column-gap:3.5rem; align-items:center}
+  .hero{display:grid; grid-template-columns:minmax(0,1fr) 15rem; column-gap:3.5rem; align-items:center}
   .hero .hero-shot{margin-top:0}
-  .hero-shot figure{max-width:19rem}
 }
 .btn{
   display:inline-flex; align-items:center; justify-content:center; height:3rem;
@@ -574,7 +574,7 @@ footer a:hover{color:var(--ink-2)}
     </div>
     </div>
     <div class="hero-shot">
-      <figure><video autoplay muted loop playsinline poster="${DEMO_POSTER_URL}" width="1920" height="1080" aria-hidden="true"><source src="${DEMO_VIDEO_URL}" type="video/mp4"></video></figure>
+      <figure><img src="/shots/01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
     </div>
   </section>
 
@@ -811,8 +811,11 @@ ${wl("wearables")}
   function getConsent(){ try { return localStorage.getItem(CONSENT_KEY); } catch(e){ return null; } }
   function setConsent(v){ try { localStorage.setItem(CONSENT_KEY, v); } catch(e){} }
   var cookiebar = document.getElementById("cookiebar");
-  function showBar(){ if (cookiebar) cookiebar.hidden = false; }
-  function hideBar(){ if (cookiebar) cookiebar.hidden = true; }
+  // the bar is fixed, so it hides the page bottom unless the body reserves its height
+  function padForBar(){ document.body.style.paddingBottom = cookiebar && !cookiebar.hidden ? cookiebar.offsetHeight + "px" : ""; }
+  function showBar(){ if (cookiebar) { cookiebar.hidden = false; padForBar(); } }
+  function hideBar(){ if (cookiebar) { cookiebar.hidden = true; padForBar(); } }
+  window.addEventListener("resize", padForBar);
   function applyConsent(v){
     setConsent(v);
     hideBar();
