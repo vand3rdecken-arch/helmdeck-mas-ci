@@ -660,8 +660,8 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     </div>
   </div>
   <div class="hero-stage">
-    <figure class="win"><img src="/shots/desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer" data-i-alt="heroDeskAlt"></figure>
-    <figure class="ph"><img src="/shots/01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
+    <figure class="win"><img src="/shots/en/desk-board.webp" data-shot="desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer" data-i-alt="heroDeskAlt"></figure>
+    <figure class="ph"><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
   </div>
 </section>
 <main>
@@ -681,10 +681,10 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <h2 data-i="screensTitle">The phone, as it looks today</h2>
     <p class="section-sub" data-i="screensSub">Screenshots from the app, taken with demo cards. Not mockups.</p>
     <div class="phones">
-      <figure><img src="/shots/01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt" loading="lazy"><figcaption><b data-i="sh1H">Board</b><span data-i="sh1P">Backlog, in progress, review. One card waits for your answer.</span></figcaption></figure>
-      <figure><img src="/shots/02-card-verlauf.webp" width="585" height="1300" alt="History of one card: request filed, gate passed, waiting for approval" data-i-alt="sh2Alt" loading="lazy"><figcaption><b data-i="sh2H">One card</b><span data-i="sh2P">Request, gate result and review step in one log, readable by everyone on the team.</span></figcaption></figure>
-      <figure><img src="/shots/03-wartet-auf-dich.webp" width="585" height="1300" alt="Needs you: one card with an open question from an agent" data-i-alt="sh3Alt" loading="lazy"><figcaption><b data-i="sh3H">Needs you</b><span data-i="sh3P">The agent's question lands with whoever is free. One tap answers it.</span></figcaption></figure>
-      <figure><img src="/shots/04-uebersicht.webp" width="585" height="1300" alt="Overview: what the planner is doing now, what is next, one item waiting for approval" data-i-alt="sh4Alt" loading="lazy"><figcaption><b data-i="sh4H">Overview</b><span data-i="sh4P">What the planner is doing now, what is next, what waits for your approval.</span></figcaption></figure>
+      <figure><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt" loading="lazy"><figcaption><b data-i="sh1H">Board</b><span data-i="sh1P">Backlog, in progress, review. One card waits for your answer.</span></figcaption></figure>
+      <figure><img src="/shots/en/02-card-verlauf.webp" data-shot="02-card-verlauf.webp" width="585" height="1300" alt="History of one card: request filed, gate passed, waiting for approval" data-i-alt="sh2Alt" loading="lazy"><figcaption><b data-i="sh2H">One card</b><span data-i="sh2P">Request, gate result and review step in one log, readable by everyone on the team.</span></figcaption></figure>
+      <figure><img src="/shots/en/03-wartet-auf-dich.webp" data-shot="03-wartet-auf-dich.webp" width="585" height="1300" alt="Needs you: one card with an open question from an agent" data-i-alt="sh3Alt" loading="lazy"><figcaption><b data-i="sh3H">Needs you</b><span data-i="sh3P">The agent's question lands with whoever is free. One tap answers it.</span></figcaption></figure>
+      <figure><img src="/shots/en/04-uebersicht.webp" data-shot="04-uebersicht.webp" width="585" height="1300" alt="Overview: what the planner is doing now, what is next, one item waiting for approval" data-i-alt="sh4Alt" loading="lazy"><figcaption><b data-i="sh4H">Overview</b><span data-i="sh4P">What the planner is doing now, what is next, what waits for your approval.</span></figcaption></figure>
     </div>
   </section>
 
@@ -1160,6 +1160,8 @@ ${wl("wearables")}
     for (var j=0;j<htmls.length;j++){ var hk = htmls[j].getAttribute("data-i-html"); if (t[hk]) htmls[j].innerHTML = t[hk]; }
     var alts = document.querySelectorAll("[data-i-alt]");
     for (var al=0;al<alts.length;al++){ var ak = alts[al].getAttribute("data-i-alt"); if (t[ak]) alts[al].setAttribute("alt", t[ak]); }
+    var shots = document.querySelectorAll("[data-shot]");   // localized app screenshots: EN in /shots/en/, DE in /shots/
+    for (var sh=0;sh<shots.length;sh++){ shots[sh].setAttribute("src", "/shots/" + (lang === "de" ? "" : "en/") + shots[sh].getAttribute("data-shot")); }
     var phs = document.querySelectorAll("[data-i-ph]");
     for (var p=0;p<phs.length;p++){ var pk = phs[p].getAttribute("data-i-ph"); if (t[pk]) phs[p].setAttribute("placeholder", t[pk]); }
     langBtn.textContent = t.toggle;
