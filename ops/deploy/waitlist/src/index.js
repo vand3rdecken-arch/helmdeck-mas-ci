@@ -841,33 +841,33 @@ ${wl("wearables")}
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
       thesesTitle:"Drei Thesen",
-      thesesSub:"Sie beruhen auf eigenen Erfahrungen und Beobachtungen beim Bau von HelmDeck. Zu jeder steht, was wir dabei gesehen haben.",
+      thesesSub:"Diese drei Thesen stammen aus unserer eigenen Erfahrung. Wir haben sie beim Bau von HelmDeck selbst beobachtet.",
       th1H:"Mobil ist die Oberfläche.",
-      th1P:"HelmDeck selbst ist in zwei Monaten entstanden, gesteuert vom Handy. Ein Agent hat die Einträge in Play Store und App Store und die Zertifikate im Browser erledigt. Der Gründer hat seine Rückfragen beantwortet und Blocker geräumt.",
-      th2H:"Ziele ersetzen Prompts.",
-      th2P:"Du setzt Ziel, Budget und Termin. Henry, der Planer in HelmDeck, legt Zeitplan und Umfang gegen die gemessene Geschwindigkeit des Gründers aus und hat widersprochen, als die Android-Prüfung vierzehn Tage dauerte.",
-      th3H:"Teams, nicht Einzelne.",
-      th3P:"Jede Entscheidung landet bei der einen Person, die sie treffen soll. Der Gründer und ein Partner in einer anderen Zeitzone übergeben das Board abends, und beide sehen, was sich bewegt hat und was auf sie wartet.",
-      screensTitle:"Das Handy, wie es heute aussieht",
+      th1P:"HelmDeck haben wir in zwei Monaten gebaut, vom Handy aus gesteuert. Die Einträge in Play Store und App Store und die Zertifikate hat ein Agent im Browser erledigt. Der Gründer hat Rückfragen beantwortet und Hindernisse aus dem Weg geräumt.",
+      th2H:"Ziele statt Prompts.",
+      th2P:"Du gibst Ziel, Budget und Termin vor. Henry, der Planer in HelmDeck, plant Zeitplan und Umfang anhand der gemessenen Geschwindigkeit des Gründers. Als die Android-Prüfung vierzehn Tage dauerte, hat er den Plan infrage gestellt.",
+      th3H:"Teams statt Einzelkämpfer.",
+      th3P:"Jede Entscheidung landet bei der Person, die sie treffen soll. Der Gründer arbeitet mit einem Partner in einer anderen Zeitzone: Abends übergibt er das Board, und beide sehen sofort, was sich bewegt hat und was auf sie wartet.",
+      screensTitle:"So sieht es auf dem Handy aus",
       screensSub:"Screenshots aus der App, mit Demo-Karten aufgenommen. Keine Mockups.",
       sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, eine Karte wartet auf Antwort",
       sh1H:"Board",
       sh1P:"Backlog, in Arbeit, Review. Eine Karte wartet auf deine Antwort.",
       sh2Alt:"Verlauf einer Karte: Anfrage eingereicht, Gate bestanden, wartet auf Freigabe",
       sh2H:"Eine Karte",
-      sh2P:"Anfrage, Gate-Ergebnis und Review-Schritt in einem Verlauf, lesbar für alle im Team.",
+      sh2P:"Anfrage, Prüfergebnis und Review in einem Verlauf, den alle im Team lesen können.",
       sh3Alt:"Wartet auf dich: eine Karte mit offener Rückfrage eines Agenten",
       sh3H:"Wartet auf dich",
-      sh3P:"Die Rückfrage des Agenten landet bei wem gerade frei ist. Ein Tipp beantwortet sie.",
+      sh3P:"Die Rückfrage des Agenten landet bei dem, der gerade Zeit hat. Ein Tipp genügt zur Antwort.",
       sh4Alt:"Übersicht: was der Planer gerade tut, was als Nächstes kommt, eine Sache wartet auf Abnahme",
       sh4H:"Übersicht",
-      sh4P:"Was der Planer gerade tut, was als Nächstes kommt, was auf deine Abnahme wartet.",
+      sh4P:"Woran der Planer gerade arbeitet, was als Nächstes kommt und was auf deine Freigabe wartet.",
       faqTitle:"Fragen",
       devicesTitle:"Läuft auf", devices:'${devicesHtml(DEV_DE)}',
       faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
       faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch, damit euer Team mehrere Agenten gleichzeitig laufen lassen kann, ohne dass sie sich in die Quere kommen; vor dem Merge prüft ein Gate Build, Typen und Tests.',
-      dlTitle:"Jetzt verfügbar", dlSub:"App für Android und iPhone, die Uhr-App liegt im selben Paket. Operator für den Windows- oder Mac-PC, auf dem eure Agenten laufen. Kein Account bei uns.",
+      dlTitle:"Jetzt verfügbar", dlSub:"Die App für Android und iPhone, die Uhr-App ist im selben Paket. Dazu der Operator für den Windows- oder Mac-Rechner, auf dem eure Agenten laufen. Kein Account bei uns nötig.",
       dlBtn:"Herunterladen",
       dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
@@ -968,7 +968,7 @@ ${wl("wearables")}
       sending:"…", toggle:"DE" }
   };
   var lang = "en";
-  try { lang = localStorage.getItem("hd_lang") || ((navigator.language||"en").slice(0,2)==="de" ? "de" : "en"); } catch(e){}
+  try { lang = localStorage.getItem("hd_lang") || "en"; } catch(e){}
   if (lang !== "de" && lang !== "en") lang = "en";
 
   // Platform-aware primary CTA: the visitor's own download first (Android ->
