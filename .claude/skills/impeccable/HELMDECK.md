@@ -10,3 +10,4 @@
 - Verification: the loop's TEST state requires screenshots JUDGED (readability,
   centering, theming, collisions) - impeccable guides the writing, the loop
   gates the shipping.
+- Exception: the marketing site ops/deploy/waitlist uses the BRAND register (see ops/deploy/waitlist/PRODUCT.md).

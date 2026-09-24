@@ -11,6 +11,9 @@
 # Usage:  bash ops/deploy/push_site.sh [--check]
 #           (no args)  deploy, then verify the live origin
 #           --check    verify only - no deploy (safe to run any time)
+#           --skip-layout-check  deploy without check_layout.py (escape hatch)
+#         A normal deploy first runs ops/deploy/waitlist/check_layout.py against a running
+#         `npx wrangler dev --port 8799` and refuses to deploy if the layout gate fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -48,6 +51,14 @@ if [ "${1:-}" = "--check" ]; then
   echo "== checking $ORIGIN (no deploy) =="
   verify
   exit $?
+fi
+
+if [ "${1:-}" != "--skip-layout-check" ]; then
+  echo "== layout check =="
+  if ! ( cd "$ROOT/ops/deploy/waitlist" && py -3.12 check_layout.py ); then
+    echo "FAIL: layout check failed, not deploying (fix it, or pass --skip-layout-check)." >&2
+    exit 1
+  fi
 fi
 
 echo "== deploying ops/deploy/waitlist -> $ORIGIN =="

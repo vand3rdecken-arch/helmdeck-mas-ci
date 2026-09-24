@@ -377,14 +377,6 @@ h1{
 }
 h2{margin:0; font-size:1.55rem; font-weight:800; letter-spacing:-.01em}
 h3{margin:0; font-size:1.08rem; font-weight:700}
-.hero{padding:2.6rem 0 2.4rem}
-.hero .sub{margin:0 0 1.8rem; font-size:clamp(1.15rem,3vw,1.4rem); font-weight:600; color:var(--ink); max-width:40rem; text-wrap:balance}
-.hero-actions{display:flex; gap:.8rem; flex-wrap:wrap}
-.hero .objection{margin:-.9rem 0 1.6rem; font-size:.9rem; color:var(--ink-3)}
-.hero-shot{margin-top:2.2rem}
-.hero-shot figure{margin:0 auto; width:min(100%,15rem); padding:.45rem; border:1px solid var(--border-strong); border-radius:2.1rem; background:#0B0C0D; box-shadow:0 20px 50px rgba(0,0,0,.45)}
-.hero-shot img{border-radius:1.65rem}
-.hero-shot img,.hero-shot video{display:block; width:100%; height:auto}
 .quote{margin:0; padding:1.2rem 1.4rem; border-left:3px solid var(--accent-hi); background:var(--surface); border-radius:0 14px 14px 0; max-width:44rem}
 .quote p{margin:0 0 .5rem; font-size:1.02rem; line-height:1.55; color:var(--ink-2); text-wrap:pretty}
 .quote footer{font-size:.84rem; color:var(--ink-3)}
@@ -401,10 +393,6 @@ a.device:hover{border-color:var(--border-strong)}
 .shots.shots-2{grid-template-columns:1fr}
 @media (min-width:46rem){.shots.shots-2{grid-template-columns:17rem 1fr; align-items:start}}
 @media (min-width:64rem){.shots.shots-2{grid-template-columns:19rem 1fr}}
-@media (min-width:64rem){
-  .hero{display:grid; grid-template-columns:minmax(0,1fr) 15rem; column-gap:3.5rem; align-items:center}
-  .hero .hero-shot{margin-top:0}
-}
 .btn{
   display:inline-flex; align-items:center; justify-content:center; height:3rem;
   padding:0 1.35rem; border-radius:10px; font-weight:700; font-size:.94rem;
@@ -475,7 +463,6 @@ summary{
 }
 summary::-webkit-details-marker{display:none}
 summary::before{content:"+"; color:var(--accent-hi); font-weight:700; width:.9rem}
-details[open] summary::before{content:"–"}
 details div{font-size:.83rem; line-height:1.6; color:var(--ink-3); padding:.6rem 0 0 1.35rem; max-width:58ch}
 details a, .consent a{color:var(--accent-hi); text-decoration:none}
 details a:hover{text-decoration:underline}
@@ -526,12 +513,7 @@ footer a:hover{color:var(--ink-2)}
 .steps p{margin:0; font-size:.86rem; color:var(--ink-3); line-height:1.5}
 .faq details{margin-top:.6rem; border-top:1px solid var(--border); padding-top:.7rem}
 .faq details:first-of-type{margin-top:1rem}
-.hero .kicker{margin:0 0 .8rem; font-size:.82rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-hi)}
 @keyframes rise{from{opacity:0; transform:translateY(10px)}}
-.hero h1,.hero .sub,.hero .objection,.hero-actions{animation:rise .5s cubic-bezier(.22,1,.36,1) both}
-.hero .sub{animation-delay:.06s}.hero .objection{animation-delay:.09s}.hero-actions{animation-delay:.12s}
-@media (prefers-reduced-motion:reduce){.hero h1,.hero .sub,.hero .objection,.hero-actions{animation:none}}
-@media (max-width:640px){.topbar{flex-wrap:wrap}.topnav{order:3; width:100%; justify-content:center; gap:1.05rem}}
 .theses{display:grid; grid-template-columns:1fr; gap:1rem; margin-top:1.4rem}
 @media (min-width:46rem){.theses{grid-template-columns:repeat(3,1fr)}}
 .thesis{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.4rem 1.4rem 1.5rem}
@@ -545,6 +527,107 @@ footer a:hover{color:var(--ink-2)}
 .phones figcaption b{display:block; font-size:.95rem; margin-bottom:.15rem}
 .phones figcaption span{font-size:.84rem; color:var(--ink-3); line-height:1.5}
 @media (max-width:480px){form button,form .btn{flex:1 1 100%}}
+/* ---- 2026-09-24 premium pass (brand register): full-viewport hero + calmer surfaces ---- */
+:root{--top:4rem; --bar:0px; --pad:clamp(1.25rem,4vw,4.5rem); --shell:80rem}
+.topbar{max-width:112rem; padding:.85rem var(--pad)}
+.topbar-fixed{background:rgba(14,15,16,.72); backdrop-filter:blur(14px); border-bottom-color:rgba(255,255,255,.07)}
+.lockup b{font-size:1.05rem; letter-spacing:-.005em}
+main{max-width:var(--shell); padding:0 var(--pad) 4rem}
+.hero{
+  border-top:0; position:relative; box-sizing:border-box; max-width:112rem; margin:0 auto;
+  height:calc(100svh - var(--top) - var(--bar));
+  display:grid; grid-template-columns:minmax(0,4.2fr) minmax(0,7.8fr); align-items:center;
+  column-gap:clamp(1.5rem,3vw,4rem); padding:clamp(.75rem,2.5vh,2.5rem) var(--pad);
+}
+.hero-copy{min-width:0}
+.hero .kicker{margin:0 0 1rem; font-size:.85rem; font-weight:600; letter-spacing:.01em; text-transform:none; color:var(--accent-hi)}
+h1{margin:0 0 1.1rem; max-width:none; font-size:clamp(2rem,2.6vw + .9rem,3.9rem); line-height:1.04; font-weight:700; letter-spacing:-.03em; text-wrap:balance}
+:lang(de) h1{hyphens:auto}
+.hero .sub{margin:0 0 1rem; max-width:34rem; font-size:clamp(1.05rem,.5vw + .95rem,1.35rem); font-weight:500; line-height:1.4; color:var(--ink-2); text-wrap:balance}
+.hero .objection{margin:0 0 1.6rem; max-width:32rem; font-size:.9rem; line-height:1.5; color:var(--ink-3)}
+.objection-m{display:none}
+.hero-actions{display:flex; gap:.7rem; flex-wrap:wrap; margin-bottom:1.1rem}
+.btn-lg{height:3.25rem; padding:0 1.6rem; font-size:1rem; border-radius:12px}
+.btn-primary{box-shadow:0 0 0 1px rgba(255,255,255,.14) inset, 0 8px 24px -6px rgba(35,150,229,.55)}
+.hero-actions .btn-ghost{border-color:transparent; color:var(--ink-2); padding:0 .5rem; height:2.6rem; font-size:.95rem}
+.hero-actions .btn-ghost:hover{border-color:var(--border-strong)}
+.badges{display:flex; gap:.6rem; flex-wrap:wrap}
+.badge{
+  display:inline-flex; align-items:center; gap:.6rem; height:3rem; padding:0 1rem 0 .85rem;
+  border-radius:10px; background:#000; color:#fff; text-decoration:none;
+  box-shadow:0 0 0 1px rgba(255,255,255,.22) inset; transition:box-shadow .15s, background .15s;
+}
+.badge:hover{box-shadow:0 0 0 1px rgba(255,255,255,.5) inset; background:#0a0a0a}
+.badge svg{width:1.55rem; height:1.55rem; flex:none; fill:currentColor}
+.badge span{display:flex; flex-direction:column; line-height:1.1; white-space:nowrap}
+.badge small{font-size:.66rem; letter-spacing:.01em; color:rgba(255,255,255,.78)}
+.badge b{font-size:1.06rem; font-weight:600; letter-spacing:-.01em}
+/* the stage: desktop window + phone, both real screenshots at native aspect */
+.hero-stage{
+  position:relative; container-type:inline-size; justify-self:end;
+  width:min(100%, calc((100svh - var(--top) - var(--bar) - 4.5rem) * 1.5)); aspect-ratio:1.5; margin-right:-2vw;
+}
+.hero-stage::before{
+  content:""; position:absolute; inset:-10% 0; z-index:-1; pointer-events:none;
+  background:radial-gradient(closest-side, rgba(35,150,229,.20), transparent 72%);
+}
+.hero-stage figure{margin:0; position:absolute}
+.hero-stage img{display:block; width:100%; height:auto}
+.hero-stage .win{left:0; top:8%; width:90%; border-radius:1.4cqw; overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,.12), 0 3cqw 8cqw -2cqw rgba(0,0,0,.75)}
+.hero-stage .ph{right:0; bottom:0; width:28%; padding:.7cqw; background:#0B0C0D; border-radius:4cqw;
+  box-shadow:0 0 0 1px rgba(255,255,255,.18), 0 3cqw 7cqw -1cqw rgba(0,0,0,.8)}
+.hero-stage .ph img{border-radius:3.35cqw}
+@keyframes rise{from{opacity:0; transform:translateY(14px)}}
+@keyframes rise-r{from{opacity:0; transform:translateX(22px)}}
+.hero-copy > *{animation:rise .6s cubic-bezier(.16,1,.3,1) both}
+.hero-copy > :nth-child(2){animation-delay:.05s}.hero-copy > :nth-child(3){animation-delay:.1s}
+.hero-copy > :nth-child(4){animation-delay:.14s}.hero-copy > :nth-child(5){animation-delay:.18s}.hero-copy > :nth-child(6){animation-delay:.22s}
+.hero-stage .win{animation:rise-r .8s cubic-bezier(.16,1,.3,1) .1s both}
+.hero-stage .ph{animation:rise .8s cubic-bezier(.16,1,.3,1) .3s both}
+@media (prefers-reduced-motion:reduce){.hero-copy > *,.hero-stage .win,.hero-stage .ph{animation:none}}
+@media (max-width:899px){
+  .topnav{display:none}
+  .hero{display:flex; flex-direction:column; align-items:stretch; padding-bottom:0; row-gap:1rem}
+  .hero .kicker,.hero .objection,.hero-actions .btn-ghost{display:none}
+  .objection-m{display:block; margin:0 0 2rem; font-size:.9rem; color:var(--ink-3); max-width:36rem; padding-top:1.5rem}
+  h1{margin-bottom:.7rem}
+  .hero .sub{margin-bottom:.4rem}
+  .hero-actions{margin-bottom:.7rem}
+  .hero-actions .btn{flex:1 1 100%}
+  .badge{flex:1 1 0; justify-content:center}
+  .hero-stage{
+    flex:1 1 0; min-height:0; width:100%; aspect-ratio:auto; overflow:hidden; justify-self:auto;
+    display:flex; justify-content:center; align-items:flex-start;
+    -webkit-mask-image:linear-gradient(#000 78%,transparent); mask-image:linear-gradient(#000 78%,transparent);
+  }
+  .hero-stage::before{inset:0}
+  .hero-stage .win{display:none}
+  .hero-stage .ph{position:static; width:min(66vw,16rem); flex:none; padding:.4rem; border-radius:2.2rem 2.2rem 0 0}
+  .hero-stage .ph img{border-radius:1.8rem 1.8rem 0 0}
+}
+@media (max-width:480px){
+  .cookiebar{padding:.5rem .9rem; gap:.4rem .8rem}
+  .cookiebar p{font-size:.74rem; line-height:1.35}
+  .cookiebar .btn-sm{height:2.1rem; font-size:.8rem}
+}
+/* calmer surfaces below the fold */
+section{padding:clamp(3.5rem,8vh,6rem) 0; border-top:1px solid rgba(255,255,255,.07)}
+h2{font-size:clamp(1.7rem,2vw + 1rem,2.5rem); font-weight:700; letter-spacing:-.025em; line-height:1.1}
+.section-sub{font-size:1.02rem; line-height:1.55; max-width:40rem; margin-bottom:2.2rem}
+.theses{gap:clamp(1.5rem,3vw,3rem); margin-top:2.4rem}
+.thesis{background:none; border:0; border-top:1px solid var(--border-strong); border-radius:0; padding:1.5rem 0 0}
+.thesis .n{display:block; font-size:2.6rem; line-height:1; font-weight:700; letter-spacing:-.03em; color:var(--accent-hi)}
+.thesis h3{margin:.9rem 0 .8rem; font-size:1.5rem; letter-spacing:-.02em}
+.thesis p{font-size:1rem; line-height:1.65; color:var(--ink-3)}
+.dl-card,.device,.success{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012)); border-color:rgba(255,255,255,.09)}
+.dl-card{border-radius:16px; padding:1.6rem}
+.phones img{box-shadow:0 0 0 1px rgba(255,255,255,.1), 0 24px 50px -16px rgba(0,0,0,.7); border:0}
+summary::before{content:"+"; display:inline-block; transition:transform .2s}
+details[open] summary::before{content:"+"; transform:rotate(45deg)}
+.devices-h{letter-spacing:.02em; text-transform:none; font-size:.95rem}
+:focus-visible{outline:2px solid var(--accent-hi); outline-offset:3px}
+.cookiebar{padding:.55rem var(--pad); box-shadow:none; background:rgba(29,31,32,.94); backdrop-filter:blur(12px)}
 </style>
 </head>
 <body>
@@ -561,22 +644,28 @@ footer a:hover{color:var(--ink-2)}
     <button class="lang" id="lang" type="button" aria-label="Switch language">DE</button>
   </div>
 </div>
-<main>
-  <section class="hero" style="border-top:0; padding-top:1rem">
-    <div class="hero-copy">
+<section class="hero">
+  <div class="hero-copy">
     <p class="kicker" data-i="kicker">For teams running Claude Code</p>
     <h1 data-i="h1">Mobile AI orchestration for teams.</h1>
     <p class="sub" data-i="sub">The agent belongs at the desk. You don't.</p>
     <p class="objection" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
     <div class="hero-actions">
-      <a class="btn btn-primary" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
-      <a class="btn btn-ghost" href="#theses" data-i="heroCtaTheses">Read the three theses</a>
+      <a class="btn btn-primary btn-lg" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
+      <a class="btn btn-ghost btn-lg" href="#theses" data-i="heroCtaTheses">Read the three theses</a>
     </div>
+    <div class="badges">
+      <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
+      <a class="badge" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-cta="android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8 13.8 12 3.6 22.2c-.4-.2-.6-.6-.6-1.1V2.9c0-.5.2-.9.6-1.1zM15.2 13.4l2.5 2.5-11.6 6.6zM15.2 10.6 6.1 1.5l11.6 6.6 2.5 1.4c.7.4.7 1.2 0 1.6l-2.5 1.4z"/></svg><span><small data-i="badgePlaySmall">Get it on</small><b>Google Play</b></span></a>
     </div>
-    <div class="hero-shot">
-      <figure><img src="/shots/01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
-    </div>
-  </section>
+  </div>
+  <div class="hero-stage">
+    <figure class="win"><img src="/shots/desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer" data-i-alt="heroDeskAlt"></figure>
+    <figure class="ph"><img src="/shots/01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
+  </div>
+</section>
+<main>
+  <p class="objection objection-m" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
 
   <section id="theses">
     <h2 data-i="thesesTitle">Three theses</h2>
@@ -812,10 +901,19 @@ ${wl("wearables")}
   function setConsent(v){ try { localStorage.setItem(CONSENT_KEY, v); } catch(e){} }
   var cookiebar = document.getElementById("cookiebar");
   // the bar is fixed, so it hides the page bottom unless the body reserves its height
-  function padForBar(){ document.body.style.paddingBottom = cookiebar && !cookiebar.hidden ? cookiebar.offsetHeight + "px" : ""; }
+  function padForBar(){
+    var h = cookiebar && !cookiebar.hidden ? cookiebar.offsetHeight : 0;
+    document.body.style.paddingBottom = h ? h + "px" : "";
+    /* the hero is exactly one screen minus these two bars (see .hero in the CSS) */
+    var tb = document.querySelector(".topbar-fixed");
+    document.documentElement.style.setProperty("--bar", h + "px");
+    if (tb) document.documentElement.style.setProperty("--top", tb.offsetHeight + "px");
+  }
   function showBar(){ if (cookiebar) { cookiebar.hidden = false; padForBar(); } }
   function hideBar(){ if (cookiebar) { cookiebar.hidden = true; padForBar(); } }
   window.addEventListener("resize", padForBar);
+  window.addEventListener("load", padForBar);
+  padForBar();
   function applyConsent(v){
     setConsent(v);
     hideBar();
@@ -843,6 +941,8 @@ ${wl("wearables")}
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
+      badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei",
+      heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Karten warten auf eine Antwort",
       thesesTitle:"Drei Thesen",
       thesesSub:"Diese drei Thesen stammen aus unserer eigenen Erfahrung. Wir haben sie beim Bau von HelmDeck selbst beobachtet.",
       th1H:"Mobil ist die Oberfläche.",
@@ -911,6 +1011,8 @@ ${wl("wearables")}
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
+      badgeIosSmall:"Download on the", badgePlaySmall:"Get it on",
+      heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer",
       thesesTitle:"Three theses",
       thesesSub:"They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.",
       th1H:"Mobile is the interface.",
