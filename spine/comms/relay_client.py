@@ -88,8 +88,10 @@ WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame a
 WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
 WS_TRANSIENT_MAX = 3            # consecutive transient WS failures before a pull detour
 WS_REDIAL_S = 0.5               # an ESTABLISHED socket that drops redials at once, no backoff
-WS_STABLE_S = 10.0              # ...if it lived this long; a relay that closes every socket at
-                                # once stays on the backoff (0.5 s redials = ~170k requests/day)
+WS_STABLE_S = 60.0              # ...if it lived this long. Each dial is one billed Worker
+                                # request: worst case (relay closes every socket right after
+                                # this) = 1 dial/min = ~1,440/day, below the old long-poll's
+                                # ~3,456; shorter-lived sockets stay on the backoff
 _ws_state = {"unsupported_until": 0.0, "fails": 0, "mode": "starting", "since": 0.0,
              "reason": ""}
 
