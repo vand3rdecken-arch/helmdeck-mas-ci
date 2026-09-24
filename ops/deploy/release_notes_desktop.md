@@ -1,6 +1,8 @@
-# HelmDeck Desktop 0.2.25 (Windows)
+# HelmDeck Desktop 0.2.25 (Windows + macOS)
 
-macOS stays on 0.2.24 for now - its 0.2.25 build follows.
+The macOS build is signed and notarized by Apple. If you installed the
+macOS 0.2.24 download, it was unsigned: download 0.2.25 once by hand, after
+that updates arrive on their own.
 
 ## What's new since 0.2.24
 
