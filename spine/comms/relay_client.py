@@ -63,6 +63,139 @@ PUSH_TIMEOUT_PER_100K = 1       # +1 s per 100 KB of frame - a 2 MB reply gets ~
 _base_lock = threading.Lock()
 _base_cache = {"ts": 0.0, "public": None, "base": None}
 
+# --- WEBSOCKET BRIDGE (2026-09-24) ------------------------------------------
+# The bridge used to long-poll /tunnel/pull every 25 s: 3,456 relay requests a
+# day per PC while nothing happened, and three per phone request (relay, pull,
+# push). On 2026-09-23 that tripped Cloudflare's free-plan limit with ONE user
+# - the relay answered its own "temporarily rate limited" page even on
+# /health, the bridge backed off to 60 s, and the phone was cut off for the
+# rest of the UTC day. Now ONE WebSocket per daemon: phone frames arrive as
+# messages, replies leave as messages, and the idle keepalive ("ping" ->
+# "pong") is answered by Cloudflare's runtime without waking the Durable
+# Object (surfaces/relay/worker/src/room.js setWebSocketAutoResponse).
+#
+# Long-poll stays as the fallback, never removed: a relay without the /ws
+# route (surfaces/relay/relay.py, an older worker) answers the upgrade with
+# 404/426 and the bridge pulls exactly as before; a box without the
+# `websockets` package pulls too.
+WS_PING_EVERY = 30.0            # s between keepalives (runtime-answered, not billed as a wake)
+WS_DEAD_AFTER = 75.0            # s without ANY message, pong included = the socket is dead
+WS_MAX_REPLY = 900 * 1024       # bigger replies go over /tunnel/push (same waiting id)
+WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame at 4 MB
+WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
+WS_TRANSIENT_MAX = 3            # consecutive transient WS failures before a pull detour
+_ws_state = {"unsupported_until": 0.0, "fails": 0, "mode": "starting", "since": 0.0,
+             "reason": ""}
+
+
+class _WSUnsupported(Exception):
+    """The relay answered the upgrade with a status that means it has no
+    WebSocket route - not a transient failure."""
+
+
+def bridge_mode():
+    """(mode, since_epoch, reason) - which transport the bridge is on RIGHT NOW.
+    Derived from what the loop last did, never configured."""
+    return _ws_state["mode"], _ws_state["since"], _ws_state["reason"]
+
+
+def _set_mode(mode, reason=""):
+    if _ws_state["mode"] == mode and _ws_state["reason"] == reason:
+        return
+    _ws_state.update(mode=mode, since=time.time(), reason=reason)
+    try:
+        from spine.storage import events
+        events.log("relay", "bridge transport: %s%s" % (mode, (" (%s)" % reason) if reason else ""))
+    except Exception:                                        # noqa: BLE001
+        pass
+
+
+def _ws_url(relay, room):
+    from urllib.parse import quote
+    if relay.startswith("https://"):
+        base = "wss://" + relay[len("https://"):]
+    elif relay.startswith("http://"):
+        base = "ws://" + relay[len("http://"):]
+    else:
+        return ""
+    return base.rstrip("/") + "/tunnel/ws?room=" + quote(room, safe="")
+
+
+def _ws_wanted(relay):
+    if time.time() < _ws_state["unsupported_until"] or not _ws_url(relay, "x"):
+        return False
+    try:
+        import websockets.sync.client  # noqa: F401
+    except Exception:                                        # noqa: BLE001
+        return False
+    return True
+
+
+def _ws_session(relay, room, sk, port, serve=None):
+    """One connected WebSocket session to the relay room. Blocks while the
+    socket lives and dispatches every phone frame to `serve` on its own thread
+    (same as a pulled frame). Returns on a clean close; raises _WSUnsupported
+    when the relay has no /ws route, anything else on a transport failure."""
+    from websockets.sync.client import connect
+    from websockets.exceptions import InvalidMessage, InvalidStatus
+    serve = serve or _serve_one
+    try:
+        ws = connect(_ws_url(relay, room), open_timeout=15, close_timeout=5,
+                     # our own text "ping": the worker auto-answers it without
+                     # waking the object; library protocol pings are not relied on
+                     ping_interval=None, max_size=WS_MAX_FRAME)
+    except InvalidStatus as e:
+        code = getattr(getattr(e, "response", None), "status_code", 0) or 0
+        if code in (400, 404, 405, 426, 501):
+            raise _WSUnsupported("HTTP %d on upgrade" % code)
+        raise
+    except InvalidMessage as e:
+        # The server ANSWERED, but not as a websocket - e.g. an HTTP/1.0 404
+        # with no Content-Length from a stdlib handler. Measured against a
+        # BaseHTTPRequestHandler in ops/tests/test_relay_websocket.py: without
+        # this the bridge read "no websocket here" as a TRANSIENT failure and
+        # would retry the upgrade forever instead of long-polling. A server
+        # that never answered is a different error (ConnectionRefused /
+        # TimeoutError) and stays transient.
+        raise _WSUnsupported("not a websocket endpoint: %s" % str(e)[:80])
+    lock = threading.Lock()
+
+    def send(fid, cipher):
+        with lock:
+            ws.send(json.dumps({"kind": "reply", "id": fid, "cipher": cipher}))
+
+    _ws_state["fails"] = 0
+    _set_mode("websocket")
+    try:
+        last_rx = last_ping = time.time()
+        while not _stop:
+            now = time.time()
+            if now - last_ping >= WS_PING_EVERY:
+                with lock:
+                    ws.send("ping")
+                last_ping = now
+            if now - last_rx > WS_DEAD_AFTER:
+                raise ConnectionError("websocket silent for %ds" % int(now - last_rx))
+            try:
+                msg = ws.recv(timeout=5)
+            except TimeoutError:
+                continue
+            last_rx = time.time()
+            if not isinstance(msg, str) or msg == "pong":
+                continue
+            try:
+                data = json.loads(msg)
+            except ValueError:
+                continue
+            if isinstance(data, dict) and data.get("kind") == "frame":
+                threading.Thread(target=serve, args=(relay, room, sk, port, data),
+                                 kwargs={"send": send}, daemon=True).start()
+    finally:
+        try:
+            ws.close()
+        except Exception:                                    # noqa: BLE001
+            pass
+
 
 def _health(url, timeout=3):
     try:
@@ -367,7 +500,21 @@ def _push_giveup(msg):
             pass
 
 
-def _serve_one(relay, room, sk_b64, port, frame):
+def _deliver(relay, room, fid, cipher, send=None):
+    """Hand one sealed reply back: over the WebSocket when the frame came in
+    on one and the reply fits a message, else over /tunnel/push. Both land on
+    the SAME waiting id in the room, so a socket that died mid-request (a
+    deploy, a network flip) costs nothing - the HTTP push still delivers."""
+    if send and len(cipher) <= WS_MAX_REPLY:
+        try:
+            send(fid, cipher)
+            return True
+        except Exception:                                    # noqa: BLE001
+            pass
+    return _push(relay, room, fid, cipher)
+
+
+def _serve_one(relay, room, sk_b64, port, frame, send=None):
     from spine.comms import e2ee
     fid = frame.get("id")
     pub = frame.get("pub", "")
@@ -397,7 +544,7 @@ def _serve_one(relay, room, sk_b64, port, frame):
             resp["cipher"] = e2ee.seal_b64(json.dumps(
                 {k: resp[k] for k in ("status", "headers", "body")}).encode(),
                 sk, e2ee.import_pub(pub))
-            _push(relay, room, fid, resp["cipher"])
+            _deliver(relay, room, fid, resp["cipher"], send)
         except Exception:
             pass
         return
@@ -420,7 +567,7 @@ def _serve_one(relay, room, sk_b64, port, frame):
         cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
     except Exception:
         return
-    _push(relay, room, fid, cipher)
+    _deliver(relay, room, fid, cipher, send)
 
 
 def _pull(relay, room):
@@ -469,6 +616,33 @@ def _loop(port):
                                "the relay URL is https (Settings -> Mobile app)")
                 except Exception:
                     pass
+            if _ws_wanted(relay):
+                try:
+                    _ws_session(relay, room, sk, port)   # blocks while connected
+                except _WSUnsupported as e:
+                    _ws_state["unsupported_until"] = time.time() + WS_UNSUPPORTED_S
+                    _set_mode("long-poll", "relay has no websocket: %s" % e)
+                    continue                             # straight to the pull path
+                except Exception:
+                    _ws_state["fails"] += 1
+                    if _ws_state["fails"] >= WS_TRANSIENT_MAX:
+                        # Something between us and the relay may block
+                        # websockets specifically - prove the relay is
+                        # reachable at all by pulling for a while.
+                        _ws_state["fails"] = 0
+                        _ws_state["unsupported_until"] = time.time() + 120
+                        _set_mode("long-poll", "websocket failed %d times in a row"
+                                  % WS_TRANSIENT_MAX)
+                    raise
+                if errs:
+                    try:
+                        from spine.storage import events
+                        events.log("relay", "bridge reconnected after %d failed attempt(s)" % errs)
+                    except Exception:
+                        pass
+                errs, delay = 0, 3
+                continue
+            _set_mode("long-poll", _ws_state["reason"] if _ws_state["mode"] == "long-poll" else "")
             frame = _pull(relay, room)
             if errs:
                 try:

@@ -2,6 +2,12 @@
 # imported by server.py and the auth/relay/settings/system routes, so a box
 # without it cannot start the daemon.
 pynacl>=1.5
+# spine/comms/relay_client.py: the relay bridge's ONE WebSocket to the room
+# (sync client, websockets.sync.client). OPTIONAL in the strict sense - without
+# it the bridge long-polls exactly as before - but that burns ~3,500 relay
+# requests a day per PC idle, which is what hit Cloudflare's free limit on
+# 2026-09-23.
+websockets>=13
 playwright>=1.40
 imageio-ffmpeg>=0.4.9
 pynput>=1.7

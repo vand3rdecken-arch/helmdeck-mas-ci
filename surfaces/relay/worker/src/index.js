@@ -203,6 +203,14 @@ export default {
     if (m === "POST" && p === "/relay")        return toRoom(request, env, url, "/relay");
     if (m === "GET"  && p === "/tunnel/pull")  return toRoom(request, env, url, "/pull");
     if (m === "POST" && p === "/tunnel/push")  return toRoom(request, env, url, "/push");
+    if (m === "GET"  && p === "/tunnel/ws") {
+      // NOT toRoom(): that rebuilds the request with a content-type only and
+      // would drop the Upgrade header. The upgrade must reach the room intact.
+      const stub = roomStub(env, url);
+      if (!stub) return json(400, { error: "room required" });
+      if (request.headers.get("Upgrade") !== "websocket") return json(426, { error: "expected websocket" });
+      return stub.fetch(new Request("https://room/ws", request));
+    }
     if (m === "GET"  && p === "/updates/manifest") return manifest(request, env, url);
     if (m === "GET"  && p === "/updates/assets")   return otaAsset(request, env, url);
     if (m === "GET"  && p === "/apk/version.json") {
