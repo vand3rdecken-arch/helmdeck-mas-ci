@@ -211,6 +211,14 @@ export default {
       if (request.headers.get("Upgrade") !== "websocket") return json(426, { error: "expected websocket" });
       return stub.fetch(new Request("https://room/ws", request));
     }
+    if (m === "GET"  && p === "/tunnel/client") {
+      // The PHONE's socket - same forwarding rule as /tunnel/ws: the upgrade
+      // must reach the room with its headers intact.
+      const stub = roomStub(env, url);
+      if (!stub) return json(400, { error: "room required" });
+      if (request.headers.get("Upgrade") !== "websocket") return json(426, { error: "expected websocket" });
+      return stub.fetch(new Request("https://room/client" + url.search, request));
+    }
     if (m === "GET"  && p === "/updates/manifest") return manifest(request, env, url);
     if (m === "GET"  && p === "/updates/assets")   return otaAsset(request, env, url);
     if (m === "GET"  && p === "/apk/version.json") {

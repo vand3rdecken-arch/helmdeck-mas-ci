@@ -1471,6 +1471,11 @@ def pm_activity_append(kind, msg, card=None, ts=None):
     with conn() as c:
         c.execute("INSERT INTO pm_activity(ts,kind,track,msg) VALUES(?,?,?,?)",
                   (ts or _now(), kind, card, msg))
+    # The PM feed rides the dashboard's /pm/plan; it was the ONE polled store
+    # whose writer never moved `v`, so the dashboard needed a timer to see it.
+    # With the event push (spine/comms/relay_client._EventPublisher) the app
+    # polls nothing that can move `v` instead (2026-09-24).
+    bump()
 
 
 def pm_activity_tail(n=20):

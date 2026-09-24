@@ -19,6 +19,8 @@ import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, useStreamCaps } from "@/data/stream";
+import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
+import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
 import { useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { armDiagCapture } from "@/data/diag";
@@ -67,39 +69,59 @@ armDiagCapture();
 // next successful call — the reconnect is the catch-up path, which is why no
 // screen needs a timer. Failures land in the health store via client.ts, so the
 // HealthBanner shows them — never silent.
+// TWO WAYS TO LEARN THAT SOMETHING MOVED, ONE HANDLER (2026-09-24). When the
+// phone's relay socket carries events (data/relay_socket.ts - the daemon PUSHES
+// {v, c} the moment a cursor moves), the long-poll RESTS: no request at all
+// while nothing happens. When it does not - direct/LAN mode, an older daemon
+// that never sends an event, the socket down - the long-poll runs exactly as
+// before. `apply` is shared, so both paths feed the same cursors and neither
+// can double-fire an invalidation. Which path is live is OBSERVED (the first
+// event on this connection), never configured.
 function useGlobalStream() {
   useEffect(() => {
     let alive = true;
     let v = 0;
     let c = 0;
     let delay = 3000;
+    const apply = (r: RelayEvent | undefined) => {
+      if (typeof r?.v === "number") {
+        if (r.v !== v) queryClient.invalidateQueries();
+        v = r.v;
+      }
+      // Guarded on `typeof`, not on truthiness: a daemon older than this
+      // bundle omits `c` entirely, and treating that as 0 would re-fire the
+      // chat invalidation on every single tick.
+      //
+      // The same check is the CAPABILITY signal (data/stream.ts): an OTA and
+      // a daemon restart are independent events, so this bundle can meet an
+      // older daemon. Recording what the daemon actually answered lets the
+      // chat keep its old 8s fallback in that case instead of going quiet -
+      // derived from the reply at event time, never assumed.
+      useStreamCaps.getState().setChatEvents(typeof r?.c === "number");
+      if (typeof r?.c === "number") {
+        // NOT invalidateQueries: that fires exactly one refetch, and if it
+        // fails the wake is consumed for good (data/stream.ts
+        // ensureChatFresh - the owner's "Antwort erst nach Neustart").
+        if (r.c !== c) void ensureChatFresh(queryClient);
+        c = r.c;
+      }
+    };
+    const offEvent = relaySocket.onEvent(apply);
+    const gone = { aborted: false };
     (async () => {
       while (alive) {
+        if (relaySocket.eventsLive) {
+          // Pushed events carry the cursors now; wait until they stop (socket
+          // dropped) and then catch up over the long-poll, whose cursors were
+          // kept current by `apply` - so nothing that moved is missed.
+          await relaySocket.waitNotLive(gone);
+          continue;
+        }
         try {
           const r = await api.boardWait(v, c);
           if (!alive) break;
           delay = 3000;
-          if (typeof r?.v === "number") {
-            if (r.v !== v) queryClient.invalidateQueries();
-            v = r.v;
-          }
-          // Guarded on `typeof`, not on truthiness: a daemon older than this
-          // bundle omits `c` entirely, and treating that as 0 would re-fire the
-          // chat invalidation on every single tick.
-          //
-          // The same check is the CAPABILITY signal (data/stream.ts): an OTA and
-          // a daemon restart are independent events, so this bundle can meet an
-          // older daemon. Recording what the daemon actually answered lets the
-          // chat keep its old 8s fallback in that case instead of going quiet -
-          // derived from the reply at event time, never assumed.
-          useStreamCaps.getState().setChatEvents(typeof r?.c === "number");
-          if (typeof r?.c === "number") {
-            // NOT invalidateQueries: that fires exactly one refetch, and if it
-            // fails the wake is consumed for good (data/stream.ts
-            // ensureChatFresh - the owner's "Antwort erst nach Neustart").
-            if (r.c !== c) void ensureChatFresh(queryClient);
-            c = r.c;
-          }
+          apply(r);
         } catch {
           if (!alive) break;
           await new Promise((res) => setTimeout(res, delay));
@@ -107,8 +129,32 @@ function useGlobalStream() {
         }
       }
     })();
-    return () => { alive = false; };
+    return () => { alive = false; gone.aborted = true; offEvent(); };
   }, []);
+}
+
+// The phone's ONE socket to its relay room: started from the pairing, restarted
+// when the pairing changes, stopped when there is none (direct/LAN mode has no
+// room and keeps plain HTTP). Sealing is the same NaCl box as every HTTP
+// request - the room still sees ciphertext only.
+function useRelaySocket() {
+  const relayUrl = useConfig((s) => s.relayUrl);
+  const room = useConfig((s) => s.room);
+  const daemonPub = useConfig((s) => s.daemonPub);
+  const mySec = useConfig((s) => s.mySec);
+  const myPub = useConfig((s) => s.myPub);
+  useEffect(() => {
+    if (!clientSocketUrl(relayUrl, room, myPub) || !daemonPub || !mySec) {
+      relaySocket.stop();
+      return;
+    }
+    relaySocket.start({
+      url: () => clientSocketUrl(relayUrl, room, myPub),
+      seal: (plain) => e2eeSeal(plain, mySec, daemonPub),
+      open: (cipher) => e2eeOpen(cipher, mySec, daemonPub),
+    });
+    return () => relaySocket.stop();
+  }, [relayUrl, room, daemonPub, mySec, myPub]);
 }
 
 // Desktop/web power-nav: Cmd/Ctrl-K toggles the command palette, Esc closes it.
@@ -272,7 +318,14 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 function useResumeRefetch() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") { queryClient.invalidateQueries(); void ensureChatFresh(queryClient); }
+      if (s === "active") {
+        // The OS may have killed the socket while we were in the background -
+        // reconnect NOW rather than after the backoff; the daemon answers the
+        // join with the current cursors, which is the catch-up.
+        relaySocket.kick();
+        queryClient.invalidateQueries();
+        void ensureChatFresh(queryClient);
+      }
     });
     return () => sub.remove();
   }, []);
@@ -357,6 +410,7 @@ export default function RootLayout() {
   usePushWiring();
   usePaletteHotkeys();
   usePortraitDefault();
+  useRelaySocket();
   useGlobalStream();
   useResumeRefetch();
   useGlassesArm();

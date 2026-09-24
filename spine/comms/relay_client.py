@@ -70,16 +70,19 @@ _base_cache = {"ts": 0.0, "public": None, "base": None}
 # - the relay answered its own "temporarily rate limited" page even on
 # /health, the bridge backed off to 60 s, and the phone was cut off for the
 # rest of the UTC day. Now ONE WebSocket per daemon: phone frames arrive as
-# messages, replies leave as messages, and the idle keepalive ("ping" ->
-# "pong") is answered by Cloudflare's runtime without waking the Durable
-# Object (surfaces/relay/worker/src/room.js setWebSocketAutoResponse).
+# messages, replies leave as messages, board/chat changes are PUSHED
+# (_EventPublisher), and the idle keepalive is a WebSocket protocol ping that
+# Cloudflare answers at the edge without waking the Durable Object - Paseo's
+# choice (packages/relay/src/cloudflare-adapter.ts). The phone's own socket
+# cannot send protocol pings (no browser/RN API), so its text "ping" is answered
+# by setWebSocketAutoResponse in room.js - equally without a wake.
 #
 # Long-poll stays as the fallback, never removed: a relay without the /ws
 # route (surfaces/relay/relay.py, an older worker) answers the upgrade with
 # 404/426 and the bridge pulls exactly as before; a box without the
 # `websockets` package pulls too.
-WS_PING_EVERY = 30.0            # s between keepalives (runtime-answered, not billed as a wake)
-WS_DEAD_AFTER = 75.0            # s without ANY message, pong included = the socket is dead
+WS_PING_EVERY = 30.0            # s between PROTOCOL pings (answered at the edge, DO stays asleep)
+WS_PING_TIMEOUT = 20.0          # no pong within this -> the library closes, the loop reconnects
 WS_MAX_REPLY = 900 * 1024       # bigger replies go over /tunnel/push (same waiting id)
 WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame at 4 MB
 WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
@@ -131,19 +134,86 @@ def _ws_wanted(relay):
     return True
 
 
+class _EventPublisher:
+    """The socket form of /stream/wait: the moment the board (`v`) or the chat
+    (`c`) moves, every paired phone gets the new pair, sealed to its own key.
+
+    Owner, 2026-09-24: "warum gibt es noch in app sachen, die gepollt sind" -
+    Paseo's daemon pushes typed state (packages/protocol: agent_update,
+    workspace_update, ...) and its app polls nothing the daemon could push.
+    HelmDeck already had the signal (db._version / _chat_version, the cursors
+    /stream/wait hangs on); what it lacked was a way to SEND it. This waits on
+    the same condition (db.wait_any - event-driven, not a poll) and coalesces a
+    burst of writes into one event: a card turn writes many rows a second, and
+    one event per row would be a broadcast storm, not a signal.
+
+    Only PINNED device keys get events - a key that merely knows the room id
+    learns nothing, not even when the board moves."""
+    COALESCE_S = 0.4
+
+    def __init__(self, sk_b64, send_obj):
+        self._sk_b64 = sk_b64
+        self._send_obj = send_obj
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _send(self, pub, v, c):
+        from spine.comms import e2ee
+        try:
+            cipher = e2ee.seal_b64(json.dumps({"v": v, "c": c}).encode("utf-8"),
+                                   e2ee.import_sec(self._sk_b64), e2ee.import_pub(pub))
+            self._send_obj({"kind": "event", "to": pub, "cipher": cipher})
+        except Exception:                                    # noqa: BLE001
+            pass       # a dead socket ends the session; the reconnect re-announces
+
+    def announce(self, pub):
+        """A phone just joined the room: give it the current state NOW, which
+        is also how it learns this daemon pushes at all."""
+        from spine.storage import db
+        if pub and pub in _cfg()[3]:
+            self._send(pub, db.current_version(), db.current_chat_version())
+
+    def _run(self):
+        from spine.storage import db
+        lv, lc = db.current_version(), db.current_chat_version()
+        while not self._stop.is_set() and not _stop:
+            v, c = db.wait_any(lv, lc, timeout=20)
+            if (v, c) == (lv, lc):
+                continue
+            self._stop.wait(self.COALESCE_S)
+            v, c = db.current_version(), db.current_chat_version()
+            for pub in _cfg()[3]:
+                self._send(pub, v, c)
+            lv, lc = v, c
+
+
 def _ws_session(relay, room, sk, port, serve=None):
     """One connected WebSocket session to the relay room. Blocks while the
-    socket lives and dispatches every phone frame to `serve` on its own thread
-    (same as a pulled frame). Returns on a clean close; raises _WSUnsupported
-    when the relay has no /ws route, anything else on a transport failure."""
+    socket lives: phone frames go to `serve` on their own thread (same as a
+    pulled frame), "a phone joined" gets the current state, and the event
+    publisher pushes every later change. Returns on a clean close; raises
+    _WSUnsupported when the relay has no /ws route, anything else on a
+    transport failure.
+
+    KEEPALIVE = WebSocket PROTOCOL pings (the library's ping_interval), the
+    way Paseo's daemon does it (cloudflare-adapter.ts: protocol pings are
+    answered at the edge, the Durable Object stays hibernated). The first cut
+    of this sent a text "ping" answered by setWebSocketAutoResponse; that
+    works too, but Paseo moved OFF app-level pings after they woke its DO, and
+    the library's ping gives dead-peer detection for free (no pong within
+    ping_timeout -> the connection closes -> the loop reconnects)."""
     from websockets.sync.client import connect
     from websockets.exceptions import InvalidMessage, InvalidStatus
     serve = serve or _serve_one
     try:
         ws = connect(_ws_url(relay, room), open_timeout=15, close_timeout=5,
-                     # our own text "ping": the worker auto-answers it without
-                     # waking the object; library protocol pings are not relied on
-                     ping_interval=None, max_size=WS_MAX_FRAME)
+                     ping_interval=WS_PING_EVERY, ping_timeout=WS_PING_TIMEOUT,
+                     max_size=WS_MAX_FRAME)
     except InvalidStatus as e:
         code = getattr(getattr(e, "response", None), "status_code", 0) or 0
         if code in (400, 404, 405, 426, 501):
@@ -160,37 +230,42 @@ def _ws_session(relay, room, sk, port, serve=None):
         raise _WSUnsupported("not a websocket endpoint: %s" % str(e)[:80])
     lock = threading.Lock()
 
-    def send(fid, cipher):
+    def send_obj(obj):
         with lock:
-            ws.send(json.dumps({"kind": "reply", "id": fid, "cipher": cipher}))
+            ws.send(json.dumps(obj))
 
+    def send(fid, cipher, to=None):
+        m = {"kind": "reply", "id": fid, "cipher": cipher}
+        if to:
+            m["to"] = to        # self-addressed: the room routes it without memory
+        send_obj(m)
+
+    events = _EventPublisher(sk, send_obj)
+    events.start()
     _ws_state["fails"] = 0
     _set_mode("websocket")
     try:
-        last_rx = last_ping = time.time()
         while not _stop:
-            now = time.time()
-            if now - last_ping >= WS_PING_EVERY:
-                with lock:
-                    ws.send("ping")
-                last_ping = now
-            if now - last_rx > WS_DEAD_AFTER:
-                raise ConnectionError("websocket silent for %ds" % int(now - last_rx))
             try:
                 msg = ws.recv(timeout=5)
             except TimeoutError:
                 continue
-            last_rx = time.time()
-            if not isinstance(msg, str) or msg == "pong":
+            if not isinstance(msg, str):
                 continue
             try:
                 data = json.loads(msg)
             except ValueError:
                 continue
-            if isinstance(data, dict) and data.get("kind") == "frame":
+            if not isinstance(data, dict):
+                continue
+            kind = data.get("kind")
+            if kind == "frame":
                 threading.Thread(target=serve, args=(relay, room, sk, port, data),
                                  kwargs={"send": send}, daemon=True).start()
+            elif kind == "client":
+                events.announce(data.get("pub") or "")
     finally:
+        events.stop()
         try:
             ws.close()
         except Exception:                                    # noqa: BLE001
@@ -411,7 +486,7 @@ def _local(port, inner):
         return {"status": 502, "headers": {}, "body": json.dumps({"error": str(e)[:200]})}
 
 
-def _push(relay, room, fid, cipher):
+def _push(relay, room, fid, cipher, to=None):
     """POST one reply frame to the relay, retrying transport-level failures
     (a reset/timeout on the tunnel leg) up to 3 attempts total. NEVER retries
     a 4xx from the relay itself - that is our bug (bad room, bad payload),
@@ -421,7 +496,10 @@ def _push(relay, room, fid, cipher):
     slot and is a harmless 200 (relay.py's push handler has no side effect
     beyond setting that one slot). Returns True iff the relay accepted the
     push (200) at any attempt."""
-    body = json.dumps({"id": fid, "cipher": cipher}).encode("utf-8")
+    # `to` makes the reply self-addressed: a request that came in on the
+    # phone's SOCKET has no HTTP waiter in the room, and the room finds the
+    # socket by this key (surfaces/relay/worker/src/room.js routeReply).
+    body = json.dumps(dict({"id": fid, "cipher": cipher}, **({"to": to} if to else {}))).encode("utf-8")
     req_kwargs = dict(data=body, headers={"Content-Type": "application/json"})
     # The timeout is an UPLOAD budget and must scale with what is uploaded: the
     # fixed 15 s cut a 1.96 MB board reply at 720 KB on a slow tunnel leg
@@ -500,18 +578,18 @@ def _push_giveup(msg):
             pass
 
 
-def _deliver(relay, room, fid, cipher, send=None):
+def _deliver(relay, room, fid, cipher, send=None, to=None):
     """Hand one sealed reply back: over the WebSocket when the frame came in
     on one and the reply fits a message, else over /tunnel/push. Both land on
     the SAME waiting id in the room, so a socket that died mid-request (a
     deploy, a network flip) costs nothing - the HTTP push still delivers."""
     if send and len(cipher) <= WS_MAX_REPLY:
         try:
-            send(fid, cipher)
+            send(fid, cipher, to)
             return True
         except Exception:                                    # noqa: BLE001
             pass
-    return _push(relay, room, fid, cipher)
+    return _push(relay, room, fid, cipher, to=to)
 
 
 def _serve_one(relay, room, sk_b64, port, frame, send=None):
@@ -544,7 +622,7 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
             resp["cipher"] = e2ee.seal_b64(json.dumps(
                 {k: resp[k] for k in ("status", "headers", "body")}).encode(),
                 sk, e2ee.import_pub(pub))
-            _deliver(relay, room, fid, resp["cipher"], send)
+            _deliver(relay, room, fid, resp["cipher"], send, to=pub)
         except Exception:
             pass
         return
@@ -567,7 +645,7 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
         cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
     except Exception:
         return
-    _deliver(relay, room, fid, cipher, send)
+    _deliver(relay, room, fid, cipher, send, to=pub)
 
 
 def _pull(relay, room):

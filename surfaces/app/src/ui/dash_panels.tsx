@@ -766,6 +766,10 @@ export function UsagePanel() {
   const tr = useT();
   const { data } = useQuery<Usage>({
     queryKey: ["usage"], queryFn: api.usage,
+    // KEPT ON PURPOSE (2026-09-24 timer sweep): the plan usage comes from
+    // api.anthropic.com (spine/ops/usage.py USAGE_URL), an EXTERNAL system
+    // that cannot push to us - the one legitimate kind of poll, the same as
+    // Paseo polling a forge's CI pipeline. Everything the DAEMON knows is pushed.
     refetchInterval: 5 * 60 * 1000, staleTime: 4 * 60 * 1000,
   });
   if (!data) return null;

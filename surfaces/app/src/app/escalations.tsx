@@ -18,8 +18,12 @@ export default function EscalationsScreen() {
   const tr = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { data } = useQuery({ queryKey: ["escalations"], queryFn: api.escalations,
-    refetchInterval: 30000 });
+  // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
+  // and a moved `v` reaches the phone as a pushed event (or the long-poll)
+  // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
+  // here only re-asked what the daemon would have said anyway, and every
+  // ask was a Cloudflare request (the 2026-09-23 rate limit).
+  const { data } = useQuery({ queryKey: ["escalations"], queryFn: api.escalations });
   // The demo seam answers {} for unmodelled endpoints and older daemons 404
   // into odd shapes - never trust the wire to be an array (the models-picker
   // crash class: rendering a non-array took the whole app black).

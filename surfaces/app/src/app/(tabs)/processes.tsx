@@ -547,7 +547,12 @@ export default function Processes() {
   const router = useRouter();
   const qc = useQueryClient();
   const { wide } = useResponsive();
-  const { data, isLoading, error } = useQuery({ queryKey: ["processes"], queryFn: api.processes, refetchInterval: 8000 });
+  // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
+  // and a moved `v` reaches the phone as a pushed event (or the long-poll)
+  // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
+  // here only re-asked what the daemon would have said anyway, and every
+  // ask was a Cloudflare request (the 2026-09-23 rate limit).
+  const { data, isLoading, error } = useQuery({ queryKey: ["processes"], queryFn: api.processes });
   const invalidate = () => qc.invalidateQueries({ queryKey: ["processes"] });
 
   return (

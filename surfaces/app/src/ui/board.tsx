@@ -690,10 +690,15 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // interval is just a slow safety net if that loop errors.
   // While the daemon is gating/merging a card, 20s is far too coarse to feel
   // like feedback — poll hard until the verdict lands, then back off.
+  // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
+  // and a moved `v` reaches the phone as a pushed event (or the long-poll)
+  // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
+  // here only re-asked what the daemon would have said anyway, and every
+  // ask was a Cloudflare request (the 2026-09-23 rate limit).
+  // The gate verdict is a track write too, so it arrives as an event the moment
+  // it lands - sooner than the 2.5 s poll that used to wait for it.
   const { data, isLoading, error } = useQuery({
     queryKey: ["tracks"], queryFn: api.tracks,
-    refetchInterval: (q) => (Array.isArray(q.state.data)
-      && (q.state.data as Track[]).some(isGating) ? 2500 : 20000),
   });
   const [busy, setBusy] = useState(false);
   const [layout, setLayout] = useState("board");

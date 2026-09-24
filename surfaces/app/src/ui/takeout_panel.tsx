@@ -54,8 +54,10 @@ export function TakeoutPanel() {
   const { data } = useQuery({
     queryKey: ["takeout"],
     queryFn: api.takeout,
-    // an export takes tens of seconds; poll while one runs, idle otherwise
-    refetchInterval: (q) => (q.state.data?.job?.state === "running" ? 2000 : 30000),
+    // An export takes tens of seconds and its progress is not a db write, so
+    // it is watched ONLY while one runs - Paseo polls a live CI pipeline the
+    // same way. Idle there is nothing to watch: starting one invalidates this.
+    refetchInterval: (q) => (q.state.data?.job?.state === "running" ? 2000 : false),
     retry: false,
   });
 

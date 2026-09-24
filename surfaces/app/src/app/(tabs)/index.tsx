@@ -15,7 +15,12 @@ export default function DashboardTab() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const { wide } = useResponsive();
-  const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, refetchInterval: 10000 });
+  // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
+  // and a moved `v` reaches the phone as a pushed event (or the long-poll)
+  // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
+  // here only re-asked what the daemon would have said anyway, and every
+  // ask was a Cloudflare request (the 2026-09-23 rate limit).
+  const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics });
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const isOwner = me?.role === "owner";
 

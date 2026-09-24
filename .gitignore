@@ -112,6 +112,7 @@ surfaces/app/web_dev.log
 surfaces/app/.kernel-out/
 surfaces/app/.capstest-out/
 surfaces/app/.conncheck-out/
+surfaces/app/.relaysocket-out/
 surfaces/app/.hubtest-out/
 surfaces/app/.ui-out/
 # screenshots + dev-server logs from the e2e_* UI judgements (ops/tests/e2e_*.py)

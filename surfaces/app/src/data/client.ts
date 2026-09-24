@@ -5,6 +5,7 @@ import { demoRespond, useDemo } from "./demo";
 import { diag } from "./diag";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
+import { relaySocket, SocketError, SocketRetryHttp, SOCKET_MAX_REQUEST } from "./relay_socket";
 import { t } from "@/i18n/core";
 
 import type { Attach } from "./attachments";
@@ -98,6 +99,38 @@ function authHeaders(): Record<string, string> {
 async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string }> {
   const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
   const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
+  // THE SOCKET FIRST (2026-09-24): the same sealed inner request, but over the
+  // phone's one socket to its room - no Cloudflare request per call. HTTP stays
+  // the fallback: the room says retry:"http" (reply too big for a message, or
+  // an older daemon without a socket), the socket is not up, or a GET's socket
+  // dropped mid-flight (idempotent, so asking again is safe). A non-GET whose
+  // socket died is NOT re-sent - the daemon may already have run it; that is
+  // the same ambiguity a failed fetch has today, and it maps to the same error.
+  // `eventsLive` is the CAPABILITY gate: the first pushed event proves the
+  // daemon on the other end is new enough to address its replies (`to`). An
+  // older daemon would answer a socket request without it, the room could not
+  // route the reply, and the request would only fail at its timeout - so until
+  // that proof arrives, requests keep taking HTTP.
+  if (relaySocket.isOpen() && relaySocket.eventsLive && inner.length <= SOCKET_MAX_REQUEST) {
+    try {
+      // The chat POST is unbounded on HTTP; the socket needs SOME bound so a
+      // lost reply cannot leak a pending entry. The daemon's held leg answers
+      // by 115 s (relay_client LOCAL_TIMEOUT), so 180 s never cuts a real one.
+      return await relaySocket.request(inner, timeoutMs ?? 180_000);
+    } catch (e) {
+      if (e instanceof SocketRetryHttp) {
+        // fall through to HTTP
+      } else if (e instanceof SocketError) {
+        if (e.code === "offline") throw new TransportError(t("net.desktopOffline"));
+        if (e.code === "keys") throw new TransportError(t("net.badKeys"));
+        if (e.code === "timeout") throw new TransportError(timeoutMs === undefined ? t("net.desktopTimeout") : t("net.relayTimeout"));
+        if (method !== "GET") throw new TransportError(t("net.relayUnreachable"));
+        // a GET whose socket closed: ask again over HTTP
+      } else {
+        throw e;
+      }
+    }
+  }
   const cipher = seal(inner, mySec, daemonPub);
   const ctl = timeoutMs !== undefined ? new AbortController() : undefined;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : undefined;
