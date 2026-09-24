@@ -641,7 +641,7 @@ footer a:hover{color:var(--ink-2)}
       </div>
       <div class="dl-card">
         <h3>iPhone &amp; iPad</h3>
-        <p class="dl-meta" data-i="dlIosMeta">Live on the App Store · v1.0.49</p>
+        <p class="dl-meta" data-i="dlIosMeta">Live on the App Store</p>
         <p class="dl-note" data-i-html="dlIosNote">Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlIosAppStoreBtn" data-cta="ios">Load on the App Store · incl. Apple Watch</a>
@@ -886,7 +886,7 @@ ${wl("wearables")}
       dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
-      dlIosMeta:"Live im App Store · v1.0.49",
+      dlIosMeta:"Live im App Store",
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
       dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch",
       dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
@@ -955,7 +955,7 @@ ${wl("wearables")}
       dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
-      dlIosMeta:"Live on the App Store · v1.0.49",
+      dlIosMeta:"Live on the App Store",
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
       dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch",
       dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
