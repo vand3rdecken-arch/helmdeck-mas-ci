@@ -117,6 +117,34 @@ attach the artifacts to a release) or let it run on a push touching
 bash surfaces/desktop/build-mac.sh --version 0.2.3        # dmg + zip, arm64 + x64
 ```
 
+**Where the runner actually runs (since 2026-09-10): the second account.**
+Actions on the private `Tienduyvo/helmdeck` fail before a single step
+("recent account payments have failed") - its four Mac workflows are
+**disabled** there (2026-09-24). The Mac build runs on the PUBLIC mirror
+`vand3rdecken-arch/helmdeck-mas-ci` (local remote `mirror`, account
+`vand3rdecken-arch`, free minutes because public, signing secrets live there).
+Everything below that names `Tienduyvo/helmdeck` as the runner is history.
+
+```bash
+# 1. filtered mirror (drops .attachments/ + ~/.helmdeck/publish_private.txt).
+#    The SSH key is Tienduyvo's: the push step fails with "Permission denied";
+#    push the built mirror from /c/hd/publish-mirror over HTTPS instead:
+HELMDECK_PUBLISH_SOURCE_ACKNOWLEDGE_RETIRED=1 HELMDECK_GH_REPO=vand3rdecken-arch/helmdeck-mas-ci \
+  HELMDECK_PUBLISH_REMOTE=mirror HELMDECK_PUBLISH_BRANCH=main bash ops/deploy/publish_source.sh --filter-private
+T=$(gh auth token --user vand3rdecken-arch)
+git -C /c/hd/publish-mirror push "https://x-access-token:$T@github.com/vand3rdecken-arch/helmdeck-mas-ci.git" HEAD:main
+# 2. build (the push run is a smoke run WITHOUT artifacts - cancel it)
+GH_TOKEN=$T gh workflow run desktop-mac.yml -R vand3rdecken-arch/helmdeck-mas-ci --ref main -f version=X.Y.Z
+GH_TOKEN=$T gh run watch <run> -R vand3rdecken-arch/helmdeck-mas-ci --exit-status
+GH_TOKEN=$T gh run download <run> -R vand3rdecken-arch/helmdeck-mas-ci -n helmdeck-macos -D /tmp/hd-mac
+# 3. publish to the public release with the Tienduyvo account
+bash ops/deploy/release_desktop_mac.sh --dir /tmp/hd-mac --latest
+```
+
+The mirror is PUBLIC: before step 1, anything private in new commits (owner
+quotes, depot, people) goes into `~/.helmdeck/publish_private.txt` - the
+script refuses to push while a listed term survives.
+
 Output in `surfaces/desktop/release/`: `HelmDeck-<v>-{arm64,x64}.dmg` for humans,
 `HelmDeck-<v>-{arm64,x64}.zip` **for the auto-updater** — Squirrel.Mac (what
 `native-updater.js` drives via electron-updater) can only apply a zipped `.app`,
