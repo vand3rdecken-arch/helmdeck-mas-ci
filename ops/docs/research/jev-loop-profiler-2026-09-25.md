@@ -163,3 +163,11 @@ einer solchen Karte ist das kein Beleg. Groesste Grenze ist das Label: Nacharbei
 geloest", und die zwei bekannten Schleifenkarten stehen in der DB als sauber akzeptiert. Fuer eine belastbare Aussage braeuchte es
 explizite Owner-Urteile (Stopp, Bounce mit Grund) und einen Vergleich gegen einen billigen Nicht-Modell-Baseline (Schrittzahl, Anteil
 blockierter Schritte).
+
+## Eingestellt 25.09.
+
+Owner-Entscheid: Die Jev-Entwicklung wird eingestellt, keine weiteren Jev- oder Baseline-Läufe. Drei Erkenntnisse aus Stufe 1 bis 3:
+
+1. Echte Schleifen sind Guard-Umgehung und Hintergrundjob-Poll-Zyklen, keine identischen Wiederholungen. Paarvergleiche und Signatur-Vorfilter verfehlen sie deshalb.
+2. Der Stop-Hook-Zyklus ist früh erkennbar (459913d5: Alarm bei Schritt 15 von 57).
+3. Das Board speichert keine echten Scheitern-Urteile (keine Owner-Abbrüche, `bounced` sind fast nur Daemon-Neustarts). Das blockiert jede belastbare Auswertung gegen den Kartenausgang.
