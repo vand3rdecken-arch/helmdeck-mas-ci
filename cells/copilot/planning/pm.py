@@ -336,6 +336,12 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
     txt = d.get("result", "")
     meta = {"num_turns": d.get("num_turns"), "usage": d.get("usage"),
             "cost_usd": d.get("total_cost_usd"), "duration_ms": d.get("duration_ms")}
+    try:                                  # the plan calibration's share of it
+        from spine.turn import econ
+        econ.record_spend("pm", list((d.get("modelUsage") or {}).keys()),
+                          d.get("usage"), d.get("total_cost_usd"))
+    except Exception:                                        # noqa: BLE001
+        pass                              # accounting must never sink a plan
     m = re.search(r"\{.*\}", txt, re.S)
     out = None
     if m:

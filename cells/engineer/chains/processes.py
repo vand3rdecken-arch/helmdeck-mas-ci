@@ -164,6 +164,12 @@ def _propose_steps(request_text):
                        capture_output=True, text=True, timeout=300,
                        encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     d = json.loads(r.stdout)
+    try:                                  # the plan calibration's share of it
+        from spine.turn import econ
+        econ.record_spend("proposal", list((d.get("modelUsage") or {}).keys()),
+                          d.get("usage"), d.get("total_cost_usd"))
+    except Exception:                                        # noqa: BLE001
+        pass
     txt = d.get("result", "")
     m = re.search(r"\[.*\]", txt, re.S)
     steps = json.loads(m.group(0)) if m else []

@@ -90,6 +90,24 @@ def _record_econ(t, meta, external=False):
     return cost
 
 
+def record_spend(source, models, usage, cost_usd=None):
+    """Fold ONE non-card model call's spend into the event log - Henry's chat
+    turn, his compaction, a hands run, a PM planning call, a process proposal.
+    The card path has _record_econ; everything else on the SAME account used
+    to leave no trace, so events.plan_calibration divided the CARDS' cost by
+    the account's WHOLE weekly usage (Henry included) and every card read as
+    drawing more of the plan than it did - by a factor that moved with how
+    much the owner chatted that week (owner 2026-09-26: the per-card watchdog
+    runs on that number). kind="spend", not "turn": metrics() counts "turn"
+    events as card turns per track. Returns the priced cost."""
+    from spine.storage import events
+    u = usage or {}
+    cost = events.price_turn(models, u, cost_usd)
+    events.emit("spend", "-", source=source, cost=round(cost, 6), usage=u,
+                models=list(models or []))
+    return cost
+
+
 def _record_turn_shape(t, meta):
     """Turn-shape snapshot (order 77, measure+warn only - the eviction fix
     itself, replacing an old tool result with a file reference, stays open

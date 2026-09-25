@@ -35,15 +35,17 @@ def _fold_stats(user, result, ctx_usage):
     sessions._record_econ documents - a long multi-call turn reads as millions
     of "context" tokens), so it feeds only the cumulative counters. A missing
     ctx reading means NO update, never a wrong one."""
-    from spine.storage import events
+    from spine.turn import econ
     from cells.engineer.cards import sessions
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
     st = _stats()
     m = st.setdefault(user, {})
     m["turns"] = int(m.get("turns") or 0) + 1
+    # the same spend also lands in the event log, so the plan calibration
+    # sees Henry's share of the account (econ.record_spend)
     m["cost"] = round(float(m.get("cost") or 0.0)
-                      + events.price_turn(models, u, result.get("total_cost_usd")), 6)
+                      + econ.record_spend("chat", models, u, result.get("total_cost_usd")), 6)
     m["tokens_in"] = int(m.get("tokens_in") or 0) + u.get("input_tokens", 0) \
         + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
     m["tokens_out"] = int(m.get("tokens_out") or 0) + u.get("output_tokens", 0)

@@ -327,6 +327,12 @@ def _pump(hid, p):
         elif ev.get("type") == "result":
             result = str(ev.get("result") or "")
             is_error = bool(ev.get("is_error"))
+            try:                          # the plan calibration's share of it
+                from spine.turn import econ
+                econ.record_spend("hands", list((ev.get("modelUsage") or {}).keys()),
+                                  ev.get("usage"), ev.get("total_cost_usd"))
+            except Exception:                            # noqa: BLE001
+                pass
     watchdog["stop"] = True
     err = ""
     try:

@@ -481,6 +481,14 @@ def _ts_epoch(ts):
     except Exception:
         return 0.0
 
+def _iso_epoch(iso):
+    """The usage API's ISO timestamp ('...Z' or with offset) -> epoch; 0.0 when absent."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
 def turn_tokens(e):
     """Every token a turn drew against the plan - cache reads included, because
     the allowance counts them even though they are cheap in API dollars."""
@@ -521,7 +529,20 @@ def plan_calibration(ev=None, s=None):
     used = (w or {}).get("usedPct")
     if not isinstance(used, (int, float)) or used < MIN_CALIB_PCT:
         return None
+    # The window the percentage covers: it STARTED one week before its reset,
+    # not a rolling 7 days back from now - two days after a reset, a rolling
+    # sum would divide last week's spend by this week's fresh percentage.
     cutoff = time.time() - WEEK_SEC
+    reset = _iso_epoch(w.get("resetsAt"))
+    if reset:
+        cutoff = reset - WEEK_SEC
+    # EVERY local consumer of the account counts, not just card turns:
+    # `used` is the whole account's percentage, and Henry's chat, hands, PM
+    # planning and proposals draw on it too (econ.record_spend, kind
+    # "spend"). With cards alone in the numerator a percent read cheaper
+    # than it is and every card's share came out inflated. What still stays
+    # out: the owner's own use outside HelmDeck (terminal sessions,
+    # claude.ai) - invisible here, debt plan-calibration-outside-use.
     # external=True (spine.turn.econ._record_econ, a remote device with its
     # OWN Claude account - ops/docs/backlog/remote-device-execution) is
     # excluded HERE specifically: `used` above is THIS account's own usage
@@ -531,7 +552,7 @@ def plan_calibration(ev=None, s=None):
     # 2026-08-25: without this exclusion the corruption is silent, not an
     # error - the number is just wrong.
     rows = [e for e in (ev if ev is not None else read_events())
-            if e.get("kind") == "turn" and not e.get("external")
+            if e.get("kind") in ("turn", "spend") and not e.get("external")
             and _ts_epoch(e.get("ts", "")) >= cutoff]
     tok = sum(turn_tokens(e) for e in rows)
     if tok <= 0:

@@ -1588,6 +1588,13 @@ def _save_memory(user, sid):
         p.wait(timeout=20)
     except Exception:                                            # noqa: BLE001
         return False
+    if result:
+        try:                              # the plan calibration's share of it
+            from spine.turn import econ
+            econ.record_spend("memory_save", list((result.get("modelUsage") or {}).keys()),
+                              result.get("usage"), result.get("total_cost_usd"))
+        except Exception:                                    # noqa: BLE001
+            pass
     _, muts = copilot_memory.parse(result.get("result") or "")
     return bool(copilot_memory.apply(muts, actor="henry"))
 
@@ -1668,11 +1675,11 @@ def _maybe_compact(user):
         _save_sessions(sess)
     # measured economics: the compact turn is billed too, but NOT counted as a
     # conversation turn (card parity: sessions._record_econ, not _record_turn).
-    from spine.storage import events
+    from spine.turn import econ
     u = result.get("usage") or {}
     models = list((result.get("modelUsage") or {}).keys())
     m["cost"] = round(float(m.get("cost") or 0.0)
-                      + events.price_turn(models, u, result.get("total_cost_usd")), 6)
+                      + econ.record_spend("compact", models, u, result.get("total_cost_usd")), 6)
     m["tokens_in"] = int(m.get("tokens_in") or 0) + u.get("input_tokens", 0) \
         + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
     m["tokens_out"] = int(m.get("tokens_out") or 0) + u.get("output_tokens", 0)
@@ -1873,6 +1880,12 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
         if not (stdout or "").strip():
             raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
         raw = json.loads(stdout)
+        try:                              # the plan calibration's share of it
+            from spine.turn import econ
+            econ.record_spend("judge", list((raw.get("modelUsage") or {}).keys()),
+                              raw.get("usage"), raw.get("total_cost_usd"))
+        except Exception:                                    # noqa: BLE001
+            pass
         new_sid = raw.get("session_id")
         if new_sid:
             if sid and new_sid != sid:
