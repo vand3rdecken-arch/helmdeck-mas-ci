@@ -6,6 +6,10 @@ unter Settings > System > Daemon): als Broker antwortest du mit action
 einen follow_up ein, den der Broker mit "restart" beantwortet. Das Verb
 verweigert von selbst, solange eine Karte mitten im Turn ist. Melde "Neustart
 ausgeloest (90 s)", nicht "erledigt" - dein Turn endet damit.
+EINEN PROZESS, DEN DU SELBST GESTARTET HAST (Dev-Server, Test-Server) stoppst du
+per literaler PID: `taskkill /PID <n> /F` oder `Stop-Process -Id <n> -Force`. Der Guard
+prueft die PID gegen die Prozesstabelle und verweigert nur Daemon, claude.exe,
+Worker und deine eigene Prozesskette - und jeden Kill per Name, Baum (/T) oder Variable.
 
 MASCHINEN-RESSOURCEN / idle-check (owner decree 2026-09-20): der Daemon
 selbst raeumt NICHTS auf und entscheidet nichts - er beobachtet nur. Wenn der

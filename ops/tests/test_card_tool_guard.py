@@ -163,6 +163,39 @@ def test_live_invariants():
         o = json.loads(out)["hookSpecificOutput"]
         return o["permissionDecision"], o.get("permissionDecisionReason", "")
 
+    # BY TARGET, NOT BY WORD (owner 2026-09-25 "warum kann er keinen Test-
+    # Server schliessen"): Henry's own commands from his transcript.
+    fake = lambda: {999: "the HelmDeck daemon", 555: "an agent session (claude.exe)"}  # noqa: E731
+    kh = lambda c: guard._live_rule_hit("PowerShell", {"command": c}, "", protected=fake)  # noqa: E731
+    ok(not kh("Stop-Process -Id 84936,60448,10132 -Force -ErrorAction SilentlyContinue"),
+       "a literal PID of his own dev server may be stopped, -Force or not (was refused for the WORD -Force)")
+    ok(not kh("grep -n -iE 'taskkill|kill|restart|8140' ops/tests/e2e_lane_http.py"),
+       "a grep pattern mentioning kill + 8140 is not a kill (was refused)")
+    ok(kh("taskkill //PID 999 //F"), "the daemon's PID is refused (the old word rule LET THIS THROUGH)")
+    ok(kh("Stop-Process -Id 555 -Force"), "an agent session (claude.exe) is refused")
+    ok(kh('bash -c "taskkill //PID 999 //F"'), "a kill hidden in bash -c is still checked")
+    ok(kh("Get-Process node | Stop-Process -Force"), "pipeline input (no literal PID) is refused")
+    ok(kh("Stop-Process -Id $w.ParentProcessId -Force"), "a PID from a variable is refused")
+    ok(kh("(Get-Process -Id 5).Kill()"), ".Kill() is refused")
+    ok(kh("pkill -f wrangler"), "kill by name is refused")
+
+    # end to end against the REAL process table
+    import time as _t
+    dummy = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        _t.sleep(0.5)
+        ok(not guard._live_rule_hit("PowerShell", {"command": "Stop-Process -Id %d -Force" % dummy.pid}, ""),
+           "real table: a process this test started may be stopped by PID")
+        ok(guard._live_rule_hit("PowerShell", {"command": "taskkill /PID %d /F" % os.getpid()}, ""),
+           "real table: the asking process's own chain is refused")
+    finally:
+        dummy.kill()
+    dp = os.path.join(ROOT, "daemon", "daemon.pid")
+    if os.path.exists(dp):
+        dpid = int(open(dp).read().strip() or 0)
+        ok(bool(dpid) and guard._live_rule_hit("Bash", {"command": "taskkill //PID %d //F" % dpid}, ""),
+           "real table: the live daemon's PID (daemon.pid) is refused")
+
     d = run("Bash", {"command": "taskkill /IM pythonw.exe /F"})
     ok(d and d[0] == "deny" and "/admin/restart" in d[1],
        "end-to-end, no worktree: daemon-kill denied WITH the restart route in the reason")
