@@ -316,10 +316,10 @@ function page({ rel, joined, already, err, email, product }) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HelmDeck: Mobile AI orchestration for teams.</title>
-<meta name="description" content="Mobile AI orchestration for teams. The agent belongs at the desk. You don't. HelmDeck runs Claude Code on your own PC; your team steers it from the phone.">
-<meta property="og:title" content="HelmDeck: Mobile AI orchestration for teams.">
-<meta property="og:description" content="The agent belongs at the desk. You don't. Three theses on how agent harnesses must evolve, tested on HelmDeck itself.">
+<title>HelmDeck: Mobile agent orchestration for teams.</title>
+<meta name="description" content="Mobile agent orchestration for teams. Your team. Your AI agents. One rhythm. Anywhere. HelmDeck runs Claude Code on your own PC; your team steers it from the phone.">
+<meta property="og:title" content="HelmDeck: Mobile agent orchestration for teams.">
+<meta property="og:description" content="Your team. Your AI agents. One rhythm. Anywhere. Three theses on how agent harnesses must evolve, tested on HelmDeck itself.">
 <meta name="theme-color" content="#0E0F10">
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -647,8 +647,8 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 </div>
 <section class="hero">
   <div class="hero-copy">
-    <h1 data-i="h1">Mobile AI orchestration for teams.</h1>
-    <p class="sub" data-i="sub">The agent belongs at the desk. You don't.</p>
+    <h1 data-i="h1">Mobile agent orchestration for teams.</h1>
+    <p class="sub" data-i="sub">Your team. Your AI agents. One rhythm. Anywhere.</p>
     <p class="objection" data-i="objection">Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.</p>
     <div class="hero-actions">
       <a class="btn btn-primary btn-lg" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
@@ -938,10 +938,10 @@ ${wl("wearables")}
 
   var I18N = {
     de:{
-      title:"HelmDeck: Mobile KI-Orchestrierung für Teams.",
+      title:"HelmDeck: Mobile Agenten-Orchestrierung für Teams.",
       navTheses:"Thesen", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
-      h1:"Mobile KI-Orchestrierung für Teams.",
-      sub:"Der Agent gehört an den Schreibtisch. Du nicht.",
+      h1:"Mobile Agenten-Orchestrierung für Teams.",
+      sub:"Dein Team. Deine KI-Agenten. Ein Rhythmus. Überall.",
       objection:"Deine Agenten laufen auf deinem eigenen PC mit deinem eigenen KI-Konto. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
@@ -1010,10 +1010,10 @@ ${wl("wearables")}
       cookieDecline:"Ablehnen", cookieAccept:"Akzeptieren",
       sending:"…", toggle:"EN" },
     en:{
-      title:"HelmDeck: Mobile AI orchestration for teams.",
+      title:"HelmDeck: Mobile agent orchestration for teams.",
       navTheses:"Theses", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
-      h1:"Mobile AI orchestration for teams.",
-      sub:"The agent belongs at the desk. You don't.",
+      h1:"Mobile agent orchestration for teams.",
+      sub:"Your team. Your AI agents. One rhythm. Anywhere.",
       objection:"Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.",
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
