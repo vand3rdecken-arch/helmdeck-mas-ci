@@ -18,6 +18,7 @@ import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useHealth } from "@/data/health";
+import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, useStreamCaps } from "@/data/stream";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
@@ -84,28 +85,12 @@ function useGlobalStream() {
     let v = 0;
     let c = 0;
     let delay = 3000;
-    // PUSHED events have no natural brake (2026-09-25): a busy daemon moves `v`
-    // several times a second, and invalidate-everything on each one - with
-    // cancelRefetch, the default - abandoned the running fetch and started the
-    // next; the phone forgot the old request, the daemon still ran it to its
-    // timeout: 1,504 threads, 100 % CPU, "Desktop offline". The long-poll was
-    // braked by its own round-trip. Now: at most one refetch wave per
-    // INVALIDATE_EVERY_MS (trailing, so the last change is never lost), and a
-    // query that is already fetching is left to finish instead of restarted.
-    const INVALIDATE_EVERY_MS = 2000;
-    let lastInv = 0;
-    let invTimer: ReturnType<typeof setTimeout> | null = null;
-    const invalidateAll = () => {
-      if (invTimer) return;
-      invTimer = setTimeout(() => {
-        invTimer = null;
-        lastInv = Date.now();
-        void queryClient.invalidateQueries(undefined, { cancelRefetch: false });
-      }, Math.max(0, lastInv + INVALIDATE_EVERY_MS - Date.now()));
-    };
+    // Pushed events have no natural brake - data/invalidate.ts is it (tested
+    // with the real React Query in __invalidate_selftest__.ts).
+    const inv = makeInvalidator(queryClient, 2000);
     const apply = (r: RelayEvent | undefined) => {
       if (typeof r?.v === "number") {
-        if (r.v !== v) invalidateAll();
+        if (r.v !== v) inv.changed();
         v = r.v;
       }
       // Guarded on `typeof`, not on truthiness: a daemon older than this
@@ -149,7 +134,7 @@ function useGlobalStream() {
         }
       }
     })();
-    return () => { alive = false; gone.aborted = true; offEvent(); if (invTimer) clearTimeout(invTimer); };
+    return () => { alive = false; gone.aborted = true; offEvent(); inv.dispose(); };
   }, []);
 }
 
