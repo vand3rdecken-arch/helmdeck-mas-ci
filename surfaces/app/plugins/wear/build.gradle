@@ -142,7 +142,10 @@ android {
         // mid-band clipped px in 39 frames). build_wear_aab.sh now refuses an
         // uncommitted wear tree and records the commit sha, so this cannot
         // recur.
-        versionCode 1000010
+        // vc1000011: TextDetailScreen + ScreenScaffold/TransformingLazyColumn
+        // (Google Wear Compose M3 list pattern) replace the chunked rows,
+        // endInset and FullText workarounds of vc1000010.
+        versionCode 1000011
         versionName "1.0.0"
     }
 
