@@ -685,7 +685,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 
   <section id="screens">
     <h2 data-i="screensTitle">The phone, as it looks today</h2>
-    <p class="section-sub" data-i="screensSub">Screenshots from the app, taken with demo goals. Not mockups.</p>
+    <p class="section-sub" data-i="screensSub">Real screenshots from the app, with example goals. Not mockups.</p>
     <div class="phones">
       <figure><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision" data-i-alt="sh1Alt" loading="lazy"><figcaption><b data-i="sh1H">Board</b><span data-i="sh1P">Backlog, in progress, review. One goal waits for your decision.</span></figcaption></figure>
       <figure><img src="/shots/en/02-card-verlauf.webp" data-shot="02-card-verlauf.webp" width="585" height="1300" alt="History of one goal: request filed, checks passed, waiting for approval" data-i-alt="sh2Alt" loading="lazy"><figcaption><b data-i="sh2H">One goal</b><span data-i="sh2P">Request, check result and approval in one log on your phone, readable by everyone on the team.</span></figcaption></figure>
@@ -960,7 +960,7 @@ ${wl("wearables")}
       th3H:"Teams statt Einzelkämpfer.",
       th3P:"Jede Entscheidung landet bei der Person, die sie treffen soll. Der Gründer arbeitet mit einem Partner in einer anderen Zeitzone: Abends übergibt er das Board, und beide sehen sofort, was sich bewegt hat und was auf sie wartet.",
       screensTitle:"So sieht es auf dem Handy aus",
-      screensSub:"Screenshots aus der App, mit Demo-Zielen aufgenommen. Keine Mockups.",
+      screensSub:"Echte Screenshots aus der App, mit Beispielzielen. Keine Mockups.",
       sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, ein Ziel braucht deine Entscheidung",
       sh1H:"Board",
       sh1P:"Backlog, in Arbeit, Review. Ein Ziel wartet auf deine Entscheidung.",
@@ -1032,7 +1032,7 @@ ${wl("wearables")}
       th3H:"Teams, not individuals.",
       th3P:"Every decision lands with the one person who should make it. The founder and a partner in another time zone hand the board over at night, and each sees what moved and what is waiting on them.",
       screensTitle:"The phone, as it looks today",
-      screensSub:"Screenshots from the app, taken with demo goals. Not mockups.",
+      screensSub:"Real screenshots from the app, with example goals. Not mockups.",
       sh1Alt:"HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision",
       sh1H:"Board",
       sh1P:"Backlog, in progress, review. One goal waits for your decision.",
