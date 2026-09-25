@@ -41,7 +41,7 @@ def _strip_actions_live(partial):
 # instead of the ```actions block, owner 2026-09-16 19:33 'Warum keine Karte').
 ACTION_KINDS = frozenset((
     "configure", "apply_template", "set_station", "machine_task", "direct_task", "file_card",
-    "move", "steer", "delete", "archive", "hands", "follow_up", "resolve_blocker", "resolve_conflict",
+    "move", "steer", "delete", "archive", "hands", "agent", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
@@ -650,6 +650,18 @@ def _run_action(a, actor, role="operator"):
         a["_hands"] = hid
         return ("Hände gestartet (%s): %s - das Ergebnis kommt in deinen naechsten Turn "
                 "und in den Chat, sobald es da ist." % (hid, task.splitlines()[0][:90]))
+    if kind == "agent":
+        # Henry's research/check sub-agent as its OWN process (hands.py,
+        # kind="agent"): survives his turn being interrupted by the owner's
+        # next message, visible as a live tile, report wakes him.
+        task = (a.get("task") or "").strip()
+        if not task:
+            return "agent: keine Aufgabe angegeben."
+        from cells.copilot.chat import hands, copilot
+        hid = hands.spawn(actor, task, copilot._skey(actor, a.get("card")),
+                          card=a.get("card") or None, why=(a.get("why") or "")[:200], kind="agent")
+        a["_run"] = hid
+        return "Hintergrund-Agent: %s" % task.splitlines()[0][:90]
     if kind == "follow_up":
         # The honest replacement for "schau ich mir gleich an" (board-copilot.md
         # forbids that prose now - it promised a check nothing ever performs,

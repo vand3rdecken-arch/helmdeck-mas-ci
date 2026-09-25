@@ -8,6 +8,7 @@ already holds, for the proactive-blocker voice path - see below). Bodies
 are byte-identical to the inline blocks they replace.
 """
 import json
+import threading
 import time
 from urllib.parse import parse_qs, urlparse
 
@@ -219,9 +220,28 @@ def chat_post(self, user, body):
     # STEER-ONLY: typed while Henry's board turn runs. Absorbed into that turn
     # (copilot.try_inject) or refused at once - never a lock wait on this leg,
     # the client keeps a refused message queued and sends it as its own turn.
+    # Since 2026-09-25 17:xx the new message TAKES OVER (copilot.supersede,
+    # Paseo replaceAgentRun): the running turn is interrupted and this message
+    # runs as its own turn right behind it - answered now, not after the old
+    # tool chain. try_inject stays the fallback when no interrupt could go out.
     if body.get("steer_only"):
-        ok = (not body.get("card")) and copilot.try_inject(
-            user["name"], text, client_msg_id=str(body.get("mid") or "")[:64])
+        if body.get("card"):
+            return self._send(200, json.dumps({"absorbed": False, "reply": "", "actions": []}))
+        if copilot.supersede(user["name"]):
+            _uname, _role, _mid = user["name"], user["role"], str(body.get("mid") or "")[:64]
+            _opts = {"model": body.get("model", ""), "thinking": body.get("thinking", ""),
+                     "mode": str(body.get("mode") or "")}
+
+            def _takeover():
+                try:
+                    copilot.chat(_uname, text, role=_role, client_msg_id=_mid,
+                                 attachments=body.get("attachments"), **_opts)
+                except Exception as e:                           # noqa: BLE001
+                    copilot._append_log(_uname, [{"cls": "error", "ts": time.strftime("%H:%M"),
+                                                  "text": "Henry-Fehler: %s" % str(e)[:300]}])
+            threading.Thread(target=_takeover, daemon=True, name="chat-takeover").start()
+            return self._send(200, json.dumps({"absorbed": True, "reply": "", "actions": []}))
+        ok = copilot.try_inject(user["name"], text, client_msg_id=str(body.get("mid") or "")[:64])
         return self._send(200, json.dumps({"absorbed": bool(ok), "reply": "", "actions": []}))
     # IDEMPOTENCY, CLAIMED HERE - the earliest point in the daemon that has the
     # message. Everything below this line (turn, log append, actions) can take

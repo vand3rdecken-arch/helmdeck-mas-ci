@@ -442,7 +442,8 @@ def _bg_continue(user, done, seen=False):
         "background-done",
         "Dein Hintergrund-Agent hat sich gemeldet - das hier ist ein automatischer "
         "Hinweis des Harness, keine Nachricht vom Owner:\n" + "\n".join(lines) + "\n\n"
-        "Das vollstaendige Ergebnis steht in deinem Verlauf (task-notification). "
+        "Das vollstaendige Ergebnis steht im harness-report dieses Turns oder in deinem "
+        "Verlauf (task-notification). "
         "Mach jetzt genau dort weiter, wo du auf ihn gewartet hast, und antworte dem "
         "Owner im Chat - er wartet seit deinem 'ich meld mich gleich'."
         + (" Du hast auf die Meldung bereits in einem automatischen Turn reagiert - "
@@ -2092,6 +2093,47 @@ def try_inject(user, message, client_msg_id=""):
     _append_log(user, [_you])
     return True
 
+
+# NEW MESSAGE TAKES OVER (owner 2026-09-25 17:0x, after try_inject shipped:
+# "ich sehe nur Tool-Calls und nicht meine Nachricht - was bringt es, wenn er
+# mir spaeter antwortet"). try_inject folds the message into the running turn,
+# so it is answered only when that whole tool chain ends - minutes. Paseo
+# (replaceAgentRun) interrupts the live run and answers the new prompt now.
+# Same here: a soft `interrupt` control request (the process lives on,
+# measured 2026-09-25: the next user frame is answered at once), then the new
+# message runs as its own turn behind the lock. Safe only because Henry's
+# delegated work runs in OWN processes (hands.spawn kind="agent"): the same
+# measurement showed the interrupt STOPS every CLI background agent of his
+# process - card_tool_guard therefore refuses Agent/Task in his chat.
+# Maps user -> the start stamp of the turn that was superseded (not a flag:
+# the running turn compares it with its OWN start, so a stale entry can
+# never mark a later turn).
+_superseded = {}
+
+
+def supersede(user):
+    """Interrupt the user's running BOARD turn for a newer owner message.
+    True = the interrupt went out (the caller now runs the new message as
+    its own turn, which takes the lock the moment the old turn yields)."""
+    with _inject_guard:
+        st = _inject.get(user)
+        if not st or st["p"].poll() is not None:
+            return False
+        try:
+            st["p"].stdin.write(json.dumps({"type": "control_request",
+                                            "request_id": "sup-" + uuid.uuid4().hex[:12],
+                                            "request": {"subtype": "interrupt"}}) + chr(10))
+            st["p"].stdin.flush()
+        except Exception:                                    # noqa: BLE001
+            return False
+        _superseded[user] = _turn_started.get(user)
+    try:
+        from spine.storage import events
+        events.emit("copilot", "-", action="superseded", actor=user)
+    except Exception:                                        # noqa: BLE001
+        pass
+    return True
+
 # -- streaming: ONE chat surface with the card (shared Transcript), only the
 # backend differs. The copilot streams its PROSE reply into a per-user live feed
 # the board chat polls (like a card's live_partial), so the board agent "types"
@@ -2634,6 +2676,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                           "Wartet auf den laufenden Turn - deine Nachricht ist eingereiht")
         _lk.acquire()
     _tt["lock"] = time.time()
+    # WHAT LANDED WHILE THIS TURN WAITED ON THE LOCK: the report above was
+    # read before the wait. A turn this message superseded writes its
+    # UNTERBROCHEN note in its own finally, right before it hands the lock
+    # over - i.e. exactly during that wait (as can any action finishing
+    # meanwhile). Read once more now, so it is not a turn late.
+    with _pending_lock:
+        _late = _pending_actions.pop(skey, [])
+    if _late:
+        turn = ("<harness-report>\nSEIT DEINEM LETZTEN TURN (MASCHINENTEXT, keine Aussage "
+                "des Owners):\n- " + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _late)
+                + "\n</harness-report>\n\n") + turn
     livebuf.set_field(live_key, "status", "bereitet den Turn vor")
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
@@ -2671,6 +2724,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         raise
     _running[user] = p
     _turn_started[user] = time.time()
+    _my_start = _turn_started[user]      # this turn's identity (see _superseded)
     _note_turn(user, True)
     _running_card[user] = card or None
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
@@ -2952,6 +3006,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # a cancelled or dead process must not be reused - next turn
             # respawns via --resume and loses nothing but the warmth
             _persist_drop(skey)
+        # A NEWER OWNER MESSAGE TOOK OVER (supersede): this turn was
+        # interrupted. Decided HERE, before the lock goes: the new message is
+        # already waiting on it, and the note about what was cut off must be
+        # in _pending_actions before that turn reads them. Unless this turn
+        # had finished its answer, it ends quietly - no error row, no half
+        # answer.
+        _sup_quiet = False
+        if _my_start is not None and _superseded.get(user) == _my_start:
+            _superseded.pop(user, None)
+            _answer = " ".join(_tail_blocks).strip() if len(_tail_blocks) < len(_blocks) else ""
+            if (result or {}).get("is_error") or not (_answer or ("".join(parts).strip() and not _live_steps)):
+                _sup_quiet = True
+                _did = ", ".join(("%s %s" % (s.get("label") or s.get("tool") or "", s.get("text") or "")).strip()
+                                 for s in _live_steps[-6:]) or "noch keine Tools"
+                with _pending_lock:
+                    _pending_actions.setdefault(skey, []).append(
+                        "UNTERBROCHEN: dein vorheriger Turn zu '%s' wurde fuer die neue Owner-"
+                        "Nachricht abgebrochen (zuletzt: %s). Beantworte ZUERST die neue "
+                        "Nachricht. Ist die unterbrochene Arbeit noch noetig, gib sie ab "
+                        "(agent / hands / direct_task) statt sie inline fortzusetzen."
+                        % (message.strip()[:200], _did[:400]))
         _lk.release()
         if voice_stream:
             # Flush BEFORE the live file is cleared: the last sentence of a reply
@@ -2962,6 +3037,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             else:
                 _vstream.finish(user, _strip_actions_live("".join(parts)))
         livebuf.clear(live_key)   # done streaming - clear the live preview
+    if _sup_quiet:
+        return {"reply": "", "actions": [], "cost": None, "usage": None, "superseded": True}
     if user in _cancelled:                 # Stop was pressed
         _cancelled.discard(user)
         return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}
@@ -3265,7 +3342,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     _append_log(user, [dict({"cls": "act", "text": done[-1]},
                                             **({"card": a.get("_card"), "cardName": a.get("_card_name")}
                                                if a.get("_card") else {}),
-                                            **({"hands": a["_hands"]} if a.get("_hands") else {}))])
+                                            **({"hands": a["_hands"]} if a.get("_hands") else {}),
+                                            # an `agent` run: the app draws the agent tile
+                                            # (chat.tsx: m.run -> runKind "agent")
+                                            **({"run": a["_run"]} if a.get("_run") else {}))])
             if done:
                 # Henry sees these NEXT turn (folded into the turn text) - a
                 # result that only reached the owner's log left him claiming a

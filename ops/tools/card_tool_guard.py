@@ -464,18 +464,22 @@ def main():
         _deny("card_tool_guard: " + why)
         return
 
-    # HENRY'S CHAT NEVER WAITS ON A SUB-AGENT (owner 2026-09-25: "Henry
-    # blockiert den Chat ... als Subagent-Prozess, damit man es sehen kann").
-    # A foreground Agent/Task holds his turn - and with it the owner's chat -
-    # for the sub-agent's whole life; in the background it is a live run tile
-    # (henry_bg) and the chat stays free. The brief says it; this makes it
-    # true. Scoped to Henry's chat surface (copilot.json sets
-    # HELMDECK_SURFACE=copilot) - a worker card may wait on its own helpers.
-    if tool in ("Agent", "Task") and os.environ.get("HELMDECK_SURFACE") == "copilot"             and not ti.get("run_in_background"):
-        _deny("card_tool_guard: im Owner-Chat laeuft ein Sub-Agent NUR im Hintergrund - "
-              "denselben Aufruf mit \"run_in_background\": true wiederholen, dem Owner in "
-              "einem Satz sagen, was jetzt laeuft, und den Turn beenden. Das Ergebnis "
-              "kommt als Kachel in den Chat und in deinen naechsten Turn.")
+    # HENRY'S SUB-AGENTS ARE OWN PROCESSES, never CLI sidechains (owner
+    # 2026-09-25: "wie Paseo - Thread oder Subprocess"). A foreground
+    # Agent/Task holds his turn and with it the owner's chat; a BACKGROUND one
+    # dies whenever a newer owner message interrupts his turn - MEASURED
+    # 2026-09-25 (claude -p stream-json): the soft interrupt answered
+    # "task_notification stopped" for every running CLI background agent.
+    # So both are refused here and pointed at the `agent` action (a daemon
+    # process: survives the interrupt, live tile, report wakes him). Scoped to
+    # Henry's chat surface (copilot.json sets HELMDECK_SURFACE=copilot) - a
+    # worker card may use its own helpers.
+    if tool in ("Agent", "Task") and os.environ.get("HELMDECK_SURFACE") == "copilot":
+        _deny("card_tool_guard: im Owner-Chat keine CLI-Sub-Agenten (sie sterben, sobald "
+              "der Owner dich mit einer neuen Nachricht unterbricht). Nimm die Aktion "
+              "{\"type\": \"agent\", \"task\": \"...\", \"why\": \"...\"} im ```actions-Block: "
+              "eigener Prozess, live als Kachel im Chat, sein Bericht weckt dich. Sag dem "
+              "Owner in einem Satz, was jetzt laeuft, und beende den Turn.")
         return
     if os.environ.get("HELMDECK_SURFACE") == "copilot" and os.environ.get("HELMDECK_CHAT_USER"):
         _inline_budget(tool, ti)

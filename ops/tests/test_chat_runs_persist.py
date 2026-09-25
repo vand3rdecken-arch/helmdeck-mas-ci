@@ -13,10 +13,10 @@ history(), the guard hook as a real subprocess):
  5. rows are per account
  6. boot reconcile closes only runs a PREVIOUS daemon left running, with why
  7. finish_all (Henry's process died) persists the failed state
- 8. the guard hook denies a FOREGROUND Agent/Task in Henry's chat surface,
-    lets a background one through, and leaves worker cards alone
+ 8. the guard hook denies the CLI Agent/Task in Henry's chat surface
+    (foreground AND background), and leaves worker cards alone
  9. the inline budget: 6 inline calls per board turn (turn = the daemon's
-    chat_turns.json stamp), the 7th refused, the hand-off never counted
+    chat_turns.json stamp), the 7th refused
 Run: py -3.12 ops/tests/test_chat_runs_persist.py
 """
 import json, os, subprocess, sys, tempfile, time
@@ -198,8 +198,8 @@ check(guard("Agent", {"description": "x", "prompt": "y"}, "copilot") == "deny",
       "8. foreground Agent in Henry's chat is denied")
 check(guard("Task", {"description": "x", "prompt": "y"}, "copilot") == "deny",
       "8. foreground Task in Henry's chat is denied")
-check(guard("Agent", {"description": "x", "prompt": "y", "run_in_background": True}, "copilot") != "deny",
-      "8. background Agent in Henry's chat passes")
+check(guard("Agent", {"description": "x", "prompt": "y", "run_in_background": True}, "copilot") == "deny",
+      "8. background CLI Agent in Henry's chat is refused too (it dies on an interrupt - use `agent`)")
 check(guard("Agent", {"description": "x", "prompt": "y"}, "") != "deny",
       "8. a worker card's foreground Agent is not this rule's business")
 
@@ -218,8 +218,6 @@ got = [guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) for _ i
 check("deny" not in got, "9. six inline calls in one turn pass (%r)" % got)
 check(guard("Bash", {"command": "git log"}, "copilot", OWNER, STATE) == "deny",
       "9. the seventh inline call is refused")
-check(guard("Agent", {"description": "x", "prompt": "y", "run_in_background": True}, "copilot", OWNER, STATE) != "deny",
-      "9. the hand-off itself (background Agent) always passes")
 turn(2000.0)
 check(guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) != "deny",
       "9. a NEW turn starts a fresh budget")

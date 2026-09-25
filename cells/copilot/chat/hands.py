@@ -75,7 +75,7 @@ def _desc(t):
     """The BgTask descriptor the chat renders (tasks() and the db row)."""
     return {"title": t["title"], "status": t["status"], "since": t["since"],
             "updated": t["updated"], "detail": t["detail"], "result": t["result"],
-            "kind": "hands", "card": t.get("card"),
+            "kind": t.get("kind") or "hands", "card": t.get("card"),
             "steps": [dict(s) for s in t.get("steps", [])]}
 
 
@@ -123,8 +123,19 @@ def running_ids():
         return [k for k, t in _tasks.items() if t["status"] == "running"]
 
 
-def spawn(user, task, skey, card=None, why=""):
-    """Start the hands process for `task` and return its id immediately."""
+def spawn(user, task, skey, card=None, why="", kind="hands"):
+    """Start the hands process for `task` and return its id immediately.
+
+    kind="agent" (owner 2026-09-25 "wie Paseo - Thread oder Subprocess"): the
+    same one-shot child for READING / research / checks, without the machine
+    tools and without the desktop queue - it starts at once and runs beside
+    other agents. Why a daemon process and not Henry's CLI Agent tool
+    (MEASURED 2026-09-25 against the real CLI, stream-json): a soft interrupt
+    of Henry's turn - which is how a new owner message now takes over - STOPS
+    every CLI background agent of his process ("task_notification stopped").
+    Paseo's children are separate agents for exactly that reason; so are
+    these."""
+    agent = kind == "agent"
     from cells.copilot.chat import copilot
     from spine.agent import drivers, proctable
     from spine.agent.agentcli import _mcp_config_arg
@@ -132,16 +143,17 @@ def spawn(user, task, skey, card=None, why=""):
     from spine.registry import harness
     from spine.storage import events
 
-    hid = time.strftime("%Y%m%d-%H%M%S") + "-hands-" + uuid.uuid4().hex[:6]
+    hid = time.strftime("%Y%m%d-%H%M%S") + ("-agent-" if agent else "-hands-") + uuid.uuid4().hex[:6]
     scratch = os.path.join(DAEMON_ROOT, "state", "hands", hid)
     os.makedirs(scratch, exist_ok=True)
     title = (task or "").strip().splitlines()[0][:90] if (task or "").strip() else hid
-    brief = harness.brief("hands") + "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
+    brief = harness.brief("delegate" if agent else "hands") + "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
     argv = [copilot.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", copilot.henry_pmode(),
             "--append-system-prompt-file", copilot._brief_file(brief)]
     argv += harness.cli_args("machine-worker")
-    argv += _mcp_config_arg({"allowed_tools": MCP_GRANTS}, capper=True)
+    # an agent needs no PC/browser: lean like Henry (no MCP servers, fast start)
+    argv += copilot._lean_mcp_args() if agent else _mcp_config_arg({"allowed_tools": MCP_GRANTS}, capper=True)
     env = tool_path()
     env["HELMDECK_TOOL_SCOPE"] = "hands"
     env["HELMDECK_CARD"] = hid                 # desktop-lease owner (card_tool_guard)
@@ -150,16 +162,21 @@ def spawn(user, task, skey, card=None, why=""):
     env["HELMDECK_WORKTREE"] = scratch
     env["MCP_TIMEOUT"] = env.get("MCP_TIMEOUT") or "60000"
     with _lock:
-        ahead = len(_queue) + (1 if _active else 0)
+        ahead = 0 if agent else len(_queue) + (1 if _active else 0)
         _tasks[hid] = {"title": title, "status": "running", "since": time.time(), "updated": time.time(),
                        "detail": task.strip()[:600], "pid": None, "user": user, "skey": skey, "card": card,
-                       "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
+                       "kind": kind, "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
                        "result": ("wartet: %d Hände-Lauf(e) davor (ein Desktop, ein Browser)" % ahead) if ahead else ""}
-        _queue.append(hid)
+        if not agent:
+            _queue.append(hid)
     events.emit("hands", card or "-", action="spawned", id=hid, actor=user, task=title, why=why[:200],
-                queued_behind=ahead)
+                queued_behind=ahead, run_kind=kind)
     _persist(hid)
-    _kick()
+    if agent:
+        # no desktop, no queue: it starts now, beside any other run
+        threading.Thread(target=_run, args=(hid, False), daemon=True, name="agent-" + hid).start()
+    else:
+        _kick()
     return hid
 
 
@@ -186,7 +203,7 @@ def _kick():
     threading.Thread(target=_run, args=(hid,), daemon=True, name="hands-" + hid).start()
 
 
-def _run(hid):
+def _run(hid, desktop=True):
     global _active
     from spine.agent import proctable
     from spine.git import desktop_lease
@@ -206,9 +223,10 @@ def _run(hid):
         _land(hid, "failed", "FAILED - spawn: %s" % str(e)[:300], 0)
     finally:
         desktop_lease.release(hid)         # event-time: a finished hands never leaves a stale lease
-        with _lock:
-            _active = None
-        _kick()
+        if desktop:                        # an agent run never held the desktop slot
+            with _lock:
+                _active = None
+            _kick()
 
 
 def _pump(hid, p):
@@ -297,10 +315,24 @@ def _land(hid, status, result, steps):
     try:
         with copilot._pending_lock:
             copilot._pending_actions.setdefault(skey, []).append(
-                "HANDS %s (%s): %s\n%s" % (status.upper(), hid, title, full))
+                "%s %s (%s): %s\n%s" % ("AGENT" if t.get("kind") == "agent" else "HANDS",
+                                        status.upper(), hid, title, full))
     except Exception:                                    # noqa: BLE001
         pass
     word = "fertig" if status == "completed" else "fehlgeschlagen"
+    if t.get("kind") == "agent" and not card:
+        # AN AGENT RUN REPORTS THROUGH ITS TILE AND THROUGH HENRY (Paseo: the
+        # child's result sits in its track, the parent picks it up). The tile
+        # already shows status + report (db.chat_runs, persisted above); a
+        # second "Hände" box would say it twice. Henry is woken for ONE
+        # harness turn - the full report rides in via _pending_actions - so
+        # the owner gets the answer to what he asked, not a raw report.
+        try:
+            copilot._schedule_bg_continue(user, [dict(_desc(t), uid=hid, status=status,
+                                                      result=short)])
+        except Exception:                                # noqa: BLE001
+            pass
+        return
     line = "Hände %s: %s\n%s" % (word, title, short)
     try:
         if card:
