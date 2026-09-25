@@ -26,25 +26,17 @@ launch-day window from the moment the queue opens).
 
 ## Tagline (max 60 chars)
 
-**Recommended — reuses the live site H1 verbatim (44 chars):**
+Live site H1, verbatim (34 chars):
 
-> The harness for your team's coding agents.
-
-Alternates, if the owner wants something punchier/less sentence-shaped for a
-PH audience:
-
-> A board where Claude Code agents actually finish the work (56 chars)
-> Answer your coding agent from your phone, not your desk (54 chars)
+> Mobile AI orchestration for teams.
 
 ## Description (product page intro)
 
-> For teams running Claude Code. The agent belongs at the desk, you don't.
-> Answer its questions, redirect it mid-run and approve its work from your
-> phone. No cloud account, no code leaves your machine, works with the
-> Claude subscription your team already has.
+> You set goal, budget and deadline. HelmDeck plans the work, agents do it
+> on your own PC, and every decision lands with the right person on your
+> team, on the phone. The agent belongs at the desk. You don't.
 
-(247 characters — adapted directly from the live kicker/sub/objection lines,
-`index.js:554-557`.)
+(Built from the live H1, sub and the three theses on helmdeck.de.)
 
 ## Gallery (5 images + demo video)
 
@@ -84,30 +76,25 @@ precedent, but the owner may prefer a fresher desktop capture instead.
 
 > Hey Product Hunt 👋
 >
-> I'm Tien, I built HelmDeck alone over the last couple of months, as a
-> hobby project beside my main job.
+> I'm Tien. HelmDeck is a hobby project I build beside my main job, to
+> test three theses about how work with AI is going to feel.
 >
-> It started from a dumb, specific annoyance: Claude Code got good enough to
-> grind on a task for 20-30 minutes unattended, but the moment it hit a
-> fork and asked a question, I was stuck at my desk until I noticed. I'd sit
-> there in the evening waiting for the next question, kids in the next
-> room, PC tying me to one spot for no good reason.
+> 1. Mobile is the interface. The agent belongs at the desk. You don't.
+> I never touched the Play Store listing, the App Store listing or the
+> certificates. An agent did it in the browser, I answered its questions
+> and cleared its blockers from wherever I was.
 >
-> So I built HelmDeck around what I kept seeing. The phone is the
-> interface: when an agent asks or finishes, it's a push notification and I
-> answer from wherever I am. Goals replace prompts: I set goal, budget and
-> deadline, and Henry, the planner inside HelmDeck, lays out the work.
-> Teams, not individuals: every question lands with the person who should
-> decide it. A quality gate runs before anything merges, so approving from
-> a phone still means reviewing, not blindly tapping yes.
+> 2. Goals replace prompts. You set goal, budget and deadline. Henry, the
+> planner inside HelmDeck, lays out timeline and scope against my measured
+> velocity, and pushed back when the Android review turned out to take
+> fourteen days.
 >
-> HelmDeck itself got built this way, mostly answered from my phone instead
-> of waiting at my desk for it.
+> 3. Teams, not individuals. Every decision lands with the one person who
+> should make it. A friend in another time zone takes the helm when I go
+> to sleep, and sees at once what moved and what waits on him.
 >
-> It's a companion app for your own HelmDeck installation: it talks only to
-> your own machine, nothing runs on a server I control, content is
-> end-to-end encrypted even over the relay that lets you reach it from
-> outside your LAN. No account, no ads.
+> It runs on your own machine: no cloud account, nothing on a server I
+> control, end to end encrypted even over the relay. No account, no ads.
 >
 > I'd genuinely like to hear how the rest of you handle this today: do you
 > just accept being desk-bound while an agent runs, or did you land on

@@ -6,7 +6,7 @@ live site (`ops/deploy/waitlist/src/index.js:554-579`), same rule as that
 draft: no invented copy, no em dashes.
 
 Per `plan-launch-2026-09-20.md` section "Mi, 23.09.": X goes out as a reply
-under an existing own post about Claude Code, not a new standalone post.
+under an existing own post, not a new standalone post.
 LinkedIn carries the link in the first comment, not in the post body
 (LinkedIn throttles outbound links in the post itself).
 
@@ -16,12 +16,13 @@ Campaign links (generated, logged in `campaign-links.csv`):
 - X: `https://helmdeck.de/?utm_source=x&utm_medium=social&utm_campaign=launch&utm_content=x-ph-launch-day`
 - LinkedIn: `https://helmdeck.de/?utm_source=linkedin&utm_medium=social&utm_campaign=launch&utm_content=linkedin-ph-launch-day`
 
-## X (reply under an existing own post about Claude Code)
+## X (reply under an existing own post)
 
 > Update: HelmDeck is live on Product Hunt today.
 >
-> Claude Code asks, you answer from your phone. The agent belongs at the
-> desk, you don't. A hobby project I build beside my main job.
+> Mobile AI orchestration for teams. You set the goal, agents do the
+> work, every decision lands on the right phone. A hobby project I build
+> beside my main job.
 >
 > Would mean a lot if you took a look: [PH LINK]
 
@@ -29,15 +30,13 @@ Campaign links (generated, logged in `campaign-links.csv`):
 
 > HelmDeck is live on Product Hunt today.
 >
-> I built it because I kept sitting at the PC in the evening, waiting for
-> the next question from Claude Code, while my kids were in the next room.
+> HelmDeck is a hobby project I build beside my main job, to test three
+> theses: mobile is the interface, goals replace prompts, teams instead of
+> individuals. You set goal, budget and deadline, agents do the work on
+> your own PC, and every decision lands with the right person on the
+> phone. The agent belongs at the desk. You don't.
 >
-> Claude Code asks, and I answer from my phone: its questions, a change of
-> direction mid-run, the final approval. The agent stays at the desk. I
-> don't have to. HelmDeck is a hobby project I build beside my main job.
->
-> No cloud account, no code leaves your machine, works with the Claude
-> subscription your team already has.
+> No cloud account, no code leaves your machine.
 >
 > Would appreciate an upvote and any feedback, link in the first comment.
 
