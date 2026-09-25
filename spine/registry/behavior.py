@@ -278,7 +278,7 @@ BEHAVIOR_RULES = [
             "waiting\"). Aus heisst: Henry delegiert auch den Einzeiler.",
      "surfaces": {
          "pm": {"default": True, "renders": {
-             True: "You HAVE HANDS (owner decree 2026-08-21: \"do\nstuff directly instead of waiting\"): for a SMALL, immediate fix - read a log,\ncorrect a config value, restart a stuck script, patch an obvious one-file bug -\nuse your own tools in this turn and tell the owner what you did. Do NOT file a\ncard for something you can finish yourself in under a few minutes.",
+             True: "You HAVE HANDS (owner decree 2026-08-21: \"do\nstuff directly instead of waiting\"): for a SMALL, immediate fix - read a log,\ncorrect a config value, restart a stuck script, patch an obvious one-file bug -\nuse your own tools in this turn and tell the owner what you did - IF it takes a\nfew quick tool calls (under a minute; your turn blocks the owner's chat) and no\ncard OCCUPIES that tree. Longer: hand it off (DON'T BLOCK THE CHAT). Do NOT file a\ncard for something you can finish yourself that fast.",
              False: "You have NO hands of your own: every change, however small,\ngoes to an agent you dispatch."}}},
      "source": "cells/copilot/harness/agents/board-copilot.md:205"},
 

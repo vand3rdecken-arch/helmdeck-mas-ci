@@ -1153,6 +1153,15 @@ def _snapshot(full=False):
         bg = [x[:60] for x in _sbg.running_bg(t)]
         if bg:
             arch += " BACKGROUND-RUNNING=%d (%s)" % (len(bg), "; ".join(bg))
+        # WHERE it builds: a live-tree card in working OCCUPIES its repo's tree
+        # (dispatch.tree_occupant) - a new card for that repo gets its own
+        # worktree automatically; Henry must not edit that tree himself.
+        if t.get("direct") and t.get("lane") == "working":
+            arch += " OCCUPIES_LIVE_TREE"
+        if t.get("isolated_from"):
+            arch += " WORKTREE(tree was busy with %s)" % t["isolated_from"]
+        if t.get("process"):
+            arch += " process=%s" % t["process"]
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
             t["id"], repo, t["branch"], t.get("lane"), t.get("status"), arch, t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
@@ -1724,11 +1733,25 @@ def history(user):
         followups = {}          # a broken fold must never take the chat down
     try:
         from cells.copilot.chat import hands
-        followups.update(hands.tasks())     # Henry's hands sub-agents, same BgTask shape
+        followups.update(hands.tasks(user))     # Henry's hands sub-agents, same BgTask shape
         followups.update(henry_bg.tasks(user))   # his own CLI Agent/Task background runs
     except Exception:                                        # noqa: BLE001
         pass
-    return {"messages": [_readable(m) for m in _entries(user)],
+    entries = _entries(user)
+    # A RUN TILE FURTHER UP THE CHAT (owner 2026-09-25): the in-memory
+    # registries keep a finished run for an hour and forget it on restart;
+    # its final descriptor was written to db.chat_runs by that registry at
+    # its end, so a tile in the visible window reads it from there.
+    try:
+        want = {m.get("run") or m.get("hands") for m in entries
+                if isinstance(m, dict) and (m.get("run") or m.get("hands"))}
+        missing = [r for r in want if r not in followups]
+        if missing:
+            from spine.storage import db as _db
+            followups.update(_db.runs_get(missing, account=user))
+    except Exception:                                        # noqa: BLE001
+        pass
+    return {"messages": [_readable(m) for m in entries],
             "session_id": _sessions().get(user),
             "stats": st,
             # Henry's current permission mode - the composer's Mode row shows
@@ -2023,6 +2046,47 @@ def _note_turn(user, on):
 # board chat's prose into the card's timeline while it waited for the lock.
 _running_card = {}
 _cancelled = set()
+
+# STEER INTO THE RUNNING TURN (owner 2026-09-25: "das blockiert diesen Chat").
+# MEASURED 2026-09-25 against the real CLI (claude -p --input-format
+# stream-json): a user frame written to stdin WHILE a tool call runs is folded
+# into the SAME turn - the model sees it after the tool result and the turn
+# ends with ONE result ("DONE1 MANGO"). So a message typed while Henry works
+# does not have to wait for the lock: it rides into the turn he is already in.
+# Only while a tool call is OPEN (the window the probe measured) - a frame
+# written while the final answer streams would open a second CLI turn nobody
+# pumps. Satellite of _running: set after the prompt write, cleared under the
+# same guard before the lock is released; `tools` = open tool_use ids, folded
+# at event time from the turn's own stream.
+_inject = {}
+_inject_guard = threading.Lock()
+_INJECT_HEAD = ("[Der Owner schreibt dir WAEHREND du arbeitest - beziehe das in "
+                "diesen laufenden Turn ein, deine Antwort am Ende gilt fuer beides]" + chr(10))
+
+
+def try_inject(user, message, client_msg_id=""):
+    """Write the owner's message into his running BOARD turn. True = absorbed
+    (the 'you' row is persisted here, at submission); False = no open tool
+    window - the caller keeps it queued and sends it as its own turn."""
+    message = (message or "").strip()
+    if not message:
+        return False
+    with _inject_guard:
+        st = _inject.get(user)
+        if not st or not st["tools"] or st["p"].poll() is not None:
+            return False
+        try:
+            st["p"].stdin.write(json.dumps({"type": "user", "message": {
+                "role": "user", "content": _INJECT_HEAD + message}}) + chr(10))
+            st["p"].stdin.flush()
+        except Exception:                                    # noqa: BLE001
+            return False
+        st["absorbed"] += 1
+    _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
+    if client_msg_id:
+        _you["client_msg_id"] = client_msg_id
+    _append_log(user, [_you])
+    return True
 
 # -- streaming: ONE chat surface with the card (shared Transcript), only the
 # backend differs. The copilot streams its PROSE reply into a per-user live feed
@@ -2660,6 +2724,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 p.stdin.flush()
         else:
             p.stdin.write(prompt); p.stdin.close()
+        if persistable and not card:
+            with _inject_guard:
+                _inject[user] = {"p": p, "tools": set(), "absorbed": 0}
         for line in _port.lines(p):                 # the pump (like drivers._pump)
             if user in _cancelled:
                 break
@@ -2676,9 +2743,21 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 continue
             typ = ev.get("type")
             try:
-                henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
+                _bg_uid = henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
             except Exception:                        # noqa: BLE001
-                pass                                 # registry is best-effort, never the turn
+                _bg_uid = None                       # registry is best-effort, never the turn
+            if _bg_uid and not card_run_dir:
+                # A BACKGROUND AGENT IS A VISIBLE RUN (owner 2026-09-25): its
+                # tile goes into the chat the moment the CLI confirms the
+                # launch, under the owner's message - live status and steps
+                # come from henry_bg via history()["followups"]["bg:<uid>"].
+                try:
+                    _bt = (henry_bg.tasks(user).get("bg:" + _bg_uid) or {}).get("title") or "Agent"
+                    _append_log(user, [{"cls": "act", "run": "bg:" + _bg_uid,
+                                        "text": "Hintergrund-Agent: " + _bt,
+                                        "ts": time.strftime("%H:%M")}])
+                except Exception:                    # noqa: BLE001
+                    pass
             if ev.get("parent_tool_use_id"):
                 # a SUB-AGENT's frame (measured 2026-09-16: the CLI streams
                 # them with parent_tool_use_id set): it keeps the silence
@@ -2713,6 +2792,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _blocks.append(_b["text"])
                         _tail_blocks.append(_b["text"])
                     if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                        with _inject_guard:
+                            if user in _inject and _b.get("id"):
+                                _inject[user]["tools"].add(_b["id"])
                         _tail_blocks = []     # prose before a tool call is a status line, not the answer
                         _inp = _b.get("input") or {}
                         _brief = str(_inp.get("command") or _inp.get("description")
@@ -2773,6 +2855,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # tool results close the matching transient step
                 for _b in ((ev.get("message") or {}).get("content") or []):
                     if isinstance(_b, dict) and _b.get("type") == "tool_result":
+                        with _inject_guard:
+                            if user in _inject:
+                                _inject[user]["tools"].discard(_b.get("tool_use_id"))
                         _rc = _b.get("content")
                         if isinstance(_rc, list):
                             _rc = "\n".join(str(x.get("text") or "") for x in _rc if isinstance(x, dict))
@@ -2854,6 +2939,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 " HUNG" if _beat.get("hung") else ""), flush=True)
         except Exception:                                    # noqa: BLE001
             pass
+        with _inject_guard:
+            _inject.pop(user, None)
         _running.pop(user, None)
         _note_turn(user, False)
         _running_card.pop(user, None)
@@ -3149,6 +3236,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                 "ts": time.strftime("%H:%M")}])
         acts = []
     if acts:
+        # THE CONVERSATION RIDES ON THE ACTION: a hands run started from a card
+        # chat belongs to that card (it reported into the board chat and fed
+        # the board session), and a card filed from a card chat remembers where
+        # it came from. Henry's action format never carried either.
+        if card:
+            for a in acts:
+                if a.get("type") == "hands" and not a.get("card"):
+                    a["card"] = card
+                if a.get("type") in ("file_card", "direct_task") and not a.get("_origin_card"):
+                    a["_origin_card"] = card
+
         def _run_bg():
             done = []
             for a in acts:
@@ -3156,6 +3254,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     done.append(_run_action(a, user, role))
                 except Exception as e:
                     done.append("action failed: %s" % str(e)[:200])
+                if not card_run_dir:
+                    # EACH row as its action lands - a card tile used to wait
+                    # for every other action of the turn (a slow merge held the
+                    # new card's tile back for minutes)
+                    _append_log(user, [dict({"cls": "act", "text": done[-1]},
+                                            **({"card": a.get("_card"), "cardName": a.get("_card_name")}
+                                               if a.get("_card") else {}),
+                                            **({"hands": a["_hands"]} if a.get("_hands") else {}))])
             if done:
                 # Henry sees these NEXT turn (folded into the turn text) - a
                 # result that only reached the owner's log left him claiming a
@@ -3168,14 +3274,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
                             {"kind": "note", "text": r, "byKind": "henry",
                              "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
-                else:
-                    # one entry per action, and the card it produced rides
-                    # along (copilot_actions._tag) so the app can draw a
-                    # thread tile instead of a sentence
-                    _append_log(user, [dict({"cls": "act", "text": r},
-                                            **({"card": a.get("_card"), "cardName": a.get("_card_name")}
-                                               if a.get("_card") else {}))
-                                       for a, r in zip(acts, done)])
+                # board chat: the rows were appended per action above (the
+                # card it produced rides along - copilot_actions._tag - so the
+                # app draws a thread tile instead of a sentence)
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
     # feed the keepalive: a real turn IS the freshest cache there is
     _last_turn_at[skey] = _last_touch_at[skey] = time.time()

@@ -121,6 +121,17 @@ export interface BgTask {
   updated?: number;    // epoch seconds of the last state change
   detail?: string;     // the command / prompt that launched it
   result?: string;     // the task-notification output, or why it was canceled
+  /** Henry's delegated runs only (history().followups): which kind, the card it
+   *  belongs to, and the tail of its tool steps for the chat's run tile. */
+  kind?: "hands" | "agent";
+  card?: string | null;
+  steps?: RunStep[];
+}
+/** One tool call of a delegated run (hands / background agent), folded by the
+ *  daemon from the run's own stream. */
+export interface RunStep {
+  id?: string; label: string; text: string;
+  status: "running" | "completed" | "failed"; ta?: number;
 }
 /** A worker's typed multiple-choice question (daemon/ask.py). Present only
  *  while the card is actually waiting on the owner's decision; answering it

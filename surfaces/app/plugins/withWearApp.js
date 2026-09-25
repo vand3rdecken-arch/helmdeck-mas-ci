@@ -137,6 +137,7 @@ function installWearModule(androidDir) {
     // wrist is therefore still the pre-48f78f0, 15s-timer build. The completeness
     // check below is the half that makes this unrepeatable.
     ["ChatRows.kt", [...JAVA, "ChatRows.kt"]],
+    ["TextDetailScreen.kt", [...JAVA, "TextDetailScreen.kt"]],
     // 2026-09-02: the app's ONE event channel (hanging GET on /stream/wait),
     // hoisted out of HenryScreen so the board screen shares it instead of
     // running load-once - MainActivity composes one screen at a time, so a

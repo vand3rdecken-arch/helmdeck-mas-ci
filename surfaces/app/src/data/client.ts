@@ -296,6 +296,9 @@ export interface Step {
  *  an optimistic copy by IDENTITY instead of by comparing text — optional
  *  because older daemons, the watch and the glasses do not send one. */
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** a delegated run this row started: `hands` = a hands id, `run` = "bg:<uid>"
+   *  for a background agent - the chat draws a live RunTile for it */
+  hands?: string; run?: string;
   /** the chat row's sequence number (db.chat_tail) - identity across the sliding 80-row window */
   seq?: number;
   /** `cls: "card"` — the EVENT MIRROR (cells/copilot/card_mirror.py). A working
@@ -339,11 +342,19 @@ export interface ChatThread {
   /** Paseo's sidebar buckets (agent-state-bucket.ts) + backlog: the list's sections. */
   bucket: "needs_input" | "failed" | "attention" | "running" | "backlog" | "done";
   preview: string; by?: "human" | "henry" | null; has_chat: boolean; at: number;
+  /** the project (repo folder name), the card chat it was filed from, and
+   *  whether it got its own worktree because the live tree was busy */
+  repo?: string | null; origin_card?: string | null; isolated?: boolean;
 }
 export interface ChatThreads {
   inbox: { id: "inbox"; kind: "inbox"; title: string; preview: string; at: number };
   threads: ChatThread[];
   processes: { id: string; title: string; status?: string; total: number; done: number }[];
+  /** Ziel -> Prozess -> Karte, top level: repo null = the workspace goal */
+  goals?: { repo: string | null; goal: string }[];
+  /** what waits on the owner beyond card questions (pm_push.derive) */
+  needs?: { key: string; kind: "proposal" | "human" | "dead" | "parked"; label: string;
+    since?: number; process?: string | null; card?: string | null }[];
 }
 
 // POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}
@@ -363,6 +374,8 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
    *  still running when the daemon gave up waiting, in which case the answer
    *  arrives through the /chat/history poll like any other persisted turn. */
   duplicate?: boolean;
+  /** steer_only: true = folded into the running turn, false = send it later */
+  absorbed?: boolean;
   /** Present when the message was routed to a CARD instead of answered by
    *  Henry (`reply_to_card`). `as` says which door it went through: "answer"
    *  settled the card's pending question, "steer" was a plain instruction.
@@ -1063,7 +1076,11 @@ export const api = {
   // these: the daemon writes it. `answer_to` is the question id, rejected with
   // 409 once the conversation has moved past it.
   chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string;
-    answer_to?: string; answers?: Record<string, string | string[]> } = {}) => {
+    answer_to?: string; answers?: Record<string, string | string[]>;
+    /** Typed while Henry's turn runs: the daemon folds it into that turn
+     *  (copilot.try_inject) and answers `absorbed`, or refuses at once -
+     *  never a lock wait on this leg. */
+    steer_only?: boolean } = {}) => {
     track("chat_message", { scope: o.reply_to_card ? "card_reply" : o.card ? "card" : "board" });
     // `mid` is minted HERE, once per call, and travels inside the body - which
     // is precisely what makes it a replay detector. A chat turn runs for

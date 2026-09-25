@@ -121,7 +121,9 @@ def new_project(name, billing, client="", fixed_price=None, rate=None, actor="ow
 # `template`, `applied` and `overrides` are deliberately NOT editable here:
 # each has exactly one mutator below (apply_template / set_override), which is
 # what keeps "vom Standard abgewichen" a recorded fact instead of a guess.
-EDITABLE = ("name", "client", "billing", "fixed_price", "rate", "status", "repo")
+# `goal` (2026-09-25): the project's long-term GOAL - Ziel -> Prozess -> Karte,
+# the top of the owner's hierarchy, per project instead of one global line.
+EDITABLE = ("name", "client", "billing", "fixed_price", "rate", "status", "repo", "goal")
 
 
 def update_project(pid, patch, actor="owner"):

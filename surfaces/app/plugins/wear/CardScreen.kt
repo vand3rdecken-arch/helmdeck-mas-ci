@@ -16,12 +16,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.ListHeaderDefaults
+import androidx.wear.compose.material3.ListHeader
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.MaterialTheme
@@ -59,6 +66,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
     var henryReply by remember { mutableStateOf<String?>(null) }
     var henrySuggestions by remember { mutableStateOf<QuestionBlock?>(null) }
     var henryBusy by remember { mutableStateOf(false) }
+    var detail by remember { mutableStateOf<Pair<String, String>?>(null) }
     val scope = rememberCoroutineScope()
 
     val dictateLauncher = rememberLauncherForActivityResult(
@@ -104,19 +112,17 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
         }
     }
 
+    val columnState = rememberTransformingLazyColumnState()
+    // The full text of anything long (task, detail, body, question, Henry's
+    // answer) is read on its own TextDetailScreen; the list only carries short,
+    // ellipsised previews (Google's list pattern, see PairingScreen).
+    val shown = detail
+    if (shown != null) {
+        TextDetailScreen(title = shown.first, text = shown.second, onBack = { detail = null })
+        return
+    }
     MaterialTheme {
-        val columnState = rememberTransformingLazyColumnState()
-        // ROUND SCREEN SIDE INSET - same as HenryScreen.kt, same cause:
-        // ScreenScaffold's contentPadding keeps the first and last ROW off
-        // the bezel, but a full-width card is still cut by the circle at
-        // every height except the vertical middle (owner photo,
-        // 2026-08-30: whole letters missing at the start of the wrapped
-        // lines). 10% of the screen width per side, so it scales with
-        // the device instead of being a guess about one.
-        val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
-        // Same reasoning as PairingScreen: ScreenScaffold computes the
-        // screen-size-relative content padding and passes it in, instead of a
-        // bare Box that leaves the first and last row against the bezel.
+        val spec = rememberTransformationSpec()
         ScreenScaffold(columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
@@ -124,108 +130,115 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
-                    Text(
-                        text = card.task.ifBlank { card.id },
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    ListHeader(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text("Karte", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                // "Zurück" stays directly under the title, ABOVE the content:
-                // this screen is reached from a manual `when(screen)` in
-                // MainActivity, not a SwipeDismissableNavHost, so the swipe-back
-                // gesture does not return to the board here. Putting the only
-                // way out below a scrolling wall of text would strand him on a
-                // long card.
+                // "Zurück" stays directly under the title, ABOVE the content: this
+                // screen is reached from a manual `when(screen)` in MainActivity, not
+                // a SwipeDismissableNavHost, so the swipe-back gesture does not
+                // return to the board here.
                 item {
                     Button(
                         onClick = { VoicePlayer.stop(); onBack() },
-                        modifier = Modifier.padding(4.dp),
-                    ) { Text("Zurück") }
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text("Zurück", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                // THE CARD'S OWN CONTENT - the whole reason this screen exists
-                // and the one thing it used to be missing. Owner, 2026-08-29:
-                // "wenn ich auf Karte gehe ist nichts da." It was literally
-                // true: title, Zurück, Henry fragen, and nothing in between.
-                //
-                // Two lines, in the order a triage read wants them:
-                //   1. WHY it wants him (blocker reason + detail), coloured by
-                //      the card's own status through WearSemantics - the same
-                //      table the phone's statusColor() uses, so red means red
-                //      on both. Absent for a pipeline card, which is not stuck.
+                // The card's task, as a preview that opens in full.
+                val task = card.task.ifBlank { card.id }
+                item {
+                    Card(
+                        onClick = { detail = "Aufgabe" to task },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text(task, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+                }
+                // THE CARD'S OWN CONTENT (owner, 2026-08-29: "wenn ich auf Karte gehe
+                // ist nichts da"). Two lines, in the order a triage read wants them:
+                //   1. WHY it wants him (blocker reason + detail), coloured by the
+                //      card's own status through WearSemantics - the same table the
+                //      phone's statusColor() uses. Absent for a pipeline card.
                 //   2. WHAT last happened (body): the machine's last reply.
                 val label = reasonLabel(card.reason)
                 if (label.isNotEmpty()) {
                     item {
                         Text(
-                            text = label,
-                            color = WearSemantics.status(
-                                card.status.ifBlank { card.reason }),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            text = label, textAlign = TextAlign.Center,
+                            color = WearSemantics.status(card.status.ifBlank { card.reason }),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                         )
                     }
                 }
-                // ...but NOT when `detail` is just the top of `body`. For the
-                // reasons 'delivered' and 'failed', blockers.blocker() builds
-                // detail FROM last_reply (blockers.py:70,80) - it is literally
-                // the first 160 chars of the card below it, and rendering both
-                // prints the same sentence twice on a screen with no room for
-                // it once. Probed on the text rather than on the reason name so
-                // a new reason with the same shape cannot reintroduce it.
-                // Compared on a WHITESPACE-FLATTENED form of both sides, not on
-                // the raw strings. `detail` arrives with its whitespace already
-                // collapsed to single spaces (blockers._blocker_text) while
-                // `body` keeps its paragraph breaks - so a reply that opens with
-                // a heading produced "DELIVERED  Auf der" against "DELIVERED Auf
-                // der" and the prefix test failed on the double space, printing
-                // the same sentence twice. Flattening both is the comparison the
-                // test always meant to make.
+                // ...but NOT when `detail` is just the top of `body` (for the reasons
+                // 'delivered' and 'failed', blockers.blocker() builds detail FROM
+                // last_reply). Compared on a WHITESPACE-FLATTENED form of both
+                // sides: `detail` arrives with its whitespace already collapsed
+                // while `body` keeps its paragraph breaks.
                 fun flat(s: String) = s.replace(Regex("\\s+"), " ").trim()
                 val detailEchoesBody =
                     flat(card.body).startsWith(flat(card.detail).take(40))
                 if (card.detail.isNotBlank() && !detailEchoesBody) {
                     item {
                         OutlinedCard(
-                            onClick = {},
-                            modifier = Modifier.padding(
-                                horizontal = sideInset, vertical = 3.dp),
-                        ) {
-                            Text(text = card.detail, textAlign = TextAlign.Start)
-                        }
+                            onClick = { detail = "Grund" to card.detail },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, spec)
+                                .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+                            transformation = SurfaceTransformation(spec),
+                        ) { Text(card.detail, maxLines = 3, overflow = TextOverflow.Ellipsis) }
                     }
                 }
                 if (card.body.isNotBlank()) {
+                    // Same neutral surface HenryScreen gives Henry's own messages
+                    // (`layer2` from WearTokens): it is the machine talking.
                     item {
-                        // Same neutral surface HenryScreen gives Henry's own
-                        // messages (`layer2` from WearTokens, i.e. from
-                        // ops/tools/gen_tokens.py) - because it is the same
-                        // thing: the machine talking. Start-aligned; a centred
-                        // paragraph has a ragged left edge and the eye loses
-                        // the line it was on.
                         Card(
-                            onClick = {},
+                            onClick = { detail = "Antwort" to card.body },
                             colors = CardDefaults.cardColors(
                                 containerColor = WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.padding(
-                                horizontal = sideInset, vertical = 3.dp),
-                        ) {
-                            Text(text = card.body, textAlign = TextAlign.Start)
-                        }
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, spec)
+                                .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+                            transformation = SurfaceTransformation(spec),
+                        ) { Text(card.body, maxLines = 3, overflow = TextOverflow.Ellipsis) }
                     }
                 }
 
                 val q = card.question
                 if (q != null) {
-                    for (item in q.questions) {
-                        item { Text(text = item.question, modifier = Modifier.padding(8.dp)) }
-                        for (opt in item.options) {
-                            val selected = picks[item.header] == opt.label
+                    for (qi in q.questions) {
+                        item {
+                            Card(
+                                onClick = { detail = "Frage" to qi.question },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(qi.question, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+                        }
+                        for (opt in qi.options) {
+                            val selected = picks[qi.header] == opt.label
                             item {
                                 Button(
                                     onClick = {
-                                        picks[item.header] = opt.label
+                                        picks[qi.header] = opt.label
                                         // Single question, single-select: this IS the
                                         // whole answer - submit immediately, same UX
                                         // as the push notification's option buttons
@@ -233,12 +246,16 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                         // header filled first (ask.validate_answers'
                                         // own requirement) - a submit button below
                                         // covers that case instead.
-                                        if (q.questions.size == 1 && !item.multiSelect) {
+                                        if (q.questions.size == 1 && !qi.multiSelect) {
                                             submitAnswer(q.id)
                                         }
                                     },
-                                    modifier = Modifier.padding(2.dp),
-                                ) { Text(text = (if (selected) "> " else "") + opt.label) }
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, spec)
+                                        .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                    transformation = SurfaceTransformation(spec),
+                                ) { Text((if (selected) "> " else "") + opt.label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                             }
                         }
                     }
@@ -247,16 +264,32 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             Button(
                                 onClick = { submitAnswer(q.id) },
                                 enabled = q.questions.all { picks.containsKey(it.header) },
-                                modifier = Modifier.padding(8.dp),
-                            ) { Text("Antworten") }
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text("Senden", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                     if (answerStatus != null) {
-                        item { Text(text = answerStatus ?: "", modifier = Modifier.padding(8.dp)) }
+                        item {
+                            Text(
+                                text = answerStatus ?: "", textAlign = TextAlign.Center,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            )
+                        }
                     }
                 }
 
-                item { Text(text = "Henry fragen", modifier = Modifier.padding(8.dp)) }
+                item {
+                    Text(
+                        text = "Henry fragen", textAlign = TextAlign.Center,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                    )
+                }
                 item {
                     Button(
                         onClick = {
@@ -268,11 +301,29 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             dictateLauncher.launch(prompt)
                         },
                         enabled = !henryBusy,
-                        modifier = Modifier.padding(4.dp),
-                    ) { Text(if (henryBusy) "…" else "Diktieren") }
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text(if (henryBusy) "…" else "Sprechen", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                if (henryReply != null) {
-                    item { Text(text = henryReply ?: "", modifier = Modifier.padding(8.dp)) }
+                val reply = henryReply
+                if (reply != null) {
+                    item {
+                        Card(
+                            onClick = { detail = "Henry" to reply },
+                            colors = CardDefaults.cardColors(
+                                containerColor = WearTokens.layer2,
+                                contentColor = WearTokens.txtPrimary,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, spec)
+                                .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+                            transformation = SurfaceTransformation(spec),
+                        ) { Text(reply, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+                    }
                 }
                 henrySuggestions?.questions?.forEach { sug ->
                     for (opt in sug.options) {
@@ -281,10 +332,14 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                 onClick = {
                                     askHenry(context, scope, card.id, opt.label,
                                         onBusy = { henryBusy = it },
-                                        onReply = { reply, more -> henryReply = reply; henrySuggestions = more })
+                                        onReply = { r, more -> henryReply = r; henrySuggestions = more })
                                 },
-                                modifier = Modifier.padding(2.dp),
-                            ) { Text(text = opt.label) }
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(opt.label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }

@@ -216,6 +216,13 @@ def chat_post(self, user, body):
     if reply_to:
         return _route_to_card(self, user, text, reply_to,
                               mid=str(body.get("mid") or ""))
+    # STEER-ONLY: typed while Henry's board turn runs. Absorbed into that turn
+    # (copilot.try_inject) or refused at once - never a lock wait on this leg,
+    # the client keeps a refused message queued and sends it as its own turn.
+    if body.get("steer_only"):
+        ok = (not body.get("card")) and copilot.try_inject(
+            user["name"], text, client_msg_id=str(body.get("mid") or "")[:64])
+        return self._send(200, json.dumps({"absorbed": bool(ok), "reply": "", "actions": []}))
     # IDEMPOTENCY, CLAIMED HERE - the earliest point in the daemon that has the
     # message. Everything below this line (turn, log append, actions) can take
     # minutes, and three transport layers give up long before that and replay

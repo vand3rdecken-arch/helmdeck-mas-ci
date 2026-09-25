@@ -10,7 +10,7 @@ decision: mobile = same capabilities), so besides pulling it can drive:
   POST /control/demo                                scripted browser demo run (background)
   GET  /control/state                               {"teach": <run-id>|null, "busy": [...]}
 """
-import json, os, threading
+import json, os, threading, time
 from urllib.parse import unquote, quote, parse_qs, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from spine.ops.actionlog import read_timeline
@@ -805,6 +805,8 @@ def serve(port=8140, takeover=False):
     # the first model output on this box (measured 2026-09-13, init 2.6-4.1s)
     # on top of the model. Fire-and-forget, best-effort, same prewarm the
     # chat screen triggers on open - just earlier, while nobody is waiting.
+    _boot_ts = time.time()
+
     def _warm_henry():
         # ORDER MATTERS: reap what the PREVIOUS daemon left BEFORE this one
         # spawns and records its own port, or the reaper kills the port it
@@ -817,6 +819,18 @@ def serve(port=8140, takeover=False):
                 print("CHAT: reaped %d warm chat port(s) left by a prior daemon" % _n, flush=True)
         except Exception as e:                                   # noqa: BLE001
             print("CHAT: port reaper skipped (%s)" % str(e)[:120], flush=True)
+        # Henry's delegated runs (db.chat_runs) that the PREVIOUS daemon left
+        # 'running' died with it - their pump and process are gone, nothing
+        # in this life will ever land them. Closed with the reason, so the
+        # chat's run tile never shows a runner nobody runs.
+        try:
+            if owns_root:
+                from spine.storage import db as _db
+                _n = _db.runs_close_running(_boot_ts, "der Daemon wurde neu gestartet, der Lauf starb mit dem alten Prozess")
+                if _n:
+                    print("CHAT: closed %d run(s) orphaned by a prior daemon" % _n, flush=True)
+        except Exception as e:                                   # noqa: BLE001
+            print("CHAT: run reconcile skipped (%s)" % str(e)[:120], flush=True)
         try:
             from cells.copilot.chat import copilot
             owner = copilot.owner_name()

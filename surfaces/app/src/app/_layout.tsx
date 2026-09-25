@@ -18,6 +18,7 @@ import { queryClient, restoreCache, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useHealth } from "@/data/health";
+import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, useStreamCaps } from "@/data/stream";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
@@ -84,9 +85,12 @@ function useGlobalStream() {
     let v = 0;
     let c = 0;
     let delay = 3000;
+    // Pushed events have no natural brake - data/invalidate.ts is it (tested
+    // with the real React Query in __invalidate_selftest__.ts).
+    const inv = makeInvalidator(queryClient, 2000);
     const apply = (r: RelayEvent | undefined) => {
       if (typeof r?.v === "number") {
-        if (r.v !== v) queryClient.invalidateQueries();
+        if (r.v !== v) inv.changed();
         v = r.v;
       }
       // Guarded on `typeof`, not on truthiness: a daemon older than this
@@ -130,7 +134,7 @@ function useGlobalStream() {
         }
       }
     })();
-    return () => { alive = false; gone.aborted = true; offEvent(); };
+    return () => { alive = false; gone.aborted = true; offEvent(); inv.dispose(); };
   }, []);
 }
 

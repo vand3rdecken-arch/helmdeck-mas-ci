@@ -51,17 +51,71 @@ MCP_GRANTS = ["mcp__windows-mcp__*", "mcp__helmdeck-browser__*"]
 # (2026-09-19: an IONOS price check sat 47 minutes behind a script card).
 
 
-def tasks(closed_within_s=3600):
-    """BgTask-shaped descriptors for the chat's background line."""
+STEPS_KEPT = 30     # the tile's step list: the tail of the run, not its archive
+
+
+def tasks(user=None, closed_within_s=3600):
+    """BgTask-shaped descriptors for the chat's background line AND its live
+    run tiles (owner 2026-09-25: "als Subagent-Prozess, damit man es sehen
+    kann"): kind, the card it belongs to, and the tail of its tool steps.
+    `user` filters to that user's runs (the line showed everyone's)."""
     now = time.time()
     out = {}
     with _lock:
         for hid, t in _tasks.items():
+            if user is not None and t.get("user") not in (None, user):
+                continue
             if t["status"] != "running" and now - t["updated"] > closed_within_s:
                 continue
-            out[hid] = {"title": t["title"], "status": t["status"], "since": t["since"],
-                        "updated": t["updated"], "detail": t["detail"], "result": t["result"]}
+            out[hid] = _desc(t)
     return out
+
+
+def _desc(t):
+    """The BgTask descriptor the chat renders (tasks() and the db row)."""
+    return {"title": t["title"], "status": t["status"], "since": t["since"],
+            "updated": t["updated"], "detail": t["detail"], "result": t["result"],
+            "kind": "hands", "card": t.get("card"),
+            "steps": [dict(s) for s in t.get("steps", [])]}
+
+
+def _persist(hid):
+    """Write the run's descriptor to helmdeck.db (db.chat_runs) at spawn and
+    at its end - the chat tile outlives the hour window and a daemon restart
+    (owner 2026-09-25). Best-effort: a db hiccup never fails the run."""
+    with _lock:
+        t = _tasks.get(hid)
+        doc, user = (_desc(t), t.get("user")) if t else (None, None)
+    if doc is None:
+        return
+    try:
+        from spine.storage import db
+        db.run_put(hid, user, doc)
+    except Exception as e:                               # noqa: BLE001
+        print("hands: run persist failed - %s" % str(e)[:160], flush=True)
+
+
+def _step(hid, tool_use=None, tool_result=None):
+    """Fold one tool call of the hands' OWN stream into its step list - the
+    same label/subject a card's tool rows use (claude_transcript_fmt)."""
+    with _lock:
+        t = _tasks.get(hid)
+        if t is None:
+            return
+        steps = t.setdefault("steps", [])
+        if tool_use is not None:
+            try:
+                from spine.agent import claude_transcript_fmt as _fmt
+                lbl, sub = _fmt._tool_label(tool_use.get("name"), tool_use.get("input") or {})
+            except Exception:                                # noqa: BLE001
+                lbl, sub = tool_use.get("name") or "tool", ""
+            steps.append({"id": tool_use.get("id") or "", "label": lbl or tool_use.get("name") or "tool",
+                          "text": (sub or "")[:140], "status": "running", "ta": time.time()})
+            del steps[:-STEPS_KEPT]
+        if tool_result is not None:
+            for s in steps:
+                if s["id"] and s["id"] == tool_result.get("tool_use_id"):
+                    s["status"] = "failed" if tool_result.get("is_error") else "completed"
 
 
 def running_ids():
@@ -104,6 +158,7 @@ def spawn(user, task, skey, card=None, why=""):
         _queue.append(hid)
     events.emit("hands", card or "-", action="spawned", id=hid, actor=user, task=title, why=why[:200],
                 queued_behind=ahead)
+    _persist(hid)
     _kick()
     return hid
 
@@ -189,10 +244,15 @@ def _pump(hid, p):
             for b in ((ev.get("message") or {}).get("content") or []):
                 if isinstance(b, dict) and b.get("type") == "tool_use":
                     steps += 1
+                    _step(hid, tool_use=b)
                     with _lock:
                         if hid in _tasks:
                             _tasks[hid]["result"] = "%d Schritte, zuletzt %s" % (steps, b.get("name"))
                             _tasks[hid]["updated"] = time.time()
+        elif ev.get("type") == "user":
+            for b in ((ev.get("message") or {}).get("content") or []):
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    _step(hid, tool_result=b)
         elif ev.get("type") == "result":
             result = str(ev.get("result") or "")
             is_error = bool(ev.get("is_error"))
@@ -224,6 +284,7 @@ def _land(hid, status, result, steps):
         t = dict(_tasks.get(hid) or {})
     if not t:
         return
+    _persist(hid)                      # the tile's final state, before anyone reads it
     user, skey, card, title = t.get("user"), t.get("skey"), t.get("card"), t.get("title")
     # Henry gets the WHOLE report (owner 2026-09-15: the 700-char cut fed him
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so
@@ -259,7 +320,7 @@ def _land(hid, status, result, steps):
             # and routes replies through routes_copilot._route_to_card, which
             # a bare hands run has no target for) so chat.tsx can box it under
             # sender "Hände" without wiring an inline-reply route to nowhere.
-            copilot._append_log(user, [{"cls": "hands", "text": "%s: %s\n%s" % (word, title, short),
+            copilot._append_log(user, [{"cls": "hands", "hands": hid, "text": "%s: %s\n%s" % (word, title, short),
                                         "ts": time.strftime("%H:%M")}])
             # Owner report 2026-09-16: a hands result landed in the transcript
             # but never pinged the phone/watch - he only saw it because Henry

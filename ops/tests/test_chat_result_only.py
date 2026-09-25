@@ -350,7 +350,10 @@ check(henry_bg.take_closed(SK) == [], "...and only once")
 SCRIPT["lines"] = _text("Recherche ist da: drei Fakten. Meine Fragen an dich: ...") + _result("x")
 copilot._schedule_bg_continue(OWNER, done)          # server._bg runs inline in this test
 msgs = (copilot.history(OWNER) or {}).get("messages") or []
-acts = [m for m in msgs if m.get("cls") == "act" and "Hintergrund-Agent" in (m.get("text") or "")]
+# the launch's RUN TILE row (run="bg:<uid>", 2026-09-25) is the visible run
+# itself, not the harness turn's plumbing line - counted separately
+acts = [m for m in msgs if m.get("cls") == "act" and not m.get("run")
+        and "Hintergrund-Agent" in (m.get("text") or "")]
 yous = [m for m in msgs if m.get("cls") == "you" and "Harness" in (m.get("text") or "")]
 check(len(acts) == 1 and "Explore onboarding" in acts[0]["text"],
       "the harness turn shows as ONE plumbing line naming the agent (got %r)" % [a.get("text") for a in acts])

@@ -502,6 +502,15 @@ def sync():
                 p["status"] = "done"
                 from spine.storage import events as _e
                 _e.emit("process", p["id"], action="completed")
+                # the plan's end is NEWS for the owner, not only an event row:
+                # a finished process used to end in silence
+                try:
+                    from cells.copilot.chat import copilot as _cp
+                    _cp.say("Prozess fertig: %s (%d/%d Schritte)" % (
+                        (p.get("request") or "").split("\n")[0][:80],
+                        len(p["steps"]), len(p["steps"])))
+                except Exception:                            # noqa: BLE001
+                    pass
         elif p.get("status") == "done":
             p["status"] = "running"
     with _lock:
@@ -791,17 +800,53 @@ def accept_step(pid, idx, repo, actor="owner"):
                 if all(x.get("track") for x in q["steps"]):
                     q["status"] = "running"
         _save(ps)
-    # tag the track with its process for the timeline swimlane
-    tracks = sessions._load()
-    tt = sessions._find(tracks, t_id)
-    if tt:
+    # tag the track with its process for the timeline swimlane - through
+    # _mutate (one atomic read-modify-write of THIS card), not a load/save of
+    # the whole store that could drop a concurrent writer's change.
+    _tag_card(t_id, pid, p["request"], idx + 1, mode)
+    return get(pid)
+
+
+def _tag_card(tid, pid, request, step_no, mode):
+    """THE one writer of a card's process pointer (process, process_title,
+    process_step, mode). The step NUMBER is a field: the board used to recover
+    it from the branch name - a data channel smuggled through a git ref, which
+    broke the moment branches gained their card-id tail."""
+    from spine.storage.trackstore import _mutate
+
+    def _t(tt):
         tt["process"] = pid
-        tt["process_title"] = p["request"][:60]
-        # The step NUMBER as a field. The board used to recover it by matching
-        # /-s(\d+)$/ against the branch name - a data channel smuggled through a
-        # git ref, which broke the moment branches gained their card-id tail
-        # (trackstore._card_branch). Store the fact instead of encoding it.
-        tt["process_step"] = idx + 1
+        tt["process_title"] = (request or "")[:60]
+        tt["process_step"] = step_no
         tt["mode"] = mode
-        sessions._save(tracks)
+    _mutate(tid, _t)
+
+
+def attach_card(pid, tid, actor="owner"):
+    """Put an EXISTING card into a process as its next step (owner
+    2026-09-25: cards Henry filed from chat never got a process - only
+    accept_step set one, so "mehrere Deliverables -> PROCESS" in his brief had
+    no verb behind it). The step is born accepted with the card as its track;
+    sync() then reads its state from the card like any other step."""
+    from cells.engineer.cards import sessions
+    t = sessions._find(sessions._load(), tid)
+    if not t:
+        raise RuntimeError("no such card: %s" % tid)
+    if t.get("process") == pid:
+        return get(pid)
+    with _lock:
+        ps = _load()
+        p = next((q for q in ps if q["id"] == pid), None)
+        if p is None:
+            raise RuntimeError("no such process: %s" % pid)
+        p["steps"].append({"title": (t.get("task") or "")[:120], "desc": "",
+                           "mode": t.get("mode") or "do", "days": 1,
+                           "status": "accepted", "track": tid,
+                           "due": t.get("due") or p.get("due", "")})
+        if p.get("status") in ("proposing", "proposed", "done"):
+            p["status"] = "running"
+        step_no = len(p["steps"])
+        request = p["request"]
+        _save(ps)
+    _tag_card(tid, pid, request, step_no, t.get("mode") or "do")
     return get(pid)

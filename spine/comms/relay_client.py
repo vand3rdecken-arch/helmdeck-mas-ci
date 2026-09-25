@@ -87,6 +87,26 @@ WS_MAX_REPLY = 900 * 1024       # bigger replies go over /tunnel/push (same wait
 WS_MAX_FRAME = 8 * 1024 * 1024  # inbound bound; the worker caps a phone frame at 4 MB
 WS_UNSUPPORTED_S = 600.0        # relay said "no websocket here": pull, re-try WS after this
 WS_TRANSIENT_MAX = 3            # consecutive transient WS failures before a pull detour
+# Phone frames are served by a FIXED pool, never a thread each (2026-09-25:
+# 1,504 threads, 4.8 GB and 100 % CPU when pushed events made the app refetch
+# everything several times a second - each abandoned request still ran here
+# to its 115 s timeout on its own thread, which slowed the next ones, which
+# piled up more). A full pool queues; the pile can no longer eat the machine.
+SERVE_WORKERS = 24
+_serve_pool = None
+_serve_pool_lock = threading.Lock()
+
+
+def _dispatch(fn, *args, **kwargs):
+    global _serve_pool
+    with _serve_pool_lock:
+        if _serve_pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _serve_pool = ThreadPoolExecutor(max_workers=SERVE_WORKERS,
+                                             thread_name_prefix="relay-serve")
+    _serve_pool.submit(fn, *args, **kwargs)
+
+
 WS_REDIAL_S = 0.5               # an ESTABLISHED socket that drops redials at once, no backoff
 WS_STABLE_S = 60.0              # ...if it lived this long. Each dial is one billed Worker
                                 # request: worst case (relay closes every socket right after
@@ -266,8 +286,7 @@ def _ws_session(relay, room, sk, port, serve=None):
                 continue
             kind = data.get("kind")
             if kind == "frame":
-                threading.Thread(target=serve, args=(relay, room, sk, port, data),
-                                 kwargs={"send": send}, daemon=True).start()
+                _dispatch(serve, relay, room, sk, port, data, send=send)
             elif kind == "client":
                 events.announce(data.get("pub") or "")
             elif kind == "probe":
@@ -767,8 +786,7 @@ def _loop(port):
                     pass
             errs, delay = 0, 3
             if frame:
-                threading.Thread(target=_serve_one, args=(relay, room, sk, port, frame),
-                                 daemon=True).start()
+                _dispatch(_serve_one, relay, room, sk, port, frame)
         except Exception as e:
             errs += 1
             if errs == 1 or errs % 10 == 0:

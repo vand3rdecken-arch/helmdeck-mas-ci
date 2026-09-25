@@ -241,4 +241,12 @@ export const composer: Dict = {
   "chat.threads.empty": { de: "Noch keine Threads. Sobald aus einer Anfrage eine Karte wird, erscheint sie hier.", en: "No threads yet. As soon as a request becomes a card, it shows up here." },
   "chat.thread.open": { de: "Thread öffnen", en: "Open thread" },
   "chat.thread.tile": { de: "Weiter im Thread dieser Karte", en: "Continues in this card's thread" },
+  "chat.threads.goal": { de: "Ziel", en: "Goal" },
+  "chat.threads.needsYou": { de: "Braucht dich", en: "Needs you" },
+  "chat.threads.plans": { de: "Pläne", en: "Plans" },
+  "chat.run.card": { de: "Karte", en: "Card" },
+  "chat.run.hands": { de: "Hände", en: "Hands" },
+  "chat.run.agent": { de: "Agent", en: "Agent" },
+  "chat.run.isolated": { de: "eigener Worktree", en: "own worktree" },
+  "chat.run.gone": { de: "Lauf nicht mehr im Speicher (Neustart)", en: "run no longer tracked (restart)" },
 };

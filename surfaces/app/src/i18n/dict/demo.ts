@@ -89,6 +89,16 @@ export const demo: Dict = {
 
   // ---- sample chat / replies ------------------------------------------------
   "demo.chat.q": { de: "Wie stehen wir diese Woche?", en: "How are we doing this week?" },
+  "demo.goal": { de: "Bis Ende Oktober: 50 zahlende Nutzer, App im Play Store und App Store", en: "By end of October: 50 paying users, app in the Play Store and App Store" },
+  "demo.need": { de: "Preisseite freigeben: wartet auf dich", en: "Approve the pricing page: waiting on you" },
+  "demo.chat.q2": { de: "Warum ist das Gate rot, und bau gleich den Export-Button ein", en: "Why is the gate red, and add the export button right away" },
+  "demo.chat.a2": { de: "Läuft: ein Agent liest die Gate-Logs, die Hände prüfen das Dashboard, der Export-Button baut in seinem Thread. Ich melde mich mit dem Ergebnis.", en: "On it: an agent reads the gate logs, the hands check the dashboard, the export button builds in its thread. I'll report back." },
+  "demo.run.agentRow": { de: "Hintergrund-Agent: Gate-Logs lesen", en: "Hintergrund-Agent: Read gate logs" },
+  "demo.run.agentTitle": { de: "Gate-Logs lesen", en: "Read gate logs" },
+  "demo.run.handsRow": { de: "Hände gestartet (h-demo): Screenshot vom Dashboard", en: "Hände gestartet (h-demo): Screenshot of the dashboard" },
+  "demo.run.handsTitle": { de: "Screenshot vom Dashboard", en: "Screenshot of the dashboard" },
+  "demo.run.handsResult": { de: "DONE - Dashboard lädt, Umsatz-Kachel zeigt 0 statt 12.400 €. Screenshot liegt im Hände-Ordner.", en: "DONE - dashboard loads, revenue tile shows 0 instead of €12,400. Screenshot saved in the hands folder." },
+  "demo.run.cardRow": { de: "Karte gestartet", en: "Card started" },
   "demo.chat.a": {
     de: "Zwei Karten sind durch (1.200 € Wert, 3,42 € KI-Kosten). Eine wartet auf deine Abnahme, eine auf deine Antwort. Kapazität ist frei.",
     en: "Two cards are done (€1,200 of value, €3.42 of AI cost). One waits for your review, one for your answer. Capacity is free.",

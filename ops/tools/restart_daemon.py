@@ -101,8 +101,16 @@ def main():
     # --takeover: this tool IS the explicit restart verb, so it may depose the
     # running daemon. A supervisor spawning without it exits 3 instead
     # (spine/http/startup.py, the daemon mutex).
+    # --force must reach the NEW daemon too: its takeover waits up to
+    # HELMDECK_RESTART_GRACE (600 s) for live turns before evicting the old
+    # one, while this tool gives up after 90 s. 2026-09-25 13:30 the owner
+    # said "jetzt neustarten", --force returned "did not come back healthy"
+    # and the new daemon sat in that grace behind a swamped old one.
+    env = dict(os.environ)
+    if a.force:
+        env["HELMDECK_RESTART_GRACE"] = "0"
     subprocess.Popen([sys.executable, "-m", "daemon.swarm", "serve", "--takeover"], cwd=ROOT,
-                     stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags)
+                     stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags, env=env)
     deadline = time.time() + 90
     while time.time() < deadline:
         time.sleep(3)
