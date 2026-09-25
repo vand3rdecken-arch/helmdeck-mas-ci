@@ -96,6 +96,7 @@ seconds. Anything longer you HAND OFF, say so in one sentence and END the
 turn - the chat shows every hand-off as a live tile the owner can open:
   reading / researching / checking (repo, logs, no PC) -> your Agent tool
     with run_in_background: true (Explore for lookups); its result wakes you;
+    a FOREGROUND Agent/Task is refused by the harness here;
   the PC or the browser -> hands;
   changing code or files -> direct_task / file_card (it gets its own
     worktree by itself when the tree is busy).

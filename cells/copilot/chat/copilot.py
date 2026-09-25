@@ -1737,7 +1737,21 @@ def history(user):
         followups.update(henry_bg.tasks(user))   # his own CLI Agent/Task background runs
     except Exception:                                        # noqa: BLE001
         pass
-    return {"messages": [_readable(m) for m in _entries(user)],
+    entries = _entries(user)
+    # A RUN TILE FURTHER UP THE CHAT (owner 2026-09-25): the in-memory
+    # registries keep a finished run for an hour and forget it on restart;
+    # its final descriptor was written to db.chat_runs by that registry at
+    # its end, so a tile in the visible window reads it from there.
+    try:
+        want = {m.get("run") or m.get("hands") for m in entries
+                if isinstance(m, dict) and (m.get("run") or m.get("hands"))}
+        missing = [r for r in want if r not in followups]
+        if missing:
+            from spine.storage import db as _db
+            followups.update(_db.runs_get(missing, account=user))
+    except Exception:                                        # noqa: BLE001
+        pass
+    return {"messages": [_readable(m) for m in entries],
             "session_id": _sessions().get(user),
             "stats": st,
             # Henry's current permission mode - the composer's Mode row shows

@@ -5,7 +5,7 @@ append-only table (dashboard stops re-parsing history). WAL mode so readers
 never block the writer. Existing tracks.json / events.jsonl are imported on
 first start and renamed *.imported - originals preserved, per the safeguard
 rule."""
-import json, marshal, os, sqlite3, threading
+import json, marshal, os, sqlite3, threading, time
 
 from daemon.paths import DAEMON_ROOT as ROOT
 DBPATH = os.path.join(ROOT, "helmdeck.db")
@@ -2126,6 +2126,62 @@ def _m14(c):
             c.execute("ALTER TABLE memory ADD COLUMN %s TEXT NOT NULL DEFAULT '%s'"
                       % (col, default))
     c.execute("CREATE INDEX IF NOT EXISTS memory_kind ON memory(kind)")
+
+
+@_migration(15, "chat-runs")
+def _m15(c):
+    """Henry's delegated runs (hands, his CLI background agents) lived only in
+    the two modules' in-memory tables - owner 2026-09-25 "als Subagent-
+    Prozess, damit man es sehen kann": the chat's run tile read them through
+    history().followups, so an hour later or after a daemon restart the tile
+    said "weg" with no report and no steps. One row per run, written by the
+    run's ONE owner (hands.py / henry_bg.py) at launch and at its end; the
+    live steps of a running run stay in memory."""
+    c.execute("""CREATE TABLE IF NOT EXISTS chat_runs(
+        id TEXT PRIMARY KEY, account TEXT, status TEXT NOT NULL,
+        updated REAL NOT NULL, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS chat_runs_status ON chat_runs(status)")
+
+
+def run_put(rid, account, doc):
+    """Upsert a run descriptor (the BgTask shape the chat renders)."""
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO chat_runs(id,account,status,updated,data) VALUES(?,?,?,?,?)",
+                  (rid, account, doc.get("status") or "running", float(doc.get("updated") or time.time()),
+                   json.dumps(doc, ensure_ascii=False)))
+
+
+def runs_get(ids, account=None):
+    """{id: descriptor} for the given run ids (an account's own, or unowned)."""
+    ids = [i for i in ids if i]
+    if not ids:
+        return {}
+    rows = conn().execute("SELECT id, account, data FROM chat_runs WHERE id IN (%s)"
+                          % ",".join("?" * len(ids)), ids).fetchall()
+    out = {}
+    for rid, acc, d in rows:
+        if account is not None and acc not in (None, "", account):
+            continue
+        try:
+            out[rid] = json.loads(d)
+        except ValueError:
+            continue
+    return out
+
+
+def runs_close_running(before, why):
+    """Close every run still 'running' that was last written before `before`
+    (the daemon's boot time): its process died with the previous daemon and
+    nothing in this one will ever land it (Paseo finishAll parity). Returns
+    the count."""
+    now = time.time()
+    with conn() as c:
+        cur = c.execute(
+            "UPDATE chat_runs SET status='failed', updated=?, "
+            "data=json_set(data,'$.status','failed','$.result',?,'$.updated',?) "
+            "WHERE status='running' AND updated < ?", (now, "FAILED - " + why, now, before))
+        return cur.rowcount
+
 
 def schema_head():
     """The highest ledger version this code knows - what user_version must

@@ -67,11 +67,32 @@ def tasks(user=None, closed_within_s=3600):
                 continue
             if t["status"] != "running" and now - t["updated"] > closed_within_s:
                 continue
-            out[hid] = {"title": t["title"], "status": t["status"], "since": t["since"],
-                        "updated": t["updated"], "detail": t["detail"], "result": t["result"],
-                        "kind": "hands", "card": t.get("card"),
-                        "steps": [dict(s) for s in t.get("steps", [])]}
+            out[hid] = _desc(t)
     return out
+
+
+def _desc(t):
+    """The BgTask descriptor the chat renders (tasks() and the db row)."""
+    return {"title": t["title"], "status": t["status"], "since": t["since"],
+            "updated": t["updated"], "detail": t["detail"], "result": t["result"],
+            "kind": "hands", "card": t.get("card"),
+            "steps": [dict(s) for s in t.get("steps", [])]}
+
+
+def _persist(hid):
+    """Write the run's descriptor to helmdeck.db (db.chat_runs) at spawn and
+    at its end - the chat tile outlives the hour window and a daemon restart
+    (owner 2026-09-25). Best-effort: a db hiccup never fails the run."""
+    with _lock:
+        t = _tasks.get(hid)
+        doc, user = (_desc(t), t.get("user")) if t else (None, None)
+    if doc is None:
+        return
+    try:
+        from spine.storage import db
+        db.run_put(hid, user, doc)
+    except Exception as e:                               # noqa: BLE001
+        print("hands: run persist failed - %s" % str(e)[:160], flush=True)
 
 
 def _step(hid, tool_use=None, tool_result=None):
@@ -137,6 +158,7 @@ def spawn(user, task, skey, card=None, why=""):
         _queue.append(hid)
     events.emit("hands", card or "-", action="spawned", id=hid, actor=user, task=title, why=why[:200],
                 queued_behind=ahead)
+    _persist(hid)
     _kick()
     return hid
 
@@ -262,6 +284,7 @@ def _land(hid, status, result, steps):
         t = dict(_tasks.get(hid) or {})
     if not t:
         return
+    _persist(hid)                      # the tile's final state, before anyone reads it
     user, skey, card, title = t.get("user"), t.get("skey"), t.get("card"), t.get("title")
     # Henry gets the WHOLE report (owner 2026-09-15: the 700-char cut fed him
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so

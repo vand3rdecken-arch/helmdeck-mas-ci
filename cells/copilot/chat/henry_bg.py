@@ -49,6 +49,28 @@ def _emit(action, skey, uid, **kw):
         pass
 
 
+def _desc(t):
+    """The BgTask descriptor the chat renders (tasks() and the db row)."""
+    return dict({k: t[k] for k in ("title", "status", "since", "updated", "detail", "result")},
+                kind="agent", steps=[dict(s) for s in t.get("steps", [])])
+
+
+def _persist(skey, uid):
+    """Write the run's descriptor to helmdeck.db (db.chat_runs) at launch and
+    at its end - the tile outlives the hour window and a daemon restart
+    (owner 2026-09-25). Best-effort: the registry never fails on the db."""
+    with _lock:
+        t = (_tasks.get(skey) or {}).get(uid)
+        doc, user = (_desc(t), t.get("user")) if t else (None, None)
+    if doc is None:
+        return
+    try:
+        from spine.storage import db
+        db.run_put("bg:" + uid, user, doc)
+    except Exception as e:                               # noqa: BLE001
+        print("henry_bg: run persist failed - %s" % str(e)[:160], flush=True)
+
+
 def fold(skey, ev, user=None):
     """Fold ONE stream event of Henry's chat process. Cheap no-op for the
     vast majority of events; never raises (best-effort registry, never the
@@ -100,6 +122,7 @@ def fold(skey, ev, user=None):
                         "title": title, "status": "running", "since": now, "updated": now,
                         "detail": detail, "result": "", "user": user, "steps": []}
                 _emit("launched", skey, uid, title=title)
+                _persist(skey, uid)
                 launched = uid
         elif p.get("type") == "text" and isinstance(p.get("text"), str) \
                 and p["text"].lstrip().startswith("<task-notification>"):
@@ -150,6 +173,7 @@ def _close(skey, uid, status, result):
         t["status"], t["result"], t["updated"] = status, (result or "")[:400], time.time()
         _closed.setdefault(skey, []).append(uid)
     _emit(status, skey, uid, result=(result or "")[:200])
+    _persist(skey, uid)
 
 
 def take_closed(skey):
@@ -168,16 +192,18 @@ def finish_all(skey, why):
     """The process behind `skey` is gone (copilot._persist_drop): its
     sub-agents died with it. Close every open task as failed with the reason,
     so the line never shows a runner nobody is running."""
-    closed = 0
+    closed = []
     with _lock:
         _cand.pop(skey, None)
         for uid, t in (_tasks.get(skey) or {}).items():
             if t["status"] == "running":
                 t["status"], t["result"], t["updated"] = "failed", ("FAILED - " + why)[:400], time.time()
-                closed += 1
+                closed.append(uid)
     if closed:
-        _emit("finish_all", skey, "-", why=why[:120], closed=closed)
-    return closed
+        _emit("finish_all", skey, "-", why=why[:120], closed=len(closed))
+    for uid in closed:
+        _persist(skey, uid)
+    return len(closed)
 
 
 def tasks(user=None, closed_within_s=3600):
@@ -193,8 +219,7 @@ def tasks(user=None, closed_within_s=3600):
                     continue
                 if t["status"] != "running" and now - t["updated"] > closed_within_s:
                     continue
-                out["bg:" + uid] = dict({k: t[k] for k in ("title", "status", "since", "updated", "detail", "result")},
-                                        kind="agent", steps=[dict(s) for s in t.get("steps", [])])
+                out["bg:" + uid] = _desc(t)
     return out
 
 
