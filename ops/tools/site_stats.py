@@ -82,7 +82,7 @@ def fetch_all(cutoff_ts, include_test):
     # same order, unpacked positionally right below.
     keys = [
         "visits_per_day", "referrers", "utm_sources", "devices", "countries",
-        "funnel_view", "funnel_sections", "funnel_cta", "funnel_form_start", "funnel_form_submit",
+        "funnel_view", "funnel_sections", "funnel_cta", "funnel_form_start", "funnel_form_submit", "cta_labels",
         "dwell_raw", "last_section", "posts_traffic", "posts_dwell", "posts_cta", "posts_submit",
     ]
     statements = [
@@ -111,6 +111,9 @@ def fetch_all(cutoff_ts, include_test):
         f"SELECT COUNT(DISTINCT vid) AS n FROM events WHERE type = 'form_start' {where}",
 
         f"SELECT COUNT(DISTINCT vid) AS n FROM events WHERE type = 'form_submit' {where}",
+
+        f"SELECT COALESCE(NULLIF(label, ''), '(none)') AS label, COUNT(DISTINCT vid) AS n FROM events "
+        f"WHERE type = 'cta_click' {where} GROUP BY label ORDER BY n DESC",
 
         f"SELECT seconds FROM events WHERE type = 'leave' AND seconds IS NOT NULL {where}",
 
@@ -185,6 +188,7 @@ def fetch_all(cutoff_ts, include_test):
             "form_start": results["funnel_form_start"][0]["n"] if results["funnel_form_start"] else 0,
             "form_submit": results["funnel_form_submit"][0]["n"] if results["funnel_form_submit"] else 0,
         },
+        "cta_labels": results["cta_labels"],
         "dwell_seconds": [row["seconds"] for row in results["dwell_raw"]],
         "last_section": results["last_section"],
         "posts": posts_ranked,
@@ -263,6 +267,8 @@ def main():
     print(f"  {'cta_click':<28} {f['cta_click']} ({pct(f['cta_click'], view_n)})")
     print(f"  {'form_start':<28} {f['form_start']} ({pct(f['form_start'], view_n)})")
     print(f"  {'form_submit':<28} {f['form_submit']} ({pct(f['form_submit'], view_n)})")
+
+    print_table("Klicks nach Button (cta_click label):", data["cta_labels"], "label")
 
     print("\nVerweildauer (aus 'leave', Sekunden auf der Seite):")
     dwell = bucket_dwell(data["dwell_seconds"])
