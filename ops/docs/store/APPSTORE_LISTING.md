@@ -6,35 +6,33 @@ existieren bei Play gar nicht, die Kurzbeschreibung dort (66–77 Zeichen) ist
 für ein 30-Zeichen-Subtitle viel zu lang. Beschreibung/Kategorie/Kontakt
 sind inhaltlich identisch zu `LISTING.md`, hier nicht dupliziert.
 
-## Subtitle (max. 30 Zeichen — unter dem App-Namen, nicht durchsuchbar)
+## Subtitle (max. 30 Zeichen, unter dem App-Namen, nicht durchsuchbar)
+
+Stand 2026-09-25: Live-Pitch von helmdeck.de (siehe `LISTING.md`).
 
 | Sprache | Text | Länge |
 |---|---|---|
-| DE | KI-Agenten erledigen Arbeit | 27 |
-| EN | AI agents get the work done | 27 |
+| DE | KI Orchestrierung für Teams | 27 |
+| EN | AI orchestration for teams | 26 |
 
-## Promotional Text (max. 170 Zeichen — änderbar ohne neue Review)
+## Promotional Text (max. 170 Zeichen, änderbar ohne neue Review)
 
 | Sprache | Text | Länge |
 |---|---|---|
-| DE | HelmDeck verbindet sich mit deiner eigenen Installation: KI-Agenten arbeiten an echten Aufgaben, du steuerst und nimmst ab – Ende-zu-Ende-verschlüsselt. | 152 |
-| EN | HelmDeck connects to your own installation: AI agents work on real tasks while you steer and approve — all end-to-end encrypted. | 128 |
+| DE | Der Agent gehört an den Schreibtisch. Du nicht. Ziel, Budget, Termin setzen, Agenten arbeiten auf deinem PC, Entscheidungen erreichen dein Team auf dem Handy. | 158 |
+| EN | The agent belongs at the desk. You don't. Set goal, budget and deadline, agents work on your own PC, decisions reach your team on the phone. | 140 |
 
 ## Keywords (max. 100 Zeichen gesamt, kommagetrennt, keine Leerzeichen nach dem Komma)
 
 | Sprache | Text | Länge |
 |---|---|---|
-| DE | KI,Agent,Automatisierung,Board,Produktivität,Tickets,Kanban,Projektmanagement,Team,Workflow | 91 |
-| EN | AI,agent,automation,board,productivity,tickets,kanban,project management,workflow,team | 86 |
-
-Wörter aus App-Name/Subtitle nicht wiederholen (Apple indexiert die bereits
-mit) — „HelmDeck", „Board", „Arbeit"/"work" tauchen deshalb bewusst nicht
-in beiden gleichzeitig auf.
+| DE | KI,Agent,Agenten,Orchestrierung,Ziele,Planung,Budget,Team,Automatisierung,Produktivität,Workflow | 96 |
+| EN | AI,agents,orchestration,goals,planning,budget,team,automation,productivity,workflow,mobile | 90 |
 
 ## Beschreibung (max. 4000 Zeichen)
 
-Identisch zu `LISTING.md` §„Vollständige Beschreibung" (DE ~1900 / EN ~1700
-Zeichen, weit unter dem Limit) — dort pflegen, hier nicht duplizieren.
+Identisch zu `LISTING.md` §„Vollständige Beschreibung" (DE 2026 / EN 1841 Zeichen),
+dort pflegen. Gleicher Text steht in `surfaces/app/store.config.json`.
 
 ## Support-URL (Pflichtfeld, getrennt von Marketing-URL)
 
@@ -110,7 +108,7 @@ plattgedrücktes Phone-Bild aus, nicht wie eine echte iPad-Aufnahme. Bewusst
    Build (Info.plist-Flag), widerspricht damit „kein Re-Upload nötig" für
    den aktuellen TestFlight-Build.
 
-## Team-Harness-Entwurf v3: Subtitle + Promo Text + Keywords + Beschreibung (2026-09-18, PREPARE, Owner-Rohentwurf geglättet)
+## (ÜBERHOLT, Stand 2026-09-25 gilt der Abschnitt oben) Team-Harness-Entwurf v3: Subtitle + Promo Text + Keywords + Beschreibung (2026-09-18, PREPARE, Owner-Rohentwurf geglättet)
 
 **Ersetzt v2 unten** (v2 und v1 bleiben stehen zum Vergleich). Owner hat im
 Chat einen eigenen Rohentwurf geliefert („So in etwa"): Positionierung jetzt

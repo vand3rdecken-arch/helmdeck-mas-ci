@@ -81,7 +81,7 @@ umformuliert auf Beta-Kontext.
 
 | Feld | Wert |
 |---|---|
-| `description` | HelmDeck ist die Begleit-App für deine eigene HelmDeck-Installation: ein Board, auf dem KI-Agenten an echten Aufgaben arbeiten, während du steuerst, Rückfragen beantwortest und Ergebnisse abnimmst — vom Telefon aus. Die App verbindet sich ausschließlich mit deinem eigenen Rechner/Server, Inhalte sind Ende-zu-Ende-verschlüsselt (Curve25519/XSalsa20-Poly1305). Diese Beta ist der interne Testkanal vor einem möglichen Store-Release. |
+| `description` | HelmDeck ist die Begleit-App für deine eigene HelmDeck-Installation: mobile KI Orchestrierung für Teams: Du setzt Ziel, Budget und Termin, die Agenten arbeiten auf deinem eigenen PC, und jede Entscheidung erreicht die richtige Person im Team auf dem Handy. Die App verbindet sich ausschließlich mit deinem eigenen Rechner/Server, Inhalte sind Ende-zu-Ende-verschlüsselt (Curve25519/XSalsa20-Poly1305). Diese Beta ist der interne Testkanal vor einem möglichen Store-Release. |
 | `feedbackEmail` | tienduyvo@googlemail.com |
 | `marketingUrl` | https://helmdeck.de |
 | `privacyPolicyUrl` | https://relay.helmdeck.de/privacy |
@@ -91,7 +91,7 @@ umformuliert auf Beta-Kontext.
 
 | Feld | Wert |
 |---|---|
-| `description` | HelmDeck is the companion app for your own HelmDeck installation: a board where AI agents work on real tasks while you steer, answer questions and approve results — from your phone. The app talks only to your own machine/server; content is end-to-end encrypted (Curve25519/XSalsa20-Poly1305). This beta is the internal test channel ahead of a possible App Store release. |
+| `description` | HelmDeck is the companion app for your own HelmDeck installation: mobile AI orchestration for teams: you set goal, budget and deadline, the agents work on your own PC, and every decision reaches the right person on your team on the phone. The app talks only to your own machine/server; content is end-to-end encrypted (Curve25519/XSalsa20-Poly1305). This beta is the internal test channel ahead of a possible App Store release. |
 | `feedbackEmail` | tienduyvo@googlemail.com |
 | `marketingUrl` | https://helmdeck.de |
 | `privacyPolicyUrl` | https://relay.helmdeck.de/privacy |
