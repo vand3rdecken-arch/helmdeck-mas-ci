@@ -61,3 +61,32 @@ Karte vorkommt und das Signal verwaschen macht.
 
 Hand-Labels stammen von einer Person (mir), Grenzfaelle (Guard-Block dann anderer Befehl = recovery?) sind Ermessen. Sonnet
 lief ueber die CLI, dessen Kosten sind Notional-Planshare. Stichprobe 20 Sitzungen, nur 2 bekannte Schleifen.
+
+## Stufe 2: deterministischer Vorfilter, Jev/Sonnet nur auf markierten Fenstern
+
+Skript `ops/tools/research/jev_loop_probe_v2.py`, gleiche 20 Sitzungen (1.677 Schritte), gleiche 160 Hand-Labels (16 verschwendet),
+beide Pflichtkarten. Weitere Transkripte mit *bekannter* Schleife gibt es nicht: ausser den zwei Pflichtkarten kenne ich keine
+gelabelte Schleifenkarte, ich habe keine erfunden. Vorfilter rein im Code: Signatur = Werkzeug + normiertes Ziel (Zahlen, Hex, fuehrendes
+`cd` entfernt, 100 Zeichen); markiert wird bei gleicher Signatur >= 3x in den letzten 8 Schritten, bei sich wiederholender
+Schrittfolge der Laenge 2-4, bei Stop-Hook-Zaehler >= 2 im Fenster. Ergebnis 138 Fenster (126 sig, 6 seq, 6 stop). Frage an Jev
+und Sonnet: `progress | no_progress` ("hat sich zwischen den Versuchen etwas geaendert, das den zweiten rechtfertigt?"), State =
+Versuch 1, Schritte dazwischen (max. 6), Versuch 2, im Mittel 660 Token. "Erkannt" = Fenster als no_progress bewertet.
+
+| Stufe | Recall (16 Hand-Waste) | Praezision | Rang 459913d5 / 02089b79 von 20 | Kosten je 1.000 Schritte | Latenz je Fenster |
+|---|---|---|---|---|---|
+| Stufe 1 (Jev, ohne Vorfilter, zum Vergleich) | 13/16 = 81 % | 52 % | 4 / 8 | 0,027 USD | 0,7 s |
+| Vorfilter allein | 1/16 = 6 % | 1/10 = 10 % | 9 / 7 | 0 | 0 |
+| Vorfilter + Jev | 1/16 = 6 % | 1/10 = 10 % | 6 / 4 | 0,0025 USD | 1,0 s (23 s fuer 138 Fenster) |
+| Vorfilter + Sonnet | 1/16 = 6 % | 1/3 = 33 % | 7 / 3 | ca. 0,8 USD (CLI-Notional, zu niedrig, 28 Fenster ohne Antwort) | 337 s im Mittel (Timeouts, Maschine unter Last) |
+
+Beobachtungen: (1) Die Hand-Waste-Schritte sind fast alle "Guard blockiert, dann anderer Befehl", also gerade *keine* Wiederholung
+der Signatur; der Vorfilter sieht sie per Konstruktion nicht (Recall 6 %). (2) Die Signaturregel feuert bei normaler Arbeit
+(mehrfach Edit derselben Datei, Greps mit gleicher Form): 126 von 138 Fenstern, nur 10 davon liegen in den Hand-Sitzungen und 9 sind
+kein Waste. (3) Jev nennt 109 von 138 Fenstern no_progress und filtert damit nichts; Sonnet nennt 25 von 110 beantworteten und
+hebt die Praezision auf 33 % (2 von 3 Treffern falsch), bei gleichem Recall. (4) Der Rang der zwei Pflichtkarten verbessert sich
+mit Jev/Sonnet leicht (bis Platz 3 und 4), bei Waste-Anteilen von 2 bis 8 % ist das aber Rauschen; keine der beiden steht oben.
+
+**Verdikt Stufe 2: Als Schleifen-Warner taugt die Kombination nicht (Praezision 10 % mit Jev, 33 % mit Sonnet bei 6 % Recall,
+schlechter als die 52 % / 81 % von Stufe 1), weil die echten Schleifen dieser Karten Zyklen und Guard-Umgehungen sind, keine
+Signatur-Wiederholungen, und Jev als "progress"-Richter fast alles als no_progress durchwinkt.** Ein brauchbarer Warner braeuchte
+Zyklus-Regeln ueber Aufgabenebene (Hintergrundjob, Stop, Poll) und eine deutlich groessere gelabelte Schleifen-Stichprobe.
