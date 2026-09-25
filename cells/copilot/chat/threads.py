@@ -87,7 +87,9 @@ def threads(user, limit=200):
         procs[p["id"]] = {"id": p["id"], "title": (p.get("request") or "").split("\n")[0][:70],
                           "status": p.get("status"),
                           "total": len(steps),
-                          "done": sum(1 for s in steps if s.get("status") == "done" or s.get("done"))}
+                          # sync() owns step completion (state/done); a step's
+                          # `status` is proposed/accepted and never "done"
+                          "done": sum(1 for s in steps if s.get("state") == "done" or s.get("done"))}
         for s in steps:
             if s.get("track") and s.get("title"):
                 step_title[s["track"]] = s["title"]
@@ -131,4 +133,43 @@ def threads(user, limit=200):
     used = {r["process"] for r in rows if r.get("process")}
     return {"inbox": inbox,
             "threads": rows[:limit],
-            "processes": [procs[k] for k in procs if k in used]}
+            # THE PLANS: every open process (the checklist under a goal) plus
+            # any finished one a listed card still points at
+            "processes": [procs[k] for k in procs
+                          if k in used or procs[k]["status"] not in ("done", "cancelled")],
+            "goals": _goals(),
+            "needs": _needs()}
+
+
+def _goals():
+    """Ziel -> Prozess -> Karte, top level: each project's goal, and the
+    workspace goal (repo None) when one is set."""
+    out = []
+    try:
+        from cells.copilot.planning import pm
+        g = pm.get_goal()
+        if g:
+            out.append({"repo": None, "goal": g})
+    except Exception:                                    # noqa: BLE001
+        pass
+    try:
+        from spine.storage import db
+        for p in db.projects_all():
+            if (p.get("goal") or "").strip():
+                out.append({"repo": os.path.basename((p.get("repo") or "").replace("\\", "/").rstrip("/")) or p.get("name"),
+                            "goal": p["goal"].strip()})
+    except Exception:                                    # noqa: BLE001
+        pass
+    return out
+
+
+def _needs():
+    """What waits on the OWNER beyond card questions: proposals nobody
+    accepted, human steps that are ready, dead chains, long-parked cards -
+    pm_push.derive is the one place that computes them; served, not re-derived."""
+    try:
+        from cells.copilot.planning import pm_push
+        return [{k: it.get(k) for k in ("key", "kind", "label", "since", "process", "card")}
+                for it in pm_push.derive()][:12]
+    except Exception:                                    # noqa: BLE001
+        return []

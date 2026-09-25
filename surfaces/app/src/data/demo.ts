@@ -409,7 +409,9 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
              threads: [th("d2", "demo.c2.task", "working", 12, "p1"), th("d3", "demo.c3.task", "review", 40, "p1"),
                        th("d1", "demo.c1.task", "done", 60 * 5), th("d4", "demo.c4.task", "done", 60 * 30),
                        th("d5", "demo.c5.task", "backlog", 60 * 24 * 3), th("d6", "demo.c6.task", "backlog", 60 * 24 * 12)],
-             processes: [{ id: "p1", title: t("demo.project"), status: "running", total: 3, done: 1 }] };
+             processes: [{ id: "p1", title: t("demo.project"), status: "running", total: 3, done: 1 }],
+             goals: [{ repo: "helmdeck", goal: t("demo.goal") }],
+             needs: [{ key: "human:p1:2", kind: "human", label: t("demo.need"), since: at(60 * 26), process: "p1", card: null }] };
   }
 
   if (path === "/chat" && method === "POST") {

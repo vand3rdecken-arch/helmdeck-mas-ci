@@ -350,6 +350,11 @@ export interface ChatThreads {
   inbox: { id: "inbox"; kind: "inbox"; title: string; preview: string; at: number };
   threads: ChatThread[];
   processes: { id: string; title: string; status?: string; total: number; done: number }[];
+  /** Ziel -> Prozess -> Karte, top level: repo null = the workspace goal */
+  goals?: { repo: string | null; goal: string }[];
+  /** what waits on the owner beyond card questions (pm_push.derive) */
+  needs?: { key: string; kind: "proposal" | "human" | "dead" | "parked"; label: string;
+    since?: number; process?: string | null; card?: string | null }[];
 }
 
 // POST /chat returns the copilot's answer, not a ChatMsg: {reply, actions, ...}

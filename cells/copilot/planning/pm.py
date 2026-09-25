@@ -67,12 +67,31 @@ def _pm():
     return c
 
 
-def get_goal():
+def get_goal(repo=None):
+    """The goal. With `repo`: that PROJECT's goal (projects record, field
+    `goal`), falling back to the workspace goal - so the one global line the
+    PM always had stays the default project's goal, not a parallel object."""
+    if repo:
+        try:
+            from spine.ops import projects
+            g = ((projects.for_repo(repo) or {}).get("goal") or "").strip()
+            if g:
+                return g
+        except Exception:                                    # noqa: BLE001
+            pass
     return (_pm().get("goal") or "").strip()
 
 
-def set_goal(goal):
+def set_goal(goal, repo=None, actor="owner"):
+    """Write the goal: onto the repo's project when `repo` names one that
+    exists, else the workspace goal."""
     from spine.storage import events
+    if repo:
+        from spine.ops import projects
+        p = projects.for_repo(repo)
+        if p:
+            projects.update_project(p["id"], {"goal": (goal or "").strip()}, actor=actor)
+            return (goal or "").strip()
     pm = dict(events.settings().get("pm") or {})
     pm["goal"] = (goal or "").strip()
     events.save_settings({"pm": pm})

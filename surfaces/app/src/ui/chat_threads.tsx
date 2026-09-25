@@ -138,6 +138,57 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
         <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
           sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
 
+        {/* ZIEL -> PROZESS -> KARTE, top down (Meta Muse / Claude Projects: the
+            goal stays in sight, the plan shows its progress, what needs the
+            owner comes first) */}
+        {(data?.goals ?? []).map((g) => (
+          <View key={g.repo ?? "_ws"} testID="threads-goal"
+            style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginHorizontal: 8, marginTop: 8,
+              paddingHorizontal: 8, paddingVertical: 8, borderRadius: 10, backgroundColor: t.surface1 }}>
+            <View style={{ width: 20, alignItems: "center", paddingTop: 1 }}><Ionicons name="flag-outline" size={15} color={t.accent} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>
+                {tr("chat.threads.goal")}{g.repo ? " · " + g.repo : ""}
+              </Text>
+              <Text numberOfLines={3} style={{ color: t.txtPrimary, fontSize: 13, lineHeight: 18, marginTop: 1 }}>{g.goal}</Text>
+            </View>
+          </View>
+        ))}
+        {(data?.needs ?? []).length ? (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: t.warn, fontSize: 12, fontWeight: "600", paddingHorizontal: 16, paddingBottom: 4 }}>{tr("chat.threads.needsYou")}</Text>
+            {(data?.needs ?? []).map((n) => (
+              <Pressable key={n.key} testID="threads-need" accessibilityLabel={n.label}
+                onPress={() => n.card ? onPick(n.card) : router.push("/processes")}
+                style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8,
+                  paddingRight: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: pressed ? t.surface2 : "transparent" })}>
+                <View style={{ width: 20, alignItems: "center" }}><Ionicons name="alert-circle" size={13} color={t.warn} /></View>
+                <Text numberOfLines={2} style={{ color: t.txtPrimary, fontSize: 13.5, lineHeight: 19, flex: 1, opacity: 0.86 }}>{n.label}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 12, opacity: 0.8 }}>{timeAgo(n.since ?? 0, nowS, tr("chat.threads.now"))}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {(data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").length ? (
+          <View style={{ marginTop: 12 }}>
+            <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingBottom: 4 }}>{tr("chat.threads.plans")}</Text>
+            {(data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").map((p) => (
+              <Pressable key={p.id} testID="threads-plan" accessibilityLabel={p.title} onPress={() => router.push("/processes")}
+                style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8,
+                  paddingRight: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: pressed ? t.surface2 : "transparent" })}>
+                <View style={{ width: 20, alignItems: "center" }}><Ionicons name="list-outline" size={14} color={t.txtSecondary} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, opacity: 0.76 }}>{p.title}</Text>
+                  <View style={{ height: 3, borderRadius: 2, backgroundColor: t.surface2, marginTop: 4, overflow: "hidden" }}>
+                    <View style={{ height: 3, width: `${p.total ? Math.round((100 * p.done) / p.total) : 0}%`, backgroundColor: t.accent }} />
+                  </View>
+                </View>
+                <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{p.done}/{p.total}</Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         {isLoading && !data ? <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 16 }}>…</Text> : null}
         {data && groups.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 13, padding: 16, lineHeight: 18 }}>{tr("chat.threads.empty")}</Text> : null}
 

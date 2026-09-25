@@ -502,6 +502,15 @@ def sync():
                 p["status"] = "done"
                 from spine.storage import events as _e
                 _e.emit("process", p["id"], action="completed")
+                # the plan's end is NEWS for the owner, not only an event row:
+                # a finished process used to end in silence
+                try:
+                    from cells.copilot.chat import copilot as _cp
+                    _cp.say("Prozess fertig: %s (%d/%d Schritte)" % (
+                        (p.get("request") or "").split("\n")[0][:80],
+                        len(p["steps"]), len(p["steps"])))
+                except Exception:                            # noqa: BLE001
+                    pass
         elif p.get("status") == "done":
             p["status"] = "running"
     with _lock:

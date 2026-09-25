@@ -45,7 +45,7 @@ ACTION_KINDS = frozenset((
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
-    "share_note", "delete_project", "attach_process",
+    "share_note", "delete_project", "attach_process", "set_goal",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
     # "wrong object" unreachable there rather than merely discouraged. We add
@@ -548,6 +548,14 @@ def _run_action(a, actor, role="operator"):
         _tag(a, t)
         _file_links(a, t, actor)
         return "filed card %s (%s)" % (t["id"], t["lane"])
+    if kind == "set_goal":
+        goal = (a.get("goal") or "").strip()
+        if not goal:
+            return "set_goal: welches Ziel? Ein Satz, was in Wochen/Monaten erreicht sein soll."
+        from cells.copilot.planning import pm as _pm
+        _pm.set_goal(goal, repo=a.get("repo") or None, actor=actor)
+        where = os.path.basename((a.get("repo") or "").replace("\\", "/").rstrip("/")) or "Workspace"
+        return "Ziel fuer %s gesetzt: %s" % (where, goal[:160])
     if kind == "attach_process":
         t = _find_card(a.get("card", ""))
         if t is None or isinstance(t, list):

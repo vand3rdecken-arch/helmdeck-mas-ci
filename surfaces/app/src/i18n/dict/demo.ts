@@ -89,6 +89,8 @@ export const demo: Dict = {
 
   // ---- sample chat / replies ------------------------------------------------
   "demo.chat.q": { de: "Wie stehen wir diese Woche?", en: "How are we doing this week?" },
+  "demo.goal": { de: "Bis Ende Oktober: 50 zahlende Nutzer, App im Play Store und App Store", en: "By end of October: 50 paying users, app in the Play Store and App Store" },
+  "demo.need": { de: "Preisseite freigeben: wartet auf dich", en: "Approve the pricing page: waiting on you" },
   "demo.chat.q2": { de: "Warum ist das Gate rot, und bau gleich den Export-Button ein", en: "Why is the gate red, and add the export button right away" },
   "demo.chat.a2": { de: "Läuft: ein Agent liest die Gate-Logs, die Hände prüfen das Dashboard, der Export-Button baut in seinem Thread. Ich melde mich mit dem Ergebnis.", en: "On it: an agent reads the gate logs, the hands check the dashboard, the export button builds in its thread. I'll report back." },
   "demo.run.agentRow": { de: "Hintergrund-Agent: Gate-Logs lesen", en: "Hintergrund-Agent: Read gate logs" },
