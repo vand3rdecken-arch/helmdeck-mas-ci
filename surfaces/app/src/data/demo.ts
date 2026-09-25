@@ -148,10 +148,18 @@ let version = 1;
 // question block is full of user-visible strings, and this module's rule is
 // that those resolve when answered, never at module load.
 type ChatRow = { cls: string; textKey?: string; text?: string; ts?: string;
-  mirror?: boolean };
+  mirror?: boolean; extra?: Record<string, string> };
 const CHAT_SEED: ChatRow[] = [
   { cls: "user", textKey: "demo.chat.q", ts: iso(120) },
   { cls: "assistant", textKey: "demo.chat.a", ts: iso(119) },
+  // Henry's HAND-OFFS as live run tiles (2026-09-25): a card, a background
+  // agent and a hands run - their live state comes from /chat/threads and
+  // the followups below, exactly like the daemon serves it.
+  { cls: "user", textKey: "demo.chat.q2", ts: iso(20) },
+  { cls: "act", textKey: "demo.run.agentRow", ts: iso(19), extra: { run: "bg:demo-agent" } },
+  { cls: "act", textKey: "demo.run.handsRow", ts: iso(19), extra: { hands: "h-demo" } },
+  { cls: "act", textKey: "demo.run.cardRow", ts: iso(19), extra: { card: "d2" } },
+  { cls: "assistant", textKey: "demo.chat.a2", ts: iso(19) },
   // a mirrored card QUESTION: exercises the label header in the transcript, the
   // QuestionPanel above the composer, and the composer's routing chip. Bound to
   // d2 - the demo's running card - so answering routes somewhere real.
@@ -357,7 +365,8 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       // renders ts verbatim, and a raw ISO string under every bubble is what
       // the first screenshot judge actually caught
       const hm = (c.ts ?? "").length > 5 ? (c.ts ?? "").slice(11, 16) : (c.ts ?? "");
-      const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? "") };
+      const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? ""), ...(c.extra ?? {}),
+        ...(c.extra?.card ? { cardName: t("demo.c2.task") } : {}) };
       if (!c.mirror) return base;
       // the mirrored card question, expanded at response time (strings follow
       // the language switch) - same shape card_mirror.say_card persists
@@ -370,6 +379,17 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
             ] }] } };
     }),
              session_id: "demo",
+             followups: {
+               "bg:demo-agent": { title: t("demo.run.agentTitle"), status: "running", kind: "agent",
+                 since: Date.now() / 1000 - 70, updated: Date.now() / 1000 - 5, detail: "", result: "",
+                 steps: [{ id: "s1", label: "Suchen", text: "FAILED|error", status: "completed" },
+                         { id: "s2", label: "Lesen", text: "ops/logs/gate-2026-09-25.log", status: "running" }] },
+               "h-demo": { title: t("demo.run.handsTitle"), status: "completed", kind: "hands", card: null,
+                 since: Date.now() / 1000 - 200, updated: Date.now() / 1000 - 120, detail: "",
+                 result: t("demo.run.handsResult"),
+                 steps: [{ id: "h1", label: "PC · App", text: "Chrome", status: "completed" },
+                         { id: "h2", label: "PC · Screenshot", text: "", status: "completed" }] },
+             },
              // card-parity PM-session stats so the demo shows the meter + usage line
              stats: { turns: 4, cost: 0.31, tokens_in: 58200, tokens_out: 4400,
                       ctx_tokens: 62000, ctx_window: 200000, plan_pct: 0.35 } };

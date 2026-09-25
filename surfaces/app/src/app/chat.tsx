@@ -94,6 +94,13 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // of the transcript's sender model.
   // Henry filed/steered a card: the topic continues in that card's thread -
   // draw the hand-over as a tile, not as a sentence about plumbing.
+  // A delegated RUN (hands / background agent): a live tile, not a sentence.
+  if (m.cls === "act" && (m.hands || m.run)) {
+    const hands = !!m.hands;
+    return { role: "assistant", kind: "run", cls: m.cls, run: m.hands || m.run, runKind: hands ? "hands" : "agent",
+             label: m.text.replace(/^(Hintergrund-Agent: |Hände gestartet \([^)]*\): )/, "").split(" - das Ergebnis")[0],
+             text: m.text, ts: m.ts, by: "Henry", byKind: "henry" };
+  }
   if (m.cls === "act" && m.card) {
     return { role: "assistant", kind: "card", cls: m.cls, card: m.card, label: m.cardName || m.card,
              text: m.text, ts: m.ts, by: "Henry", byKind: "henry" };
@@ -743,6 +750,34 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }
 
+  // LIVE STATE FOR THE RUN TILES, derived per render from the daemon's own
+  // records: a card's thread row (server-side _bucket - the one owner of that
+  // derivation) and the run descriptors in history().followups. Card moves
+  // arrive as tracks invalidations, so the thread rows follow them.
+  const { data: threadRows } = useQuery({ queryKey: ["chatThreads"], queryFn: api.chatThreads, staleTime: 5000 });
+  useEffect(() => { void qc.invalidateQueries({ queryKey: ["chatThreads"] }); }, [tracksForWelcome, qc]);
+  const threadById = useMemo(() => new Map((threadRows?.threads ?? []).map((r) => [r.id, r])), [threadRows]);
+  function withLive(st: TStep): TStep {
+    if (st.kind === "card" && st.card) {
+      const r = threadById.get(st.card);
+      if (!r) return st;
+      return { ...st, live: { bucket: r.bucket, sub: r.preview || undefined,
+        tag: r.isolated ? tr("chat.run.isolated") : (r.repo || undefined) } };
+    }
+    if (st.kind === "run" && st.run) {
+      const f = (data?.followups ?? {})[st.run];
+      if (!f) return { ...st, live: { bucket: "done", sub: tr("chat.run.gone") } };
+      const bucket = f.status === "running" ? ((f.result || "").startsWith("wartet") ? "backlog" : "running")
+        : f.status === "completed" ? "done" : "failed";
+      const last = (f.steps ?? [])[(f.steps ?? []).length - 1];
+      return { ...st, label: f.title || st.label, live: { bucket, steps: f.steps, result: f.status !== "running" ? f.result : undefined,
+        sub: f.status === "running" ? (last ? `${last.label} ${last.text}`.trim() : (f.result || undefined))
+          // the status mark already says done/failed - drop the report's own verdict word
+          : (f.result || "").split("\n")[0].replace(/^(DONE|FAILED|TOO_BIG)\s*[-:]\s*/i, "").slice(0, 120) || undefined } };
+    }
+    return st;
+  }
+
   /** Typed WHILE Henry's turn runs: the daemon folds it into that turn when a
    *  tool call is open (copilot.try_inject - measured: the CLI takes a stdin
    *  frame mid-turn and ends with ONE answer), else false -> the composer
@@ -959,7 +994,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           {msgs.length === 0 && !showWelcome && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
             : <Transcript me={me?.name} ctxWindow={stats?.ctx_window} steps={(() => {
-                const s = msgs.map((m) => toStep(m, me?.name, tr));
+                const s = msgs.map((m) => withLive(toStep(m, me?.name, tr)));
                 // STATIC, local-only greeting (no daemon call, no turn, no
                 // cost) - never persisted, so it renders again every time
                 // this stays true and disappears the moment either half

@@ -90,6 +90,19 @@ sentence of prose BEFORE the first tool call ("Moment, ich schau in die
 Karten-Logs."). The owner otherwise stares at a silent screen for as long as
 your diligence takes.
 
+DON'T BLOCK THE CHAT (owner 2026-09-25). While your turn runs, the owner's
+chat waits on you. Tools INLINE only for a quick look: at most ~3 calls,
+seconds. Anything longer you HAND OFF, say so in one sentence and END the
+turn - the chat shows every hand-off as a live tile the owner can open:
+  reading / researching / checking (repo, logs, no PC) -> your Agent tool
+    with run_in_background: true (Explore for lookups); its result wakes you;
+  the PC or the browser -> hands;
+  changing code or files -> direct_task / file_card (it gets its own
+    worktree by itself when the tree is busy).
+Never sleep, poll or wait inside your own turn for something that runs
+elsewhere. A message the owner sends while you work reaches you mid-turn
+(marked as such) - fold it into the answer you are already giving.
+
 Cards, lanes and worktrees are INTERNAL PLUMBING. Speak in outcomes ("Mach
 ich, meld mich wenn's läuft"); mention a card only when the owner asks how,
 or must decide/accept something. Every card IS its own conversation thread:

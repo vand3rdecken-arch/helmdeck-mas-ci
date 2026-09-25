@@ -1733,7 +1733,7 @@ def history(user):
         followups = {}          # a broken fold must never take the chat down
     try:
         from cells.copilot.chat import hands
-        followups.update(hands.tasks())     # Henry's hands sub-agents, same BgTask shape
+        followups.update(hands.tasks(user))     # Henry's hands sub-agents, same BgTask shape
         followups.update(henry_bg.tasks(user))   # his own CLI Agent/Task background runs
     except Exception:                                        # noqa: BLE001
         pass
@@ -2729,9 +2729,21 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 continue
             typ = ev.get("type")
             try:
-                henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
+                _bg_uid = henry_bg.fold(skey, ev, user=user)   # Agent/Task bg registry, event time
             except Exception:                        # noqa: BLE001
-                pass                                 # registry is best-effort, never the turn
+                _bg_uid = None                       # registry is best-effort, never the turn
+            if _bg_uid and not card_run_dir:
+                # A BACKGROUND AGENT IS A VISIBLE RUN (owner 2026-09-25): its
+                # tile goes into the chat the moment the CLI confirms the
+                # launch, under the owner's message - live status and steps
+                # come from henry_bg via history()["followups"]["bg:<uid>"].
+                try:
+                    _bt = (henry_bg.tasks(user).get("bg:" + _bg_uid) or {}).get("title") or "Agent"
+                    _append_log(user, [{"cls": "act", "run": "bg:" + _bg_uid,
+                                        "text": "Hintergrund-Agent: " + _bt,
+                                        "ts": time.strftime("%H:%M")}])
+                except Exception:                    # noqa: BLE001
+                    pass
             if ev.get("parent_tool_use_id"):
                 # a SUB-AGENT's frame (measured 2026-09-16: the CLI streams
                 # them with parent_tool_use_id set): it keeps the silence

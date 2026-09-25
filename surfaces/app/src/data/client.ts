@@ -296,6 +296,9 @@ export interface Step {
  *  an optimistic copy by IDENTITY instead of by comparing text — optional
  *  because older daemons, the watch and the glasses do not send one. */
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** a delegated run this row started: `hands` = a hands id, `run` = "bg:<uid>"
+   *  for a background agent - the chat draws a live RunTile for it */
+  hands?: string; run?: string;
   /** the chat row's sequence number (db.chat_tail) - identity across the sliding 80-row window */
   seq?: number;
   /** `cls: "card"` — the EVENT MIRROR (cells/copilot/card_mirror.py). A working
@@ -339,6 +342,9 @@ export interface ChatThread {
   /** Paseo's sidebar buckets (agent-state-bucket.ts) + backlog: the list's sections. */
   bucket: "needs_input" | "failed" | "attention" | "running" | "backlog" | "done";
   preview: string; by?: "human" | "henry" | null; has_chat: boolean; at: number;
+  /** the project (repo folder name), the card chat it was filed from, and
+   *  whether it got its own worktree because the live tree was busy */
+  repo?: string | null; origin_card?: string | null; isolated?: boolean;
 }
 export interface ChatThreads {
   inbox: { id: "inbox"; kind: "inbox"; title: string; preview: string; at: number };

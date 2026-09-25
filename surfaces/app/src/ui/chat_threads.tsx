@@ -52,7 +52,7 @@ function timeAgo(at: number, nowS: number, nowLabel: string): string {
 }
 
 /** Paseo's StatusRing: a 9px ring rotating with a 900ms period. */
-function StatusRing({ color }: { color: string }) {
+export function StatusRing({ color }: { color: string }) {
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: true }));
@@ -66,7 +66,7 @@ function StatusRing({ color }: { color: string }) {
   );
 }
 
-function StatusIndicator({ bucket, t }: { bucket: ChatThread["bucket"]; t: ReturnType<typeof useTheme> }) {
+export function StatusIndicator({ bucket, t }: { bucket: ChatThread["bucket"]; t: ReturnType<typeof useTheme> }) {
   if (bucket === "needs_input") return <Ionicons name="alert-circle" size={12} color={t.warn} />;
   if (bucket === "failed") return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.danger }} />;
   if (bucket === "running") return <StatusRing color={t.accent} />;

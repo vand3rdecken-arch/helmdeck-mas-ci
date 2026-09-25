@@ -66,6 +66,14 @@ def fold(skey, ev, user=None):
     c = (ev.get("message") or {}).get("content")
     if not isinstance(c, list):
         return
+    parent = ev.get("parent_tool_use_id")
+    if parent:
+        # A SUB-AGENT's own frame (the CLI streams them with the Agent call's
+        # id as parent - measured 2026-09-16): its tool calls are the steps
+        # the run tile shows. Folded here, at event time, never re-read.
+        _sub_steps(skey, parent, c)
+        return
+    launched = None
     for p in c:
         if not isinstance(p, dict):
             continue
@@ -90,8 +98,9 @@ def fold(skey, ev, user=None):
                 with _lock:
                     _tasks.setdefault(skey, {})[uid] = {
                         "title": title, "status": "running", "since": now, "updated": now,
-                        "detail": detail, "result": "", "user": user}
+                        "detail": detail, "result": "", "user": user, "steps": []}
                 _emit("launched", skey, uid, title=title)
+                launched = uid
         elif p.get("type") == "text" and isinstance(p.get("text"), str) \
                 and p["text"].lstrip().startswith("<task-notification>"):
             hit = _re_done.search(p["text"])
@@ -99,6 +108,36 @@ def fold(skey, ev, user=None):
                 sm = _re_status.search(p["text"])
                 _close(skey, hit.group(1).strip(), (sm.group(1).strip() if sm else "completed"),
                        _text_of(p["text"]))
+    return launched
+
+
+_STEPS_KEPT = 30
+
+
+def _sub_steps(skey, parent, content):
+    with _lock:
+        t = (_tasks.get(skey) or {}).get(parent)
+        if t is None:
+            return
+        steps = t.setdefault("steps", [])
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            if p.get("type") == "tool_use":
+                inp = p.get("input") if isinstance(p.get("input"), dict) else {}
+                try:
+                    from spine.agent import claude_transcript_fmt as _fmt
+                    lbl, sub = _fmt._tool_label(p.get("name"), inp)
+                except Exception:                            # noqa: BLE001
+                    lbl, sub = p.get("name") or "tool", ""
+                steps.append({"id": p.get("id") or "", "label": lbl or p.get("name") or "tool",
+                              "text": (sub or "")[:140], "status": "running", "ta": time.time()})
+                del steps[:-_STEPS_KEPT]
+                t["updated"] = time.time()
+            elif p.get("type") == "tool_result":
+                for s in steps:
+                    if s["id"] and s["id"] == p.get("tool_use_id"):
+                        s["status"] = "failed" if p.get("is_error") else "completed"
 
 
 def _close(skey, uid, status, result):
@@ -154,7 +193,8 @@ def tasks(user=None, closed_within_s=3600):
                     continue
                 if t["status"] != "running" and now - t["updated"] > closed_within_s:
                     continue
-                out["bg:" + uid] = {k: t[k] for k in ("title", "status", "since", "updated", "detail", "result")}
+                out["bg:" + uid] = dict({k: t[k] for k in ("title", "status", "since", "updated", "detail", "result")},
+                                        kind="agent", steps=[dict(s) for s in t.get("steps", [])])
     return out
 
 
