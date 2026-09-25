@@ -13,10 +13,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -118,16 +121,13 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        // Google's Wear list pattern: one TransformationSpec shapes every row, so
-        // it narrows towards the round top/bottom edge (Play rejection 2026-09-24,
-        // fontScale 2.0). See PairingScreen.
+        // Google's Wear list pattern (developer.android.com/training/wearables/
+        // compose/lists): ScreenScaffold's contentPadding into the column, and every
+        // item with transformedHeight + minimumVerticalContentPadding +
+        // SurfaceTransformation of one spec. Entries are SHORT: a card title is
+        // Text(maxLines = 2, overflow = Ellipsis) here and reads in full on the
+        // card screen (TextDetailScreen).
         val spec = rememberTransformationSpec()
-        // Long card titles become several rows (each its own Button, same tap
-        // target) so no row is ever taller than the round viewport.
-        val chunk = rememberChunkChars()
-        // Same reasoning as PairingScreen: ScreenScaffold computes the
-        // screen-size-relative content padding and passes it in, instead of a
-        // bare Box that leaves the first and last row against the bezel.
         ScreenScaffold(columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
@@ -136,93 +136,104 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             ) {
                 item {
                     ListHeader(
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
                         transformation = SurfaceTransformation(spec),
-                    ) { FullText(text = "HelmDeck", textAlign = TextAlign.Center) }
+                    ) { Text("HelmDeck", maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
-                if (status.isNotEmpty()) textRows(status, chunk, spec)
-                for (c in cards) {
-                    chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
-                        Button(onClick = { onOpenCard(c) }, modifier = m,
-                            transformation = SurfaceTransformation(spec)) { FullText(text = part) }
+                if (status.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = status, textAlign = TextAlign.Center,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        )
                     }
                 }
-                // The numbers the daemon already sends and this screen used to
-                // discard. "Nichts wartet auf dich" alone is not a board - it is
-                // an all-clear with no evidence behind it. `yours` is unstarted
-                // work only the owner can begin; wip is what the machine is
-                // doing right now; the age says whether any of it is still true.
-                // The `yours` bucket, listed rather than counted - a number tells
-                // him work exists without telling him which. Lower emphasis than
-                // the blocked cards above (OutlinedButton, not filled): glances.py
-                // separates the two buckets so a red gate is never buried under a
-                // backlog, and the visual weight has to say the same thing.
+                for (c in cards) {
+                    item {
+                        Button(
+                            onClick = { onOpenCard(c) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, spec)
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                            transformation = SurfaceTransformation(spec),
+                        ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+                // The numbers the daemon already sends: `yours` is unstarted work only
+                // the owner can begin, wip is what the machine is doing right now, the
+                // age says whether any of it is still true. Three emphasis tiers,
+                // most to least urgent: filled (blocked), outlined (yours), hairline
+                // (context) - all obviously touchable, still ranked.
                 if (yours.isNotEmpty()) {
                     item {
-                        FullText(
-                            text = "Nur von dir startbar",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
+                        Text(
+                            text = "Von dir", textAlign = TextAlign.Center,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                         )
                     }
                     for (c in yours) {
-                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
-                            OutlinedButton(onClick = { onOpenCard(c) }, modifier = m,
-                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
+                        item {
+                            OutlinedButton(
+                                onClick = { onOpenCard(c) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }
-                // IN ARBEIT and BACKLOG, in that order, both BELOW the two
-                // buckets that want something from the owner. Order is the whole
-                // point (owner: "Karten die mich brauchen als erstes?"): these
-                // two are context, not a to-do list - nothing here is his move,
-                // so they carry the lowest emphasis (ChildButton) and never
-                // compete with a red gate for attention.
-                //
-                // But lowest emphasis is not the same as NO affordance. A bare
-                // ChildButton draws neither fill nor border, so on the real
-                // watch these rows read as plain text - the owner had to be told
-                // they were tappable, and on 2026-08-29 I only reached the card
-                // screen at all by tapping something that looked inert. They now
-                // carry a hairline in `borderSubtle`, one step below the outline
-                // OutlinedButton gives the `yours` bucket above. Three visual
-                // tiers instead of two-and-a-ghost: filled accent (blocked),
-                // outlined (yours), hairline (context) - all three obviously
-                // touchable, still ranked. Both colours come from WearTokens,
-                // i.e. from ops/tools/gen_tokens.py.
                 if (working.total > 0) {
                     item {
-                        FullText(
+                        Text(
                             text = if (summary?.let { it.wipLimit > 0 } == true)
                                        "In Arbeit: ${working.total} von ${summary!!.wipLimit}"
                                    else "In Arbeit: ${working.total}",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                         )
                     }
                     for (c in working.cards) {
-                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
-                            ChildButton(onClick = { onOpenCard(c) },
+                        item {
+                            ChildButton(
+                                onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = m,
-                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }
                 if (backlog.total > 0) {
                     item {
-                        FullText(
-                            text = "Backlog: ${backlog.total}",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
+                        Text(
+                            text = "Backlog: ${backlog.total}", textAlign = TextAlign.Center,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                         )
                     }
                     for (c in backlog.cards) {
-                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
-                            ChildButton(onClick = { onOpenCard(c) },
+                        item {
+                            ChildButton(
+                                onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = m,
-                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                         }
                     }
                 }
@@ -230,36 +241,37 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     val age = freshness(s.tsEpochSec, System.currentTimeMillis() / 1000L)
                     if (age.isNotEmpty()) {
                         item {
-                            FullText(
-                                text = "Stand: $age",
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
+                            Text(
+                                text = "Stand: $age", textAlign = TextAlign.Center,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                             )
                         }
                     }
                 }
-                // Henry BEFORE "Aktualisieren", and never gated on there being
-                // a card. Until now the only way to reach him was tapping a
-                // card, so an empty board - the normal, healthy state - meant
-                // "Alles klar." and no way to say anything. Talking to Henry
-                // was the point of putting HelmDeck on a wrist; it must not
-                // depend on something being wrong first.
+                // Henry BEFORE the refresh, and never gated on there being a card:
+                // talking to Henry is the point of putting HelmDeck on a wrist.
                 item {
-                    Button(onClick = { onAskHenry() }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                        transformation = SurfaceTransformation(spec)) {
-                        FullText("Henry fragen")
-                    }
+                    Button(
+                        onClick = { onAskHenry() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text("Henry", maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
-                // "Henry fragen" above keeps the filled accent; refreshing is
-                // maintenance, so it steps back to outlined. Same reasoning as
-                // HenryScreen's own three tiers.
+                // Refreshing is maintenance, so it steps back to outlined.
                 item {
-                    OutlinedButton(onClick = { reload() }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                        transformation = SurfaceTransformation(spec)) {
-                        FullText("Aktualisieren")
-                    }
+                    OutlinedButton(
+                        onClick = { reload() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text("Neu laden", maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
-                endInset()
             }
         }
     }

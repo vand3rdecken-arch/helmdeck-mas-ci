@@ -68,18 +68,16 @@ sealed interface Row {
     data object Title : Row
     data class Hint(val text: String) : Row
     data class Day(val date: String) : Row
-    // part > 0 = continuation of a long message (see chunkText): `shown` is that
-    // slice of the text, and only part 0 carries the sender and time.
-    data class Msg(val line: Line, val part: Int = 0, val shown: String = line.text) : Row
+    data class Msg(val line: Line) : Row
     /** A refresh is in flight while the transcript already has content -
      *  the wake-catch-up case Row.Hint cannot cover (it only shows on an
      *  EMPTY list). Without this the old messages just sat there during a
      *  wake refetch with nothing telling the owner they might be stale
      *  (owner report 2026-09-14: no sign a reload is happening). */
     data object Loading : Row
-    data class Option(val card: String, val label: String, val shown: String = label) : Row
+    data class Option(val card: String, val label: String) : Row
     data object Busy : Row
-    data class Suggest(val label: String, val shown: String = label) : Row
+    data class Suggest(val label: String) : Row
     data object Speak : Row
     data object VoiceToggle : Row
     data object Board : Row
@@ -94,7 +92,6 @@ sealed interface Row {
 fun buildRows(
     lines: List<Line>, answered: Set<String>, busy: Boolean,
     hint: String, suggestOptions: List<String>, loading: Boolean = false,
-    maxChars: Int = Int.MAX_VALUE,
 ): List<Row> {
     val rows = ArrayList<Row>(lines.size + 8)
     rows.add(Row.Title)
@@ -102,7 +99,7 @@ fun buildRows(
     // geladen..." while loading (see HenryScreen's call site). A non-empty
     // list has no such slot, so a refresh in flight gets its own row instead
     // of silently leaving the last-known transcript on screen unmarked.
-    if (lines.isEmpty()) for (part in chunkText(hint, maxChars)) rows.add(Row.Hint(part))
+    if (lines.isEmpty()) rows.add(Row.Hint(hint))
     else if (loading) rows.add(Row.Loading)
     // DATE SEPARATORS, exactly where the owner's SMS screenshot has them: one
     // centred caption above the first message of each day.
@@ -118,26 +115,17 @@ fun buildRows(
             lastDay = line.date
             rows.add(Row.Day(line.date))
         }
-        // A mirrored card's "Frage · Kartenname" label sits in the card's title
-        // slot, which cannot be sliced: a long one moves its card-name part into
-        // caption rows above and leaves only the kind ("Frage") as the title.
-        var shownLine = line
-        if (line.label.length > maxChars) {
-            val kind = line.label.substringBefore(" · ").take(maxChars)
-            for (part in chunkText(line.label.substringAfter(" · ", ""), maxChars)) rows.add(Row.Hint(part))
-            shownLine = line.copy(label = kind.ifBlank { "Karte" })
-        }
-        chunkText(line.text, maxChars).forEachIndexed { i, part -> rows.add(Row.Msg(shownLine, i, part)) }
+        rows.add(Row.Msg(line))
         // The worker's OWN options, right under the question that offered them -
         // not collected at the bottom like Henry's follow-up suggestions. Two
         // cards can be waiting at once, and a pooled list would give the owner
         // no way to see which card a button belongs to.
         if (line.card.isNotBlank() && line.card !in answered) {
-            for (opt in line.options) for (part in chunkText(opt, maxChars)) rows.add(Row.Option(line.card, opt, part))
+            for (opt in line.options) rows.add(Row.Option(line.card, opt))
         }
     }
     if (busy) rows.add(Row.Busy)
-    for (opt in suggestOptions) for (part in chunkText(opt, maxChars)) rows.add(Row.Suggest(opt, part))
+    for (opt in suggestOptions) rows.add(Row.Suggest(opt))
     rows.add(Row.Speak)
     rows.add(Row.VoiceToggle)
     rows.add(Row.Board)
@@ -150,29 +138,4 @@ fun buildRows(
  *  scrolled on the very first composition, when the list was still empty, and
  *  pushed the title and the hint up under the clock so the screen opened
  *  half-cut (seen on the watch, 2026-08-29). An empty chat opens at the TOP. */
-fun newestMessageIndex(rows: List<Row>): Int {
-    var i = rows.indexOfLast { it is Row.Msg }
-    // a long message is several rows: aim at its FIRST, so reading starts at the top
-    while (i > 0 && (rows[i] as Row.Msg).part > 0) i--
-    return i
-}
-
-// Cuts `text` into slices of at most `maxChars`, at spaces and after . / - so no
-// single list row can be taller than the round viewport (Play rejection
-// 2026-09-24/25: a row taller than the screen cannot be transformed and is cut
-// by the bezel at font scale 2.0). A word longer than `maxChars` is cut hard.
-fun chunkText(text: String, maxChars: Int): List<String> {
-    if (text.length <= maxChars) return listOf(text)
-    val out = ArrayList<String>()
-    val cur = StringBuilder()
-    fun flush() { if (cur.isNotBlank()) out.add(cur.toString().trim()); cur.setLength(0) }
-    for (m in Regex("[^\\s./-]*[\\s./-]?").findAll(text)) {
-        var tok = m.value
-        if (tok.isEmpty()) continue
-        while (tok.length > maxChars) { flush(); out.add(tok.take(maxChars)); tok = tok.drop(maxChars) }
-        if (cur.length + tok.length > maxChars) flush()
-        cur.append(tok)
-    }
-    flush()
-    return out.ifEmpty { listOf("") }
-}
+fun newestMessageIndex(rows: List<Row>): Int = rows.indexOfLast { it is Row.Msg }

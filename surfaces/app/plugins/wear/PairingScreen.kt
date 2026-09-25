@@ -17,11 +17,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.lazy.TransformationSpec
@@ -115,18 +118,18 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
 
     fun submit() {
         if (claimBaseUrl.isBlank() || code.isBlank()) {
-            status = "Adresse und Code eingeben"
+            status = "Code fehlt"
             return
         }
         busy = true
-        status = "Koppeln…"
+        status = "…"
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { RelayClient.claim(claimBaseUrl, code) }.getOrNull()
             }
             if (result == null) {
                 busy = false
-                status = "Code unbekannt oder abgelaufen"
+                status = "Code ungültig"
                 return@launch
             }
             val kp = withContext(Dispatchers.Default) { HelmDeckBox.generateKeyPair() }
@@ -139,7 +142,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
             }
             busy = false
             if (!completed) {
-                status = "Gekoppelt, aber der erste Abruf ist fehlgeschlagen - erneut versuchen"
+                status = "Nochmal versuchen"
                 return@launch
             }
             DeviceStore.save(context, DeviceStore.Device(
@@ -154,30 +157,26 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
     }
 
     if (editingAddress) {
-        AddressEditor(
-            value = claimBaseUrl,
-            onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
-            onReset = { claimBaseUrl = DEFAULT_CLAIM_BASE_URL },
-            onDone = { editingAddress = false },
-        )
+        // The full address is long text: it lives on its own detail screen
+        // (TextDetailScreen), never in a list button.
+        TextDetailScreen(
+            title = "Adresse",
+            text = claimBaseUrl,
+            onBack = { editingAddress = false },
+        ) { spec ->
+            item { ActionButton(spec, "Sprechen") { urlLauncher.launch(speechIntent("Adresse")) } }
+            item { ActionButton(spec, "Standard") { claimBaseUrl = DEFAULT_CLAIM_BASE_URL } }
+        }
         return
     }
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        val chunk = rememberChunkChars()
         // Google's Wear Compose M3 list pattern (developer.android.com/training/
-        // wearables/compose/lists, checked against the resolved 1.6.2 AAR): every
-        // row is transformed by ONE TransformationSpec, so it narrows and shrinks
-        // as it nears the round top/bottom edge instead of keeping its full width
-        // where the circle is only a short chord (Play rejection 2026-09-24: title
-        // and buttons cut at fontScale 2.0 in exactly those bands). The two earlier
-        // fixes measured the middle of the screen only, which is why they passed.
+        // wearables/compose/lists): ScreenScaffold hands its contentPadding to the
+        // TransformingLazyColumn, every item carries transformedHeight,
+        // minimumVerticalContentPadding and SurfaceTransformation of ONE
+        // TransformationSpec, and text is Text(maxLines, overflow = Ellipsis).
         val spec = rememberTransformationSpec()
-        // NOT an EdgeButton, although 1.6.2 has one and it was tried first: at
-        // fontScale 2.0 "Koppeln" does not fit the EdgeButton's narrow bottom
-        // chord and wraps to "Kopp / eln" with the second line cut (measured on
-        // the Small Round emulator, 2026-09-25). A transformed full-width Button
-        // in the list wraps and scrolls like every other row.
         ScreenScaffold(columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
@@ -186,73 +185,62 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
             ) {
                 item {
                     ListHeader(
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
                         transformation = SurfaceTransformation(spec),
-                    ) { FullText(text = "HelmDeck koppeln", textAlign = TextAlign.Center) }
+                    ) { Text("HelmDeck", maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
                 // Code first: with the address defaulted (DEFAULT_CLAIM_BASE_URL),
                 // this is the only field the owner needs to touch in the
-                // common case - the whole reason that default exists. "Koppeln"
-                // sits DIRECTLY under it, above the address: dictate, then act,
-                // without scrolling past a field that is almost never needed.
+                // common case. "Koppeln" sits DIRECTLY under it.
                 item {
-                    FieldButton(
-                        spec = spec, label = "Code diktieren", value = code,
-                        onDictate = { codeLauncher.launch(speechIntent("Code")) },
-                    )
+                    Button(
+                        onClick = { codeLauncher.launch(speechIntent("Code")) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                        secondaryLabel = { Text(code.ifBlank { "sprechen" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    ) { Text("Code", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 item {
                     Button(
                         onClick = ::submit, enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                         transformation = SurfaceTransformation(spec),
-                    ) { FullText(if (busy) "…" else "Koppeln") }
+                    ) { Text(if (busy) "…" else "Koppeln", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                if (status != null) textRows(status ?: "", chunk, spec)
-                // The address is NOT shown here: a full URL in a button is taller
-                // than the round viewport at fontScale 2.0 and gets cut by the
-                // bezel (Play rejection 2026-09-25). One short line; the value
-                // itself lives on its own screen (AddressEditor).
-                item {
-                    FieldButton(
-                        spec = spec, label = "Adresse",
-                        value = if (claimBaseUrl == DEFAULT_CLAIM_BASE_URL) "Standard" else "geändert",
-                        onDictate = { editingAddress = true },
-                    )
+                if (status != null) {
+                    item {
+                        Text(
+                            text = status ?: "", textAlign = TextAlign.Center,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        )
+                    }
                 }
-                endInset()
-            }
-        }
-    }
-}
-
-/** The address on its own screen: the value as plain wrapping text rows (never
- *  in a Button, never a row taller than the viewport), then the actions. */
-@Composable
-private fun AddressEditor(
-    value: String, onDictate: () -> Unit, onReset: () -> Unit, onDone: () -> Unit,
-) {
-    MaterialTheme {
-        val columnState = rememberTransformingLazyColumnState()
-        val spec = rememberTransformationSpec()
-        val chunk = rememberChunkChars()
-        ScreenScaffold(columnState) { contentPadding ->
-            TransformingLazyColumn(
-                state = columnState,
-                contentPadding = contentPadding,
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
                 item {
-                    ListHeader(
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                    Button(
+                        onClick = { editingAddress = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                         transformation = SurfaceTransformation(spec),
-                    ) { FullText(text = "Adresse", textAlign = TextAlign.Center) }
+                        secondaryLabel = {
+                            Text(
+                                if (claimBaseUrl == DEFAULT_CLAIM_BASE_URL) "Standard" else "geändert",
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                    ) { Text("Adresse", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
-                textRows(value, chunk, spec)
-                item { ActionButton(spec, "Diktieren", onDictate) }
-                item { ActionButton(spec, "Standard", onReset) }
-                item { ActionButton(spec, "Fertig", onDone) }
-                endInset()
             }
         }
     }
@@ -264,32 +252,10 @@ private fun TransformingLazyColumnItemScope.ActionButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+        modifier = Modifier
+            .fillMaxWidth()
+            .transformedHeight(this, spec)
+            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
         transformation = SurfaceTransformation(spec),
-    ) { FullText(text = label) }
-}
-
-/** One field: a full-width Button whose label says what it does and whose
- *  secondary label shows the last dictated/typed value. NOT a real TextField -
- *  Wear Compose Material3's text-entry story was not confirmed here, and
- *  dictation-only is a defensible v1 for a 6-char code / a short host name,
- *  matching this screen's own §9.1-documented scope.
- *
- *  Both texts WRAP (the Button grows with them): Play's Wear font-size
- *  guideline forbids clipping at the largest system font scale, and an
- *  ellipsis is a clip. The SurfaceTransformation narrows the button towards the
- *  round edge, so a wrapped line never meets the bezel. */
-@Composable
-private fun TransformingLazyColumnItemScope.FieldButton(
-    spec: TransformationSpec,
-    label: String,
-    value: String,
-    onDictate: () -> Unit,
-) {
-    Button(
-        onClick = onDictate,
-        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-        transformation = SurfaceTransformation(spec),
-        secondaryLabel = { FullText(text = value.ifBlank { "–" }) },
-    ) { FullText(text = label) }
+    ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
