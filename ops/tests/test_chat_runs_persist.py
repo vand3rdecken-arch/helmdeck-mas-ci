@@ -152,9 +152,9 @@ check(db.runs_get([hid], account="gast") == {} and hid in db.runs_get([hid], acc
 
 # 6) boot reconcile
 now = time.time()
-db.run_put("bg:old", OWNER, {"title": "alt", "status": "running", "since": now - 900, "updated": now - 900,
+db.chat_run_put("bg:old", OWNER, {"title": "alt", "status": "running", "since": now - 900, "updated": now - 900,
                              "detail": "", "result": "", "kind": "agent", "steps": []})
-db.run_put("bg:new", OWNER, {"title": "neu", "status": "running", "since": now + 1, "updated": now + 1,
+db.chat_run_put("bg:new", OWNER, {"title": "neu", "status": "running", "since": now + 1, "updated": now + 1,
                              "detail": "", "result": "", "kind": "agent", "steps": []})
 n = db.runs_close_running(now, "der Daemon wurde neu gestartet")
 got = db.runs_get(["bg:old", "bg:new"])

@@ -90,7 +90,7 @@ def _persist(hid):
         return
     try:
         from spine.storage import db
-        db.run_put(hid, user, doc)
+        db.chat_run_put(hid, user, doc)
     except Exception as e:                               # noqa: BLE001
         print("hands: run persist failed - %s" % str(e)[:160], flush=True)
 

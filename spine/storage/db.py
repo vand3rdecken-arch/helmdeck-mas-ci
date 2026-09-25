@@ -2143,7 +2143,7 @@ def _m15(c):
     c.execute("CREATE INDEX IF NOT EXISTS chat_runs_status ON chat_runs(status)")
 
 
-def run_put(rid, account, doc):
+def chat_run_put(rid, account, doc):
     """Upsert a run descriptor (the BgTask shape the chat renders)."""
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO chat_runs(id,account,status,updated,data) VALUES(?,?,?,?,?)",
