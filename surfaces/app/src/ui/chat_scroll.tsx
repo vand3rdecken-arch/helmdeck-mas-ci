@@ -47,6 +47,9 @@ export interface ChatScrollHandle {
   /** Jump to the newest message. Used for the owner's OWN send, which pins
    *  unconditionally: he just wrote it, he wants to see it land. */
   toBottom: (animated?: boolean) => void;
+  /** Scroll so content offset `y` sits near the top - a quoted reply jumping
+   *  back to the message it answers. Unpins: the reader is browsing now. */
+  toY: (y: number) => void;
 }
 
 export const ChatScroll = forwardRef<ChatScrollHandle, {
@@ -71,7 +74,12 @@ export const ChatScroll = forwardRef<ChatScrollHandle, {
     setAtBottom(true);
     scroll.current?.scrollToEnd({ animated });
   }, []);
-  useImperativeHandle(ref, () => ({ toBottom }), [toBottom]);
+  const toY = useCallback((y: number) => {
+    pinned.current = false;
+    setAtBottom(false);
+    scroll.current?.scrollTo({ y: Math.max(0, y), animated: true });
+  }, []);
+  useImperativeHandle(ref, () => ({ toBottom, toY }), [toBottom, toY]);
 
   // The runtime says the content (or the viewport) moved. If the reader was at
   // the end, keep him there - unanimated, because this fires mid-stream and an

@@ -83,7 +83,7 @@ def chat_cancel_post(self, user, body):
     return self._send(200, json.dumps({"cancelled": copilot.cancel(user["name"])}))
 
 
-def _route_to_card(self, user, text, tid, mid=""):
+def _route_to_card(self, user, text, tid, mid="", quote=None):
     """The owner answered a MIRRORED card message in the Henry chat: send it to
     that card instead of running a Henry turn (owner decree 2026-08-29).
 
@@ -149,6 +149,7 @@ def _route_to_card(self, user, text, tid, mid=""):
         copilot._append_log(user["name"], [dict(
             {"cls": "you", "text": text, "ts": time.strftime("%H:%M"),
              "card": tid, "to": "worker"},
+            **({"reply_to": copilot._reply_ref(quote)} if copilot._reply_ref(quote) else {}),
             **({"client_msg_id": mid[:64]} if mid else {}))])
         card_mirror.say_card(
             t, card_mirror.KIND_RESULT,
@@ -216,7 +217,7 @@ def chat_post(self, user, body):
     reply_to = str(body.get("reply_to_card") or "").strip()
     if reply_to:
         return _route_to_card(self, user, text, reply_to,
-                              mid=str(body.get("mid") or ""))
+                              mid=str(body.get("mid") or ""), quote=body.get("reply_to"))
     # STEER-ONLY: typed while Henry's board turn runs. Absorbed into that turn
     # (copilot.try_inject) or refused at once - never a lock wait on this leg,
     # the client keeps a refused message queued and sends it as its own turn.
@@ -242,7 +243,8 @@ def chat_post(self, user, body):
             def _takeover():
                 try:
                     out = copilot.chat(_uname, text, role=_role, client_msg_id=_mid,
-                                       attachments=body.get("attachments"), **_opts)
+                                       attachments=body.get("attachments"),
+                                       reply_to=body.get("reply_to"), **_opts)
                     chat_dedupe.settle(_mine, out)
                 except Exception as e:                           # noqa: BLE001
                     chat_dedupe.fail(_mine)
@@ -325,7 +327,9 @@ def chat_post(self, user, body):
             # spoken turns get the hard brevity overlay - a minute of options
             # read aloud is not an answer (owner report 2026-08-21)
             extra_system=copilot.voice_style() if want_voice else "",
-            overlay="voice" if want_voice else "")
+            overlay="voice" if want_voice else "",
+            # the one message this answers (messenger-style reply)
+            reply_to=body.get("reply_to"))
         turn_ok = True
         # VOICE MODE (phone). The client asks per-request rather than
         # by a server setting, because it is the client that knows

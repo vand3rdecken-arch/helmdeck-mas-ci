@@ -6,7 +6,7 @@ import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, T
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
-import { api, neverDelivered, type ChatMsg, type SteerOpts } from "@/data/client";
+import { api, neverDelivered, type ChatMsg, type ReplyRef, type SteerOpts } from "@/data/client";
 import { CHAT_FOCUS, usePresence } from "@/data/presence";
 import { chatFallbackInterval, ensureChatFresh, useChatCatchup, useStreamCaps } from "@/data/stream";
 import type { PendingQuestion, Track } from "@/data/types";
@@ -118,7 +118,7 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // own sender so it's never mistaken for Henry's own words or a card's.
   if (m.cls === "hands") {
     return { role: "assistant", kind: "text", cls: m.cls, text: m.text, ts: m.ts,
-             by: "Hände", byKind: "worker" };
+             by: "Hände", byKind: "worker", seq: m.seq };
   }
   if (m.cls === "card") {
     const label = tr?.(CARD_KIND_KEY[m.kind ?? ""] ?? "chat.mirror.card") ?? "";
@@ -129,7 +129,7 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
       // itself instead of having to go find it - the same `card` field the
       // CardTile hand-over row already navigates with (m.card is always the
       // id this mirror line is bound to, see card_mirror.say_card's `tid`).
-      card: m.card,
+      card: m.card, seq: m.seq,
     };
   }
   return {
@@ -145,6 +145,7 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     by: mine ? me : "Henry",
     byKind: mine ? "human" : "henry",
     agent: m.cls === "pm",   // legacy flag, superseded by byKind above
+    seq: m.seq, quote: m.reply_to,
   };
 }
 
@@ -282,6 +283,18 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     return () => usePresence.getState().setFocusedCard(null);
   }, []);
   const [busy, setBusy] = useState(false);
+  // THE MESSAGE BEING ANSWERED (messenger-style reply, owner 2026-09-25): set
+  // by a swipe / the reply arrow on a bubble, shown as the composer's quote
+  // bar, attached to exactly the next send and cleared by it.
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
+  const withReply = (o: SteerOpts): SteerOpts => {
+    if (!replyTo) return o;
+    const q = replyTo;
+    setReplyTo(null);
+    return { ...o, reply_to: { text: q.text, by: q.by, seq: q.seq },
+      // a card's mirrored message: the answer goes to THAT card, by its id
+      ...(q.card ? { to: `card:${q.card}` } : {}) };
+  };
   // phone: the conversation list is a full-screen sheet over the chat; on
   // desktop it is a permanent sidebar (CopilotOverlay/ChatScreen), so the
   // header button only exists on the narrow layout.
@@ -640,7 +653,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 
   // baseline = this occurrence's rank among same-text user messages already
   // visible (server + pending) at queue time - see the reconcile effect above.
-  function queueTurn(id: number, q: string, mid: string) {
+  function queueTurn(id: number, q: string, mid: string, quote?: ReplyRef) {
     const baseline = (server ?? []).filter((m) => (m.cls === "user" || m.cls === "you") && (m.text ?? "").trim() === q).length
       + pending.filter((tn) => tn.key === q).length;
     setHeld(null);
@@ -651,7 +664,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       // Where this bubble belongs: after everything the server had shown at the
       // moment it was sent, and BEFORE anything that arrives afterwards.
       anchor: (server ?? []).length,
-      msgs: [{ cls: "user", text: q, client_msg_id: mid }],
+      msgs: [{ cls: "user", text: q, client_msg_id: mid, ...(quote ? { reply_to: quote } : {}) }],
     }]);
   }
   const appendReply = (id: number, msg: ChatMsg) =>
@@ -679,7 +692,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     // the identity the daemon will echo back. Same token client.ts would have
     // minted itself; passing it in only moves the minting one step earlier.
     const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    queueTurn(id, q, mid);
+    queueTurn(id, q, mid, opts.reply_to);
     // Routed to a CARD when the composer's target is one (`card:<id>`), so the
     // words reach that worker instead of starting a Henry turn. The id comes
     // from the chip the owner can see, which in turn comes from the `card` the
@@ -798,7 +811,8 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     const r = await api.chat(q, { ...opts, mid, steer_only: true });
     if (!r?.absorbed) return false;
     setPending((p) => [...p, { id: -Date.now(), key: q, mid, baseline: Number.MAX_SAFE_INTEGER,
-      anchor: (server ?? []).length, msgs: [{ cls: "user", text: q, client_msg_id: mid }] }]);
+      anchor: (server ?? []).length, msgs: [{ cls: "user", text: q, client_msg_id: mid,
+        ...(opts.reply_to ? { reply_to: opts.reply_to } : {}) }] }]);
     setTimeout(() => scroll.current?.toBottom(), 50);
     return true;
   }
@@ -1003,7 +1017,11 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
           {msgs.length === 0 && !showWelcome && !(busy && stream.trim())
             ? <Empty text={tr("chat.empty")} />
-            : <Transcript me={me?.name} ctxWindow={stats?.ctx_window} steps={(() => {
+            : <Transcript me={me?.name} ctxWindow={stats?.ctx_window}
+                onReply={(st) => setReplyTo({ text: (st.text || st.label || "").trim().slice(0, 300),
+                  by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })}
+                onJump={(y) => scroll.current?.toY(y)}
+                steps={(() => {
                 const s = msgs.map((m) => withLive(toStep(m, me?.name, tr)));
                 // STATIC, local-only greeting (no daemon call, no turn, no
                 // cost) - never persisted, so it renders again every time
@@ -1076,7 +1094,9 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               its background tasks, fed by /chat/history's derived descriptors. */}
           <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
-          <Composer onSend={send} onSteerLive={steerLive} busy={busy} onStop={stop} models={models ?? ["auto"]}
+          <Composer onSend={(txt, o) => send(txt, withReply(o))} onSteerLive={(txt, o) => steerLive(txt, withReply(o))}
+            quote={replyTo} onClearQuote={() => setReplyTo(null)}
+            busy={busy} onStop={stop} models={models ?? ["auto"]}
             // Mode row (owner request 2026-09-12, screenshot of Claude Code's
             // picker: Model / Thinking / Mode): Henry's permission mode, same
             // three options and labels as a card's composer, current mode

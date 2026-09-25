@@ -148,7 +148,9 @@ let version = 1;
 // question block is full of user-visible strings, and this module's rule is
 // that those resolve when answered, never at module load.
 type ChatRow = { cls: string; textKey?: string; text?: string; ts?: string;
-  mirror?: boolean; extra?: Record<string, string> };
+  mirror?: boolean; extra?: Record<string, string>;
+  // a messenger-style reply and its client id, echoed like the daemon does
+  reply_to?: unknown; client_msg_id?: string };
 const CHAT_SEED: ChatRow[] = [
   { cls: "user", textKey: "demo.chat.q", ts: iso(120) },
   { cls: "assistant", textKey: "demo.chat.a", ts: iso(119) },
@@ -359,13 +361,15 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       attempts: 1, closed: false },
   ];
   if (path === "/chat/history") {
-    return { messages: chatLog.map((c) => {
+    return { messages: chatLog.map((c, i) => {
       // the daemon stamps "%H:%M" (copilot._append_log); the fixture keeps full
       // ISO for ordering, so serve the same HH:MM shape here - the transcript
       // renders ts verbatim, and a raw ISO string under every bubble is what
       // the first screenshot judge actually caught
       const hm = (c.ts ?? "").length > 5 ? (c.ts ?? "").slice(11, 16) : (c.ts ?? "");
-      const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? ""), ...(c.extra ?? {}),
+      const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? ""), seq: i + 1,
+        ...(c.reply_to ? { reply_to: c.reply_to } : {}), ...(c.client_msg_id ? { client_msg_id: c.client_msg_id } : {}),
+        ...(c.extra ?? {}),
         ...(c.extra?.card ? { cardName: t("demo.c2.task") } : {}) };
       if (!c.mirror) return base;
       // the mirrored card question, expanded at response time (strings follow
@@ -415,7 +419,8 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   }
 
   if (path === "/chat" && method === "POST") {
-    chatLog = [...chatLog, { cls: "user", text: String(b.text ?? ""), ts: now() },
+    chatLog = [...chatLog, { cls: "user", text: String(b.text ?? ""), ts: now(),
+                             ...(b.reply_to ? { reply_to: b.reply_to } : {}), ...(b.mid ? { client_msg_id: String(b.mid) } : {}) },
                { cls: "assistant", textKey: "demo.chat.reply", ts: now() }];
     return { reply: t("demo.chat.reply"), cost: 0 };
   }

@@ -295,7 +295,14 @@ export interface Step {
  *  by the daemon on the persisted `you` entry. It is what lets the chat retire
  *  an optimistic copy by IDENTITY instead of by comparing text — optional
  *  because older daemons, the watch and the glasses do not send one. */
+/** The one message a reply answers (messenger-style "Antworten", owner
+ *  2026-09-25): an excerpt + who said it + its chat seq to jump back to.
+ *  `card` = it was a card's mirrored message, so the reply goes to that card. */
+export interface ReplyRef { text: string; by?: string; seq?: number; card?: string }
+
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** the message this one answers (see ReplyRef) */
+  reply_to?: ReplyRef;
   /** a delegated run this row started: `hands` = a hands id, `run` = "bg:<uid>"
    *  for a background agent - the chat draws a live RunTile for it */
   hands?: string; run?: string;
@@ -388,6 +395,8 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
 // and /chat spread these opts into the request body, so adding it here wires it.
 export interface SteerOpts {
   model?: string; thinking?: string; mode?: string; attachments?: Attach[];
+  /** the one message this send answers (messenger-style reply) */
+  reply_to?: ReplyRef;
   /** Team-chat recipient picked in the composer ("henry" | "worker") — read
    *  client-side to route the send (api.chat vs api.steer) and echoed onto
    *  the rendered message; harmless if it rides along in a steer POST body,
@@ -1077,6 +1086,8 @@ export const api = {
   // 409 once the conversation has moved past it.
   chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string;
     answer_to?: string; answers?: Record<string, string | string[]>;
+    /** the one message this answers (messenger-style reply) */
+    reply_to?: ReplyRef;
     /** Typed while Henry's turn runs: the daemon folds it into that turn
      *  (copilot.try_inject) and answers `absorbed`, or refuses at once -
      *  never a lock wait on this leg. */

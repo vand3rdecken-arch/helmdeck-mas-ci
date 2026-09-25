@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useTheme } from "@/theme";
-import type { SteerOpts } from "@/data/client";
+import type { ReplyRef, SteerOpts } from "@/data/client";
 import {
   type Attach, filesToAttachments, isWeb, MAX_FILES, MAX_MB, mergeAttachments, pickFiles,
   pickImages, recoverPendingImages, takePhoto,
@@ -44,7 +44,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  onVoice, recipients, defaultTo, contextChip, onClearContext, onSteerLive,
+  onVoice, recipients, defaultTo, contextChip, onClearContext, onSteerLive, quote, onClearQuote,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   /** Typed while busy: try to fold the message into the RUNNING turn first
@@ -85,6 +85,11 @@ export function Composer({
    *  what he is asking about, and can drop it. */
   contextChip?: string;
   onClearContext?: () => void;
+  /** The message this one will answer (messenger-style reply, owner
+   *  2026-09-25): shown as WhatsApp's quote bar above the input, dropped
+   *  with its x. The SENDER attaches it to the send - this only shows it. */
+  quote?: ReplyRef | null;
+  onClearQuote?: () => void;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -99,6 +104,9 @@ export function Composer({
   // write always happens inside onChangeText, which always runs before a
   // later tap's onPress (native events are FIFO).
   const textRef = useRef("");
+  // picking "Antworten" puts the cursor in the input, like every messenger
+  const inputRef = useRef<TextInput>(null);
+  useEffect(() => { if (quote) inputRef.current?.focus(); }, [quote]);
   const [model, setModel] = useState("auto");
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
@@ -296,6 +304,25 @@ export function Composer({
       {/* THE CONTEXT CHIP, above everything: what this message is about. Placed
           over the input rather than inside it so it survives the draft being
           cleared and cannot be accidentally deleted with a backspace. */}
+      {quote ? (
+        <View testID="composer-quote" style={{ flexDirection: "row", alignItems: "center", gap: 8,
+          marginHorizontal: 12, marginTop: 8, paddingLeft: 9, paddingRight: 6, paddingVertical: 6,
+          borderLeftWidth: 3, borderLeftColor: t.accent2, backgroundColor: t.surface2, borderRadius: 7 }}>
+          <Ionicons name="return-up-back-outline" size={14} color={t.accent2} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={{ color: t.accent2, fontSize: 11, fontWeight: "700" }}>
+              {quote.by ? tr("composer.replyTo", { who: quote.by }) : tr("composer.replyToMsg")}
+            </Text>
+            <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12 }}>{quote.text}</Text>
+          </View>
+          {onClearQuote ? (
+            <Pressable testID="composer-quote-clear" onPress={onClearQuote} hitSlop={8}
+              accessibilityLabel={tr("composer.replyCancel")}>
+              <Ionicons name="close" size={15} color={t.txtTertiary} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       {contextChip ? (
         <View testID="composer-context"
           style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12,
@@ -437,7 +464,7 @@ export function Composer({
 
       {/* input row */}
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
-        <TextInput value={text} onChangeText={setText} multiline
+        <TextInput ref={inputRef} value={text} onChangeText={setText} multiline
           placeholder={placeholder ?? tr("composer.placeholder")} placeholderTextColor={t.txtPlaceholder}
           style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120,
             borderWidth: 1, borderColor: t.borderSubtle }} />
@@ -457,7 +484,7 @@ export function Composer({
           </Pressable>
         ) : (
           /* send stays enabled while busy — the message is queued instead of dropped */
-          <Pressable onPress={fire} disabled={!text.trim() && !atts.length}
+          <Pressable testID="composer-send" onPress={fire} disabled={!text.trim() && !atts.length}
             style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: (!text.trim() && !atts.length) ? 0.5 : 1 }}>
             <Ionicons name={busy ? "add" : "arrow-up"} size={22} color="#fff" />
           </Pressable>

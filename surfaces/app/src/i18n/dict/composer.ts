@@ -76,6 +76,11 @@ export const composer: Dict = {
   },
   // Paseo SubagentsTrack wording (track-presentation.ts): one segment per
   // state present, never one vague count ("Henry checked: 4" said nothing)
+  // messenger-style reply (owner 2026-09-25)
+  "chat.reply": { de: "Antworten", en: "Reply" },
+  "composer.replyTo": { de: "Antwort an {who}", en: "Replying to {who}" },
+  "composer.replyToMsg": { de: "Antwort auf Nachricht", en: "Replying to message" },
+  "composer.replyCancel": { de: "Antwort verwerfen", en: "Cancel reply" },
   "chat.followups.head": { de: "Sub-Agenten", en: "Sub-agents" },
   "chat.followups.running": { de: "{n} aktiv", en: "{n} working" },
   "chat.followups.failed": { de: "{n} fehlgeschlagen", en: "{n} failed" },

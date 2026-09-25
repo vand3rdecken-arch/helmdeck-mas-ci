@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
+import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { ASK_OPEN, stripAsk } from "@/data/ask";
 import { useRouter } from "expo-router";
@@ -9,6 +10,7 @@ import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
 import { RunTile, type RunLive } from "./run_tile";
+import type { ReplyRef } from "@/data/client";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
 
@@ -53,6 +55,8 @@ export interface TStep {
   card?: string;       // bound card id: kind "card" draws a thread-tile row (RunTile);
                         // kind "text" (a mirrored worker message) draws a footer link - both open that card's chat
   todos?: { content: string; status: string }[];
+  seq?: number;        // the chat row's identity - what a reply's quote jumps back to
+  quote?: ReplyRef;    // this message answers that one (messenger-style reply)
 }
 
 // Legacy rows (older daemon / cached feeds) carry only ok/running/abandoned —
@@ -394,17 +398,70 @@ function readable(steps: TStep[]): TStep[] {
   return out;
 }
 
-export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number }) {
+/** The quoted message on top of a reply - WhatsApp's shape: a tinted block
+ *  with a coloured left edge, sender, two lines. Tapping it jumps back. */
+function QuoteBlock({ q, color, t, onPress }: { q: ReplyRef; color: string; t: ThemeTokens; onPress?: () => void }) {
+  return (
+    <Pressable onPress={onPress} disabled={!onPress} testID="reply-quote"
+      style={{ borderLeftWidth: 3, borderLeftColor: color, backgroundColor: color + "16", borderRadius: 6,
+        paddingHorizontal: 8, paddingVertical: 5, marginBottom: 6 }}>
+      {q.by ? <Text numberOfLines={1} style={{ color, fontSize: 11, fontWeight: "700" }}>{q.by}</Text> : null}
+      <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 12, lineHeight: 16 }}>{q.text}</Text>
+    </Pressable>
+  );
+}
+
+/** Swipe a message to the right to answer it (WhatsApp / iMessage). The reply
+ *  arrow shows under the finger; letting go past the threshold replies and the
+ *  row springs back. */
+function ReplySwipe({ onReply, t, children }: { onReply: () => void; t: ThemeTokens; children: React.ReactNode }) {
+  const ref = useRef<SwipeableMethods>(null);
+  return (
+    <ReanimatedSwipeable ref={ref} friction={1.6} leftThreshold={40} overshootLeft={false} dragOffsetFromLeftEdge={12}
+      renderLeftActions={() => (
+        <View style={{ width: 56, alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name="return-up-back-outline" size={18} color={t.accent} />
+        </View>)}
+      onSwipeableWillOpen={() => onReply()}
+      onSwipeableOpen={() => ref.current?.close()}>
+      {children}
+    </ReanimatedSwipeable>
+  );
+}
+
+export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, onJump }: {
+  steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number;
+  /** answer THIS message (messenger-style); absent = the surface has no replies */
+  onReply?: (s: TStep) => void;
+  /** scroll the chat to content offset y (a quote jumping back to its message) */
+  onJump?: (y: number) => void;
+}) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
+  // where each message with a seq sits, relative to this list - for the jump
+  const rowY = useRef(new Map<number, number>());
+  const rootY = useRef(0);
+  const jumpTo = (seq?: number) => {
+    if (seq == null || !onJump) return undefined;
+    return () => { const y = rowY.current.get(seq); if (y != null) onJump(rootY.current + y - 12); };
+  };
+  const wrap = (s: TStep, key: string, el: React.ReactElement) => (
+    <View key={key} onLayout={s.seq != null ? (e) => { rowY.current.set(s.seq as number, e.nativeEvent.layout.y); } : undefined}>
+      {onReply && !s.streaming ? <ReplySwipe onReply={() => onReply(s)} t={t}>{el}</ReplySwipe> : el}
+    </View>
+  );
+  const replyBtn = (s: TStep) => onReply ? (
+    <Pressable hitSlop={8} onPress={() => onReply(s)} accessibilityLabel={tr("chat.reply")} testID="reply-btn">
+      <Ionicons name="return-up-back-outline" size={13} color={t.txtTertiary} />
+    </Pressable>) : null;
   const steps = readable(rawSteps);
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
   let lastTextSender: string | null = null;   // consecutive-run grouping (Slack-style)
   return (
-    <View style={{ gap: 8 }}>
+    <View style={{ gap: 8 }} onLayout={(e) => { rootY.current = e.nativeEvent.layout.y; }}>
       {steps.map((s, i) => {
         const kind = s.kind;
         const key = keyFor(s, i);
@@ -494,14 +551,16 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps
           : byKind === "worker" ? (s.by || tr("transcript.worker")) : (s.by || "?");
         const senderIcon = byKind === "henry" ? "sparkles-outline"
           : byKind === "worker" ? "construct-outline" : "person-outline";
-        if (mine) return (
-          <View key={key} style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: ac + "22", borderRadius: 10, padding: 10 }}>
+        if (mine) return wrap(s, key,
+          <View style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: ac + "22", borderRadius: 10, padding: 10 }}>
+            {s.quote ? <QuoteBlock q={s.quote} color={t.accent2} t={t} onPress={jumpTo(s.quote.seq)} /> : null}
             <Collapsible text={s.text || ""} color={ac}
               style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20 }} />
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4, justifyContent: "flex-end" }}>
               {s.to ? <Text style={{ color: s.to === "henry" ? t.accent2 : t.accent, fontSize: 10, fontWeight: "700" }}>
                 → {s.to === "henry" ? tr("transcript.boardAgent") : tr("transcript.worker")}</Text> : null}
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+              {replyBtn(s)}
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               {onRewind ? <Pressable hitSlop={8} onPress={() => onRewind(s.text || "")}><Ionicons name="arrow-undo-outline" size={13} color={t.txtTertiary} /></Pressable> : null}
             </View>
@@ -509,14 +568,15 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps
         // not-mine text (Henry, the Worker, or another human) — a sender
         // header only on the first message of a consecutive run from them
         // (Slack-style grouping), colored/badged by who's speaking.
-        return (
-          <View key={key} style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: byKind !== "worker" ? ac + "66" : t.borderSubtle }}>
+        return wrap(s, key,
+          <View style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: byKind !== "worker" ? ac + "66" : t.borderSubtle }}>
             {showHeader ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
                 <Ionicons name={senderIcon} size={11} color={ac} />
                 <Text style={{ color: ac, fontSize: 10.5, fontWeight: "700" }}>{senderLabel}</Text>
               </View>
             ) : null}
+            {s.quote ? <QuoteBlock q={s.quote} color={ac} t={t} onPress={jumpTo(s.quote.seq)} /> : null}
             <CollapsibleMarkdown text={s.text || ""} color={ac} />
             {s.streaming ? <Text style={{ color: t.accent }}>▍</Text> : null}
             {!s.streaming ? (
@@ -538,6 +598,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow }: { steps
                   </Pressable>
                 ) : null}
                 <View style={{ flex: 1 }} />
+                {replyBtn(s)}
                 <CopyBtn text={s.text || ""} color={t.txtTertiary} />
               </View>
             ) : null}

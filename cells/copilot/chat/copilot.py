@@ -2069,6 +2069,23 @@ _INJECT_HEAD = ("[Der Owner schreibt dir WAEHREND du arbeitest - beziehe das in 
                 "diesen laufenden Turn ein, deine Antwort am Ende gilt fuer beides]" + chr(10))
 
 
+def _reply_ref(r):
+    """The quoted message of a reply, sanitised - {seq, by, text} or None.
+    Only what the app can show and Henry needs: the text is an excerpt."""
+    if not isinstance(r, dict):
+        return None
+    text = str(r.get("text") or "").strip()
+    if not text:
+        return None
+    out = {"text": text[:300], "by": str(r.get("by") or "")[:40]}
+    try:
+        if r.get("seq") is not None:
+            out["seq"] = int(r["seq"])
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
 def try_inject(user, message, client_msg_id=""):
     """Write the owner's message into his running BOARD turn. True = absorbed
     (the 'you' row is persisted here, at submission); False = no open tool
@@ -2341,7 +2358,7 @@ def build_argv(cli_model, sid, system):
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
          client_msg_id="", announce=True, _retried=False, model_source="user", mode="",
-         harness_note="", overlay=""):
+         harness_note="", overlay="", reply_to=None):
     """One copilot turn for this user. Returns {reply, actions, refused, cost, usage}.
     model/thinking/attachments come from the shared composer and resolve through
     turnopts (same whitelist + Auto routing the card chat uses). `card` = the id of
@@ -2426,6 +2443,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     if mode and mode != henry_pmode() and role in ("owner", "operator"):
         set_hands_mode(mode, actor=user, note="composer mode row")
     body = turnopts.augment_prompt(message, thinking, paths)
+    # A REPLY TO ONE MESSAGE (owner 2026-09-25: "direkt auf Nachrichten
+    # antworten wie in einer Messenger-App"): the quoted message rides in
+    # front of the owner's words, so "ja, mach das" means THAT one.
+    reply_to = _reply_ref(reply_to)
+    if reply_to:
+        body = ("[Antwort auf %s: \"%s\"]\n" % (reply_to.get("by") or "eine Nachricht",
+                                                reply_to["text"])) + body
     focus = ""
     card_run_dir = None
     if card:
@@ -2468,6 +2492,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
             if client_msg_id:
                 _you["client_msg_id"] = client_msg_id
+            if reply_to:
+                _you["reply_to"] = reply_to
         _append_log(user, [_you])
     # A turn carries the context of the surface it belongs to, and only that.
     # A CARD chat gets that card's own timeline (worker steps, Henry's notes,
@@ -3195,7 +3221,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     # message WITHOUT its client id, and the app would silently
                     # fall back to position matching for exactly the turns that
                     # already went wrong once.
-                    client_msg_id=client_msg_id, _retried=True)
+                    client_msg_id=client_msg_id, _retried=True, reply_to=reply_to)
     out = {"reply": reply_prose, "actions": acts_parsed}
     # The tappable half rides the response as TYPED state, so /wear/talk and
     # /glance/talk keep getting a question after the prose was cleaned here
