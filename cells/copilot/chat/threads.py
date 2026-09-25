@@ -19,6 +19,7 @@ processes.py prepends ("HUMAN STEP (tracked only): ...", "PREPARE (draft only
 say out loud (his first screenshot of the list, 2026-09-13 13:11). For those
 the STEP's own title is the name - matched through step["track"], the binding
 processes.accept_step writes."""
+import os
 import time
 
 ACTIVE_LANES = ("working", "review")
@@ -117,6 +118,10 @@ def threads(user, limit=200):
             "bucket": _bucket(t),
             "process": t.get("process") or None,
             "process_title": t.get("process_title") or None,
+            # the PROJECT (repo folder name) and where the card came from
+            "repo": os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or None,
+            "origin_card": t.get("origin_card") or None,
+            "isolated": bool(t.get("isolated_from")),
             "preview": ((lm.get("text") if lm else "") or "")[:140].replace("\n", " "),
             "by": (lm.get("byKind") if lm else None),
             "has_chat": lm is not None,

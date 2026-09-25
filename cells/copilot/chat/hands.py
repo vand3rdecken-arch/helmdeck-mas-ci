@@ -259,7 +259,7 @@ def _land(hid, status, result, steps):
             # and routes replies through routes_copilot._route_to_card, which
             # a bare hands run has no target for) so chat.tsx can box it under
             # sender "Hände" without wiring an inline-reply route to nowhere.
-            copilot._append_log(user, [{"cls": "hands", "text": "%s: %s\n%s" % (word, title, short),
+            copilot._append_log(user, [{"cls": "hands", "hands": hid, "text": "%s: %s\n%s" % (word, title, short),
                                         "ts": time.strftime("%H:%M")}])
             # Owner report 2026-09-16: a hands result landed in the transcript
             # but never pinged the phone/watch - he only saw it because Henry

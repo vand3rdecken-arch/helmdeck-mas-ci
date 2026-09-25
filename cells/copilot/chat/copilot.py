@@ -3210,6 +3210,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                 "ts": time.strftime("%H:%M")}])
         acts = []
     if acts:
+        # THE CONVERSATION RIDES ON THE ACTION: a hands run started from a card
+        # chat belongs to that card (it reported into the board chat and fed
+        # the board session), and a card filed from a card chat remembers where
+        # it came from. Henry's action format never carried either.
+        if card:
+            for a in acts:
+                if a.get("type") == "hands" and not a.get("card"):
+                    a["card"] = card
+                if a.get("type") in ("file_card", "direct_task") and not a.get("_origin_card"):
+                    a["_origin_card"] = card
+
         def _run_bg():
             done = []
             for a in acts:
@@ -3217,6 +3228,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                     done.append(_run_action(a, user, role))
                 except Exception as e:
                     done.append("action failed: %s" % str(e)[:200])
+                if not card_run_dir:
+                    # EACH row as its action lands - a card tile used to wait
+                    # for every other action of the turn (a slow merge held the
+                    # new card's tile back for minutes)
+                    _append_log(user, [dict({"cls": "act", "text": done[-1]},
+                                            **({"card": a.get("_card"), "cardName": a.get("_card_name")}
+                                               if a.get("_card") else {}),
+                                            **({"hands": a["_hands"]} if a.get("_hands") else {}))])
             if done:
                 # Henry sees these NEXT turn (folded into the turn text) - a
                 # result that only reached the owner's log left him claiming a
@@ -3229,14 +3248,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
                             {"kind": "note", "text": r, "byKind": "henry",
                              "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
-                else:
-                    # one entry per action, and the card it produced rides
-                    # along (copilot_actions._tag) so the app can draw a
-                    # thread tile instead of a sentence
-                    _append_log(user, [dict({"cls": "act", "text": r},
-                                            **({"card": a.get("_card"), "cardName": a.get("_card_name")}
-                                               if a.get("_card") else {}))
-                                       for a, r in zip(acts, done)])
+                # board chat: the rows were appended per action above (the
+                # card it produced rides along - copilot_actions._tag - so the
+                # app draws a thread tile instead of a sentence)
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
     # feed the keepalive: a real turn IS the freshest cache there is
     _last_turn_at[skey] = _last_touch_at[skey] = time.time()

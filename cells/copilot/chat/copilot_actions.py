@@ -45,7 +45,7 @@ ACTION_KINDS = frozenset((
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
-    "share_note", "delete_project",
+    "share_note", "delete_project", "attach_process",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
     # "wrong object" unreachable there rather than merely discouraged. We add
@@ -281,6 +281,37 @@ def _tag(a, t):
     return t
 
 
+def _one_process(ref):
+    """A process by id or request fragment, or the reason it could not be
+    resolved (same resolution accept_steps uses)."""
+    from cells.engineer.chains import processes
+    frag = (ref or "").lower().strip()
+    if not frag:
+        return "kein Prozess angegeben (process: id oder Stichwort)"
+    ps = [p for p in processes.list_processes()
+          if frag in p["id"].lower() or frag in p["request"].lower()]
+    if len(ps) != 1:
+        return "Prozess '%s' nicht eindeutig oder nicht gefunden (%d Treffer)" % (ref, len(ps))
+    return ps[0]
+
+
+def _file_links(a, t, actor):
+    """The links a card filed from chat carries at birth: its PROCESS (the
+    action's `process` field) and the conversation it came from (`_origin_card`
+    = the card chat Henry was in, set by copilot.chat). Both written here, once,
+    at filing - nothing can reconstruct them later."""
+    from cells.engineer.cards import sessions
+    if a.get("process"):
+        p = _one_process(a["process"])
+        if not isinstance(p, str):
+            from cells.engineer.chains import processes
+            processes.attach_card(p["id"], t["id"], actor=actor)
+    if a.get("_origin_card"):
+        def _o(tt):
+            tt["origin_card"] = a["_origin_card"]
+        sessions._mutate(t["id"], _o)
+
+
 def _run_action(a, actor, role="operator"):
     from cells.engineer.cards import sessions
     from cells.engineer.chains import processes
@@ -487,12 +518,20 @@ def _run_action(a, actor, role="operator"):
         except RuntimeError as e:
             return "direct_task: %s" % e
         _tag(a, t)
+        _file_links(a, t, actor)
+        t = sessions._find(sessions._load(), t["id"]) or t
+        if t.get("isolated_from"):
+            return ("Karte %s gestartet - der Live-Baum ist gerade von %s belegt, "
+                    "darum im eigenen Worktree (Branch %s); landet danach im Baum."
+                    % (t["id"], t["isolated_from"], t.get("branch")))
         return ("Direkt-Build gestartet (%s%s) - der Agent arbeitet OHNE Worktree direkt "
                 "im Baum %s. Kein Gate, kein Merge: was er ändert, ist sofort da."
                 % (t["id"], ", fast-track" if t.get("fast_track") else "",
                    t.get("worktree")))
     if kind == "file_card":
-        repo = events.settings().get("default_repo")
+        # the PROJECT is the repo: honoured when Henry names one (it was
+        # silently dropped - every worktree card landed in default_repo)
+        repo = a.get("repo") or events.settings().get("default_repo")
         if not repo:
             return ("file_card: es ist kein default_repo gesetzt. Entweder settings "
                     "default_repo auf das Projekt setzen (configure), oder ich mache es "
@@ -507,7 +546,18 @@ def _run_action(a, actor, role="operator"):
                                actor=actor, priority=a.get("priority", "medium"),
                                due=a.get("due", ""))
         _tag(a, t)
+        _file_links(a, t, actor)
         return "filed card %s (%s)" % (t["id"], t["lane"])
+    if kind == "attach_process":
+        t = _find_card(a.get("card", ""))
+        if t is None or isinstance(t, list):
+            return _card_hint("attach_process", a.get("card", ""), t if isinstance(t, list) else [])
+        p = _one_process(a.get("process"))
+        if isinstance(p, str):
+            return p
+        processes.attach_card(p["id"], t["id"], actor=actor)
+        _tag(a, t)
+        return "Karte %s ist jetzt Schritt im Prozess %s" % (t["id"], p["id"])
     # An explicit-object alias is the SAME verb, normalised once here so every
     # branch below keeps one name to reason about - and so delete_card reaches
     # the card branch at all.
@@ -751,19 +801,34 @@ def _run_action(a, actor, role="operator"):
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
-        return "process %s filed - agent is proposing steps" % p["id"]
+        # cards that already exist for this theme join it right away
+        joined = []
+        for ref in a.get("cards") or []:
+            ct = _find_card(ref)
+            if ct and not isinstance(ct, list):
+                processes.attach_card(p["id"], ct["id"], actor=actor)
+                joined.append(ct["id"])
+        return "process %s filed - agent is proposing steps%s" % (
+            p["id"], (" - Karten drin: " + ", ".join(joined)) if joined else "")
     if kind == "accept_steps":
         frag = (a.get("process") or "").lower()
         ps = [p for p in processes.list_processes()
               if frag in p["id"].lower() or frag in p["request"].lower()]
         if len(ps) != 1:
             return "accept_steps failed: process ref ambiguous or not found"
-        repo = events.settings().get("default_repo")
+        repo = a.get("repo") or events.settings().get("default_repo")
         p = ps[0]
+        made = []
         for i in range(len(p["steps"])):
             if not p["steps"][i].get("track"):
                 p = processes.accept_step(p["id"], i, repo, actor=actor)
-        return "accepted all steps of %s into cards" % p["id"]
+                made.append(p["steps"][i].get("track"))
+        if made:
+            ct = _find_card(made[0])
+            if ct and not isinstance(ct, list):
+                _tag(a, ct)          # the tile opens the first card of the chain
+        return "accepted all steps of %s into cards (%s)" % (
+            p["id"], ", ".join(x for x in made if x))
     if kind in ("edit_process", "cancel_process", "delete_process", "process_status"):
         # Added 2026-09-03 (owner report: the Prozesse screen let you add
         # steps and nothing else - no rename/re-schedule, no way to stop a
