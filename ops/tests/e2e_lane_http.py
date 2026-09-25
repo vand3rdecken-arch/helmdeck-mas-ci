@@ -59,7 +59,9 @@ db._LEGACY_DB = os.path.join(SANDBOX, "legacy.db")
 events.SET = os.path.join(SANDBOX, "settings.json")
 
 from cells.copilot.chat import copilot
-from cells.engineer.cards import sessions
+from cells.engineer.cards import sessions, lanemachine
+from spine.http import startup
+from cells.copilot.chat import card_mirror
 from spine.http import server
 
 # role="tool": this process owns no driver sessions, so it must never be allowed
@@ -88,10 +90,12 @@ def slow_gate(t):
     return True, []
 
 
-sessions._gate = slow_gate
-sessions._autocommit = lambda t: True
-sessions._repo_hook = lambda t, kind: True
-sessions._merge_to_main = lambda t: (True, "merged", "1 commit nach main gemergt")
+lanemachine._gate = slow_gate
+lanemachine._autocommit = lambda t: True
+lanemachine._repo_hook = lambda t, kind, extra_env=None: True
+lanemachine._merge_to_main = lambda t: (True, "merged", "1 commit nach main gemergt")
+lanemachine._sync_base = lambda t: "ok"
+lanemachine._pull_main_into_branch = lambda t: True
 
 # -- a real owner + a real card ----------------------------------------------
 auth.create_user("owner1", "test-pw-12345", "owner")
@@ -123,6 +127,18 @@ sessions._save_track(CARD)
 
 # -- boot the REAL server -----------------------------------------------------
 PORT = 8199
+# The daemon singleton keys its pidfile off daemon.paths.DAEMON_ROOT, i.e. the
+# LIVE daemon's daemon.pid - without this, serve() evicts (tree-kills) the real
+# daemon and overwrites its pidfile. Measured 2026-09-25: this harness restarted
+# the live daemon. Point it at the sandbox like every other store.
+startup._DAEMON_ROOT = SANDBOX
+# serve() itself no longer reaps when db.DBPATH is a sandbox (test_sandbox_boot_no_reap.py),
+# but nothing else this harness does may touch the live pid tables or warm a real claude.
+from spine.agent import proctable
+proctable._PIDFILE = os.path.join(SANDBOX, "driver_pids.json")
+copilot._PORTS_FILE = os.path.join(SANDBOX, "chat_ports.json")
+copilot.prewarm = lambda *a, **k: None
+copilot._start_keepalive_loop = lambda *a, **k: None
 threading.Thread(target=lambda: server.serve(PORT), daemon=True).start()
 BASE = "http://127.0.0.1:%d" % PORT
 
@@ -196,12 +212,15 @@ check(final.get("status") == "accepted" and final.get("lane") == "done",
 
 msgs = (req("GET", "/chat/history", None, tok) or {}).get("messages", [])
 texts = [m.get("text", "") for m in msgs]
-check(any("E2E Testkarte" in x for x in texts),
+# Since 2026-08-29 a lane outcome is a card_mirror.say_card entry: BOUND to the
+# card id (`card`) and labelled via `cardName`, not a prose prefix in the text.
+accept_msgs = [m for m in msgs if m.get("card") == "e2e-card"]
+check(bool(accept_msgs),
       "the REAL copilot.say wrote the outcome into the owner's chat")
 check(any("gemergt" in x or "abgenommen" in x for x in texts),
       "the chat message states what happened: %s" % (texts[-1][:80] if texts else "(none)"))
-check(any(m.get("cls") == "pm" for m in msgs),
-      "it is tagged cls='pm' so the app renders it as a board-agent message")
+check(any(m.get("cls") == card_mirror.CLS for m in accept_msgs),
+      "it is tagged cls=%r so the app renders it as a board-agent message" % card_mirror.CLS)
 
 # -- 4. THE BOUNCE: a red gate must not be silent -----------------------------
 # This is the reported symptom: drag to Done, work happens, the card bounces,
@@ -209,7 +228,7 @@ check(any(m.get("cls") == "pm" for m in msgs),
 # actual gate output (not just "it failed").
 CARD2 = dict(CARD, id="e2e-bounce", branch="b-bounce", task="E2E Bounce-Karte")
 sessions._save_track(CARD2)
-sessions._gate = lambda t: (False, [
+lanemachine._gate = lambda t: (False, [
     "gate command failed (py -3.12 ops/tools/run_gate.py):\nFAIL test_thing.py\nAssertionError: lane != done"])
 
 res2 = req("POST", "/tracks/e2e-bounce/lane", {"lane": "done"}, tok)
@@ -223,7 +242,7 @@ check(bool(b.get("gate_report")), "the card carries the gate_report for the boar
 
 msgs2 = (req("GET", "/chat/history", None, tok) or {}).get("messages", [])
 texts2 = [m.get("text", "") for m in msgs2]
-bounce_msgs = [x for x in texts2 if "Bounce-Karte" in x]
+bounce_msgs = [m.get("text", "") for m in msgs2 if m.get("card") == "e2e-bounce"]
 check(bool(bounce_msgs), "THE BOUNCE IS ANNOUNCED IN CHAT (the reported bug)")
 check(any("test_thing.py" in x for x in bounce_msgs),
       "the chat message carries the REAL gate output, not just 'failed'")

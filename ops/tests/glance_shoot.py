@@ -118,7 +118,9 @@ def main():
         pg.goto(base, wait_until="domcontentloaded")
         pg.evaluate("""(cfg) => localStorage.setItem('helmdeck_glance_cfg',
                        JSON.stringify(cfg))""", {"base": base, "token": TOKEN})
-        pg.goto(base, wait_until="networkidle")
+        # NOT networkidle: the lens holds a long-lived chat stream open
+        # (startChatStream), so the network never goes idle.
+        pg.goto(base, wait_until="domcontentloaded")
         pg.wait_for_timeout(400)
         pg.screenshot(path=os.path.join(SHOTS, "glance_1_home.png"))
 

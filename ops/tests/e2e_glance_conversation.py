@@ -331,7 +331,11 @@ def main():
             # ---- the conversation survives navigation ------------------------
             page.keyboard.press("Escape")
             page.wait_for_timeout(400)
-            page.click('[data-action="talk-start"]')
+            # There is no talk-start button any more (7885d65e: the mic is
+            # started FROM the glasses via Speak, and the phone reports back).
+            # The way back into the conversation is a new mic-open turn state,
+            # which maybeOpenTalk() turns into the talk screen.
+            post_state("listening", mic="glasses", text="")
             page.wait_for_timeout(2000)
             ok("Two cards need you" in page.text_content("#talk-chat"),
                "coming back to the conversation shows the WHOLE exchange - the "

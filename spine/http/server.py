@@ -678,6 +678,13 @@ def serve(port=8140, takeover=False):
     _hydrate_registry_env()      # + JAVA_HOME/ANDROID_HOME/user-PATH from the registry (build env)
     _take_singleton_lock(port, takeover=takeover)   # THE gate: mutex, then (takeover only) evict
     from spine.storage import db
+    from daemon.paths import DAEMON_ROOT
+    # A sandbox boot (a harness that repointed db.DBPATH, the same signal as
+    # db._migrate's guard) does not own the pid/port tables under DAEMON_ROOT/
+    # state: they belong to the LIVE daemon, and the reapers below kill every
+    # process listed there. Measured 2026-09-25: e2e_lane_http killed a card's
+    # own claude and Henry's chat port this way.
+    owns_root = os.path.dirname(os.path.abspath(db.DBPATH)) == os.path.abspath(DAEMON_ROOT)
     # role="daemon": loading the store AS THE DAEMON structurally devalues any
     # persisted 'running'/'gating' (db._devalue_persisted_running - the old
     # serve()-side sweep_zombies call, now part of the load path itself).
@@ -701,14 +708,14 @@ def serve(port=8140, takeover=False):
     legacypolicy.run_at_boot()
     import atexit
     from spine.agent import drivers
-    reaped = drivers.reap_orphans()   # tree-kill agent processes a prior daemon left behind
+    reaped = drivers.reap_orphans() if owns_root else 0   # tree-kill agent processes a prior daemon left behind
     if reaped:
         print("DRIVERS: reaped %d orphan agent process tree(s) from a previous run." % reaped)
     # SINGLETON eviction's taskkill /T does not reliably cascade to a
     # grandchild ffmpeg subprocess, so a screen recorder can outlive the
     # daemon that started it - reap those too (wincap.py's own reap_orphans).
     from spine.media import wincap
-    rreaped = wincap.reap_orphans()
+    rreaped = wincap.reap_orphans() if owns_root else 0
     if rreaped:
         print("WINCAP: reaped %d orphan screen recorder(s) from a previous run." % rreaped)
     drivers.start_idle_sweeper()      # reap idle worker sessions (Paseo idle TTL)
@@ -805,7 +812,7 @@ def serve(port=8140, takeover=False):
         # claude.exe from 09-11..09-13 measured on 2026-09-14.
         try:
             from cells.copilot.chat import copilot
-            _n = copilot.reap_chat_ports()
+            _n = copilot.reap_chat_ports() if owns_root else 0
             if _n:
                 print("CHAT: reaped %d warm chat port(s) left by a prior daemon" % _n, flush=True)
         except Exception as e:                                   # noqa: BLE001

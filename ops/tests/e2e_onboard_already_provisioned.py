@@ -212,8 +212,12 @@ def main():
             # The app must not be stuck: SOME real screen is showing, not a
             # blank canvas (useCacheGate's pre-hydrate placeholder).
             check(len(body.strip()) > 20, "the page rendered real content, not a blank canvas")
-            check("Create the owner account" in body or "Owner-Konto anlegen" in body,
-                  "reached the create-owner screen")
+            # The flow now opens on the fresh-vs-restore choice ("Set up fresh" /
+            # "Take over from another machine") BEFORE the create-owner form;
+            # either one is "onboarding, not the normal app".
+            check("Create the owner account" in body or "Owner-Konto anlegen" in body
+                  or "Set up fresh" in body or "Neu einrichten" in body,
+                  "reached the onboarding flow (create-owner or the fresh-vs-restore choice)")
             # The actual regression: did it get there by mounting the normal
             # app tree first (pre-fix) or by going straight through onboarding
             # (post-fix)?
