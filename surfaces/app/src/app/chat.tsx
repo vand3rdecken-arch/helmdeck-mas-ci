@@ -743,6 +743,24 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     }
   }
 
+  /** Typed WHILE Henry's turn runs: the daemon folds it into that turn when a
+   *  tool call is open (copilot.try_inject - measured: the CLI takes a stdin
+   *  frame mid-turn and ends with ONE answer), else false -> the composer
+   *  queues it. The bubble goes up only once the daemon took it; it is
+   *  retired by its mid when the persisted row arrives. Never touches
+   *  turn.current - the running send owns that. */
+  async function steerLive(raw: string, opts: SteerOpts): Promise<boolean> {
+    const q = raw.trim();
+    if (!q || opts.to?.startsWith("card:") || replyTarget) return false;
+    const mid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const r = await api.chat(q, { ...opts, mid, steer_only: true });
+    if (!r?.absorbed) return false;
+    setPending((p) => [...p, { id: -Date.now(), key: q, mid, baseline: Number.MAX_SAFE_INTEGER,
+      anchor: (server ?? []).length, msgs: [{ cls: "user", text: q, client_msg_id: mid }] }]);
+    setTimeout(() => scroll.current?.toBottom(), 50);
+    return true;
+  }
+
   /** The owner TAPPED an option on one of Henry's own questions.
    *
    *  It runs the ORDINARY send path - same turn, same session, same optimistic
@@ -1013,7 +1031,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               its background tasks, fed by /chat/history's derived descriptors. */}
           <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
           <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
-          <Composer onSend={send} busy={busy} onStop={stop} models={models ?? ["auto"]}
+          <Composer onSend={send} onSteerLive={steerLive} busy={busy} onStop={stop} models={models ?? ["auto"]}
             // Mode row (owner request 2026-09-12, screenshot of Claude Code's
             // picker: Model / Thinking / Mode): Henry's permission mode, same
             // three options and labels as a card's composer, current mode

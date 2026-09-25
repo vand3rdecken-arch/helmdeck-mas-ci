@@ -363,6 +363,8 @@ export interface ChatReply { reply?: string; error?: string; cost?: number;
    *  still running when the daemon gave up waiting, in which case the answer
    *  arrives through the /chat/history poll like any other persisted turn. */
   duplicate?: boolean;
+  /** steer_only: true = folded into the running turn, false = send it later */
+  absorbed?: boolean;
   /** Present when the message was routed to a CARD instead of answered by
    *  Henry (`reply_to_card`). `as` says which door it went through: "answer"
    *  settled the card's pending question, "steer" was a plain instruction.
@@ -1063,7 +1065,11 @@ export const api = {
   // these: the daemon writes it. `answer_to` is the question id, rejected with
   // 409 once the conversation has moved past it.
   chat: (text: string, o: SteerOpts & { card?: string; reply_to_card?: string; mid?: string;
-    answer_to?: string; answers?: Record<string, string | string[]> } = {}) => {
+    answer_to?: string; answers?: Record<string, string | string[]>;
+    /** Typed while Henry's turn runs: the daemon folds it into that turn
+     *  (copilot.try_inject) and answers `absorbed`, or refuses at once -
+     *  never a lock wait on this leg. */
+    steer_only?: boolean } = {}) => {
     track("chat_message", { scope: o.reply_to_card ? "card_reply" : o.card ? "card" : "board" });
     // `mid` is minted HERE, once per call, and travels inside the body - which
     // is precisely what makes it a replay detector. A chat turn runs for

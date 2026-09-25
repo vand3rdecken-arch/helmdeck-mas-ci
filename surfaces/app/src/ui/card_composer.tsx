@@ -44,9 +44,13 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  onVoice, recipients, defaultTo, contextChip, onClearContext,
+  onVoice, recipients, defaultTo, contextChip, onClearContext, onSteerLive,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
+  /** Typed while busy: try to fold the message into the RUNNING turn first
+   *  (board chat -> copilot.try_inject). Resolves false when the turn cannot
+   *  take it right now; the message is then queued like before. */
+  onSteerLive?: (text: string, opts: SteerOpts) => Promise<boolean>;
   busy?: boolean;
   onStop?: () => void;
   models: (string | { id: string; label?: string; desc?: string })[];
@@ -107,8 +111,14 @@ export function Composer({
   const [atts, setAtts] = useState<Attach[]>([]);
   const [seedKey, setSeedKey] = useState(0);
   const picking = useRef(false);   // Android: a double-tap otherwise opens two pickers
-  // queue-while-busy: hold a message typed during a running turn, auto-send on free
-  const [queued, setQueued] = useState<{ text: string; opts: SteerOpts } | null>(null);
+  // queue-while-busy: hold messages typed during a running turn, auto-send in
+  // order on free. A LIST: the single slot silently overwrote the first held
+  // message with the second (Paseo keeps queuedMessages per agent).
+  const [queued, setQueued] = useState<{ id: number; text: string; opts: SteerOpts }[]>([]);
+  const qid = useRef(0);
+  const enqueue = (text: string, opts: SteerOpts) =>
+    setQueued((q) => [...q, { id: ++qid.current, text, opts }]);
+  const unqueue = (id: number) => setQueued((q) => q.filter((x) => x.id !== id));
   const flushing = useRef(false);
 
   // draft persistence — write-through on every edit, restore on mount
@@ -217,11 +227,12 @@ export function Composer({
     return () => { window.removeEventListener("dragover", stop); window.removeEventListener("drop", onDrop); };
   }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // when the agent frees up, deliver the held message
+  // when the agent frees up, deliver the OLDEST held message; the next one
+  // follows when that turn frees up again (one turn per message, in order)
   useEffect(() => {
-    if (!busy && queued && !flushing.current) {
+    if (!busy && queued.length && !flushing.current) {
       flushing.current = true;
-      const q = queued; setQueued(null);
+      const q = queued[0]; unqueue(q.id);
       Promise.resolve(onSend(q.text, q.opts)).finally(() => { flushing.current = false; });
     }
   }, [busy, queued]);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -265,7 +276,10 @@ export function Composer({
     const v = textRef.current.trim() || (atts.length ? tr("composer.seeAttachment") : "");
     if (!v) return;
     const opts = buildOpts();
-    if (busy) setQueued({ text: v, opts });   // hold until the agent is free
+    if (busy && onSteerLive) {
+      // into the running turn if it can take it, else hold it
+      onSteerLive(v, opts).then((ok) => { if (!ok) enqueue(v, opts); }, () => enqueue(v, opts));
+    } else if (busy) enqueue(v, opts);   // hold until the agent is free
     else onSend(v, opts);
     clearInput();
   }
@@ -384,23 +398,24 @@ export function Composer({
       ) : null}
 
       {/* queued-while-busy chip: held until the running turn frees up */}
-      {queued ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, marginTop: 8,
+      {queued.map((q) => (
+        <View key={q.id} testID="composer-queued"
+          style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, marginTop: 8,
           backgroundColor: t.accent + "1A", borderColor: t.accent + "66", borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 7 }}>
           <ActivityIndicator size="small" color={t.accent} />
-          <Pressable style={{ flex: 1 }} onPress={() => { setText(queued.text); setQueued(null); }}>
+          <Pressable style={{ flex: 1 }} onPress={() => { setText(q.text); unqueue(q.id); }}>
             <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700" }}>{tr("composer.queued")}</Text>
-            <Text numberOfLines={1} style={{ color: t.txtSecondary, fontSize: 12 }}>{queued.text}</Text>
+            <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 12 }}>{q.text}</Text>
           </Pressable>
-          <Pressable onPress={() => { const q = queued; setQueued(null); onSend(q.text, q.opts); }}
+          <Pressable onPress={() => { unqueue(q.id); onSend(q.text, q.opts); }}
             style={{ backgroundColor: t.accent, borderRadius: 7, paddingHorizontal: 9, paddingVertical: 5 }}>
             <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{tr("composer.sendNow")}</Text>
           </Pressable>
-          <Pressable onPress={() => setQueued(null)} hitSlop={8}>
+          <Pressable onPress={() => unqueue(q.id)} hitSlop={8}>
             <Ionicons name="close" size={18} color={t.txtTertiary} />
           </Pressable>
         </View>
-      ) : null}
+      ))}
 
       {/* recipient chip: who an unaddressed message goes to right now — never
           invisible, unlike the old Worker/Agent tab state it replaces. */}

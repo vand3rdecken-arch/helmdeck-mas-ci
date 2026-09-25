@@ -2033,6 +2033,47 @@ def _note_turn(user, on):
 _running_card = {}
 _cancelled = set()
 
+# STEER INTO THE RUNNING TURN (owner 2026-09-25: "das blockiert diesen Chat").
+# MEASURED 2026-09-25 against the real CLI (claude -p --input-format
+# stream-json): a user frame written to stdin WHILE a tool call runs is folded
+# into the SAME turn - the model sees it after the tool result and the turn
+# ends with ONE result ("DONE1 MANGO"). So a message typed while Henry works
+# does not have to wait for the lock: it rides into the turn he is already in.
+# Only while a tool call is OPEN (the window the probe measured) - a frame
+# written while the final answer streams would open a second CLI turn nobody
+# pumps. Satellite of _running: set after the prompt write, cleared under the
+# same guard before the lock is released; `tools` = open tool_use ids, folded
+# at event time from the turn's own stream.
+_inject = {}
+_inject_guard = threading.Lock()
+_INJECT_HEAD = ("[Der Owner schreibt dir WAEHREND du arbeitest - beziehe das in "
+                "diesen laufenden Turn ein, deine Antwort am Ende gilt fuer beides]" + chr(10))
+
+
+def try_inject(user, message, client_msg_id=""):
+    """Write the owner's message into his running BOARD turn. True = absorbed
+    (the 'you' row is persisted here, at submission); False = no open tool
+    window - the caller keeps it queued and sends it as its own turn."""
+    message = (message or "").strip()
+    if not message:
+        return False
+    with _inject_guard:
+        st = _inject.get(user)
+        if not st or not st["tools"] or st["p"].poll() is not None:
+            return False
+        try:
+            st["p"].stdin.write(json.dumps({"type": "user", "message": {
+                "role": "user", "content": _INJECT_HEAD + message}}) + chr(10))
+            st["p"].stdin.flush()
+        except Exception:                                    # noqa: BLE001
+            return False
+        st["absorbed"] += 1
+    _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
+    if client_msg_id:
+        _you["client_msg_id"] = client_msg_id
+    _append_log(user, [_you])
+    return True
+
 # -- streaming: ONE chat surface with the card (shared Transcript), only the
 # backend differs. The copilot streams its PROSE reply into a per-user live feed
 # the board chat polls (like a card's live_partial), so the board agent "types"
@@ -2669,6 +2710,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 p.stdin.flush()
         else:
             p.stdin.write(prompt); p.stdin.close()
+        if persistable and not card:
+            with _inject_guard:
+                _inject[user] = {"p": p, "tools": set(), "absorbed": 0}
         for line in _port.lines(p):                 # the pump (like drivers._pump)
             if user in _cancelled:
                 break
@@ -2722,6 +2766,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                         _blocks.append(_b["text"])
                         _tail_blocks.append(_b["text"])
                     if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                        with _inject_guard:
+                            if user in _inject and _b.get("id"):
+                                _inject[user]["tools"].add(_b["id"])
                         _tail_blocks = []     # prose before a tool call is a status line, not the answer
                         _inp = _b.get("input") or {}
                         _brief = str(_inp.get("command") or _inp.get("description")
@@ -2782,6 +2829,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # tool results close the matching transient step
                 for _b in ((ev.get("message") or {}).get("content") or []):
                     if isinstance(_b, dict) and _b.get("type") == "tool_result":
+                        with _inject_guard:
+                            if user in _inject:
+                                _inject[user]["tools"].discard(_b.get("tool_use_id"))
                         _rc = _b.get("content")
                         if isinstance(_rc, list):
                             _rc = "\n".join(str(x.get("text") or "") for x in _rc if isinstance(x, dict))
@@ -2863,6 +2913,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 " HUNG" if _beat.get("hung") else ""), flush=True)
         except Exception:                                    # noqa: BLE001
             pass
+        with _inject_guard:
+            _inject.pop(user, None)
         _running.pop(user, None)
         _note_turn(user, False)
         _running_card.pop(user, None)
