@@ -1,10 +1,11 @@
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useBlockerVoice } from "./blocker_voice";
 import { ApiError, TransportError, api } from "./client";
 import { deviceLabel, useConfig } from "./config";
 import { open } from "./e2ee";
+import { backgroundTaskPresents } from "./push_present";
 import { speak } from "./voice";
 import { t } from "@/i18n/core";
 
@@ -251,7 +252,13 @@ TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }) => 
     return;
   }
 
-  // A data-only FCM message arrived. Shape of `raw` here is the
+  // A data-only FCM message arrived. With the app in the foreground this task
+  // fires TOO (expo-notifications runs it on every message) - the received-
+  // listener in app/_layout.tsx owns display there, including hiding a Henry
+  // reply the owner is reading (push_present.ts).
+  if (!backgroundTaskPresents(AppState.currentState)) return;
+
+  // Shape of `raw` here is the
   // NotificationTaskPayload the docs describe (raw.data.dataString is the JSON-
   // encoded FCM `data` map) - defensively unwrapped since this repo has no
   // node_modules to read the real .d.ts from inside a card worktree; confirm

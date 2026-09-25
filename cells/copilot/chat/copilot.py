@@ -1767,6 +1767,44 @@ def history(user):
             "followups": followups}
 
 
+class JudgePreempted(RuntimeError):
+    """The owner wrote while a judgement turn held his chat: the judgement
+    was stopped so his message runs now. Not a failed attempt - the caller
+    (henry_broker) keeps the escalation open for the next round."""
+
+
+# user -> the judge process holding that user's turn lock right now. ONE
+# owner: judge() sets it after the spawn and clears it in its finally.
+_judge_proc = {}
+_judge_preempted = set()
+
+
+def _preempt_judge(user):
+    """The owner's message outranks a background judgement (owner 2026-09-25
+    22:21, "Warum eingereiht": a follow_up judgement held his chat lock and
+    "Klaere das jetzt" waited behind it). Stop that process; judge() sees the
+    mark and raises JudgePreempted - the session pointer only advances on a
+    finished turn, so nothing half-done is adopted. True = one was stopped."""
+    p = _judge_proc.get(user)
+    if p is None or p.poll() is not None:
+        return False
+    _judge_preempted.add(user)
+    try:
+        from spine.agent import proctable
+        proctable._tree_kill(p)
+    except Exception:                                        # noqa: BLE001
+        try:
+            p.kill()
+        except Exception:                                    # noqa: BLE001
+            pass
+    try:
+        from spine.storage import events
+        events.emit("copilot", "-", action="judge_preempted", actor=user)
+    except Exception:                                        # noqa: BLE001
+        pass
+    return True
+
+
 def judge(prompt, cwd, perm=None, model="", timeout=900):
     """ONE judgement turn (henry_broker's escalation call) run on the OWNER'S
     OWN board session, from a possibly different cwd/permission level than
@@ -1819,12 +1857,19 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
                              stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        _judge_preempted.discard(user)
+        _judge_proc[user] = p
         try:
             stdout, stderr = p.communicate(input=prompt, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()          # a timed-out judgement must not linger as a zombie
             p.communicate()
             raise
+        finally:
+            _judge_proc.pop(user, None)
+        if user in _judge_preempted:
+            _judge_preempted.discard(user)
+            raise JudgePreempted("henry: judgement stopped - the owner wrote in the chat")
         if not (stdout or "").strip():
             raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
         raw = json.loads(stdout)
@@ -2688,6 +2733,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _cancelled.discard(user)
     # serialize with prewarm (and any concurrent send) on the shared process
     _lk = _turn_lock(user)
+    if not harness_note and _preempt_judge(user):
+        livebuf.set_field(live_key, "status",
+                          "Hintergrund-Check angehalten - deine Nachricht geht vor")
     if not _lk.acquire(blocking=False):
         # SAY WHY the owner waits. A contended lock is either a running turn
         # (his own steer, another device) or maintenance (memory-save +

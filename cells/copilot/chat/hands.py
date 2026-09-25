@@ -33,6 +33,8 @@ from daemon.paths import DAEMON_ROOT
 
 _lock = threading.Lock()
 _tasks = {}          # id -> {title, status, since, updated, detail, result, pid, user, skey, card}
+_procs = {}          # id -> the live Popen (set in _run, dropped when _pump ends) - cancel()'s handle
+_cancelled = {}      # id -> actor who stopped it (read by _pump to name the end "canceled")
 _queue = []          # hids waiting for the desktop, FIFO
 _active = None       # the ONE hands run that owns the desktop right now (mutated only in _kick/_run)
 SILENCE_S = 600      # no stream output for this long = hung -> tree-kill (turn idle-watchdog parity)
@@ -180,6 +182,51 @@ def spawn(user, task, skey, card=None, why="", kind="hands"):
     return hid
 
 
+def cancel(hid, actor="owner"):
+    """Stop ONE hands/agent run - the daemon owns the process, so the daemon
+    stops it (Paseo cancel_agent/kill_agent; owner 2026-09-25 21:44: "Stop"
+    reached Henry, no verb reached the run, the X post went out anyway).
+    Returns {ok, status, detail}. A queued run never starts; a running one
+    has its whole tree killed and ends as "canceled" through _pump/_land -
+    the same one end path every run takes."""
+    from spine.agent import proctable
+    from spine.storage import events
+    with _lock:
+        t = _tasks.get(hid)
+        if t is None:
+            return {"ok": False, "status": None, "detail": "kein Lauf mit id %s" % hid}
+        if t["status"] != "running":
+            return {"ok": False, "status": t["status"], "detail": "%s ist schon zu Ende (%s)" % (hid, t["status"])}
+        queued = hid in _queue
+        if queued:
+            _queue.remove(hid)
+            t.update(status="canceled", result="CANCELLED by %s before it started." % actor, updated=time.time())
+        else:
+            _cancelled[hid] = actor
+        p = _procs.get(hid)
+    events.emit("hands", t.get("card") or "-", action="cancel", id=hid, actor=actor, queued=queued)
+    if queued:
+        _land(hid, "canceled", "CANCELLED by %s before it started." % actor, 0)
+        return {"ok": True, "status": "canceled", "detail": "%s gestoppt, bevor er lief" % hid}
+    if p is not None:
+        proctable._tree_kill(p)
+    return {"ok": True, "status": "canceled", "detail": "%s gestoppt (Prozessbaum beendet)" % hid}
+
+
+def find(frag):
+    """The run id `frag` names - exact id first, then a unique substring of
+    id or title - or a list of candidates / None (same shape as _find_card)."""
+    frag = (frag or "").strip().lower()
+    if not frag:
+        return None
+    with _lock:
+        ids = list(_tasks)
+        if frag in (i.lower() for i in ids):
+            return next(i for i in ids if i.lower() == frag)
+        hits = [i for i in ids if frag in i.lower() or frag in (_tasks[i]["title"] or "").lower()]
+    return hits[0] if len(hits) == 1 else (hits or None)
+
+
 def _popen(argv, cwd, env):
     """The process itself - CREATE_NO_WINDOW because the daemon is DETACHED
     (no console), so every console child it starts got a console WINDOW of
@@ -212,8 +259,12 @@ def _run(hid, desktop=True):
     try:
         p = _popen(t["argv"], t["cwd"], t["env"])
         with _lock:
+            _procs[hid] = p
             if hid in _tasks:
                 _tasks[hid].update(pid=p.pid, result="", updated=time.time())
+            stop_now = hid in _cancelled        # stopped between spawn and Popen
+        if stop_now:
+            proctable._tree_kill(p)
         proctable._record_pid(p.pid, time.time())
         _pump(hid, p)
     except Exception as e:                               # noqa: BLE001
@@ -222,6 +273,8 @@ def _run(hid, desktop=True):
                 _tasks[hid].update(status="failed", result="FAILED - spawn: %s" % str(e)[:300], updated=time.time())
         _land(hid, "failed", "FAILED - spawn: %s" % str(e)[:300], 0)
     finally:
+        with _lock:
+            _procs.pop(hid, None)
         desktop_lease.release(hid)         # event-time: a finished hands never leaves a stale lease
         if desktop:                        # an agent run never held the desktop slot
             with _lock:
@@ -282,6 +335,19 @@ def _pump(hid, p):
         pass
     rc = p.wait()
     proctable._forget_pid(p.pid)
+    with _lock:
+        stopped_by = _cancelled.pop(hid, None)
+    if stopped_by:
+        # the kill is the cause of this end - say so, whatever the stream held
+        result = ("CANCELLED by %s after %d steps.%s" % (
+            stopped_by, steps, ("\n" + result.strip()) if result.strip() else "")).strip()
+        status = "canceled"
+        with _lock:
+            t = _tasks.get(hid)
+            if t:
+                t["status"], t["result"], t["updated"] = status, result[:8000], time.time()
+        _land(hid, status, result, steps)
+        return
     if not result:
         result = ("FAILED - no report (rc=%s) %s" % (rc, err.strip())).strip()
         is_error = True
@@ -332,7 +398,7 @@ def _land(hid, status, result, steps):
                                         status.upper(), hid, title, full))
     except Exception:                                    # noqa: BLE001
         pass
-    word = "fertig" if status == "completed" else "fehlgeschlagen"
+    word = {"completed": "fertig", "canceled": "gestoppt"}.get(status, "fehlgeschlagen")
     if t.get("kind") == "agent" and not card:
         # AN AGENT RUN REPORTS THROUGH ITS TILE AND THROUGH HENRY (Paseo: the
         # child's result sits in its track, the parent picks it up). The tile

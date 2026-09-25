@@ -134,73 +134,23 @@ def test_end_to_end_via_stdin():
        "end-to-end: a package-mutating command is denied by the real process")
 
 
-def test_live_invariants():
-    """The one rule Claude cannot know (2026-09-12, cut back the same evening):
-    the agent is a child of the daemon, so a kill on the python tree kills
-    the daemon, every live turn and the asker. Everything else (secrets,
-    force-push, history verbs) is Claude's own permission system's job."""
-    hit = lambda tool, **ti: guard._live_rule_hit(tool, ti, "")  # noqa: E731
-    ok(hit("Bash", command="taskkill /IM pythonw.exe /F"), "taskkill by image is denied")
-    ok(hit("Bash", command="taskkill /PID 123 /T /F"), "taskkill /T (tree) is denied")
-    ok(hit("PowerShell", command="Stop-Process -Name python -Force"), "Stop-Process on python is denied")
-    ok(not hit("Bash", command="tasklist | grep python"), "listing processes is fine")
-    ok(not hit("Bash", command="kill %1"), "a bare job kill without a daemon marker is fine")
-    # what the guard no longer polices (Claude does): no opinion
-    ok(not hit("Bash", command="git push --force origin main"), "force-push: not the guard's call any more")
-    ok(not hit("Bash", command="cat daemon/users.json"), "secrets: the settings deny-rule's call, not the guard's")
-    ok(not hit("Bash", command="schtasks /Delete /TN X /F"), "schtasks: not the guard's call any more")
-
-    def run(tool, ti):
+def test_no_kill_rule():
+    """Paseo parity (owner 2026-09-25 "Do like paseo"): the guard has NO
+    process-termination rule any more - the owner's "Stop" to a hands run
+    died on it that evening. Kills of any shape get no opinion from the hook,
+    end to end through the real process."""
+    def run(command):
         env = dict(os.environ)
         env.pop("HELMDECK_WORKTREE", None)
         env.pop("HELMDECK_TOOL_SCOPE", None)
-        payload = json.dumps({"tool_name": tool, "tool_input": ti})
+        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
         r = subprocess.run([sys.executable, GUARD], input=payload,
                            capture_output=True, text=True, env=env, timeout=15)
-        out = (r.stdout or "").strip()
-        if not out:
-            return None
-        o = json.loads(out)["hookSpecificOutput"]
-        return o["permissionDecision"], o.get("permissionDecisionReason", "")
-
-    # BY TARGET, NOT BY WORD (owner 2026-09-25 "warum kann er keinen Test-
-    # Server schliessen"): Henry's own commands from his transcript.
-    fake = lambda: {999: "the HelmDeck daemon", 555: "an agent session (claude.exe)"}  # noqa: E731
-    kh = lambda c: guard._live_rule_hit("PowerShell", {"command": c}, "", protected=fake)  # noqa: E731
-    ok(not kh("Stop-Process -Id 84936,60448,10132 -Force -ErrorAction SilentlyContinue"),
-       "a literal PID of his own dev server may be stopped, -Force or not (was refused for the WORD -Force)")
-    ok(not kh("grep -n -iE 'taskkill|kill|restart|8140' ops/tests/e2e_lane_http.py"),
-       "a grep pattern mentioning kill + 8140 is not a kill (was refused)")
-    ok(kh("taskkill //PID 999 //F"), "the daemon's PID is refused (the old word rule LET THIS THROUGH)")
-    ok(kh("Stop-Process -Id 555 -Force"), "an agent session (claude.exe) is refused")
-    ok(kh('bash -c "taskkill //PID 999 //F"'), "a kill hidden in bash -c is still checked")
-    ok(kh("Get-Process node | Stop-Process -Force"), "pipeline input (no literal PID) is refused")
-    ok(kh("Stop-Process -Id $w.ParentProcessId -Force"), "a PID from a variable is refused")
-    ok(kh("(Get-Process -Id 5).Kill()"), ".Kill() is refused")
-    ok(kh("pkill -f wrangler"), "kill by name is refused")
-
-    # end to end against the REAL process table
-    import time as _t
-    dummy = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    try:
-        _t.sleep(0.5)
-        ok(not guard._live_rule_hit("PowerShell", {"command": "Stop-Process -Id %d -Force" % dummy.pid}, ""),
-           "real table: a process this test started may be stopped by PID")
-        ok(guard._live_rule_hit("PowerShell", {"command": "taskkill /PID %d /F" % os.getpid()}, ""),
-           "real table: the asking process's own chain is refused")
-    finally:
-        dummy.kill()
-    dp = os.path.join(ROOT, "daemon", "daemon.pid")
-    if os.path.exists(dp):
-        dpid = int(open(dp).read().strip() or 0)
-        ok(bool(dpid) and guard._live_rule_hit("Bash", {"command": "taskkill //PID %d //F" % dpid}, ""),
-           "real table: the live daemon's PID (daemon.pid) is refused")
-
-    d = run("Bash", {"command": "taskkill /IM pythonw.exe /F"})
-    ok(d and d[0] == "deny" and "/admin/restart" in d[1],
-       "end-to-end, no worktree: daemon-kill denied WITH the restart route in the reason")
-    ok(run("Bash", {"command": "git status --short"}) is None,
-       "end-to-end, no worktree: an ordinary command gets no opinion")
+        return (r.stdout or "").strip() or None
+    for c in ("taskkill /PID 80940 /T /F", "taskkill /IM pythonw.exe /F",
+              "Stop-Process -Name claude -Force", "(Get-Process -Id 5).Kill()", "pkill -f wrangler"):
+        ok(run(c) is None, "no opinion on: %s" % c)
+    ok(not hasattr(guard, "_live_rule_hit"), "the kill rule is gone, not just unwired")
 
 
 def test_hands_scope_read_repo_write_scratch():
@@ -269,7 +219,7 @@ def main():
     test_argv_allowlist_logic()
     test_deny_verbs_are_word_bounded()
     test_end_to_end_via_stdin()
-    test_live_invariants()
+    test_no_kill_rule()
     test_hands_scope_read_repo_write_scratch()
     if _fails:
         print("\n=== FAILED: %d ===" % len(_fails))

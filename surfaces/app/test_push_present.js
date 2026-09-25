@@ -1,8 +1,9 @@
 // Foreground push display/wake decision - the WhatsApp/Slack fix (owner report
 // 2026-09-23: "Push kommt sofort, der offene Chat laedt dieselbe Antwort noch
-// per Spinner nach"). The daemon half (per-device exclude_pubs, freshness from
-// heartbeat arrival) is pinned by ops/tests/test_chat_push.py; this proves what
-// the APP does with a push that lands while it is already in the foreground.
+// per Spinner nach"). Since 2026-09-25 the daemon always sends a Henry reply
+// (ops/tests/test_chat_push.py) and the APP alone decides display - this proves
+// what it does with a push that lands in the foreground, and that the
+// background task stays out of it then.
 //
 // Runs the REAL src/data/push_present.ts (transpiled with the repo's own
 // TypeScript) - not a reimplementation. Import-free, same reason as
@@ -45,7 +46,7 @@ function loadTsModule(relPath, tag) {
   return require(out);
 }
 
-const { decideChatPush } = loadTsModule(path.join("src", "data", "push_present.ts"), "pushpresent");
+const { decideChatPush, backgroundTaskPresents } = loadTsModule(path.join("src", "data", "push_present.ts"), "pushpresent");
 
 console.log("foreground push display/wake decision");
 
@@ -78,6 +79,18 @@ const card = decideChatPush("question", "chat", "chat", true);
 ok(card.present === true && card.wake === false,
    "a card push is never suppressed and never treated as a chat wake-up, " +
    "even while the chat happens to be the focused screen");
+
+// 6) the BACKGROUND task must stay out while the app is in the foreground -----
+// expo-notifications 57 runs it on EVERY FCM message, foreground included, and
+// it presented unconditionally: a Henry reply buzzed the phone showing the chat
+// (owner report 2026-09-25). The foreground listener owns display there.
+ok(backgroundTaskPresents("active") === false,
+   "app in the foreground: the background task does NOT raise the banner - " +
+   "the received-listener (decideChatPush) is the one owner of display");
+ok(backgroundTaskPresents("background") === true,
+   "app backgrounded: the task presents - no listener runs there");
+ok(backgroundTaskPresents(null) === true && backgroundTaskPresents(undefined) === true,
+   "headless start (killed app, no AppState yet): the task presents");
 
 console.log();
 if (fails.length) {
