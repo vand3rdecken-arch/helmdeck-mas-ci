@@ -20,9 +20,8 @@ Campaign links (generated, logged in `campaign-links.csv`):
 
 > Update: HelmDeck is live on Product Hunt today.
 >
-> The harness for your team's coding agents. Every task becomes a card,
-> each card gets its own agent, your team answers questions and approves
-> from the phone instead of waiting at a desk.
+> Claude Code asks, you answer from your phone. The agent belongs at the
+> desk, you don't. A hobby project I build beside my main job.
 >
 > Would mean a lot if you took a look: [PH LINK]
 
@@ -33,9 +32,9 @@ Campaign links (generated, logged in `campaign-links.csv`):
 > I built it because I kept sitting at the PC in the evening, waiting for
 > the next question from Claude Code, while my kids were in the next room.
 >
-> Every task becomes a card. Each card gets its own agent, working in an
-> isolated copy of the codebase. The team follows along and approves from
-> the phone, nobody has to open a terminal or sit at a desk.
+> Claude Code asks, and I answer from my phone: its questions, a change of
+> direction mid-run, the final approval. The agent stays at the desk. I
+> don't have to. HelmDeck is a hobby project I build beside my main job.
 >
 > No cloud account, no code leaves your machine, works with the Claude
 > subscription your team already has.

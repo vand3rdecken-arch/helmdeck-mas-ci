@@ -38,11 +38,10 @@ PH audience:
 
 ## Description (product page intro)
 
-> For teams running Claude Code. Every task becomes a card, each card gets
-> its own agent working in an isolated copy of your codebase. Your team
-> follows along and approves from the phone, nobody has to open a terminal.
-> No cloud account, no code leaves your machine, works with the Claude
-> subscription your team already has.
+> For teams running Claude Code. The agent belongs at the desk, you don't.
+> Answer its questions, redirect it mid-run and approve its work from your
+> phone. No cloud account, no code leaves your machine, works with the
+> Claude subscription your team already has.
 
 (247 characters — adapted directly from the live kicker/sub/objection lines,
 `index.js:554-557`.)
@@ -85,7 +84,8 @@ precedent, but the owner may prefer a fresher desktop capture instead.
 
 > Hey Product Hunt 👋
 >
-> I'm Tien, I built HelmDeck alone over the last couple of months.
+> I'm Tien, I built HelmDeck alone over the last couple of months, as a
+> hobby project beside my main job.
 >
 > It started from a dumb, specific annoyance: Claude Code got good enough to
 > grind on a task for 20-30 minutes unattended, but the moment it hit a
@@ -93,13 +93,13 @@ precedent, but the owner may prefer a fresher desktop capture instead.
 > there in the evening waiting for the next question, kids in the next
 > room, PC tying me to one spot for no good reason.
 >
-> So HelmDeck turns every task into a card. Each card gets its own agent,
-> working in an isolated copy of your codebase (its own git worktree, so
-> nothing bleeds into another card). The board shows what every agent is
-> doing, step by step, live. When an agent has a question or finishes a
-> diff, it's a push notification, and I answer from my phone. A quality
-> gate runs automatically before anything merges, so approving from a
-> phone still means reviewing, not blindly tapping yes.
+> So I built HelmDeck around what I kept seeing. The phone is the
+> interface: when an agent asks or finishes, it's a push notification and I
+> answer from wherever I am. Goals replace prompts: I set goal, budget and
+> deadline, and Henry, the planner inside HelmDeck, lays out the work.
+> Teams, not individuals: every question lands with the person who should
+> decide it. A quality gate runs before anything merges, so approving from
+> a phone still means reviewing, not blindly tapping yes.
 >
 > HelmDeck itself got built this way, mostly answered from my phone instead
 > of waiting at my desk for it.
