@@ -649,7 +649,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
   <div class="hero-copy">
     <h1 data-i="h1">Mobile AI orchestration for teams.</h1>
     <p class="sub" data-i="sub">The agent belongs at the desk. You don't.</p>
-    <p class="objection" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
+    <p class="objection" data-i="objection">Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.</p>
     <div class="hero-actions">
       <a class="btn btn-primary btn-lg" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
       <a class="btn btn-ghost btn-lg" href="#demo" data-i="heroCtaDemo">Watch the 30 second demo</a>
@@ -660,12 +660,12 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     </div>
   </div>
   <div class="hero-stage">
-    <figure class="win"><img src="/shots/en/desk-board.webp" data-shot="desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer" data-i-alt="heroDeskAlt"></figure>
-    <figure class="ph"><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt"></figure>
+    <figure class="win"><img src="/shots/en/desk-board.webp" data-shot="desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two goals need a decision" data-i-alt="heroDeskAlt"></figure>
+    <figure class="ph"><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision" data-i-alt="sh1Alt"></figure>
   </div>
 </section>
 <main>
-  <p class="objection objection-m" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
+  <p class="objection objection-m" data-i="objection">Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.</p>
 
   <section id="demo">
     <h2 data-i="demoTitle">HelmDeck in 30 seconds</h2>
@@ -685,11 +685,11 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 
   <section id="screens">
     <h2 data-i="screensTitle">The phone, as it looks today</h2>
-    <p class="section-sub" data-i="screensSub">Screenshots from the app, taken with demo cards. Not mockups.</p>
+    <p class="section-sub" data-i="screensSub">Screenshots from the app, taken with demo goals. Not mockups.</p>
     <div class="phones">
-      <figure><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer" data-i-alt="sh1Alt" loading="lazy"><figcaption><b data-i="sh1H">Board</b><span data-i="sh1P">Backlog, in progress, review. One card waits for your answer.</span></figcaption></figure>
-      <figure><img src="/shots/en/02-card-verlauf.webp" data-shot="02-card-verlauf.webp" width="585" height="1300" alt="History of one card: request filed, gate passed, waiting for approval" data-i-alt="sh2Alt" loading="lazy"><figcaption><b data-i="sh2H">One card</b><span data-i="sh2P">Request, gate result and review step in one log, readable by everyone on the team.</span></figcaption></figure>
-      <figure><img src="/shots/en/03-wartet-auf-dich.webp" data-shot="03-wartet-auf-dich.webp" width="585" height="1300" alt="Needs you: one card with an open question from an agent" data-i-alt="sh3Alt" loading="lazy"><figcaption><b data-i="sh3H">Needs you</b><span data-i="sh3P">The agent's question lands with whoever is free. One tap answers it.</span></figcaption></figure>
+      <figure><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision" data-i-alt="sh1Alt" loading="lazy"><figcaption><b data-i="sh1H">Board</b><span data-i="sh1P">Backlog, in progress, review. One goal waits for your decision.</span></figcaption></figure>
+      <figure><img src="/shots/en/02-card-verlauf.webp" data-shot="02-card-verlauf.webp" width="585" height="1300" alt="History of one goal: request filed, checks passed, waiting for approval" data-i-alt="sh2Alt" loading="lazy"><figcaption><b data-i="sh2H">One goal</b><span data-i="sh2P">Request, check result and approval in one log on your phone, readable by everyone on the team.</span></figcaption></figure>
+      <figure><img src="/shots/en/03-wartet-auf-dich.webp" data-shot="03-wartet-auf-dich.webp" width="585" height="1300" alt="Needs you: a goal with an open question from an agent" data-i-alt="sh3Alt" loading="lazy"><figcaption><b data-i="sh3H">Needs you</b><span data-i="sh3P">The agent's question lands with whoever is free. One tap answers it.</span></figcaption></figure>
       <figure><img src="/shots/en/04-uebersicht.webp" data-shot="04-uebersicht.webp" width="585" height="1300" alt="Overview: what the planner is doing now, what is next, one item waiting for approval" data-i-alt="sh4Alt" loading="lazy"><figcaption><b data-i="sh4H">Overview</b><span data-i="sh4P">What the planner is doing now, what is next, what waits for your approval.</span></figcaption></figure>
     </div>
   </section>
@@ -742,7 +742,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <h2 data-i="faqTitle">Questions</h2>
     <div class="faq">
       <details><summary data-i="faq1Q">Does the machine have to be on?</summary><div data-i-html="faq1A">Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.</div></details>
-      <details><summary data-i="faq2Q">What do the others on the team see?</summary><div data-i="faq2A">The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.</div></details>
+      <details><summary data-i="faq2Q">What do the others on the team see?</summary><div data-i="faq2A">The board: goals, progress, questions, results, per role. A client sets goals and accepts results without ever seeing your file system or credentials.</div></details>
       <details><summary data-i="faq3Q">Which agents run inside?</summary><div data-i-html="faq3A">Claude Code, verified live. Codex and OpenCode are untested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch, so your team can run several agents at once without them stepping on each other; before the merge a gate checks build, types and tests.</div></details>
     </div>
   </section>
@@ -942,7 +942,7 @@ ${wl("wearables")}
       navTheses:"Thesen", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
       h1:"Mobile KI-Orchestrierung für Teams.",
       sub:"Der Agent gehört an den Schreibtisch. Du nicht.",
-      objection:"Läuft auf deinem eigenen PC mit dem Claude-Abo, das du schon hast. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
+      objection:"Deine Agenten laufen auf deinem eigenen PC mit deinem eigenen KI-Konto. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
       heroCtaPrimary:"Loslegen",
       heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
@@ -950,7 +950,7 @@ ${wl("wearables")}
       demoTitle:"HelmDeck in 30 Sekunden",
       demoSub:"Vom Board über die Frage des Agenten bis zur Antwort vom Handy. Auf Englisch vertont.",
       badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei",
-      heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Karten warten auf eine Antwort",
+      heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Ziele brauchen eine Entscheidung",
       thesesTitle:"Drei Thesen",
       thesesSub:"Diese drei Thesen stammen aus unserer eigenen Erfahrung. Wir haben sie beim Bau von HelmDeck selbst beobachtet.",
       th1H:"Mobil ist die Oberfläche.",
@@ -960,14 +960,14 @@ ${wl("wearables")}
       th3H:"Teams statt Einzelkämpfer.",
       th3P:"Jede Entscheidung landet bei der Person, die sie treffen soll. Der Gründer arbeitet mit einem Partner in einer anderen Zeitzone: Abends übergibt er das Board, und beide sehen sofort, was sich bewegt hat und was auf sie wartet.",
       screensTitle:"So sieht es auf dem Handy aus",
-      screensSub:"Screenshots aus der App, mit Demo-Karten aufgenommen. Keine Mockups.",
-      sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, eine Karte wartet auf Antwort",
+      screensSub:"Screenshots aus der App, mit Demo-Zielen aufgenommen. Keine Mockups.",
+      sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, ein Ziel braucht deine Entscheidung",
       sh1H:"Board",
-      sh1P:"Backlog, in Arbeit, Review. Eine Karte wartet auf deine Antwort.",
-      sh2Alt:"Verlauf einer Karte: Anfrage eingereicht, Gate bestanden, wartet auf Freigabe",
-      sh2H:"Eine Karte",
-      sh2P:"Anfrage, Prüfergebnis und Review in einem Verlauf, den alle im Team lesen können.",
-      sh3Alt:"Wartet auf dich: eine Karte mit offener Rückfrage eines Agenten",
+      sh1P:"Backlog, in Arbeit, Review. Ein Ziel wartet auf deine Entscheidung.",
+      sh2Alt:"Verlauf eines Ziels: Anfrage eingereicht, Prüfung bestanden, wartet auf Freigabe",
+      sh2H:"Ein Ziel",
+      sh2P:"Anfrage, Prüfergebnis und Freigabe in einem Verlauf auf deinem Handy, den alle im Team lesen können.",
+      sh3Alt:"Wartet auf dich: ein Ziel mit offener Rückfrage eines Agenten",
       sh3H:"Wartet auf dich",
       sh3P:"Die Rückfrage des Agenten landet bei dem, der gerade Zeit hat. Ein Tipp genügt zur Antwort.",
       sh4Alt:"Übersicht: was der Planer gerade tut, was als Nächstes kommt, eine Sache wartet auf Abnahme",
@@ -976,7 +976,7 @@ ${wl("wearables")}
       faqTitle:"Fragen",
       devicesTitle:"Läuft auf", devices:'${devicesHtml(DEV_DE)}',
       faq1Q:"Muss der Rechner an sein?", faq1A:'Ja. Der Operator und die Agenten arbeiten auf diesem Rechner. Handy und Uhr sind Fernbedienung und Anzeige. Schläft der Rechner, warten die Aufgaben, nichts geht verloren. Kein Rechner, der durchläuft? <a href="#cloud">HelmDeck Cloud</a> ist in Prüfung.',
-      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Karten, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber reicht Karten ein und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
+      faq2Q:"Was sehen die anderen im Team?", faq2A:"Das Board: Ziele, Fortschritt, Rückfragen, Ergebnisse, je nach Rolle. Ein Auftraggeber setzt Ziele und nimmt ab, ohne je euer Dateisystem oder eure Zugangsdaten zu sehen.",
       faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch, damit euer Team mehrere Agenten gleichzeitig laufen lassen kann, ohne dass sie sich in die Quere kommen; vor dem Merge prüft ein Gate Build, Typen und Tests.',
       dlTitle:"Jetzt verfügbar", dlSub:"Die App für Android und iPhone, die Uhr-App ist im selben Paket. Dazu der Operator für den Windows- oder Mac-Rechner, auf dem eure Agenten laufen. Kein Account bei uns nötig.",
       dlBtn:"Herunterladen",
@@ -1014,7 +1014,7 @@ ${wl("wearables")}
       navTheses:"Theses", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
       h1:"Mobile AI orchestration for teams.",
       sub:"The agent belongs at the desk. You don't.",
-      objection:"Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.",
+      objection:"Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.",
       heroCtaPrimary:"Get started",
       heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
@@ -1022,7 +1022,7 @@ ${wl("wearables")}
       demoTitle:"HelmDeck in 30 seconds",
       demoSub:"From the board to the agent's question to the answer from your phone. Narrated in English.",
       badgeIosSmall:"Download on the", badgePlaySmall:"Get it on",
-      heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two cards ask for an answer",
+      heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two goals need a decision",
       thesesTitle:"Three theses",
       thesesSub:"They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.",
       th1H:"Mobile is the interface.",
@@ -1032,14 +1032,14 @@ ${wl("wearables")}
       th3H:"Teams, not individuals.",
       th3P:"Every decision lands with the one person who should make it. The founder and a partner in another time zone hand the board over at night, and each sees what moved and what is waiting on them.",
       screensTitle:"The phone, as it looks today",
-      screensSub:"Screenshots from the app, taken with demo cards. Not mockups.",
-      sh1Alt:"HelmDeck board on a phone: backlog, in progress, review, one card asks for an answer",
+      screensSub:"Screenshots from the app, taken with demo goals. Not mockups.",
+      sh1Alt:"HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision",
       sh1H:"Board",
-      sh1P:"Backlog, in progress, review. One card waits for your answer.",
-      sh2Alt:"History of one card: request filed, gate passed, waiting for approval",
-      sh2H:"One card",
-      sh2P:"Request, gate result and review step in one log, readable by everyone on the team.",
-      sh3Alt:"Needs you: one card with an open question from an agent",
+      sh1P:"Backlog, in progress, review. One goal waits for your decision.",
+      sh2Alt:"History of one goal: request filed, checks passed, waiting for approval",
+      sh2H:"One goal",
+      sh2P:"Request, check result and approval in one log on your phone, readable by everyone on the team.",
+      sh3Alt:"Needs you: a goal with an open question from an agent",
       sh3H:"Needs you",
       sh3P:"The agent's question lands with whoever is free. One tap answers it.",
       sh4Alt:"Overview: what the planner is doing now, what is next, one item waiting for approval",
@@ -1048,7 +1048,7 @@ ${wl("wearables")}
       faqTitle:"Questions",
       devicesTitle:"Runs on", devices:'${devicesHtml(DEV_EN)}',
       faq1Q:"Does the machine have to be on?", faq1A:'Yes. The operator and the agents work on that machine. Phone and watch are remote control and display. If the machine sleeps, the tasks wait, nothing is lost. No machine that stays on? <a href="#cloud">HelmDeck Cloud</a> is under evaluation.',
-      faq2Q:"What do the others on the team see?", faq2A:"The board: cards, progress, questions, results, per role. A client files cards and accepts results without ever seeing your file system or credentials.",
+      faq2Q:"What do the others on the team see?", faq2A:"The board: goals, progress, questions, results, per role. A client sets goals and accepts results without ever seeing your file system or credentials.",
       faq3Q:"Which agents run inside?", faq3A:'Claude Code, verified live. Codex and OpenCode are untested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch, so your team can run several agents at once without them stepping on each other; before the merge a gate checks build, types and tests.',
       dlTitle:"Available now", dlSub:"App for Android and iPhone, the watch app ships in the same package. Operator for the Windows or Mac PC where your agents run. No account with us.",
       dlBtn:"Download",
