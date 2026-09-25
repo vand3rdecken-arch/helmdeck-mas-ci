@@ -38,3 +38,18 @@ export function decideChatPush(
   const readingItNow = appActive && focusedCard === chatFocusValue;
   return { wake: isChatReply, present: !(isChatReply && readingItNow) };
 }
+
+/** Whether the BACKGROUND notification task should present a data push.
+ *
+ *  expo-notifications 57 runs that task on EVERY FCM message, foreground
+ *  included (FirebaseMessagingDelegate.onMessageReceived calls
+ *  runTaskManagerTasks unconditionally) - so while the app was open the task
+ *  raised the banner on its own, right past decideChatPush, and a Henry reply
+ *  buzzed the very phone showing the chat (owner report 2026-09-25, once the
+ *  daemon stopped withholding it). In the foreground the received-listener
+ *  in app/_layout.tsx is the one owner of display; the task only covers a
+ *  backgrounded or killed app, where no listener runs. A headless start
+ *  reports "background" or no state at all - never "active". */
+export function backgroundTaskPresents(appState: string | null | undefined): boolean {
+  return appState !== "active";
+}
