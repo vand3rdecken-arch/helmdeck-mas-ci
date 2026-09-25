@@ -16,12 +16,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ListHeader
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.MaterialTheme
@@ -106,6 +110,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
+        // Google's Wear list pattern (see PairingScreen): one TransformationSpec
+        // shapes every row towards the round edge, so nothing is cut at fontScale 2.0.
+        val spec = rememberTransformationSpec()
         // ROUND SCREEN SIDE INSET - same as HenryScreen.kt, same cause:
         // ScreenScaffold's contentPadding keeps the first and last ROW off
         // the bezel, but a full-width card is still cut by the circle at
@@ -113,7 +120,6 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
         // 2026-08-30: whole letters missing at the start of the wrapped
         // lines). 10% of the screen width per side, so it scales with
         // the device instead of being a guess about one.
-        val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -124,11 +130,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
-                    Text(
-                        text = card.task.ifBlank { card.id },
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    ListHeader(
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(text = card.task.ifBlank { card.id }, textAlign = TextAlign.Center) }
                 }
                 // "Zurück" stays directly under the title, ABOVE the content:
                 // this screen is reached from a manual `when(screen)` in
@@ -139,8 +144,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 item {
                     Button(
                         onClick = { VoicePlayer.stop(); onBack() },
-                        modifier = Modifier.padding(4.dp),
-                    ) { Text("Zurück") }
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText("Zurück") }
                 }
                 // THE CARD'S OWN CONTENT - the whole reason this screen exists
                 // and the one thing it used to be missing. Owner, 2026-08-29:
@@ -156,12 +162,12 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 val label = reasonLabel(card.reason)
                 if (label.isNotEmpty()) {
                     item {
-                        Text(
+                        FullText(
                             text = label,
                             color = WearSemantics.status(
                                 card.status.ifBlank { card.reason }),
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                 }
@@ -187,10 +193,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                     item {
                         OutlinedCard(
                             onClick = {},
-                            modifier = Modifier.padding(
-                                horizontal = sideInset, vertical = 3.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            transformation = SurfaceTransformation(spec),
                         ) {
-                            Text(text = card.detail, textAlign = TextAlign.Start)
+                            FullText(text = card.detail, textAlign = TextAlign.Start)
                         }
                     }
                 }
@@ -208,10 +214,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                 containerColor = WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.padding(
-                                horizontal = sideInset, vertical = 3.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            transformation = SurfaceTransformation(spec),
                         ) {
-                            Text(text = card.body, textAlign = TextAlign.Start)
+                            FullText(text = card.body, textAlign = TextAlign.Start)
                         }
                     }
                 }
@@ -219,7 +225,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 val q = card.question
                 if (q != null) {
                     for (item in q.questions) {
-                        item { Text(text = item.question, modifier = Modifier.padding(8.dp)) }
+                        item { FullText(text = item.question, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
                         for (opt in item.options) {
                             val selected = picks[item.header] == opt.label
                             item {
@@ -237,8 +243,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                             submitAnswer(q.id)
                                         }
                                     },
-                                    modifier = Modifier.padding(2.dp),
-                                ) { Text(text = (if (selected) "> " else "") + opt.label) }
+                                    modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                    transformation = SurfaceTransformation(spec),
+                                ) { FullText(text = (if (selected) "> " else "") + opt.label) }
                             }
                         }
                     }
@@ -247,16 +254,17 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             Button(
                                 onClick = { submitAnswer(q.id) },
                                 enabled = q.questions.all { picks.containsKey(it.header) },
-                                modifier = Modifier.padding(8.dp),
-                            ) { Text("Antworten") }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText("Antworten") }
                         }
                     }
                     if (answerStatus != null) {
-                        item { Text(text = answerStatus ?: "", modifier = Modifier.padding(8.dp)) }
+                        item { FullText(text = answerStatus ?: "", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
                     }
                 }
 
-                item { Text(text = "Henry fragen", modifier = Modifier.padding(8.dp)) }
+                item { FullText(text = "Henry fragen", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
                 item {
                     Button(
                         onClick = {
@@ -268,11 +276,12 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             dictateLauncher.launch(prompt)
                         },
                         enabled = !henryBusy,
-                        modifier = Modifier.padding(4.dp),
-                    ) { Text(if (henryBusy) "…" else "Diktieren") }
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(if (henryBusy) "…" else "Diktieren") }
                 }
                 if (henryReply != null) {
-                    item { Text(text = henryReply ?: "", modifier = Modifier.padding(8.dp)) }
+                    item { FullText(text = henryReply ?: "", modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
                 }
                 henrySuggestions?.questions?.forEach { sug ->
                     for (opt in sug.options) {
@@ -283,8 +292,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                         onBusy = { henryBusy = it },
                                         onReply = { reply, more -> henryReply = reply; henrySuggestions = more })
                                 },
-                                modifier = Modifier.padding(2.dp),
-                            ) { Text(text = opt.label) }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText(text = opt.label) }
                         }
                     }
                 }

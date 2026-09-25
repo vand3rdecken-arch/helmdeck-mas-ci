@@ -6,7 +6,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -16,17 +16,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-// Button: NOT independently re-fetched/confirmed this session the way
-// TransformingLazyColumn/MaterialTheme/Text were (§4.5) - a basic button
-// composable is about as foundational to any Compose Material library as
-// Text is, so this is a low-risk assumption, but it is an assumption, not a
-// citation. Recheck alongside everything else in §9.1 item 15.
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.TransformationSpec
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
@@ -152,16 +152,19 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
-        // ScreenScaffold, NOT a bare Box: it supplies the scroll indicator and
-        // - the part that matters here - computes the screen's content padding
-        // itself and hands it to this lambda. That padding is a PERCENTAGE of
-        // the screen (androidx.wear.compose.material3.PaddingDefaults
-        // .verticalContentPaddingPercentage / horizontalContentPaddingPercentage,
-        // read off the 1.6.2 artifact, not assumed), so it adapts to any watch
-        // size and shape on its own. The previous code passed no contentPadding
-        // at all, which is why the first and last rows sat hard against the
-        // bezel on a real device. Nothing here is measured or hardcoded for one
-        // specific watch - that would be the opposite of responsive.
+        // Google's Wear Compose M3 list pattern (developer.android.com/training/
+        // wearables/compose/lists, checked against the resolved 1.6.2 AAR): every
+        // row is transformed by ONE TransformationSpec, so it narrows and shrinks
+        // as it nears the round top/bottom edge instead of keeping its full width
+        // where the circle is only a short chord (Play rejection 2026-09-24: title
+        // and buttons cut at fontScale 2.0 in exactly those bands). The two earlier
+        // fixes measured the middle of the screen only, which is why they passed.
+        val spec = rememberTransformationSpec()
+        // NOT an EdgeButton, although 1.6.2 has one and it was tried first: at
+        // fontScale 2.0 "Koppeln" does not fit the EdgeButton's narrow bottom
+        // chord and wraps to "Kopp / eln" with the second line cut (measured on
+        // the Small Round emulator, 2026-09-25). A transformed full-width Button
+        // in the list wraps and scrolls like every other row.
         ScreenScaffold(columnState) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
@@ -169,104 +172,73 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
-                    Text(
-                        text = "HelmDeck koppeln",
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    ListHeader(
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(text = "HelmDeck koppeln", textAlign = TextAlign.Center) }
                 }
                 // Code first: with the address defaulted (DEFAULT_CLAIM_BASE_URL),
                 // this is the only field the owner needs to touch in the
-                // common case - the whole reason that default exists.
+                // common case - the whole reason that default exists. "Koppeln"
+                // sits DIRECTLY under it, above the address: dictate, then act,
+                // without scrolling past a field that is almost never needed.
                 item {
-                    FieldRow(
-                        label = "Code", value = code,
+                    FieldButton(
+                        spec = spec, label = "Code diktieren", value = code,
                         onDictate = { codeLauncher.launch(speechIntent("Code")) },
                     )
                 }
-                // "Koppeln" sits DIRECTLY under the code field, above the
-                // address. It used to be last, which put the screen's whole
-                // point below the fold: dictate the code, then scroll to find
-                // the button (seen on the watch, 2026-08-29). The address is
-                // defaulted and "meist unnötig", so it belongs after the action
-                // it almost never affects, not in front of it.
                 item {
-                    Button(onClick = ::submit, enabled = !busy,
-                        modifier = Modifier.padding(8.dp)) {
-                        Text(if (busy) "…" else "Koppeln")
-                    }
-                }
-                item {
-                    FieldRow(
-                        label = "Adresse (meist unnötig)", value = claimBaseUrl,
-                        // Label and value on SEPARATE lines. With both on one
-                        // line the label plus colon ate the whole width and the
-                        // value ellipsised to "..." - a confirmation field that
-                        // confirms nothing.
-                        valueOnOwnLine = true,
-                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
-                    )
+                    Button(
+                        onClick = ::submit, enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(if (busy) "…" else "Koppeln") }
                 }
                 if (status != null) {
                     item {
-                        Text(
+                        FullText(
                             text = status ?: "",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                                .transformedHeight(this, spec)
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
+                }
+                item {
+                    FieldButton(
+                        spec = spec, label = "Adresse diktieren (meist unnötig)",
+                        value = claimBaseUrl,
+                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
+                    )
                 }
             }
         }
     }
 }
 
-/** One field: the last dictated/typed value shown as text, plus a mic
- *  button. NOT a real TextField - Wear Compose Material3's text-entry story
- *  (OutlinedTextField equivalents) was not fetched/confirmed this session,
- *  and dictation-only is a defensible v1 for a 6-char code / a short host
- *  name, matching this screen's own §9.1-documented scope. A typed fallback
- *  via the system's Wear keyboard/handwriting input is still reachable
- *  through Android's own text-selection long-press on the value text - not
- *  wired here explicitly, tracked as a gap, not silently dropped. */
+/** One field: a full-width Button whose label says what it does and whose
+ *  secondary label shows the last dictated/typed value. NOT a real TextField -
+ *  Wear Compose Material3's text-entry story was not confirmed here, and
+ *  dictation-only is a defensible v1 for a 6-char code / a short host name,
+ *  matching this screen's own §9.1-documented scope.
+ *
+ *  Both texts WRAP (the Button grows with them): Play's Wear font-size
+ *  guideline forbids clipping at the largest system font scale, and an
+ *  ellipsis is a clip. The SurfaceTransformation narrows the button towards the
+ *  round edge, so a wrapped line never meets the bezel. */
 @Composable
-private fun FieldRow(
+private fun TransformingLazyColumnItemScope.FieldButton(
+    spec: TransformationSpec,
     label: String,
     value: String,
     onDictate: () -> Unit,
-    /** Put the value on its OWN line instead of after "label: ". For a long
-     *  value (the claim URL) the single-line form spent the entire width on the
-     *  label, forcing the value onto a truncated remainder. */
-    valueOnOwnLine: Boolean = false,
 ) {
-    // Centred, not start-aligned: a watch screen is widest through its middle,
-    // so left-aligned text is the first thing a round bezel eats. The
-    // horizontal inset comes from ScreenScaffold's contentPadding on the list
-    // above, so this only adds the spacing BETWEEN rows.
-    //
-    // NO maxLines / TextOverflow.Ellipsis on the value: Play's Wear font-size
-    // guideline (rejection 2026-09-15, submission #11) requires that nothing
-    // be clipped at the largest system font scale, and an ellipsis IS a clip -
-    // it hides characters rather than growing the row. Wrapping is the only
-    // way a value keeps its full content at every font scale. A side inset
-    // (10% of screen width, same reasoning as HenryScreen/CardScreen) keeps a
-    // wrapped line's first/last characters off the round bezel instead of
-    // relying on ScreenScaffold's padding alone, which only protects the
-    // first/last ROW, not every side of a multi-line block.
-    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
-    Column(
-        modifier = Modifier.padding(vertical = 6.dp, horizontal = sideInset),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        if (valueOnOwnLine) {
-            Text(text = label, textAlign = TextAlign.Center)
-            Text(text = value.ifBlank { "–" }, textAlign = TextAlign.Center)
-        } else {
-            Text(
-                text = "$label: ${value.ifBlank { "–" }}",
-                textAlign = TextAlign.Center,
-            )
-        }
-        Button(onClick = onDictate) { Text("Diktieren") }
-    }
+    Button(
+        onClick = onDictate,
+        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+        transformation = SurfaceTransformation(spec),
+        secondaryLabel = { FullText(text = value.ifBlank { "–" }) },
+    ) { FullText(text = label) }
 }

@@ -24,7 +24,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -46,6 +45,11 @@ import androidx.wear.compose.material3.ChildButton
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.ListHeader
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TitleCard
 import app.helmdeck.wear.data.DeviceStore
@@ -753,10 +757,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
     // only number here that is not a guess about one device. Applied to
     // the CARDS rather than to the column, so the date separators and the
     // title stay centred on the full width.
-    val sideInset = (LocalConfiguration.current.screenWidthDp * 0.10f).dp
     // Box so the "Neueste" button below can float OVER the list. ScreenScaffold
     // keeps its own scroll indicator on the right edge, so the button sits
     // bottom-CENTRE and the two never fight for the same pixels.
+    // Google's Wear list pattern (see PairingScreen): one TransformationSpec
+    // shapes every row towards the round edge, so nothing is cut at fontScale 2.0.
+    val spec = rememberTransformationSpec()
     Box(modifier = Modifier.fillMaxSize()) {
         ScreenScaffold(scrollState = columnState) { contentPadding ->
             TransformingLazyColumn(
@@ -809,40 +815,41 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 for (row in rows) {
                     item {
                         when (row) {
-                            is Row.Title -> Text(
-                                text = "Henry", textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 8.dp))
+                            is Row.Title -> ListHeader(
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                    ) { FullText(text = "Henry", textAlign = TextAlign.Center) }
 
-                            is Row.Hint -> Text(
+                            is Row.Hint -> FullText(
                                 text = row.text, textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp))
 
                             // The wake-catch-up banner: transcript already has
                             // content, a refresh is in flight, and that must
                             // stay visible rather than silent (see ChatRows.kt).
-                            is Row.Loading -> Text(
+                            is Row.Loading -> FullText(
                                 text = if (loadingLong) "Verlauf wird aktualisiert… (Versuch $loadingAttempt)"
                                        else "Verlauf wird aktualisiert…",
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp))
 
-                            is Row.Day -> Text(
+                            is Row.Day -> FullText(
                                 text = dayLabel(row.date),
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp))
 
                             is Row.Msg -> TitleCard(
                                 onClick = {},
-                                title = { Text(senderOf(row.line)) },
+                                title = { FullText(senderOf(row.line)) },
                                 // Omitted, not blanked, when there is no stamp:
                                 // an empty `time` slot would still reserve its
                                 // space and leave a gap where a time should be.
                                 // A line cached before timestamps existed simply
                                 // shows the name - see DeviceStore.ChatLine.
                                 time = if (row.line.ts.isBlank()) null
-                                       else ({ Text(row.line.ts) }),
+                                       else ({ FullText(row.line.ts) }),
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isAmbient) WearTokens.canvas
                                                      else if (row.line.mine) WearTokens.glow1
@@ -850,25 +857,27 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                     contentColor = if (isAmbient) WearTokens.txtTertiary
                                                    else WearTokens.txtPrimary,
                                 ),
-                                modifier = Modifier.padding(
-                                    horizontal = sideInset, vertical = 3.dp),
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
                             ) {
-                                Text(text = row.line.text, textAlign = TextAlign.Start)
+                                FullText(text = row.line.text, textAlign = TextAlign.Start)
                             }
 
                             is Row.Option -> Button(
                                 onClick = { answerCard(row.card, row.label) },
                                 enabled = !busy,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            ) { Text(text = row.label) }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText(text = row.label) }
 
-                            is Row.Busy -> Text(
+                            is Row.Busy -> FullText(
                                 text = "Henry denkt …", textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(6.dp))
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp))
 
                             is Row.Suggest -> Button(
                                 onClick = { ask(row.label) }, enabled = !busy,
-                                modifier = Modifier.padding(4.dp)) { Text(text = row.label) }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec)) { FullText(text = row.label) }
 
                             // ALWAYS enabled, even while `busy`: a tap while
                             // Henry is still answering DICTATES a follow-up
@@ -878,8 +887,9 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             // 2026-09-18: "passiert sichtbar nichts").
                             is Row.Speak -> Button(
                                 onClick = { dictate.launch(speechIntent()) },
-                                modifier = Modifier.padding(6.dp),
-                            ) { Text(if (queued != null) "Wartet …" else if (busy) "…" else "Sprechen") }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText(if (queued != null) "Wartet …" else if (busy) "…" else "Sprechen") }
 
                             is Row.VoiceToggle -> OutlinedButton(
                                 onClick = {
@@ -889,8 +899,9 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                     // sentence, not merely the next one.
                                     if (!voiceOn) VoicePlayer.stop()
                                 },
-                                modifier = Modifier.padding(6.dp),
-                            ) { Text(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText(if (voiceOn) "Stimme aus" else "Stimme aktivieren") }
 
                             // Lowest emphasis, but NOT invisible. A bare
                             // ChildButton draws neither fill nor border, and on
@@ -903,7 +914,8 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             is Row.Board -> ChildButton(
                                 onClick = { VoicePlayer.stop(); onOpenBoard() },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(6.dp)) { Text("Board") }
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec)) { FullText("Board") }
                         }
                     }
                 }
@@ -924,7 +936,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 6.dp),
-            ) { Text(text = "↓ Neueste") }
+            ) { FullText(text = "↓ Neueste") }
         }
     }
 }

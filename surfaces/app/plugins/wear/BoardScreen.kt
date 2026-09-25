@@ -17,6 +17,11 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ListHeader
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.ChildButton
 import androidx.wear.compose.material3.OutlinedButton
 import androidx.wear.compose.material3.MaterialTheme
@@ -113,6 +118,10 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
 
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
+        // Google's Wear list pattern: one TransformationSpec shapes every row, so
+        // it narrows towards the round top/bottom edge (Play rejection 2026-09-24,
+        // fontScale 2.0). See PairingScreen.
+        val spec = rememberTransformationSpec()
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -123,25 +132,25 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 item {
-                    Text(
-                        text = "HelmDeck",
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(8.dp),
-                    )
+                    ListHeader(
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(text = "HelmDeck", textAlign = TextAlign.Center) }
                 }
                 if (status.isNotEmpty()) {
                     item {
-                        Text(
+                        FullText(
                             text = status,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(8.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                 }
                 for (c in cards) {
                     item {
-                        Button(onClick = { onOpenCard(c) }, modifier = Modifier.padding(4.dp)) {
-                            Text(text = c.task.ifBlank { c.id })
+                        Button(onClick = { onOpenCard(c) }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            transformation = SurfaceTransformation(spec)) {
+                            FullText(text = c.task.ifBlank { c.id })
                         }
                     }
                 }
@@ -157,17 +166,18 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // backlog, and the visual weight has to say the same thing.
                 if (yours.isNotEmpty()) {
                     item {
-                        Text(
+                        FullText(
                             text = "Nur von dir startbar",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                     for (c in yours) {
                         item {
                             OutlinedButton(onClick = { onOpenCard(c) },
-                                modifier = Modifier.padding(4.dp)) {
-                                Text(text = c.task.ifBlank { c.id })
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            transformation = SurfaceTransformation(spec)) {
+                                FullText(text = c.task.ifBlank { c.id })
                             }
                         }
                     }
@@ -192,38 +202,40 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // i.e. from ops/tools/gen_tokens.py.
                 if (working.total > 0) {
                     item {
-                        Text(
+                        FullText(
                             text = if (summary?.let { it.wipLimit > 0 } == true)
                                        "In Arbeit: ${working.total} von ${summary!!.wipLimit}"
                                    else "In Arbeit: ${working.total}",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                     for (c in working.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(2.dp)) {
-                                Text(text = c.task.ifBlank { c.id })
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec)) {
+                                FullText(text = c.task.ifBlank { c.id })
                             }
                         }
                     }
                 }
                 if (backlog.total > 0) {
                     item {
-                        Text(
+                        FullText(
                             text = "Backlog: ${backlog.total}",
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                         )
                     }
                     for (c in backlog.cards) {
                         item {
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.padding(2.dp)) {
-                                Text(text = c.task.ifBlank { c.id })
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec)) {
+                                FullText(text = c.task.ifBlank { c.id })
                             }
                         }
                     }
@@ -232,10 +244,10 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     val age = freshness(s.tsEpochSec, System.currentTimeMillis() / 1000L)
                     if (age.isNotEmpty()) {
                         item {
-                            Text(
+                            FullText(
                                 text = "Stand: $age",
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
                             )
                         }
                     }
@@ -247,16 +259,18 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // was the point of putting HelmDeck on a wrist; it must not
                 // depend on something being wrong first.
                 item {
-                    Button(onClick = { onAskHenry() }, modifier = Modifier.padding(6.dp)) {
-                        Text("Henry fragen")
+                    Button(onClick = { onAskHenry() }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec)) {
+                        FullText("Henry fragen")
                     }
                 }
                 // "Henry fragen" above keeps the filled accent; refreshing is
                 // maintenance, so it steps back to outlined. Same reasoning as
                 // HenryScreen's own three tiers.
                 item {
-                    OutlinedButton(onClick = { reload() }, modifier = Modifier.padding(8.dp)) {
-                        Text("Aktualisieren")
+                    OutlinedButton(onClick = { reload() }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec)) {
+                        FullText("Aktualisieren")
                     }
                 }
             }
