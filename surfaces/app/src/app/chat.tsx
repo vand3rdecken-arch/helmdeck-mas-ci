@@ -656,6 +656,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   }
   const appendReply = (id: number, msg: ChatMsg) =>
     setPending((p) => p.map((tn) => tn.id === id ? { ...tn, msgs: [...tn.msgs, msg] } : tn));
+  const dropTurn = (id: number) => setPending((p) => p.filter((tn) => tn.id !== id));
 
   // `retryOf` = the outbox row this send is re-attempting, so a success settles
   // THAT row instead of leaving a duplicate parked, and a second failure counts
@@ -700,13 +701,17 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       // a received one).
       if (retryOf) await outbox.settle(retryOf);
       if (turn.current !== id) return;   // cancelled/superseded — drop this reply
-      if (r.duplicate && !r.reply) {
-        // A transport layer replayed this POST and the daemon refused to run a
-        // second turn (cells/copilot/chat_dedupe.py) while the original was
-        // still going. There is no answer to render HERE — appending
-        // "chat.noReply" would put a phantom empty turn in the chat, which is
-        // the cosmetic half of the very bug this path exists to stop. The
-        // history poll below delivers the real turn when it lands.
+      if (r.duplicate) {
+        // The daemon matched this POST to an ORIGINAL send of the same message
+        // (cells/copilot/chat_dedupe.py) and ran no second turn. The original
+        // is already in the history under ITS mid - this copy's mid never
+        // will be, so it could never retire: it stuck at the bottom of the
+        // chat with the original's reply glued on, below newer messages
+        // (owner 2026-09-25 17:54 "Messages in wrong order": the relay leg gave
+        // up on a long turn, the outbox resent with a fresh mid, the daemon
+        // answered it as a duplicate). Drop the copy; the history carries the
+        // real message and its answer.
+        dropTurn(id);
         qc.invalidateQueries({ queryKey: ["chatHistory"] });
         return;
       }
@@ -870,7 +875,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       const r = await api.chat(text, { voice: onClip ? "stream" : undefined, mid });
       if (turn.current !== id) return { reply: "", clip: null };   // cancelled/superseded
       const said = r.reply || r.error || tr("chat.noReply");
-      appendReply(id, { cls: r.error ? "error" : "bot", text: said });
+      // a duplicate's copy can never retire (see send()) - the history
+      // carries the original; the reply is still spoken below
+      if (r.duplicate) dropTurn(id);
+      else appendReply(id, { cls: r.error ? "error" : "bot", text: said });
       qc.invalidateQueries({ queryKey: ["tracks"] });
       qc.invalidateQueries({ queryKey: ["chatHistory"] });
       // DRAIN. The POST returns when the MODEL is done, which is not when the

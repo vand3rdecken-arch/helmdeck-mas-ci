@@ -227,20 +227,33 @@ def chat_post(self, user, body):
     if body.get("steer_only"):
         if body.get("card"):
             return self._send(200, json.dumps({"absorbed": False, "reply": "", "actions": []}))
+        from cells.copilot.chat import chat_dedupe
+        _mid = str(body.get("mid") or "")[:64]
+        _mine, _orig = chat_dedupe.claim(user["name"], text, None, body.get("attachments"), mid=_mid)
+        if _orig is not None:
+            # a replay of a takeover that already runs - never a second turn
+            return self._send(200, json.dumps({"absorbed": True, "reply": "", "actions": [],
+                                               "duplicate": True}))
         if copilot.supersede(user["name"]):
-            _uname, _role, _mid = user["name"], user["role"], str(body.get("mid") or "")[:64]
+            _uname, _role = user["name"], user["role"]
             _opts = {"model": body.get("model", ""), "thinking": body.get("thinking", ""),
                      "mode": str(body.get("mode") or "")}
 
             def _takeover():
                 try:
-                    copilot.chat(_uname, text, role=_role, client_msg_id=_mid,
-                                 attachments=body.get("attachments"), **_opts)
+                    out = copilot.chat(_uname, text, role=_role, client_msg_id=_mid,
+                                       attachments=body.get("attachments"), **_opts)
+                    chat_dedupe.settle(_mine, out)
                 except Exception as e:                           # noqa: BLE001
+                    chat_dedupe.fail(_mine)
                     copilot._append_log(_uname, [{"cls": "error", "ts": time.strftime("%H:%M"),
                                                   "text": "Henry-Fehler: %s" % str(e)[:300]}])
             threading.Thread(target=_takeover, daemon=True, name="chat-takeover").start()
             return self._send(200, json.dumps({"absorbed": True, "reply": "", "actions": []}))
+        # no takeover ran: release the claim at once, or the composer's own
+        # re-send of this text (absorbed=false -> queued -> sent) would be
+        # taken for a replay of a turn that never existed
+        chat_dedupe.fail(_mine)
         ok = copilot.try_inject(user["name"], text, client_msg_id=str(body.get("mid") or "")[:64])
         return self._send(200, json.dumps({"absorbed": bool(ok), "reply": "", "actions": []}))
     # IDEMPOTENCY, CLAIMED HERE - the earliest point in the daemon that has the

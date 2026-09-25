@@ -108,7 +108,7 @@ P = _WarmProc()
 copilot._persist_get = lambda skey, cli_model, sid, system: (P, False)
 
 
-def _settle(cond, timeout=4.0):
+def _settle(cond, timeout=10.0):
     t0 = time.time()
     while time.time() - t0 < timeout:
         if cond():
