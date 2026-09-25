@@ -120,132 +120,17 @@ def _grant(reason):
 
 _PATH_KEYS = ("file_path", "path", "notebook_path")
 
-# ---------------------------------------------------------------------------
-# THE ONE RULE CLAUDE CANNOT KNOW (2026-09-12, cut back the same evening from a
-# seven-rule "hard invariants" block after the owner asked what the guard is
-# for when Claude's own permission system guards the whole PC): the agent is a
-# CHILD of the daemon. A `taskkill` on a python image or a process tree looks
-# harmless to Claude's classifier and to acceptEdits' allow-list alike, but it
-# kills the daemon, every live turn, and the asking agent itself. Everything
-# else this block once held (secrets, force-push, reset --hard, schtasks,
-# memory-dir writes) is Claude's job: settings deny-rules for the files
-# (measured: users.json blocked by the rule in bypass AND auto mode) and the
-# auto-mode classifier for the risky verbs. Deterministic, word-based,
-# fail-closed like the rest of this file; the deny carries the ONE sanctioned
-# restart route so the model stops guessing.
-#
-# BY TARGET, NOT BY WORD (owner 2026-09-25 18:0x "warum kann er keinen Test-
-# Server schliessen"). The rule used to be `kill-verb AND a daemon-ish word`
-# (python|8140|/im|/t|-name|-force) - wrong both ways, measured in Henry's own
-# transcript: `Stop-Process -Id <his wrangler pids> -Force` was refused for
-# the word -Force, a grep mentioning "kill" and "8140" was refused, while
-# `taskkill //PID <any pid> //F` - the daemon's included - passed. Now the
-# TARGETS are resolved against the live process table (proctable._pid_table,
-# ctypes Toolhelp32) at call time: refused when a target is the daemon
-# (daemon.pid), anything in this hook's own ancestor chain (the session, its
-# CLI, the daemon, the supervisor), a recorded agent worker (driver_pids.json)
-# or any claude.exe; refused when the target cannot be named up front (by
-# image/name, /T tree, pipeline input, a variable, .Kill()). A literal PID of
-# a process the agent started itself - a dev server - may be stopped.
-_KILL_RE = re.compile(r"\b(taskkill|tskill|stop-process|pkill|killall|kill)(\.exe)?\b", re.I)
-_KILL_CMD_RE = re.compile(
-    r"(?:^|[;&|\n{(`]|\bdo\b|\bthen\b|\bxargs\b|\$\()\s*(?:sudo\s+)?(?:[\w.:~-]*[/\\])?"
-    r"(?P<verb>taskkill|tskill|stop-process|pkill|killall|kill)(?:\.exe)?\b(?P<args>[^;&|\n})]*)", re.I)
-_METHOD_KILL_RE = re.compile(r"\.kill\s*\(", re.I)
-_BY_NAME_RE = re.compile(r"(?:^|\s)(?:/im|/t|/fi|-name|-processname|-inputobject)\b", re.I)
-_RESTART_ROUTE = ("the restart route is the harness verb (POST /admin/restart / "
-                  "Settings > System > Daemon), never a kill")
-
-
-def _kill_targets(verb, args):
-    """(pids, why_unverifiable). pids = the literal PIDs this kill names."""
-    verb = verb.lower()
-    a = args.replace("//", "/")
-    if verb in ("pkill", "killall", "tskill"):
-        return [], "kills by process NAME"
-    if _BY_NAME_RE.search(a):
-        return [], "kills by image/name or a whole tree (/IM, /T, -Name)"
-    if verb == "taskkill":
-        vals = re.findall(r"/pid\s+(\S+)", a, re.I)
-    elif verb == "stop-process":
-        m = re.search(r"-id\s+(\S+(?:\s*,\s*\S+)*)", a, re.I)
-        vals = re.split(r"\s*,\s*", m.group(1)) if m else []
-    else:                                   # kill [-9|-f|-s SIG] pid... / %job
-        toks = [t for t in a.split() if not t.startswith("-")]
-        if toks and all(t.startswith("%") for t in toks):
-            return [], ""                   # a shell job of this very shell
-        vals = toks
-    if not vals:
-        return [], "names no literal PID (pipeline input or none)"
-    if not all(re.fullmatch(r"\d+", v) for v in vals):
-        return [], "the PID is not a literal number (a variable or expression)"
-    return [int(v) for v in vals], ""
-
-
-def _protected_pids():
-    """{pid: why} - what no agent may kill, derived from the live process
-    table now. Empty dict = the table could not be read (fail closed)."""
-    sys.path.insert(0, _REPO_ROOT)
-    from spine.agent import proctable
-    table = proctable._pid_table()
-    if not table:
-        return {}
-    parent = {p: pp for p, pp, _ in table}
-    prot = {}
-    p = os.getpid()
-    while p and p not in prot:
-        prot[p] = "part of your own session's process chain (daemon, CLI, shell)"
-        p = parent.get(p)
-    try:
-        with open(os.path.join(_REPO_ROOT, "daemon", "daemon.pid"), encoding="utf-8") as f:
-            d = int((f.read() or "0").strip() or 0)
-        if d:
-            prot[d] = "the HelmDeck daemon"
-    except (OSError, ValueError):
-        pass
-    for k in (proctable._read_pids() or {}):
-        try:
-            prot.setdefault(int(k), "a running agent worker (driver_pids)")
-        except (TypeError, ValueError):
-            pass
-    for pid, _, exe in table:
-        if exe.lower() == "claude.exe":
-            prot.setdefault(pid, "an agent session (claude.exe)")
-    return prot
-
-
-def _live_rule_hit(tool, ti, worktree, protected=None):
-    """The reason to deny, or "" - over the hook payload and the live
-    process table (`protected` = injectable for tests)."""
-    if tool not in ("Bash", "PowerShell"):
-        return ""
-    cmd = ti.get("command") or ""
-    if not _KILL_RE.search(cmd) and not _METHOD_KILL_RE.search(cmd):
-        return ""
-    if _METHOD_KILL_RE.search(cmd):
-        return "a .Kill() call cannot be checked up front - use taskkill /PID <n> or Stop-Process -Id <n>; " + _RESTART_ROUTE
-    # Quoted text is DATA (a grep pattern 'taskkill|kill' is not a kill) -
-    # except a string handed to a shell (-c / -Command / /c "..."), which is
-    # scanned as a command of its own so a kill cannot hide inside it.
-    scan = [re.sub(r"'[^']*'|\"[^\"]*\"", " ", cmd)]
-    scan += [m.group(2) for m in re.finditer(r"(?:\s-c|\s-command|\s/c)\s+(['\"])(.*?)\1", cmd, re.I | re.S)]
-    targets = []
-    for m in (mm for s in scan for mm in _KILL_CMD_RE.finditer(s)):
-        pids, why = _kill_targets(m.group("verb"), m.group("args") or "")
-        if why:
-            return ("%s - only a literal PID of a process you started yourself may be "
-                    "stopped (taskkill /PID <n> /F, Stop-Process -Id <n> -Force); %s"
-                    % (why, _RESTART_ROUTE))
-        targets += pids
-    if not targets:
-        return ""
-    prot = protected() if protected else _protected_pids()
-    if not prot:
-        return "the process table could not be read, so no kill can be checked; " + _RESTART_ROUTE
-    for pid in targets:
-        if pid in prot:
-            return "PID %d is %s; %s" % (pid, prot[pid], _RESTART_ROUTE)
-    return ""
+# NO KILL RULE (owner 2026-09-25 22:0x "Do like paseo"). This file held a
+# process-termination guard from 2026-09-12 to 2026-09-25: no agent could kill
+# a claude.exe, a process tree, or the daemon. The same evening it cost a stop:
+# the owner said "Stop" to a hands run posting on X, Henry had no verb and the
+# guard refused the kill, and the post went out. Paseo has no such guard - any
+# agent may cancel/kill any agent (paseo-tools.ts kill_agent/cancel_agent) and
+# `paseo daemon stop|restart` is a plain CLI call; the supervisor restarts a
+# crashed daemon. HelmDeck now does the same: the daemon verbs are the clean
+# path (the `stop` action -> hands.cancel / sessions.cancel_turn, the restart
+# route POST /admin/restart), and a raw kill is Claude's own permission
+# system's call, like every other risky verb. tray.py is the supervisor.
 
 
 # Package-mutating/publishing verbs - network egress and arbitrary
@@ -560,17 +445,6 @@ def main():
     scope = os.environ.get("HELMDECK_TOOL_SCOPE") or ""
     tool = payload.get("tool_name") or ""
     ti = payload.get("tool_input") or {}
-
-    # The daemon-kill rule first, in EVERY scope (worktree card, live-tree
-    # direct/machine card, Henry's broker with no worktree at all).
-    try:
-        why = _live_rule_hit(tool, ti, worktree)
-    except Exception as e:                                     # noqa: BLE001
-        _deny("card_tool_guard: internal error in the invariant check, refusing (%s)" % str(e)[:120])
-        return
-    if why:
-        _deny("card_tool_guard: " + why)
-        return
 
     # HENRY'S SUB-AGENTS ARE OWN PROCESSES, never CLI sidechains (owner
     # 2026-09-25: "wie Paseo - Thread oder Subprocess"). A foreground

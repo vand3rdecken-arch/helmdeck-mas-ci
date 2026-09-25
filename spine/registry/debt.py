@@ -5369,7 +5369,7 @@ DEBT = [
     {
         "id": "guard-process-rule-matches-prose-payload",
         "title": "The process-termination guard rule matches the English word inside a heredoc payload",
-        "status": "open",
+        "status": "paid",
         "what": "ops/tools/card_tool_guard.py _KILL_RE is a word-boundary match over the "
                 "WHOLE Bash command string and _DAEMON_RE matches 'python'. Any "
                 "'python - <<EOF ... EOF' command whose payload contains the plain "
@@ -5377,7 +5377,13 @@ DEBT = [
                 "case', a grep pattern, a debt entry) is denied with the daemon-tree "
                 "message. Hit twice on 2026-09-20 (22:03 filing a research card, 23:05 "
                 "grepping the guard itself); both had nothing to do with processes.",
-        "why_it_bites": "Henry and card workers cannot file tasks or write notes that "
+        "why_it_bites": "PAID 2026-09-25 - the whole kill rule is GONE (owner: "
+                        "'Do like paseo'; Paseo has no process guard, its agents "
+                        "may kill_agent/cancel_agent any agent). The rule's last "
+                        "cost: the owner's 'Stop' to a hands run posting on X "
+                        "had no verb and no permitted kill, the post went out. "
+                        "Replaced by the daemon-owned `stop` action "
+                        "(hands.cancel / sessions.cancel_turn). Was: Henry and card workers cannot file tasks or write notes that "
                         "use an ordinary English verb, and the deny message sends them "
                         "chasing a restart route that is irrelevant.",
         "trigger": "a Bash or PowerShell command containing both 'python' and the "

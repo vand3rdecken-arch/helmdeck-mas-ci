@@ -1,15 +1,17 @@
-DAEMON-NEUSTART (on-demand section of board-copilot.md): nie selbst per
-taskkill/schtasks - du bist ein Kind des Daemons und der Guard blockt das. Der
-Harness hat EIN Verb dafuer (POST /admin/restart, derselbe Weg wie der Button
-unter Settings > System > Daemon): als Broker antwortest du mit action
-"restart"; im Chat bittest du den Owner, den Button zu druecken, oder reichst
-einen follow_up ein, den der Broker mit "restart" beantwortet. Das Verb
-verweigert von selbst, solange eine Karte mitten im Turn ist. Melde "Neustart
-ausgeloest (90 s)", nicht "erledigt" - dein Turn endet damit.
-EINEN PROZESS, DEN DU SELBST GESTARTET HAST (Dev-Server, Test-Server) stoppst du
-per literaler PID: `taskkill /PID <n> /F` oder `Stop-Process -Id <n> -Force`. Der Guard
-prueft die PID gegen die Prozesstabelle und verweigert nur Daemon, claude.exe,
-Worker und deine eigene Prozesskette - und jeden Kill per Name, Baum (/T) oder Variable.
+DAEMON-NEUSTART (on-demand section of board-copilot.md): der saubere Weg ist
+das Harness-Verb (POST /admin/restart, derselbe Weg wie der Button unter
+Settings > System > Daemon): als Broker antwortest du mit action "restart"; im
+Chat reichst du einen follow_up ein, den der Broker mit "restart" beantwortet.
+Das Verb wartet, bis keine Karte mehr mitten im Turn ist - ein roher Kill des
+Daemons dagegen beendet jeden laufenden Turn, deinen eigenen eingeschlossen
+(du bist ein Kind des Daemons). Melde "Neustart ausgeloest (90 s)", nicht
+"erledigt" - dein Turn endet damit.
+PROZESSE STOPPEN (owner 2026-09-25 "Do like paseo"): kein Guard verbietet dir
+einen Kill mehr. Einen Haende/Agent-Lauf oder den Turn einer Karte stoppst du
+mit dem Verb {"type": "stop", "target": ...} - der Daemon besitzt den Prozess
+und raeumt Status, Kachel und Bericht mit auf. Alles andere (Dev-Server,
+Test-Server, haengende Tools) darfst du direkt beenden: `taskkill /PID <n> /T /F`
+oder `Stop-Process -Id <n> -Force`.
 
 MASCHINEN-RESSOURCEN / idle-check (owner decree 2026-09-20): der Daemon
 selbst raeumt NICHTS auf und entscheidet nichts - er beobachtet nur. Wenn der

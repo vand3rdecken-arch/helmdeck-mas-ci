@@ -44,9 +44,11 @@ def main():
     fails = []
     payload = json.dumps({"tool_name": "Read", "hook_event_name": "PreToolUse",
                           "tool_input": {"file_path": os.path.join(ROOT, "ARCHITECTURE.md")}})
-    kill = json.dumps({"tool_name": "Bash", "hook_event_name": "PreToolUse",
-                       "tool_input": {"command": "taskkill /PID 999999 /T /F"}})
     foreign = tempfile.mkdtemp(prefix="hd-foreign-cwd-")
+    # the armed-probe: a Write outside the confined worktree (the kill rule
+    # that used to serve here is gone since 2026-09-25, Paseo parity)
+    escape = json.dumps({"tool_name": "Write", "hook_event_name": "PreToolUse",
+                         "tool_input": {"file_path": os.path.join(ROOT, "ARCHITECTURE.md"), "content": "x"}})
     for key in ("copilot", "pm", "card"):
         with open(harness._settings_path(key), encoding="utf-8") as f:
             cmds = [h["command"] for blk in json.load(f)["hooks"]["PreToolUse"]
@@ -66,10 +68,11 @@ def main():
                 if not good:
                     fails.append("%s.json from %s" % (key, cwd))
                 # and the fence is still ARMED from here, not just "not failing"
-                p = subprocess.run([bash, "-c", cmd], cwd=cwd, env=env, input=kill,
+                armed = dict(env, HELMDECK_WORKTREE=foreign)
+                p = subprocess.run([bash, "-c", cmd], cwd=cwd, env=armed, input=escape,
                                    capture_output=True, text=True, timeout=60)
                 if '"deny"' not in p.stdout:
-                    print("FAIL %s.json cwd=%s: taskkill /T not denied" % (key, cwd))
+                    print("FAIL %s.json cwd=%s: worktree escape not denied" % (key, cwd))
                     fails.append("%s.json from %s: not armed" % (key, cwd))
     shutil.rmtree(foreign, ignore_errors=True)
     print("\n%d failure(s)" % len(fails) if fails else "\nall guard-hook cwd checks passed")

@@ -41,7 +41,7 @@ def _strip_actions_live(partial):
 # instead of the ```actions block, owner 2026-09-16 19:33 'Warum keine Karte').
 ACTION_KINDS = frozenset((
     "configure", "apply_template", "set_station", "machine_task", "direct_task", "file_card",
-    "move", "steer", "delete", "archive", "hands", "agent", "follow_up", "resolve_blocker", "resolve_conflict",
+    "move", "steer", "delete", "archive", "hands", "agent", "stop", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
@@ -140,6 +140,14 @@ def _card_hint(kind, frag, hits):
     """A miss on a card reference, answered with the actual candidates so the
     owner's next message resolves it in one move."""
     from cells.engineer.cards import sessions
+    from cells.copilot.chat import hands
+    run = hands.find(frag) if frag else None
+    if isinstance(run, str):
+        # a hands/agent RUN is not a card (2026-09-25 21:44: the owner's "Stop"
+        # was sent as a card steer at a hands id, missed, and the post went out)
+        return ("%s: '%s' ist ein Hände/Agent-Lauf, keine Karte. Anhalten: "
+                "{\"type\": \"stop\", \"target\": \"%s\"}. Umlenken geht nicht - "
+                "stoppen und neu starten." % (kind, frag, run))
     if hits:
         opts = "; ".join("%s (%s, %s)" % (t["branch"], t["id"], t.get("lane"))
                          for t in hits[:6])
@@ -662,6 +670,29 @@ def _run_action(a, actor, role="operator"):
                           card=a.get("card") or None, why=(a.get("why") or "")[:200], kind="agent")
         a["_run"] = hid
         return "Hintergrund-Agent: %s" % task.splitlines()[0][:90]
+    if kind == "stop":
+        # STOP ANY RUN BY ID (Paseo cancel_agent: any agent may stop any agent).
+        # The daemon owns every process it spawned, so the daemon stops it -
+        # a hands/agent run via hands.cancel, a card's live turn via
+        # sessions.cancel_turn (the composer's Stop button). The result is the
+        # truth about what stopped; Henry reports THAT, never the intent.
+        from cells.copilot.chat import hands
+        target = (a.get("target") or a.get("run") or a.get("card") or "").strip()
+        if not target:
+            return "stop: kein Ziel - gib die Lauf-id oder die Karte an."
+        run = hands.find(target)
+        if isinstance(run, list):
+            return "stop: '%s' passt auf %d Laeufe - welcher? %s" % (target, len(run), "; ".join(run[:6]))
+        if isinstance(run, str):
+            r = hands.cancel(run, actor=actor)
+            return ("GESTOPPT: %s" if r["ok"] else "NICHT gestoppt: %s") % r["detail"]
+        t = _find_card(target)
+        if t is None or isinstance(t, list):
+            return _card_hint("stop", target, t if isinstance(t, list) else [])
+        r = sessions.cancel_turn(t["id"], actor=actor) or {}
+        _tag(a, t)
+        return ("GESTOPPT: der laufende Turn von %s" % t["branch"] if r.get("cancelled")
+                else "stop %s: kein laufender Turn (%s)" % (t["branch"], json.dumps(r)[:160]))
     if kind == "follow_up":
         # The honest replacement for "schau ich mir gleich an" (board-copilot.md
         # forbids that prose now - it promised a check nothing ever performs,

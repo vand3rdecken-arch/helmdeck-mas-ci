@@ -788,13 +788,12 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
       const f = (data?.followups ?? {})[st.run];
       if (!f) return { ...st, live: { bucket: "done", sub: tr("chat.run.gone") } };
       const bucket = f.status === "running" ? ((f.result || "").startsWith("wartet") ? "backlog" : "running")
-        : f.status === "completed" ? "done" : "failed";
+        : f.status === "completed" || f.status === "canceled" ? "done" : "failed";
       const last = (f.steps ?? [])[(f.steps ?? []).length - 1];
       return { ...st, label: f.title || st.label, live: { bucket, steps: f.steps, result: f.status !== "running" ? f.result : undefined,
         sub: f.status === "running" ? (last ? `${last.label} ${last.text}`.trim() : (f.result || undefined))
           // the status mark already says done/failed - drop the report's own verdict word
-          : (f.result || "").split("\n")[0].replace(/^(DONE|FAILED|TOO_BIG)\s*[-:]\s*/i, "").slice(0, 120) || undefined } };
-    }
+          : (f.result || "").split("\n")[0].replace(/^(DONE|FAILED|TOO_BIG)\s*[-:]\s*/i, "").slice(0, 120) || undefined } };    }
     return st;
   }
 
