@@ -142,7 +142,7 @@ android {
         // mid-band clipped px in 39 frames). build_wear_aab.sh now refuses an
         // uncommitted wear tree and records the commit sha, so this cannot
         // recur.
-        versionCode 1000009
+        versionCode 1000010
         versionName "1.0.0"
     }
 

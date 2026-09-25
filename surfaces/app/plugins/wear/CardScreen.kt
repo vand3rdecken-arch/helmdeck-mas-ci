@@ -113,6 +113,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
         // Google's Wear list pattern (see PairingScreen): one TransformationSpec
         // shapes every row towards the round edge, so nothing is cut at fontScale 2.0.
         val spec = rememberTransformationSpec()
+        // Long user text (title, detail, body, options) is emitted as several rows
+        // so no row is ever taller than the round viewport.
+        val chunk = rememberChunkChars()
         // ROUND SCREEN SIDE INSET - same as HenryScreen.kt, same cause:
         // ScreenScaffold's contentPadding keeps the first and last ROW off
         // the bezel, but a full-width card is still cut by the circle at
@@ -129,11 +132,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                item {
-                    ListHeader(
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                        transformation = SurfaceTransformation(spec),
-                    ) { FullText(text = card.task.ifBlank { card.id }, textAlign = TextAlign.Center) }
+                chunkedRows(card.task.ifBlank { card.id }, chunk, spec) { part, m ->
+                    ListHeader(modifier = m, transformation = SurfaceTransformation(spec)) {
+                        FullText(text = part, textAlign = TextAlign.Center)
+                    }
                 }
                 // "Zurück" stays directly under the title, ABOVE the content:
                 // this screen is reached from a manual `when(screen)` in
@@ -161,15 +163,8 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 //   2. WHAT last happened (body): the machine's last reply.
                 val label = reasonLabel(card.reason)
                 if (label.isNotEmpty()) {
-                    item {
-                        FullText(
-                            text = label,
-                            color = WearSemantics.status(
-                                card.status.ifBlank { card.reason }),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
-                    }
+                    textRows(label, chunk, spec,
+                        color = WearSemantics.status(card.status.ifBlank { card.reason }))
                 }
                 // ...but NOT when `detail` is just the top of `body`. For the
                 // reasons 'delivered' and 'failed', blockers.blocker() builds
@@ -190,34 +185,30 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 val detailEchoesBody =
                     flat(card.body).startsWith(flat(card.detail).take(40))
                 if (card.detail.isNotBlank() && !detailEchoesBody) {
-                    item {
-                        OutlinedCard(
-                            onClick = {},
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                            transformation = SurfaceTransformation(spec),
-                        ) {
-                            FullText(text = card.detail, textAlign = TextAlign.Start)
+                    chunkedRows(card.detail, chunk, spec) { part, m ->
+                        OutlinedCard(onClick = {}, modifier = m, transformation = SurfaceTransformation(spec)) {
+                            FullText(text = part, textAlign = TextAlign.Start)
                         }
                     }
                 }
                 if (card.body.isNotBlank()) {
-                    item {
-                        // Same neutral surface HenryScreen gives Henry's own
-                        // messages (`layer2` from WearTokens, i.e. from
-                        // ops/tools/gen_tokens.py) - because it is the same
-                        // thing: the machine talking. Start-aligned; a centred
-                        // paragraph has a ragged left edge and the eye loses
-                        // the line it was on.
+                    // Same neutral surface HenryScreen gives Henry's own
+                    // messages (`layer2` from WearTokens, i.e. from
+                    // ops/tools/gen_tokens.py) - because it is the same
+                    // thing: the machine talking. Start-aligned; a centred
+                    // paragraph has a ragged left edge and the eye loses
+                    // the line it was on.
+                    chunkedRows(card.body, chunk, spec) { part, m ->
                         Card(
                             onClick = {},
                             colors = CardDefaults.cardColors(
                                 containerColor = WearTokens.layer2,
                                 contentColor = WearTokens.txtPrimary,
                             ),
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                            modifier = m,
                             transformation = SurfaceTransformation(spec),
                         ) {
-                            FullText(text = card.body, textAlign = TextAlign.Start)
+                            FullText(text = part, textAlign = TextAlign.Start)
                         }
                     }
                 }
@@ -225,10 +216,10 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 val q = card.question
                 if (q != null) {
                     for (item in q.questions) {
-                        item { FullText(text = item.question, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
+                        textRows(item.question, chunk, spec, textAlign = TextAlign.Start)
                         for (opt in item.options) {
                             val selected = picks[item.header] == opt.label
-                            item {
+                            chunkedRows((if (selected) "> " else "") + opt.label, chunk, spec) { part, m ->
                                 Button(
                                     onClick = {
                                         picks[item.header] = opt.label
@@ -243,9 +234,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                                             submitAnswer(q.id)
                                         }
                                     },
-                                    modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                    modifier = m,
                                     transformation = SurfaceTransformation(spec),
-                                ) { FullText(text = (if (selected) "> " else "") + opt.label) }
+                                ) { FullText(text = part) }
                             }
                         }
                     }
@@ -259,9 +250,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             ) { FullText("Antworten") }
                         }
                     }
-                    if (answerStatus != null) {
-                        item { FullText(text = answerStatus ?: "", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
-                    }
+                    if (answerStatus != null) textRows(answerStatus ?: "", chunk, spec)
                 }
 
                 item { FullText(text = "Henry fragen", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
@@ -280,24 +269,23 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                         transformation = SurfaceTransformation(spec),
                     ) { FullText(if (henryBusy) "…" else "Diktieren") }
                 }
-                if (henryReply != null) {
-                    item { FullText(text = henryReply ?: "", modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp)) }
-                }
+                if (henryReply != null) textRows(henryReply ?: "", chunk, spec, textAlign = TextAlign.Start)
                 henrySuggestions?.questions?.forEach { sug ->
                     for (opt in sug.options) {
-                        item {
+                        chunkedRows(opt.label, chunk, spec) { part, m ->
                             Button(
                                 onClick = {
                                     askHenry(context, scope, card.id, opt.label,
                                         onBusy = { henryBusy = it },
                                         onReply = { reply, more -> henryReply = reply; henrySuggestions = more })
                                 },
-                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                modifier = m,
                                 transformation = SurfaceTransformation(spec),
-                            ) { FullText(text = opt.label) }
+                            ) { FullText(text = part) }
                         }
                     }
                 }
+                endInset()
             }
         }
     }

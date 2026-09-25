@@ -78,6 +78,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var editingAddress by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val urlLauncher = rememberLauncherForActivityResult(
@@ -101,7 +102,9 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
             // characters ("F 5 Z E K 6") more often than not on a 6-char
             // code with no dictionary word to anchor it - stripped here so
             // a spoken code has the same shot at matching as a typed one.
-            if (text != null) code = text.replace(" ", "").trim()
+            // A code is 6 characters; capped so a dictated sentence cannot make the
+            // field button taller than the round screen.
+            if (text != null) code = text.replace(" ", "").trim().take(8)
         }
     }
 
@@ -150,8 +153,18 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
         }
     }
 
+    if (editingAddress) {
+        AddressEditor(
+            value = claimBaseUrl,
+            onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
+            onReset = { claimBaseUrl = DEFAULT_CLAIM_BASE_URL },
+            onDone = { editingAddress = false },
+        )
+        return
+    }
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
+        val chunk = rememberChunkChars()
         // Google's Wear Compose M3 list pattern (developer.android.com/training/
         // wearables/compose/lists, checked against the resolved 1.6.2 AAR): every
         // row is transformed by ONE TransformationSpec, so it narrows and shrinks
@@ -195,27 +208,65 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                         transformation = SurfaceTransformation(spec),
                     ) { FullText(if (busy) "…" else "Koppeln") }
                 }
-                if (status != null) {
-                    item {
-                        FullText(
-                            text = status ?: "",
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                                .transformedHeight(this, spec)
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
-                    }
-                }
+                if (status != null) textRows(status ?: "", chunk, spec)
+                // The address is NOT shown here: a full URL in a button is taller
+                // than the round viewport at fontScale 2.0 and gets cut by the
+                // bezel (Play rejection 2026-09-25). One short line; the value
+                // itself lives on its own screen (AddressEditor).
                 item {
                     FieldButton(
-                        spec = spec, label = "Adresse diktieren (meist unnötig)",
-                        value = claimBaseUrl,
-                        onDictate = { urlLauncher.launch(speechIntent("Adresse")) },
+                        spec = spec, label = "Adresse",
+                        value = if (claimBaseUrl == DEFAULT_CLAIM_BASE_URL) "Standard" else "geändert",
+                        onDictate = { editingAddress = true },
                     )
                 }
+                endInset()
             }
         }
     }
+}
+
+/** The address on its own screen: the value as plain wrapping text rows (never
+ *  in a Button, never a row taller than the viewport), then the actions. */
+@Composable
+private fun AddressEditor(
+    value: String, onDictate: () -> Unit, onReset: () -> Unit, onDone: () -> Unit,
+) {
+    MaterialTheme {
+        val columnState = rememberTransformingLazyColumnState()
+        val spec = rememberTransformationSpec()
+        val chunk = rememberChunkChars()
+        ScreenScaffold(columnState) { contentPadding ->
+            TransformingLazyColumn(
+                state = columnState,
+                contentPadding = contentPadding,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item {
+                    ListHeader(
+                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                        transformation = SurfaceTransformation(spec),
+                    ) { FullText(text = "Adresse", textAlign = TextAlign.Center) }
+                }
+                textRows(value, chunk, spec)
+                item { ActionButton(spec, "Diktieren", onDictate) }
+                item { ActionButton(spec, "Standard", onReset) }
+                item { ActionButton(spec, "Fertig", onDone) }
+                endInset()
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransformingLazyColumnItemScope.ActionButton(
+    spec: TransformationSpec, label: String, onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+        transformation = SurfaceTransformation(spec),
+    ) { FullText(text = label) }
 }
 
 /** One field: a full-width Button whose label says what it does and whose

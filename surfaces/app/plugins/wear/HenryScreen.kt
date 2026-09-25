@@ -34,6 +34,7 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.ChildButton
 // Wear Compose Material3's own small pill - the right size for a transient
@@ -705,6 +706,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         // Henry's own follow-up options, when a tap can settle it.
         suggestions?.questions?.firstOrNull()?.options?.map { it.label } ?: emptyList(),
         loading = loadingVisible,
+        maxChars = rememberChunkChars(),
     )
     val newest = newestMessageIndex(rows)
 
@@ -828,7 +830,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             // content, a refresh is in flight, and that must
                             // stay visible rather than silent (see ChatRows.kt).
                             is Row.Loading -> FullText(
-                                text = if (loadingLong) "Verlauf wird aktualisiert… (Versuch $loadingAttempt)"
+                                text = if (loadingLong) "Aktualisiere… (Versuch $loadingAttempt)"
                                        else "Verlauf wird aktualisiert…",
                                 color = WearTokens.txtTertiary,
                                 textAlign = TextAlign.Center,
@@ -840,7 +842,20 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp))
 
-                            is Row.Msg -> TitleCard(
+                            // Continuation slice of a long message: same colours, no header.
+                            is Row.Msg -> if (row.part > 0) Card(
+                                onClick = {},
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isAmbient) WearTokens.canvas
+                                                     else if (row.line.mine) WearTokens.glow1
+                                                     else WearTokens.layer2,
+                                    contentColor = if (isAmbient) WearTokens.txtTertiary
+                                                   else WearTokens.txtPrimary,
+                                ),
+                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+                                transformation = SurfaceTransformation(spec),
+                            ) { FullText(text = row.shown, textAlign = TextAlign.Start) }
+                            else TitleCard(
                                 onClick = {},
                                 title = { FullText(senderOf(row.line)) },
                                 // Omitted, not blanked, when there is no stamp:
@@ -860,7 +875,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                                 transformation = SurfaceTransformation(spec),
                             ) {
-                                FullText(text = row.line.text, textAlign = TextAlign.Start)
+                                FullText(text = row.shown, textAlign = TextAlign.Start)
                             }
 
                             is Row.Option -> Button(
@@ -868,7 +883,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 enabled = !busy,
                                 modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
                                 transformation = SurfaceTransformation(spec),
-                            ) { FullText(text = row.label) }
+                            ) { FullText(text = row.shown) }
 
                             is Row.Busy -> FullText(
                                 text = "Henry denkt …", textAlign = TextAlign.Center,
@@ -877,7 +892,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                             is Row.Suggest -> Button(
                                 onClick = { ask(row.label) }, enabled = !busy,
                                 modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                                transformation = SurfaceTransformation(spec)) { FullText(text = row.label) }
+                                transformation = SurfaceTransformation(spec)) { FullText(text = row.shown) }
 
                             // ALWAYS enabled, even while `busy`: a tap while
                             // Henry is still answering DICTATES a follow-up
@@ -919,6 +934,7 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                         }
                     }
                 }
+                endInset()
             }
         }
 
@@ -935,7 +951,10 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                 colors = ButtonDefaults.filledTonalButtonColors(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp),
+                    // 26dp: at the bottom of a round face the chord is short, a
+                    // 6dp offset put this pill's lower corners outside the circle
+                    // at fontScale 2.0.
+                    .padding(bottom = 26.dp),
             ) { FullText(text = "↓ Neueste") }
         }
     }

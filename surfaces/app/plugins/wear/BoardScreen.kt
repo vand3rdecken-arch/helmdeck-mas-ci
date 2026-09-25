@@ -122,6 +122,9 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
         // it narrows towards the round top/bottom edge (Play rejection 2026-09-24,
         // fontScale 2.0). See PairingScreen.
         val spec = rememberTransformationSpec()
+        // Long card titles become several rows (each its own Button, same tap
+        // target) so no row is ever taller than the round viewport.
+        val chunk = rememberChunkChars()
         // Same reasoning as PairingScreen: ScreenScaffold computes the
         // screen-size-relative content padding and passes it in, instead of a
         // bare Box that leaves the first and last row against the bezel.
@@ -137,21 +140,11 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         transformation = SurfaceTransformation(spec),
                     ) { FullText(text = "HelmDeck", textAlign = TextAlign.Center) }
                 }
-                if (status.isNotEmpty()) {
-                    item {
-                        FullText(
-                            text = status,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().transformedHeight(this, spec).padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
-                    }
-                }
+                if (status.isNotEmpty()) textRows(status, chunk, spec)
                 for (c in cards) {
-                    item {
-                        Button(onClick = { onOpenCard(c) }, modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                            transformation = SurfaceTransformation(spec)) {
-                            FullText(text = c.task.ifBlank { c.id })
-                        }
+                    chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
+                        Button(onClick = { onOpenCard(c) }, modifier = m,
+                            transformation = SurfaceTransformation(spec)) { FullText(text = part) }
                     }
                 }
                 // The numbers the daemon already sends and this screen used to
@@ -173,12 +166,9 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         )
                     }
                     for (c in yours) {
-                        item {
-                            OutlinedButton(onClick = { onOpenCard(c) },
-                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                            transformation = SurfaceTransformation(spec)) {
-                                FullText(text = c.task.ifBlank { c.id })
-                            }
+                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
+                            OutlinedButton(onClick = { onOpenCard(c) }, modifier = m,
+                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
                         }
                     }
                 }
@@ -211,13 +201,11 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         )
                     }
                     for (c in working.cards) {
-                        item {
+                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                                transformation = SurfaceTransformation(spec)) {
-                                FullText(text = c.task.ifBlank { c.id })
-                            }
+                                modifier = m,
+                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
                         }
                     }
                 }
@@ -230,13 +218,11 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         )
                     }
                     for (c in backlog.cards) {
-                        item {
+                        chunkedRows(c.task.ifBlank { c.id }, chunk, spec) { part, m ->
                             ChildButton(onClick = { onOpenCard(c) },
                                 border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                                transformation = SurfaceTransformation(spec)) {
-                                FullText(text = c.task.ifBlank { c.id })
-                            }
+                                modifier = m,
+                                transformation = SurfaceTransformation(spec)) { FullText(text = part) }
                         }
                     }
                 }
@@ -273,6 +259,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                         FullText("Aktualisieren")
                     }
                 }
+                endInset()
             }
         }
     }
