@@ -1457,7 +1457,7 @@ def _schedule_compact(user):
             # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
             prewarm(user, spoken=False)
             if note:
-                _append_log(user, [{"cls": "error", "text": note,
+                _append_log(user, [{"cls": "act", "text": note,
                                     "ts": time.strftime("%H:%M")}])
         except Exception:
             pass                 # best-effort, same contract as _maybe_compact
@@ -1538,7 +1538,7 @@ def _schedule_prune(user):
                 lk.release()
             if note:
                 prewarm(user, spoken=False)   # the drop above cost the warmth
-                _append_log(user, [{"cls": "error", "text": note,
+                _append_log(user, [{"cls": "act", "text": note,
                                     "ts": time.strftime("%H:%M")}])
         except Exception as e:                                   # noqa: BLE001
             # best-effort like _maybe_compact, but never SILENT: a rewrite

@@ -16,7 +16,7 @@ history(), the guard hook as a real subprocess):
  8. the guard hook denies the CLI Agent/Task in Henry's chat surface
     (foreground AND background), and leaves worker cards alone
  9. the inline budget: 6 inline calls per board turn (turn = the daemon's
-    chat_turns.json stamp), the 7th refused
+    chat_turns.json stamp), the 7th refused; none after 90 s
 Run: py -3.12 ops/tests/test_chat_runs_persist.py
 """
 import json, os, subprocess, sys, tempfile, time
@@ -213,19 +213,22 @@ def turn(stamp):
         json.dump({OWNER: stamp} if stamp else {}, f)
 
 
-turn(1000.0)
+turn(time.time())
 got = [guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) for _ in range(6)]
 check("deny" not in got, "9. six inline calls in one turn pass (%r)" % got)
 check(guard("Bash", {"command": "git log"}, "copilot", OWNER, STATE) == "deny",
       "9. the seventh inline call is refused")
-turn(2000.0)
+turn(time.time() + 1)
 check(guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) != "deny",
       "9. a NEW turn starts a fresh budget")
+turn(time.time() - 120)
+check(guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) == "deny",
+      "9. no inline call starts later than 90 s into the turn (time window)")
 turn(None)
 for _ in range(8):
     last = guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE)
 check(last != "deny", "9. no turn witness (not a board turn) = no budget")
-turn(3000.0)
+turn(time.time() + 2)
 for _ in range(8):
     last = guard("Bash", {"command": "git status"}, "", None, STATE)
 check(last != "deny", "9. a worker card (no chat surface) is never budgeted")

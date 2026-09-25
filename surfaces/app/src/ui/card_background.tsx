@@ -106,10 +106,17 @@ export function BackgroundTasks({ tasks, waiting, variant = "card" }: {
     || (b.updated || b.since || 0) - (a.updated || a.since || 0));
   const running = list.filter((x) => x.status === "running").length;
   const live = running > 0;
-  const k = variant === "henry" ? "chat.followups" : "card.bg";
-  const label = waiting && live ? tr("card.bg.lineWaiting", { m: running })
-    : live ? tr(`${k}.lineLive`, { n: list.length, m: running })
-    : tr(`${k}.line`, { n: list.length });
+  const failed = list.filter((x) => x.status === "failed").length;
+  const done = list.length - running - failed;
+  const label = variant === "henry"
+    // Henry's sub-agents: Paseo's per-state segments ("2 working · 1 failed")
+    ? tr("chat.followups.head") + ": " + [
+        running ? tr("chat.followups.running", { n: running }) : "",
+        failed ? tr("chat.followups.failed", { n: failed }) : "",
+        done ? tr("chat.followups.done", { n: done }) : ""].filter(Boolean).join(" · ")
+    : waiting && live ? tr("card.bg.lineWaiting", { m: running })
+    : live ? tr("card.bg.lineLive", { n: list.length, m: running })
+    : tr("card.bg.line", { n: list.length });
   return (
     <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
       <View style={{ backgroundColor: t.surface2, borderColor: t.borderSubtle,

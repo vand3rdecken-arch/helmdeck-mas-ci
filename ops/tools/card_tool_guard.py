@@ -373,9 +373,13 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 # says "at most ~3 calls, then hand off"; measured, that prose lost. The
 # budget is counted HERE, the one place every tool call of his passes, per
 # TURN - the turn's identity is the start stamp the daemon writes at event
-# time into daemon/state/chat_turns.json (copilot._note_turn). A background
-# Agent/Task is the hand-off itself and never counts.
+# time into daemon/state/chat_turns.json (copilot._note_turn).
+# And a TIME WINDOW (owner 2026-09-25 17:2x, same complaint, measured live
+# after the count shipped: Henry stayed under 6 calls but one of them was a
+# 40-round curl wait loop plus a deploy - minutes of tool blocks again). No
+# inline call starts later than INLINE_WINDOW_S into the turn.
 INLINE_BUDGET = int(os.environ.get("HELMDECK_INLINE_BUDGET") or 6)
+INLINE_WINDOW_S = float(os.environ.get("HELMDECK_INLINE_WINDOW_S") or 90)
 
 
 def _state_dir():
@@ -384,8 +388,6 @@ def _state_dir():
 
 
 def _inline_budget(tool, ti):
-    if tool in ("Agent", "Task") and ti.get("run_in_background"):
-        return
     user = os.environ.get("HELMDECK_CHAT_USER") or ""
     sd = _state_dir()
     try:
@@ -433,12 +435,18 @@ def _inline_budget(tool, ti):
                 os.remove(lock)
             except OSError:
                 pass
-    if n > INLINE_BUDGET:
-        _deny("card_tool_guard: dein Inline-Budget fuer diesen Turn (%d Tool-Aufrufe) ist "
-              "verbraucht - der Owner-Chat wartet auf dich. Gib den Rest ab: Lesen/Pruefen/"
-              "Recherche -> Agent mit \"run_in_background\": true, PC/Browser -> hands, "
-              "Aenderungen -> direct_task/file_card. Sag dem Owner in einem Satz, was du "
-              "hast und was jetzt im Hintergrund laeuft, und beende den Turn." % INLINE_BUDGET)
+    try:
+        elapsed = _t.time() - float(turn)
+    except (TypeError, ValueError):
+        elapsed = 0.0
+    if n > INLINE_BUDGET or elapsed > INLINE_WINDOW_S:
+        _deny("card_tool_guard: dein Inline-Budget fuer diesen Turn ist verbraucht (%s) - "
+              "der Owner-Chat wartet auf dich. Gib den Rest ab: Lesen/Pruefen/Recherche -> "
+              "Aktion agent, PC/Browser -> hands, Aenderungen/Deploy -> direct_task/file_card. "
+              "Sag dem Owner in einem Satz, was du hast und was jetzt im Hintergrund "
+              "laeuft, und beende den Turn."
+              % ("%d Tool-Aufrufe" % INLINE_BUDGET if n > INLINE_BUDGET
+                 else "%ds Laufzeit" % int(INLINE_WINDOW_S)))
 
 
 def main():

@@ -140,8 +140,10 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     ts: m.ts,
     // Henry's identity on EVERY reply here (not just proactive `pm` pushes) -
     // this surface is Henry-only, so every non-user message is him.
-    by: mine ? me : (m.cls !== "error" ? "Henry" : undefined),
-    byKind: mine ? "human" : (m.cls !== "error" ? "henry" : undefined),
+    // an error row is about Henry's turn too - without a sender the
+    // transcript fell back to "Worker", a card that never spoke here
+    by: mine ? me : "Henry",
+    byKind: mine ? "human" : "henry",
     agent: m.cls === "pm",   // legacy flag, superseded by byKind above
   };
 }
