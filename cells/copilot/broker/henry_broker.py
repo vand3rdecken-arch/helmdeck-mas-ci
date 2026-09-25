@@ -470,7 +470,6 @@ def _judgement_policy(t):
 
 def _decide(esc):
     """One judgement round. Returns True if the escalation was closed."""
-    escalations.record_attempt(esc["id"])
     card_log = _card_log_tail(esc.get("card"))
     t = _find_track(esc.get("card"))
     policy = _judgement_policy(t)
@@ -507,11 +506,21 @@ def _decide(esc):
             "eingereicht - du hast in diesem Turn KEINE Haende (nur lesen). "
             "action \"did\" ist nicht verfuegbar; nutze steer/notify_owner/"
             "ignore.")
+    from cells.copilot.chat import copilot as _cp
     try:
         d = _ask(prompt, perm="plan") if not privileged else _hands_on_ask(prompt)
+    except _cp.JudgePreempted:
+        # the owner wrote while this ran - his message went first; not an
+        # attempt (the 2-attempt cap is for judgements, not interruptions)
+        escalations.record_note(esc["id"], "vom Owner-Chat unterbrochen - naechste Runde")
+        return False
     except Exception as e:
+        escalations.record_attempt(esc["id"])
         escalations.record_note(esc["id"], "ask failed: %s" % str(e)[:200])
         return False
+    # counted once a judgement actually came back (or failed on its own) -
+    # recorded here, not before the ask, so an owner interruption is free
+    escalations.record_attempt(esc["id"])
     den = d.get("_denials") or []
     if den:
         escalations.record_note(esc["id"], "Policy hat %d Aufruf(e) geblockt: %s" % (

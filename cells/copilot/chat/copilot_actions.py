@@ -716,7 +716,10 @@ def _run_action(a, actor, role="operator"):
         # follow-ups on their own thread precisely so this stays close to
         # true in the common case, but the chat confirmation must not assert
         # a number the broker never actually guaranteed).
-        return "notiert - laeuft im Hintergrund (Status: die Zeile ueber dem Eingabefeld)"
+        # Owner 2026-09-25 22:21 "Was ist das": the line read like a log.
+        # Say WHAT happens, in words the owner uses; the status lives in the
+        # Sub-Agenten line (followups).
+        return "Henry prüft im Hintergrund nach: %s (Stand: Zeile „Sub-Agenten“ über dem Eingabefeld)" % text[:120]
     if kind == "resolve_blocker":
         # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
         # the shared repo checkout - a cross-cutting fix the sandboxed worker
