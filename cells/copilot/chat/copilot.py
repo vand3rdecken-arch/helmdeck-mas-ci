@@ -17,7 +17,7 @@ _MODELS_KEY = "copilot_models"
 # is the same slice the old file kept (it CLIPPED to 80 and threw the rest
 # away); the rest is now a bigger LIMIT away, not gone.
 _HISTORY_WINDOW = 80
-from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats, _plan_share
+from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats
 from cells.copilot.chat import copilot_prune
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions, ACTION_KINDS
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
@@ -1093,6 +1093,10 @@ def _snapshot(full=False):
     lines = ["POLICY: " + json.dumps(pol)]
     lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
+    from cells.copilot.planning.pm_budget import _quota_line
+    quota = _quota_line()
+    if quota:
+        lines.append(quota)
     # Cards span MULTIPLE repos (projects). The repo is shown so a question about
     # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
     # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.
@@ -1735,9 +1739,6 @@ def history(user):
     a terminal via `claude --resume <id>`) plus the PM-session stats the board
     chat renders as context meter + usage line (card-chat parity)."""
     st = _stats().get(user)
-    if st:
-        st = dict(st)
-        st["plan_pct"] = _plan_share(st)
     try:
         from cells.copilot.broker import henry_broker
         followups = henry_broker.followup_tasks()

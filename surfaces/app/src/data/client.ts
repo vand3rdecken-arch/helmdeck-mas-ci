@@ -335,12 +335,12 @@ export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id
    *  everything written before it — which means "not recorded", not "today". */
   date?: string }
 /** The PM session's measured economics (daemon: copilot._fold_stats) — the
- *  board chat's card-parity context meter + usage line read this. ctx_tokens/
+ *  board chat's card-parity context meter reads this. ctx_tokens/
  *  ctx_window mirror a card's fields (window derived from model evidence, not
- *  assumed); plan_pct is the flat plan's share-of-subscription when calibrated. */
+ *  assumed). */
 export interface ChatStats {
   turns: number; cost: number; tokens_in: number; tokens_out: number;
-  ctx_tokens?: number; ctx_window?: number; plan_pct?: number | null;
+  ctx_tokens?: number; ctx_window?: number;
 }
 export interface ChatThread {
   id: string; kind: "card"; title: string; lane?: string; status?: string;

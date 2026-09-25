@@ -109,7 +109,6 @@ export const composer: Dict = {
   "chat.askHenry": { de: "Henry fragen", en: "Ask Henry" },
   // {cost} arrives pre-rendered: planLabel() on the flat plan ("KI ~x % vom
   // Abo" / "KI 34k Tok"), the measured "AI $x.xx" on a metered plan.
-  "chat.usage": { de: "PM-Session · {turns} Turns · {cost}", en: "PM session · {turns} turns · {cost}" },
 
   // -- voice mode (ui/voice_mode.tsx) ---------------------------------------
   // Deliberately SHORT: these are read at a glance, or not at all — the surface

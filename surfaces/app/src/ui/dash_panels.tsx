@@ -734,6 +734,8 @@ function toneColor(t: ThemeTokens, tone: UsageTone, accent: string): string {
   return tone === "danger" ? t.danger : tone === "warning" ? t.warn : accent;
 }
 
+const WIN_KEYS = new Set(["five_hour", "weekly", "weekly_opus"]);
+
 function UsageRow({ w }: { w: UsageWindow }) {
   const t = useTheme();
   const tr = useT();
@@ -744,7 +746,7 @@ function UsageRow({ w }: { w: UsageWindow }) {
   return (
     <View style={{ marginBottom: 10 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
-        <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{w.label}</Text>
+        <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{WIN_KEYS.has(w.id) ? tr(`dash.usage.win.${w.id}`) : w.label}</Text>
         <Text style={{ color: col, fontSize: 12.5, fontWeight: "700" }}>{tr("dash.usage.used", { pct: Math.round(pct) })}</Text>
       </View>
       <View style={{ marginVertical: 5 }}><Meter pct={pct} color={col} /></View>
@@ -761,10 +763,8 @@ function UsageRow({ w }: { w: UsageWindow }) {
 /** The usage element: Claude subscription rate-limit windows (5h + weekly) with
  *  pacing. Owner-only; polls /usage every 5 min (the daemon caches it). Renders
  *  nothing until it has an answer, and only a small note if usage is unavailable. */
-export function UsagePanel() {
-  const t = useTheme();
-  const tr = useT();
-  const { data } = useQuery<Usage>({
+function useUsage() {
+  return useQuery<Usage>({
     queryKey: ["usage"], queryFn: api.usage,
     // KEPT ON PURPOSE (2026-09-24 timer sweep): the plan usage comes from
     // api.anthropic.com (spine/ops/usage.py USAGE_URL), an EXTERNAL system
@@ -772,6 +772,26 @@ export function UsagePanel() {
     // Paseo polling a forge's CI pipeline. Everything the DAEMON knows is pushed.
     refetchInterval: 5 * 60 * 1000, staleTime: 4 * 60 * 1000,
   });
+}
+
+/** The same windows as UsagePanel, bare - for the chat's context-meter detail
+ *  (Paseo's composer tooltip: context + the provider's own usage windows).
+ *  The account's measured percentages, never a per-session estimate. */
+export function UsageWindows() {
+  const t = useTheme();
+  const tr = useT();
+  const { data } = useUsage();
+  if (!data) return null;
+  if (data.status !== "ok" || data.windows.length === 0) {
+    return <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.usage.unavailable")}</Text>;
+  }
+  return <View>{data.windows.map((w) => <UsageRow key={w.id} w={w} />)}</View>;
+}
+
+export function UsagePanel() {
+  const t = useTheme();
+  const tr = useT();
+  const { data } = useUsage();
   if (!data) return null;
   if (data.status !== "ok" || data.windows.length === 0) {
     return (

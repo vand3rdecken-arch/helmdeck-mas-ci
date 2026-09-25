@@ -1721,7 +1721,13 @@ DEBT = [
                 "endpoint publishes a percentage and never the absolute limit, so "
                 "there is no exact allowance to divide by. "
                 "settings.pm.plan_tokens_week overrides it when the owner knows the "
-                "real number.",
+                "real number. NARROWED 2026-09-26: the numerator used to be CARD "
+                "turns only, so HelmDeck's own non-card spend (Henry's chat, "
+                "compaction, judge, memory save, hands, PM planning, proposals) "
+                "inflated card shares too - now folded at event time "
+                "(spine.turn.econ.record_spend, kind 'spend'), and the window "
+                "starts at resetsAt-7d instead of a rolling 7 days. What remains "
+                "is use OUTSIDE HelmDeck.",
         "why_it_bites": "used_pct covers the WHOLE Anthropic account - Claude Code in "
                         "the owner's own terminal, claude.ai, other machines - while "
                         "the numerator counts only turns this daemon recorded. Every "

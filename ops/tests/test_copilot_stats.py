@@ -9,14 +9,13 @@ time from the runtime's own result + assistant events. Pinned here:
   - cost/turns/tokens ACCUMULATE across turns, ctx is REPLACED;
   - the window is derived from model evidence ("[1m]" -> 1M) with the
     successful call's context as a lower bound, not hardcoded;
-  - /chat/history serves the stats (plan_pct None when not calibratable).
+  - /chat/history serves the stats (no lifetime plan share).
 Load-bearing: chat.tsx renders the meter + usage line straight off this."""
-import os, sys, tempfile, time
+import os, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 from cells.copilot.chat import copilot as c
-from cells.copilot.chat import copilot_stats
 
 _fails = []
 
@@ -68,17 +67,13 @@ m2 = c._fold_stats("other", {"usage": {}, "modelUsage": {}, "total_cost_usd": 0.
                    {"input_tokens": 260000})
 check(m2["ctx_window"] == 1000000, "proof beyond 200k -> 1M-tier window, not a pinned 100%")
 
-# 5) history() serves the stats; plan_pct is None when not calibratable
-copilot_stats._calib.update({"t": time.time(), "flat": False, "v": None})
+# 5) history() serves the stats - and no lifetime "% of plan" any more: the
+#    session's whole-life spend over ONE week's allowance read 625% (owner
+#    2026-09-26); the chat shows the account's measured windows instead.
 h = c.history("owner")
 st = h.get("stats") or {}
 check(st.get("turns") == 4 and st.get("ctx_tokens") == 73000, "history exposes the folded stats")
-check(st.get("plan_pct") is None, "not calibratable -> plan_pct None (UI falls back to tokens)")
-
-# 6) calibrated flat plan: cost basis wins (cache reads must not over-weight)
-copilot_stats._calib.update({"t": time.time(), "flat": True, "v": {"cost_per_pct": 0.5, "tokens_per_pct": 1e6}})
-st2 = (c.history("owner").get("stats") or {})
-check(st2.get("plan_pct") == round(st2["cost"] / 0.5, 4), "flat plan: plan share = cost / cost_per_pct")
+check("plan_pct" not in st, "no lifetime plan share on the chat stats")
 
 print()
 if _fails:

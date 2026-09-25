@@ -118,6 +118,36 @@ def _quota_signal():
     return out
 
 
+def _quota_line():
+    """ONE line of the live quota for Henry's board snapshot - so "können wir
+    pushen?" is answered from the account's measured windows, not a guess
+    (owner 2026-09-26). Non-blocking (usage.cached: a chat turn must never
+    inherit the usage endpoint's timeout); None while the cache is cold or
+    there is no Claude login. "runs out" is claimed only on pacing's
+    reset_risk - never on exhaust_before_reset alone (usage.pacing)."""
+    try:
+        from spine.ops import usage
+        snap = usage.cached()
+    except Exception:
+        return None
+    if not snap or snap.get("status") != "ok":
+        return None
+    parts = []
+    for w in snap.get("windows") or []:
+        used = w.get("usedPct")
+        if w.get("id") not in ("weekly", "five_hour") or not isinstance(used, (int, float)):
+            continue
+        s = "%s %d%% used (reset %s)" % ("week" if w["id"] == "weekly" else "5h",
+                                          round(used), _fmt_when(w.get("resetsAt")))
+        pac = w.get("pacing") or {}
+        if pac.get("projected_pct") is not None:
+            s += ", at this pace %d%% by reset" % round(pac["projected_pct"])
+        if pac.get("reset_risk"):
+            s += " - RUNS OUT BEFORE RESET (~%s)" % _fmt_when(pac.get("exhaust_at"))
+        parts.append(s)
+    return ("QUOTA (Anthropic, measured): " + "; ".join(parts)) if parts else None
+
+
 def _budget_assess(econ, est_turns, pace):
     """The PM's CODE-COMPUTED, plan-aware budget verdict + the panel data the
     board renders. It CHECKS the real bottleneck and BUILDS the block - measured,

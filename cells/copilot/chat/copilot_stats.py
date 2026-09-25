@@ -2,12 +2,9 @@
 """Board-copilot PM-session economics — extracted from copilot.py (the 1.1k line
 board agent) as a cohesive module seam. The ONE owner of copilot_stats.json:
 folds each finished copilot turn's cost/tokens/context at event time (the board
-chat's counterpart of sessions._record_econ) and derives the plan-share (% of
-the flat subscription, owner decree). Not monkeypatched by the suite; copilot.py
+chat's counterpart of sessions._record_econ). Not monkeypatched by the suite; copilot.py
 re-imports these names so every caller is unchanged.
 """
-import json
-import time
 
 # The stats doc is the runtime_doc row "copilot_stats" (state-into-db phase D;
 # ledger step 7 imported state/copilot_stats.json).
@@ -69,35 +66,3 @@ def _fold_stats(user, result, ctx_usage):
     m["ctx_window"] = max(win, int(m.get("ctx_window") or 0), int(m.get("ctx_tokens") or 0))
     _save_stats(st)
     return m
-
-
-# plan-share calibration cache: /chat/history is polled every ~8s and
-# events.plan_calibration reads the whole event log, so the calibration (a
-# slow-moving derived metric, not load-bearing state) is cached briefly.
-_calib = {"t": 0.0, "flat": False, "v": None}
-
-
-def _plan_share(st):
-    """Share of the subscription this PM session has eaten - the flat plan's
-    honest cost unit (owner decree: % of quota, not €). Cost basis wins when
-    calibrated (raw tokens over-weight cache reads ~10x, see
-    events.plan_calibration); None = not calibratable, the UI falls back to
-    the raw token count."""
-    now = time.time()
-    if now - _calib["t"] > 120:
-        try:
-            from spine.storage import events
-            _calib["flat"] = events.ai_billing() == "flat"
-            _calib["v"] = events.plan_calibration() if _calib["flat"] else None
-        except Exception:
-            _calib["v"] = None
-        _calib["t"] = now
-    cal = _calib["v"]
-    if not (_calib["flat"] and cal):
-        return None
-    cost_per = cal.get("cost_per_pct") or 0.0
-    if cost_per > 0 and float(st.get("cost") or 0.0) > 0:
-        return round(float(st["cost"]) / cost_per, 4)
-    tok_per = cal.get("tokens_per_pct") or 0.0
-    tok = int(st.get("tokens_in") or 0) + int(st.get("tokens_out") or 0)
-    return round(tok / tok_per, 4) if tok_per > 0 else None

@@ -14,7 +14,6 @@ import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
-import { planLabel, useAiFlat } from "@/ui/billing";
 import { BackgroundTasks } from "@/ui/card_background";
 import { Composer, type Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
@@ -24,6 +23,7 @@ import { ThreadList } from "@/ui/chat_threads";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import * as outbox from "@/data/outbox";
 import { ContextMeter } from "@/ui/context_meter";
+import { UsageWindows } from "@/ui/dash_panels";
 import { Empty } from "@/ui/kit";
 import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
 import { useResponsive } from "@/ui/responsive";
@@ -518,7 +518,6 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // PM-session economics (card parity): context fill + spend, folded by the
   // daemon per finished turn (copilot._fold_stats) and served with the history.
   const stats = data?.stats;
-  const flat = useAiFlat();
   const modeBase = [{ id: "auto", label: tr("card.perm.auto") }, { id: "bypassPermissions", label: tr("card.perm.full") },
     { id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") }]
     .filter((m) => m.id !== "bypassPermissions" || me?.role === "owner");
@@ -1057,20 +1056,14 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
               daemon keeps the last call's context fill + a window derived from
               the model id (never a blind 200k). Like the card it updates per
               finished turn, because that is when the runtime reports usage. */}
+          {/* Tap -> the account's measured usage windows (Paseo parity). The
+              old "PM session · N turns · ~X % of plan" line is gone: it summed
+              the session's whole lifetime against ONE week's allowance
+              (read 625% - owner 2026-09-26) - a number nobody can act on.
+              "Can we push?" is the weekly window + its pace. */}
           <ContextMeter tokens={stats?.ctx_tokens} window={stats?.ctx_window}
+            details={me?.role === "owner" ? <UsageWindows /> : undefined}
             style={{ paddingHorizontal: 14, paddingTop: 6 }} />
-          {/* Usage line for the running PM session: turns + consumption. On the
-              flat plan the honest unit is share-of-subscription (tokens as the
-              fallback), on a metered plan the measured $ (owner decree). */}
-          {stats && stats.turns > 0 ? (
-            <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 10, paddingHorizontal: 14, paddingTop: 3 }}>
-              {tr("chat.usage", {
-                turns: stats.turns,
-                cost: flat ? planLabel(tr, stats.plan_pct, (stats.tokens_in ?? 0) + (stats.tokens_out ?? 0))
-                  : `AI $${(stats.cost ?? 0).toFixed(2)}`,
-              })}
-            </Text>
-          ) : null}
           {/* The SAME QuestionPanel the card screen pins above its composer -
               not a second one built for this surface. Both kinds of question
               render through it (see openChatQuestion); only the DOOR differs, so

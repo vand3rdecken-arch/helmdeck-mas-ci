@@ -341,6 +341,17 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
   if (path === "/tracks" && method === "GET") return rows.map(materialize);
   if (path === "/me") return ME;
   if (path === "/dashboard/data") return metrics();
+  // GET /usage (spine/ops/usage.py): the account's plan windows - the chat's
+  // context-meter detail and the dashboard's usage panel read it.
+  if (path === "/usage") {
+    const at = (h: number) => new Date(Date.now() + h * 3600e3).toISOString();
+    return { status: "ok", plan: "Max", fetchedAt: new Date().toISOString(), windows: [
+      { id: "five_hour", label: "5-Stunden", usedPct: 30, remainingPct: 70, resetsAt: at(2.5), tone: "ok" },
+      { id: "weekly", label: "Woche", usedPct: 62, remainingPct: 38, resetsAt: at(50), tone: "ok",
+        pacing: { elapsed_pct: 70, ahead_pct: -8, projected_pct: 89, exhaust_at: null,
+                  reset_hours_left: 50, exhaust_before_reset: false, flag: false } },
+    ] };
+  }
   if (path === "/models") return [{ id: "claude-opus-4-8", label: "Opus 4.8" }];
   // GET /engines (spine/agent/engines.py): the picker on /new. A realistic
   // spread - the daemon's engine, one extra installed, the rest missing.
@@ -394,9 +405,9 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
                  steps: [{ id: "h1", label: "PC · App", text: "Chrome", status: "completed" },
                          { id: "h2", label: "PC · Screenshot", text: "", status: "completed" }] },
              },
-             // card-parity PM-session stats so the demo shows the meter + usage line
+             // card-parity PM-session stats so the demo shows the meter
              stats: { turns: 4, cost: 0.31, tokens_in: 58200, tokens_out: 4400,
-                      ctx_tokens: 62000, ctx_window: 200000, plan_pct: 0.35 } };
+                      ctx_tokens: 62000, ctx_window: 200000 } };
   }
 
   if (path === "/chat/threads") {

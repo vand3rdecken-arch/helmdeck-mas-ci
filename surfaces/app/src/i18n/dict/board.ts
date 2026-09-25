@@ -258,6 +258,10 @@ export const board: Dict = {
     en: "Usage data unavailable (no Claude login found).",
   },
   "dash.usage.used": { de: "{pct}% genutzt", en: "{pct}% used" },
+  // window names by id - the daemon's label is German-only (spine/ops/usage.py)
+  "dash.usage.win.five_hour": { de: "5 Stunden", en: "5 hours" },
+  "dash.usage.win.weekly": { de: "Woche", en: "Week" },
+  "dash.usage.win.weekly_opus": { de: "Woche · Opus", en: "Week · Opus" },
   "dash.usage.reset": { de: "Reset {when}", en: "resets {when}" },
   "dash.usage.pace": {
     de: "⚠ Bei diesem Tempo ~{proj}% zum Reset — Limit ~{when} erschöpft, vor dem Reset.",

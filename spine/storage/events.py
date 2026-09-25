@@ -532,9 +532,12 @@ def plan_calibration(ev=None, s=None):
     # The window the percentage covers: it STARTED one week before its reset,
     # not a rolling 7 days back from now - two days after a reset, a rolling
     # sum would divide last week's spend by this week's fresh percentage.
-    cutoff = time.time() - WEEK_SEC
+    # Only a reset that can belong to the live window (within the next week)
+    # moves the cutoff; a stale snapshot's past reset keeps the rolling 7 days.
+    now = time.time()
+    cutoff = now - WEEK_SEC
     reset = _iso_epoch(w.get("resetsAt"))
-    if reset:
+    if now < reset <= now + WEEK_SEC:
         cutoff = reset - WEEK_SEC
     # EVERY local consumer of the account counts, not just card turns:
     # `used` is the whole account's percentage, and Henry's chat, hands, PM
@@ -542,7 +545,7 @@ def plan_calibration(ev=None, s=None):
     # "spend"). With cards alone in the numerator a percent read cheaper
     # than it is and every card's share came out inflated. What still stays
     # out: the owner's own use outside HelmDeck (terminal sessions,
-    # claude.ai) - invisible here, debt plan-calibration-outside-use.
+    # claude.ai) - invisible here, debt plan-share-calibration.
     # external=True (spine.turn.econ._record_econ, a remote device with its
     # OWN Claude account - ops/docs/backlog/remote-device-execution) is
     # excluded HERE specifically: `used` above is THIS account's own usage
