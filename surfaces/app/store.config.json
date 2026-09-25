@@ -3,7 +3,9 @@
   "apple": {
     "version": "1.0.45",
     "copyright": "2026 Tien Duy Vo",
-    "categories": ["PRODUCTIVITY"],
+    "categories": [
+      "PRODUCTIVITY"
+    ],
     "advisory": {
       "alcoholTobaccoOrDrugUseOrReferences": "NONE",
       "contests": "NONE",
@@ -37,22 +39,46 @@
     "info": {
       "de-DE": {
         "title": "HelmDeck",
-        "subtitle": "Projekt-Harness für dein Team",
-        "description": "HelmDeck ist der mobile Projekt-Harness für dein Team. Setze langfristige Ziele und plane die Arbeit zusammen mit deinem Team. Aktiviere Teammitglieder und Agenten von einem zentralen Ort aus.\n\nWIE ES FUNKTIONIERT\n• Ziele und Aktivitäten anlegen mit Priorität, Wert, Kunde und Anhängen, alles auf einem Kanban Board\n• Jede Entwicklung bekommt einen eigenen Worktree, Agenten arbeiten isoliert, nichts vermischt sich\n• Live mitverfolgen, was dein Team gerade tut, Schritt für Schritt im Verlauf\n• Agenten steuern und Arbeit prüfen vom Handy aus\n• Qualitätsgate vor jeder Abnahme, Prüfungen laufen automatisch, erst deine Freigabe merged und deployt\n• Push Benachrichtigung auf Handy und Uhr, sobald etwas von dir gebraucht wird oder fertig ist\n\nPLANUNG MIT ZIEL, BUDGET UND TEMPO\n• Jedes Projekt hat ein Ziel, ein Budget und ein Tempo, das Dashboard zeigt den Stand in echten Zahlen\n• Gelieferter Wert, KI Kosten und Marge je Karte auf einen Blick\n• Du siehst sofort, ob das Team im Rahmen bleibt, nicht erst am Monatsende\n\nDEINE DATEN BLEIBEN DEINE\n• Die App verbindet sich ausschließlich mit deiner eigenen HelmDeck Installation, direkt im LAN oder über ein Zero Knowledge Relay von unterwegs\n• Ende zu Ende verschlüsselt (Curve25519/XSalsa20 Poly1305), das Relay sieht nur Chiffretext\n• Auch Push Nachrichten sind Ende zu Ende verschlüsselt\n• Keine Werbung, keine Analytics ohne dein Opt-in, kein Konto beim Entwickler\n\nWICHTIG\nHelmDeck ist eine Begleit App, sie braucht eine laufende HelmDeck Installation auf deinem eigenen Rechner. Kopplung dauert eine Minute, QR Code auf dem Desktop scannen, fertig.\n\nDatenschutz: https://relay.helmdeck.de/privacy",
-        "keywords": ["KI", "Agent", "Automatisierung", "Board", "Produktivität", "Tickets", "Kanban", "Projektmanagement", "Team", "Workflow"],
+        "subtitle": "KI Orchestrierung für Teams",
+        "description": "HelmDeck ist mobile KI Orchestrierung für Teams. Der Agent gehört an den Schreibtisch. Du nicht.\n\nDu setzt Ziel, Budget und Termin. HelmDeck plant die Arbeit, die Agenten arbeiten auf deinem eigenen PC, und jede Entscheidung landet bei dem Menschen im Team, der sie treffen soll, direkt auf dem Handy.\n\nMOBIL IST DIE OBERFLÄCHE\n• Agenten steuern, Rückfragen beantworten und Ergebnisse abnehmen, von unterwegs\n• Live mitverfolgen, was gerade passiert, Schritt für Schritt im Verlauf\n• Push Benachrichtigung, sobald etwas von dir gebraucht wird oder fertig ist\n• Antworten mit einem Tipp oder per Diktat\n\nZIELE STATT PROMPTS\n• Du gibst Ziel, Budget und Termin vor, der Planer in HelmDeck legt daraus Zeitplan und Umfang an\n• Die Übersicht zeigt den Stand in echten Zahlen: gelieferter Wert, KI Kosten und Marge\n• Du siehst sofort, ob ihr im Rahmen bleibt, nicht erst am Monatsende\n\nTEAMS STATT EINZELKÄMPFER\n• Jede Entscheidung landet bei der Person, die sie treffen soll\n• Alle im Team sehen, was sich bewegt hat und was auf sie wartet, je nach Rolle\n• Auftraggeber reichen Aufträge ein und nehmen Ergebnisse ab, ohne dein Dateisystem oder deine Zugangsdaten je zu sehen\n• Ein Qualitätsgate prüft jede Arbeit automatisch, erst nach deiner Freigabe wird übernommen\n\nAUCH AM HANDGELENK UND AUF DER BRILLE\nRückfragen auf der Uhr sehen und per Diktat beantworten, mit Smartglasses auch per Sprache.\n\nDEINE DATEN BLEIBEN DEINE\n• Die App verbindet sich ausschließlich mit deiner eigenen HelmDeck Installation, direkt im LAN oder über ein Zero Knowledge Relay von unterwegs\n• Ende zu Ende verschlüsselt (Curve25519/XSalsa20 Poly1305), das Relay sieht nur Chiffretext\n• Auch Push Nachrichten sind Ende zu Ende verschlüsselt\n• Keine Werbung, keine Analytics ohne dein Opt-in, kein Konto beim Entwickler\n\nWICHTIG\nHelmDeck ist eine Begleit App, sie braucht eine laufende HelmDeck Installation auf deinem eigenen Rechner. Kopplung dauert eine Minute, QR Code auf dem Desktop scannen, fertig.\n\nDatenschutz: https://relay.helmdeck.de/privacy",
+        "keywords": [
+          "KI",
+          "Agent",
+          "Agenten",
+          "Orchestrierung",
+          "Ziele",
+          "Planung",
+          "Budget",
+          "Team",
+          "Automatisierung",
+          "Produktivität",
+          "Workflow"
+        ],
         "releaseNotes": "Erster App-Store-Release von HelmDeck.",
-        "promoText": "HelmDeck ist der Projekt-Harness für dein Team. Meistere die Aufgaben und erreiche deine Ziele von einem Board aus, mit Fokus auf Handy und Uhr.",
+        "promoText": "Der Agent gehört an den Schreibtisch. Du nicht. Ziel, Budget, Termin setzen, Agenten arbeiten auf deinem PC, Entscheidungen erreichen dein Team auf dem Handy.",
         "marketingUrl": "https://helmdeck.de",
         "supportUrl": "https://helmdeck.de",
         "privacyPolicyUrl": "https://relay.helmdeck.de/privacy"
       },
       "en-US": {
         "title": "HelmDeck",
-        "subtitle": "Project harness for your team",
-        "description": "HelmDeck is the mobile project harness for your team. Set long term goals and plan the work together with your team. Activate team members and agents from one central place.\n\nHOW IT WORKS\n• Create goals and activities with priority, value, client and attachments, all on one kanban board\n• Every piece of work gets its own worktree, agents work in isolation, nothing gets mixed up\n• Follow live what your team is doing right now, step by step in the history\n• Steer agents and review work from your phone\n• Quality gate before every acceptance, checks run automatically, only your approval merges and deploys\n• Push notification on phone and watch as soon as something needs you or is done\n\nPLANNING WITH A GOAL, A BUDGET AND A PACE\n• Every project has a goal, a budget and a pace, the dashboard shows where you stand in real numbers\n• Value delivered, AI cost and margin per card at a glance\n• You see right away whether the team stays within bounds, not at the end of the month\n\nYOUR DATA STAYS YOURS\n• The app connects only to your own HelmDeck installation, directly on the LAN or through a zero knowledge relay on the go\n• End to end encrypted (Curve25519/XSalsa20 Poly1305), the relay sees only ciphertext\n• Push messages are end to end encrypted too\n• No ads, no analytics without your opt in, no account with the developer\n\nNOTE\nHelmDeck is a companion app, it needs a running HelmDeck installation on your own computer. Pairing takes a minute, scan the QR code on the desktop, done.\n\nPrivacy: https://relay.helmdeck.de/privacy",
-        "keywords": ["AI", "agent", "automation", "board", "productivity", "tickets", "kanban", "project management", "workflow", "team"],
+        "subtitle": "AI orchestration for teams",
+        "description": "HelmDeck is mobile AI orchestration for teams. The agent belongs at the desk. You don't.\n\nYou set goal, budget and deadline. HelmDeck plans the work, the agents work on your own PC, and every decision lands with the right person on your team, right on their phone.\n\nMOBILE IS THE INTERFACE\n• Steer agents, answer questions and approve results, from anywhere\n• Follow live what is happening, step by step in the history\n• Push notification as soon as something needs you or is done\n• Answer with a tap or by dictation\n\nGOALS REPLACE PROMPTS\n• You give goal, budget and deadline, the planner inside HelmDeck lays out timeline and scope from it\n• The overview shows where you stand in real numbers: value delivered, AI cost and margin\n• You see right away whether you stay within bounds, not at the end of the month\n\nTEAMS, NOT INDIVIDUALS\n• Every decision lands with the person who should make it\n• Everyone on the team sees what moved and what is waiting on them, per role\n• Clients file requests and accept results without ever seeing your file system or credentials\n• A quality gate checks every piece of work automatically, and only your approval lets it through\n\nON YOUR WRIST AND ON YOUR GLASSES TOO\nSee questions on your watch and answer by dictation, with smart glasses by voice.\n\nYOUR DATA STAYS YOURS\n• The app connects only to your own HelmDeck installation, directly on the LAN or through a zero knowledge relay on the go\n• End to end encrypted (Curve25519/XSalsa20 Poly1305), the relay sees only ciphertext\n• Push messages are end to end encrypted too\n• No ads, no analytics without your opt in, no account with the developer\n\nNOTE\nHelmDeck is a companion app, it needs a running HelmDeck installation on your own computer. Pairing takes a minute, scan the QR code on the desktop, done.\n\nPrivacy: https://relay.helmdeck.de/privacy",
+        "keywords": [
+          "AI",
+          "agents",
+          "orchestration",
+          "goals",
+          "planning",
+          "budget",
+          "team",
+          "automation",
+          "productivity",
+          "workflow",
+          "mobile"
+        ],
         "releaseNotes": "Initial App Store release of HelmDeck.",
-        "promoText": "HelmDeck is the project harness for your team. Get the work done and reach your goals from one board, built for your phone and your watch.",
+        "promoText": "The agent belongs at the desk. You don't. Set goal, budget and deadline, agents work on your own PC, decisions reach your team on the phone.",
         "marketingUrl": "https://helmdeck.de",
         "supportUrl": "https://helmdeck.de",
         "privacyPolicyUrl": "https://relay.helmdeck.de/privacy"
