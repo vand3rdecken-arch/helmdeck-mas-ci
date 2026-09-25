@@ -2250,7 +2250,12 @@ DEBT = [
                 "agent's edits land in the tree the owner is looking at, "
                 "immediately. Two direct cards on the same tree are serialized "
                 "in _turn (bounded queue per normalized tree path, the desktop-"
-                "lock pattern), so they cannot edit blind over each other.",
+                "lock pattern), so they cannot edit blind over each other. "
+                "PARTLY PAID 2026-09-25: a direct card dispatched while another "
+                "card OCCUPIES the tree (dispatch.tree_occupant: direct + lane "
+                "working) now gets its own worktree instead of queueing "
+                "(test_busy_tree_isolation). Henry's own chat edits still take "
+                "no tree lock.",
         "why_it_bites": "(1) A direct card can break the tree and nothing red "
                         "stops it - the gate law is deliberately bypassed for "
                         "this card class; the repo's own hooks/loop-state are "

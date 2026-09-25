@@ -1153,6 +1153,15 @@ def _snapshot(full=False):
         bg = [x[:60] for x in _sbg.running_bg(t)]
         if bg:
             arch += " BACKGROUND-RUNNING=%d (%s)" % (len(bg), "; ".join(bg))
+        # WHERE it builds: a live-tree card in working OCCUPIES its repo's tree
+        # (dispatch.tree_occupant) - a new card for that repo gets its own
+        # worktree automatically; Henry must not edit that tree himself.
+        if t.get("direct") and t.get("lane") == "working":
+            arch += " OCCUPIES_LIVE_TREE"
+        if t.get("isolated_from"):
+            arch += " WORKTREE(tree was busy with %s)" % t["isolated_from"]
+        if t.get("process"):
+            arch += " process=%s" % t["process"]
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
             t["id"], repo, t["branch"], t.get("lane"), t.get("status"), arch, t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),

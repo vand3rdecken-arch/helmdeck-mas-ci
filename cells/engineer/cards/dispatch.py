@@ -339,8 +339,68 @@ def _record_base_branch(t, base):
         pass                        # a card not (yet) in the store is not a dispatch failure
 
 
+def tree_occupant(repo, exclude=None):
+    """The card that is building in `repo`'s LIVE tree right now, or None.
+
+    Derived from the lane machine's own record, never a separate busy flag: a
+    live-tree card (direct=True, cwd == the repo root) in lane `working` owns
+    the tree - between two of its turns too, because its next steer lands
+    there. The per-tree turn lock covers the one case the lane cannot see yet
+    (a turn that took the lock before its card was saved into working).
+    Returns {"id", "task"} or None."""
+    key = os.path.normcase(os.path.abspath(repo or ""))
+    for c in _load():
+        if c.get("id") == exclude or not c.get("direct") or c.get("archived"):
+            continue
+        if c.get("lane") != "working":
+            continue
+        cwd = c.get("worktree") or c.get("repo") or ""
+        if os.path.normcase(os.path.abspath(cwd)) == key:
+            return {"id": c["id"], "task": (c.get("task") or "")[:80]}
+    from spine.git.locks import _direct_lock_for
+    if _direct_lock_for(repo).locked():
+        return {"id": "?", "task": "laufender Turn im Live-Tree"}
+    return None
+
+
+def _isolate_from_busy_tree(t, occ):
+    """A live-tree card whose tree another card is building in gets its OWN
+    worktree instead of queueing behind it (owner 2026-09-25: "Henry macht
+    nicht selbstaendig einen neuen Worktree auf, vor allem wenn ein
+    Kartenagent bereits arbeitet"). Decided HERE, at dispatch - the moment the
+    card would touch the tree - by code, not by Henry's prose judgement: the
+    old answer was a 960s wait on the per-tree turn lock, then a bounce.
+
+    The card keeps everything else (fast_track too: a worktree fast-track card
+    converts back onto the live tree at turn end via
+    sessions._maybe_fast_track_convert, i.e. it LANDS when it is done instead
+    of editing under the running card)."""
+    def _iso(tt):
+        tt["machine"] = False
+        tt["direct"] = False
+        tt["worktree"] = ""
+        tt["branch"] = _card_branch(tt["repo"], "iso-" + (tt.get("task") or ""), tt["id"])
+        tt["isolated_from"] = occ["id"]
+    t = _mutate(t["id"], _iso) or t
+    from spine.ops.actionlog import ActionLog
+    ActionLog(t["run_dir"]).log(
+        "note", "Live-Tree belegt (Karte %s: %s) - diese Karte bekommt einen "
+                "eigenen Worktree (Branch %s) statt zu warten."
+                % (occ["id"], occ["task"], t["branch"]))
+    from spine.storage import events
+    events.emit("isolated", t["id"], busy_with=occ["id"], branch=t["branch"])
+    return t
+
+
 def _start_inner(t):
-    if t.get("fast_track") and not t.get("machine"):
+    # Busy live tree -> own worktree. Ship cards stay on the live tree by
+    # construction (they deploy what is there); plain machine cards have no repo.
+    wants_live = t.get("direct") or (t.get("fast_track") and not t.get("machine"))
+    if wants_live and not t.get("ship_kind"):
+        occ = tree_occupant(t["repo"], exclude=t["id"])
+        if occ:
+            t = _isolate_from_busy_tree(t, occ)
+    if t.get("fast_track") and not t.get("machine") and not t.get("isolated_from"):
         # FAST-TRACK, Paseo semantics (owner-decreed 2026-08-20, debt
         # fast-track-no-worktree): the whole point of worktree isolation - a
         # regenerable, disposable copy - kept fast-track cards exposed to base
