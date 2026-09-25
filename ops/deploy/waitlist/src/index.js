@@ -647,7 +647,6 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 </div>
 <section class="hero">
   <div class="hero-copy">
-    <p class="kicker" data-i="kicker">For teams running Claude Code</p>
     <h1 data-i="h1">Mobile AI orchestration for teams.</h1>
     <p class="sub" data-i="sub">The agent belongs at the desk. You don't.</p>
     <p class="objection" data-i="objection">Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.</p>
@@ -941,7 +940,6 @@ ${wl("wearables")}
     de:{
       title:"HelmDeck: Mobile KI-Orchestrierung für Teams.",
       navTheses:"Thesen", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
-      kicker:"Für Teams, die Claude Code nutzen",
       h1:"Mobile KI-Orchestrierung für Teams.",
       sub:"Der Agent gehört an den Schreibtisch. Du nicht.",
       objection:"Läuft auf deinem eigenen PC mit dem Claude-Abo, das du schon hast. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
@@ -1014,7 +1012,6 @@ ${wl("wearables")}
     en:{
       title:"HelmDeck: Mobile AI orchestration for teams.",
       navTheses:"Theses", navDownloads:"Downloads", navFaq:"FAQ", navCloud:"Cloud", navWaitlist:"Glasses",
-      kicker:"For teams running Claude Code",
       h1:"Mobile AI orchestration for teams.",
       sub:"The agent belongs at the desk. You don't.",
       objection:"Runs on your own PC with the Claude subscription you already have. No cloud account, no code leaves your machine.",
