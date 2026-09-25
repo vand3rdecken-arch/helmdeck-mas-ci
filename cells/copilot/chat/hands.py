@@ -290,8 +290,20 @@ def _pump(hid, p):
     with _lock:
         t = _tasks.get(hid)
         if t:
-            t["status"], t["result"], t["updated"] = status, result[:2000], time.time()
+            t["status"], t["result"], t["updated"] = status, result.strip()[:8000], time.time()
     _land(hid, status, result, steps)
+
+
+def _summary(result):
+    """The report's head above the first `---` line: the watch-sized message
+    for Henry, the chat row and the push (owner 2026-09-25: detail may be
+    long, the message back must be short). The tile keeps the whole report.
+    No separator = the old single-block report, cut as before."""
+    lines = result.strip().splitlines()
+    for i, ln in enumerate(lines):
+        if ln.strip() == "---":
+            return "\n".join(lines[:i]).strip()
+    return result.strip()
 
 
 def _land(hid, status, result, steps):
@@ -308,8 +320,8 @@ def _land(hid, status, result, steps):
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so
     # he never saw the passcode/permission lines and invented a still-open
     # browser window); the chat act row stays a readable excerpt.
-    full = result.strip()[:4000]
-    short = result.strip()[:1500]
+    full = _summary(result)[:4000]
+    short = _summary(result)[:1500]
     events.emit("hands", card or "-", action=status, id=hid, actor=user, steps=steps,
                 result=short[:300])
     try:
