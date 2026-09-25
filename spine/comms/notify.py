@@ -282,6 +282,13 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None,
                 # token (uninstalled app, revoked registration) is the normal
                 # case, not an outage. Named per device so the log says WHICH.
                 print("notify: fcm failed for %s: %s" % (label, e))
+        # Name who was reached AND who was withheld: a push that "didn't
+        # come" was otherwise indistinguishable in the log between presence
+        # withholding that device and FCM delivering it silently (only
+        # failures printed - owner report 2026-09-25 21:04).
+        print("notify: fcm sent %d/%d [%s]%s -" % (
+            sent, len(targets), ", ".join(l for l, _t, _p in targets),
+            (" withheld %d reading it" % excluded) if excluded else ""), title)
         return sent > 0
     except Exception as e:
         print("notify: fcm failed:", e)
