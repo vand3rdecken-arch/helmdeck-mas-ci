@@ -296,8 +296,9 @@ def _pump(hid, p):
 
 def _summary(result):
     """The report's head above the first `---` line: the watch-sized message
-    for Henry, the chat row and the push (owner 2026-09-25: detail may be
-    long, the message back must be short). The tile keeps the whole report.
+    for the owner - chat row and push (owner 2026-09-25: Henry gets the
+    detail, the owner the short version). Henry and the tile keep the whole
+    report.
     No separator = the old single-block report, cut as before."""
     lines = result.strip().splitlines()
     for i, ln in enumerate(lines):
@@ -319,8 +320,8 @@ def _land(hid, status, result, steps):
     # Henry gets the WHOLE report (owner 2026-09-15: the 700-char cut fed him
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so
     # he never saw the passcode/permission lines and invented a still-open
-    # browser window); the chat act row stays a readable excerpt.
-    full = _summary(result)[:4000]
+    # browser window); the owner's chat row and push get only the summary.
+    full = result.strip()[:8000]
     short = _summary(result)[:1500]
     events.emit("hands", card or "-", action=status, id=hid, actor=user, steps=steps,
                 result=short[:300])
@@ -341,7 +342,7 @@ def _land(hid, status, result, steps):
         # the owner gets the answer to what he asked, not a raw report.
         try:
             copilot._schedule_bg_continue(user, [dict(_desc(t), uid=hid, status=status,
-                                                      result=short)])
+                                                      result=full)])
         except Exception:                                # noqa: BLE001
             pass
         return

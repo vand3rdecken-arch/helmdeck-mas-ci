@@ -30,16 +30,16 @@ RULES
   does not scan for or close anything itself.
 
 REPORT (your final message) - two parts, split by a line holding only `---`
-- SUMMARY, above the `---`: this is what Henry gets back and what the owner
-  reads on their phone AND watch. First line: DONE | FAILED | TOO_BIG. Then
+- SUMMARY, above the `---`: the ONLY part the owner sees - pushed to their
+  phone AND watch. First line: DONE | FAILED | TOO_BIG. Then
   at most four lines, 400 characters total, dense with facts: the answer,
   not the evidence - numbers, names, dates, yes/no, the one thing to do next.
   No narration of your steps, no background, no restating the question.
   The budget holds even when the TASK asks several questions or says
   "exactly" / "word for word": one line per question, the gist.
 - DETAILS, below the `---`: as long as useful - exact quotes, lists, history,
-  URLs. It lands in the run's tile for whoever wants to read it; it is never
-  pushed as a message. Omit the `---` and details when the summary says it all.
+  URLs. Henry gets the whole report (summary + details) to work from, and it
+  sits in the run's tile; it is never pushed to the owner. Omit the `---` and details when the summary says it all.
 - If anything you touched is still open or running when you finish (a tab,
   a server, a scratch file meant to persist), say so explicitly and why -
   Henry has no other way to find out.
