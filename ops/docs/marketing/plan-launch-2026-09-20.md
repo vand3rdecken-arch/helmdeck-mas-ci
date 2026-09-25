@@ -135,7 +135,6 @@ alle anderen Kanäle zusammen auf.
 | **tildes.net** | auf Einladung | unbestimmt | 0 | 0 | **nie** |
 | **Slashdot** | keine, Einreichung über die Firehose ist offen | 0 | 0 bis 10 | 0 | **nie**, Publikum passt nicht |
 | **X** | keine Sperre, aber praktisch null Follower. Eigene Beiträge erreichen niemanden | 0 | 5 bis 25 | 0 | **jetzt**, aber ausschließlich als Antwort in fremden Threads zu Claude Code, nicht als eigener Beitrag |
-| **LinkedIn** | keine, vorhandenes persönliches Netzwerk ist der einzige echte Verteiler den es heute gibt | 0 | 15 bis 60 | 0 | **jetzt**. Link in den ersten Kommentar, nicht in den Beitrag, LinkedIn drosselt ausgehende Links |
 | **YouTube Shorts** | keine, aber neuer Kanal ohne Historie | 0 | 0 bis 80 | 0 | **jetzt**, das vorhandene Hero-Video in drei 30-Sekunden-Schnitte zerlegen, Kosten nur Zeit |
 | **Discord: r/ClaudeCode-Server** (`discord.gg/4QbtMRErUc`) | keine, in der Sidebar des Subs verlinkt, gleiche Zielgruppe | 1 (erst lesen, dann schreiben) | 10 bis 60 | 0 | **jetzt** |
 | **Discord: Anthropic Developers** | keine, Kanäle zu Claude Code sind aktiv, Publikum ist genau die Zielgruppe | 1 bis 2 | 10 bis 50 | 0 | **jetzt**, im passenden Showcase-Kanal, nach Lesen der Serverregeln |
@@ -167,7 +166,6 @@ erzeugt. Das ist die Form, die hier funktioniert, und der Plan setzt darauf.
 | **X Ads** | keine harte Untergrenze, Selbstbedienung ab ca. 20 USD pro Tag. CPC 0,50 bis 2,00 USD | breit, Entwickler-Targeting schwach | gleicher Tag | nein | **nein.** Kampagnen unter 500 USD pro Monat verlassen die Lernphase kaum. Bei 200 EUR Gesamtbudget verbrannt |
 | **Google Search Ads** | kein Mindestbudget. Durchschnitt aller Branchen 5,42 USD CPC, Technik 3,80 USD. Long-Tail deutlich billiger | winzige Suchvolumina bei Problembegriffen wie "claude code phone notification" | gleicher Tag | nein | **bedingt ja, 40 bis 50 EUR.** Nicht wegen der Menge, wegen der Absicht: wer das sucht, hat das Problem heute. Nur exakte Übereinstimmung, Markenbegriffe (helmdeck) für 2 bis 3 EUR mitnehmen |
 | **daily.dev Ads** | 8 bis 20 USD CPM, 0,50 bis 2,50 USD CPC, 1,2 Mio Entwickler | nativ im Entwickler-Feed | Selbstbedienung | nein | **später.** Preislich möglich, aber Streuverlust: das Publikum sind Entwickler allgemein, nicht Claude-Code-Nutzer |
-| **LinkedIn Ads** | 5 bis 12 USD CPC, B2B-Software eher 8 bis 12 USD | präzises Berufs-Targeting | gleicher Tag | nein | **nein.** Bei diesem Budget kauft man 15 Klicks |
 | **Product Hunt Promoted** | Preis nur auf Anfrage über die Sponsorenseite | Startseite plus Newsletter | Vertrieb, Tage bis Wochen | nicht relevant | **nein**, und formal ausgeschlossen: Promoted Products sind laut PH-Hilfecenter für brandneue Launches nicht verfügbar |
 
 ### 3.2 Newsletter
@@ -258,7 +256,7 @@ ein Urteil oder eine Unterschrift und kann nicht delegiert werden.
 |---|---|---|---|
 | Product Hunt | **09:01 Uhr deutscher Zeit** veröffentlichen. Erster Maker-Kommentar in derselben Minute | Owner | Konto freigeschaltet seit 20.09. |
 | Product Hunt | Den ganzen Tag jede Frage binnen einer Stunde beantworten. Das ist der eigentliche Ranking-Faktor | Owner | nichts |
-| X, LinkedIn | Launch-Hinweis. LinkedIn: Link in den ersten Kommentar. X: unter eigene frühere Beiträge hängen, nicht neu | Owner | nichts |
+| X | Launch-Hinweis. X: unter eigene frühere Beiträge hängen, nicht neu | Owner | nichts |
 | Uneed (optional, 29,99 USD) | Skip the Line auf den 23.09. legen, falls der bezahlte Posten im Budget bleibt | Owner | nichts |
 | Reddit Ads | Kampagne starten, 10 EUR pro Tag | Owner | Landeseite gefixt |
 
@@ -301,7 +299,6 @@ ein Urteil oder eine Unterschrift und kann nicht delegiert werden.
 | Kanal | Aufgabe | Wer | Vorher aufwärmen |
 |---|---|---|---|
 | Indie Hackers | Punktestand prüfen. Bei 20+ Punkten den Launch-Beitrag setzen, sonst weiter kommentieren | Owner | seit 20.09. täglich zwei Kommentare, sonst kein Postrecht |
-| LinkedIn | Zweiter Beitrag: die Zahlen der Woche, offen | Owner | nichts |
 | Messung | Zwischenstand gegen das Ziel: wie viele fremde Downloads sind gezählt | Agent | nichts |
 
 ### Mi, 30.09.
@@ -323,7 +320,7 @@ ein Urteil oder eine Unterschrift und kann nicht delegiert werden.
 | Product Hunt | 300 | 150 bis 600 |
 | dev.to und Hashnode, 3 Artikel | 70 | 30 bis 170 |
 | Discord, 2 Server | 35 | 10 bis 110 |
-| X und LinkedIn | 45 | 20 bis 85 |
+| X | 45 | 20 bis 85 |
 | YouTube Shorts | 25 | 0 bis 80 |
 | Verzeichnisse (kostenlos) | 20 | 5 bis 50 |
 | Reddit Ads, 90 EUR | 65 | 45 bis 110 |

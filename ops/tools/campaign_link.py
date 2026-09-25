@@ -37,7 +37,6 @@ BASE_URL = "https://helmdeck.de/"
 # platform for the first time.
 PLATFORM_MEDIUM = {
     "x": "social",
-    "linkedin": "social",
     "reddit": "community",
     "hackernews": "community",
     "discord": "community",
@@ -108,7 +107,7 @@ def cmd_posted(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--platform", help="channel, e.g. x, reddit, hackernews, devto, producthunt, youtube, discord, linkedin")
+    ap.add_argument("--platform", help="channel, e.g. x, reddit, hackernews, devto, producthunt, youtube, discord")
     ap.add_argument("--campaign", help="utm_campaign, e.g. teamharness")
     ap.add_argument("--label", help="utm_content, one short slug per individual post, e.g. show-hn-announce")
     ap.add_argument("--medium", help="override the platform's default utm_medium")
