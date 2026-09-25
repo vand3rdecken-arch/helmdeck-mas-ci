@@ -84,9 +84,28 @@ function useGlobalStream() {
     let v = 0;
     let c = 0;
     let delay = 3000;
+    // PUSHED events have no natural brake (2026-09-25): a busy daemon moves `v`
+    // several times a second, and invalidate-everything on each one - with
+    // cancelRefetch, the default - abandoned the running fetch and started the
+    // next; the phone forgot the old request, the daemon still ran it to its
+    // timeout: 1,504 threads, 100 % CPU, "Desktop offline". The long-poll was
+    // braked by its own round-trip. Now: at most one refetch wave per
+    // INVALIDATE_EVERY_MS (trailing, so the last change is never lost), and a
+    // query that is already fetching is left to finish instead of restarted.
+    const INVALIDATE_EVERY_MS = 2000;
+    let lastInv = 0;
+    let invTimer: ReturnType<typeof setTimeout> | null = null;
+    const invalidateAll = () => {
+      if (invTimer) return;
+      invTimer = setTimeout(() => {
+        invTimer = null;
+        lastInv = Date.now();
+        void queryClient.invalidateQueries(undefined, { cancelRefetch: false });
+      }, Math.max(0, lastInv + INVALIDATE_EVERY_MS - Date.now()));
+    };
     const apply = (r: RelayEvent | undefined) => {
       if (typeof r?.v === "number") {
-        if (r.v !== v) queryClient.invalidateQueries();
+        if (r.v !== v) invalidateAll();
         v = r.v;
       }
       // Guarded on `typeof`, not on truthiness: a daemon older than this
@@ -130,7 +149,7 @@ function useGlobalStream() {
         }
       }
     })();
-    return () => { alive = false; gone.aborted = true; offEvent(); };
+    return () => { alive = false; gone.aborted = true; offEvent(); if (invTimer) clearTimeout(invTimer); };
   }, []);
 }
 
