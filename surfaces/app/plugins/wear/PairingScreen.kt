@@ -23,6 +23,8 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ChildButton
+import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
@@ -196,7 +198,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                 // this is the only field the owner needs to touch in the
                 // common case. "Koppeln" sits DIRECTLY under it.
                 item {
-                    Button(
+                    FilledTonalButton(
                         onClick = { codeLauncher.launch(speechIntent("Code")) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -226,7 +228,7 @@ fun PairingScreen(context: Context, onPaired: () -> Unit) {
                     }
                 }
                 item {
-                    Button(
+                    ChildButton(
                         onClick = { editingAddress = true },
                         modifier = Modifier
                             .fillMaxWidth()

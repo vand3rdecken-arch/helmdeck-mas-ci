@@ -75,10 +75,13 @@ sealed interface Row {
      *  wake refetch with nothing telling the owner they might be stale
      *  (owner report 2026-09-14: no sign a reload is happening). */
     data object Loading : Row
+    // A ListHeader over a group of buttons, so they are not taken for messages.
+    data class Header(val text: String) : Row
     data class Option(val card: String, val label: String) : Row
     data object Busy : Row
     data class Suggest(val label: String) : Row
-    data object Speak : Row
+    // "Sprechen" is not a row: it is the ScreenScaffold's EdgeButton, pinned so it
+    // can never scroll out of reach.
     data object VoiceToggle : Row
     data object Board : Row
 }
@@ -121,12 +124,13 @@ fun buildRows(
         // cards can be waiting at once, and a pooled list would give the owner
         // no way to see which card a button belongs to.
         if (line.card.isNotBlank() && line.card !in answered) {
+            if (line.options.isNotEmpty()) rows.add(Row.Header("Antworten"))
             for (opt in line.options) rows.add(Row.Option(line.card, opt))
         }
     }
     if (busy) rows.add(Row.Busy)
+    if (suggestOptions.isNotEmpty()) rows.add(Row.Header("Vorschläge"))
     for (opt in suggestOptions) rows.add(Row.Suggest(opt))
-    rows.add(Row.Speak)
     rows.add(Row.VoiceToggle)
     rows.add(Row.Board)
     return rows

@@ -17,8 +17,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +26,11 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.ChildButton
-import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.TitleCard
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
+import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
@@ -154,14 +158,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 }
                 for (c in cards) {
                     item {
-                        Button(
-                            onClick = { onOpenCard(c) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, spec)
-                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
-                            transformation = SurfaceTransformation(spec),
-                        ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        CardEntry(c, spec) { onOpenCard(c) }
                     }
                 }
                 // The numbers the daemon already sends: `yours` is unstarted work only
@@ -179,14 +176,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     }
                     for (c in yours) {
                         item {
-                            OutlinedButton(
-                                onClick = { onOpenCard(c) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .transformedHeight(this, spec)
-                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
-                                transformation = SurfaceTransformation(spec),
-                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            CardEntry(c, spec) { onOpenCard(c) }
                         }
                     }
                 }
@@ -203,15 +193,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     }
                     for (c in working.cards) {
                         item {
-                            ChildButton(
-                                onClick = { onOpenCard(c) },
-                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .transformedHeight(this, spec)
-                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
-                                transformation = SurfaceTransformation(spec),
-                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            CardEntry(c, spec) { onOpenCard(c) }
                         }
                     }
                 }
@@ -225,15 +207,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                     }
                     for (c in backlog.cards) {
                         item {
-                            ChildButton(
-                                onClick = { onOpenCard(c) },
-                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .transformedHeight(this, spec)
-                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
-                                transformation = SurfaceTransformation(spec),
-                            ) { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            CardEntry(c, spec) { onOpenCard(c) }
                         }
                     }
                 }
@@ -252,18 +226,19 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 // Henry BEFORE the refresh, and never gated on there being a card:
                 // talking to Henry is the point of putting HelmDeck on a wrist.
                 item {
-                    Button(
+                    FilledTonalButton(
                         onClick = { onAskHenry() },
                         modifier = Modifier
                             .fillMaxWidth()
                             .transformedHeight(this, spec)
                             .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                         transformation = SurfaceTransformation(spec),
+                        icon = { Icon(WearIcons.Mic, contentDescription = null) },
                     ) { Text("Henry", maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
-                // Refreshing is maintenance, so it steps back to outlined.
+                // Refreshing is maintenance: the lowest tier, a ChildButton.
                 item {
-                    OutlinedButton(
+                    ChildButton(
                         onClick = { reload() },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -275,4 +250,24 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             }
         }
     }
+}
+
+/** One board entry as Google's TitleCard: the task (max 2 lines) as title, the
+ *  card's status as subtitle in its brand colour - a card, not a button. */
+@Composable
+private fun TransformingLazyColumnItemScope.CardEntry(
+    c: BoardCard, spec: TransformationSpec, onClick: () -> Unit,
+) {
+    TitleCard(
+        onClick = onClick,
+        title = { Text(c.task.ifBlank { c.id }, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        subtitle = if (c.status.isBlank()) null
+                   else ({ Text(c.status, maxLines = 1, overflow = TextOverflow.Ellipsis) }),
+        colors = CardDefaults.cardColors(subtitleColor = WearSemantics.status(c.status)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .transformedHeight(this, spec)
+            .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
+        transformation = SurfaceTransformation(spec),
+    )
 }

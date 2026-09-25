@@ -10,6 +10,7 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ListHeaderDefaults
@@ -69,7 +70,7 @@ fun TextDetailScreen(
             }
             extra(spec)
             item {
-                Button(
+                FilledTonalButton(
                     onClick = onBack,
                     modifier = Modifier
                         .fillMaxWidth()

@@ -68,7 +68,7 @@ LIGHT_PRIM = {
     "neutral-600": (.8925, .0024, 230.7), "neutral-700": (.8612, .0032, 230.71), "neutral-800": (.6668, .0079, 230.82),
     "neutral-900": (.6161, .0092, 230.87), "neutral-1000": (.5288, .0083, 230.88), "neutral-1100": (.4377, .0066, 230.87),
     "neutral-1200": (.2378, .0029, 230.83), "neutral-black": (.1482, .0034, 196.79),
-    "brand-default": (.508, .148, 250), "brand-700": (.6766, .1665, 250),
+    "brand-default": (.508, .148, 250), "brand-700": (.6766, .1665, 250), "brand-container": (.9, .05, 250),
     "green-700": (.64, .15, 149), "amber-600": (.68, .12, 62), "red-700": (.57, .19, 27),
     # blue+violet analogous scheme: AI unified into the blue accent family; human
     # is violet (analogous, was clashing gold); one warm hue (amber) only.
@@ -86,6 +86,8 @@ DARK_PRIM.update({
     "neutral-900": (.6835, .0074, 230.81), "neutral-1000": (.7655, .0054, 230.76), "neutral-1100": (.8455, .0035, 230.72),
     "neutral-1200": (.9235, .0017, 230.69), "neutral-white": (.9702, 0, 0),
     "brand-default": (.65, .152, 245), "brand-700": (.7408, .11, 245),
+    # Wear: Google's primaryContainer is Primary30, a blue-tinted dark; a grey one made tonal buttons look like cards.
+    "brand-container": (.3, .07, 245),
     "green-700": (.7, .13, 150), "amber-600": (.75, .13, 66), "red-700": (.68, .16, 24),
     "accent-2": (.66, .17, 292), "ai": "#3D9BD6", "human": "#9B87E8",
     # final "liquid glass" pass ([data-theme=dark] override): blue-grey plate, white edge.
@@ -101,7 +103,7 @@ COMMON_ALIAS = {
     "borderSubtle": "neutral-400", "borderStrong": "neutral-600",
     "txtPrimary": "neutral-1200", "txtSecondary": "neutral-1100",
     "txtTertiary": "neutral-1000", "txtPlaceholder": "neutral-900",
-    "accent": "brand-default", "accentTxt": "brand-default", "brand700": "brand-700",
+    "brandContainer": "brand-container", "accent": "brand-default", "accentTxt": "brand-default", "brand700": "brand-700",
     "accent2": "accent-2", "ok": "green-700", "warn": "amber-600", "danger": "red-700",
     "ai": "ai", "human": "human", "glass": "glass", "glassBorder": "glass-border",
     "glow1": "glow-1", "glow2": "glow-2", "backdrop": "backdrop", "transparentHover": "transparent-hover",
@@ -159,13 +161,13 @@ SEMANTIC_FALLBACK = "txtTertiary"
 # (androidx.wear.compose.material3.ColorScheme, read off the 1.6.2 artifact).
 WEAR_ROLE = {
     "primary": "accent", "primaryDim": "ai", "onPrimary": "neutral100",
-    "primaryContainer": "layer2", "onPrimaryContainer": "brand700",
+    "primaryContainer": "brandContainer","onPrimaryContainer": "brand700",
     "secondary": "accent2", "secondaryDim": "human", "onSecondary": "neutral100",
     "secondaryContainer": "layer2", "onSecondaryContainer": "human",
     "tertiary": "ai", "tertiaryDim": "ai", "onTertiary": "neutral100",
     "tertiaryContainer": "layer2", "onTertiaryContainer": "ai",
     # chat-bubble spec, mirroring the phone transcript's surface1 + borderSubtle
-    "surfaceContainerLow": "canvas", "surfaceContainer": "surface1",
+    "surfaceContainerLow": "canvas", "surfaceContainer": "layer2Hover",  # Google Neutral20: visibly above black; surface1 vanished
     "surfaceContainerHigh": "surface2",
     "onSurface": "txtPrimary", "onSurfaceVariant": "txtSecondary",
     "outline": "borderStrong", "outlineVariant": "borderSubtle",

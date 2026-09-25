@@ -67,14 +67,14 @@ fun main() {
     rows = buildRows(withCard, emptySet(), busy = false, hint = HINT, suggestOptions = emptyList())
     newest = newestMessageIndex(rows)
     check("option buttons follow the question, not the end of the list",
-        rows.getOrNull(newest + 1) is Row.Option && rows.last() is Row.Board)
+        rows.getOrNull(newest + 1) is Row.Header && rows.getOrNull(newest + 2) is Row.Option && rows.last() is Row.Board)
     check("newest is the QUESTION itself, not a button",
         (rows[newest] as Row.Msg).line.card == "c1")
 
     // answered -> the buttons go away, and the newest index moves with them
     val answered = buildRows(withCard, setOf("c1"), busy = false, hint = HINT, suggestOptions = emptyList())
     check("answering a card removes exactly its option rows",
-        rows.size - answered.size == 3, "delta=${rows.size - answered.size}")
+        rows.size - answered.size == 4, "delta=${rows.size - answered.size}")
     check("newest still lands on the question after answering",
         (answered[newestMessageIndex(answered)] as Row.Msg).line.card == "c1")
 
@@ -82,9 +82,8 @@ fun main() {
     rows = buildRows(oneDay, emptySet(), busy = true, hint = HINT, suggestOptions = listOf("ja", "nein"))
     newest = newestMessageIndex(rows)
     check("busy + suggestions sit AFTER the newest message", newest < rows.size - 6)
-    check("list always ends Speak, VoiceToggle, Board",
-        rows[rows.size - 3] is Row.Speak && rows[rows.size - 2] is Row.VoiceToggle &&
-            rows[rows.size - 1] is Row.Board)
+    check("list always ends VoiceToggle, Board (Speak is the edge button)",
+        rows[rows.size - 2] is Row.VoiceToggle && rows[rows.size - 1] is Row.Board)
 
     // ---- 5. an empty chat must NOT scroll --------------------------------
     rows = buildRows(emptyList(), emptySet(), busy = false, hint = HINT, suggestOptions = emptyList())

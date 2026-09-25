@@ -45,7 +45,13 @@ import androidx.wear.compose.material3.ChildButton
 // filledTonalButtonColors - both read out of the AAR in the Gradle cache, not
 // assumed from docs), which is the same check TitleCard above went through.
 import androidx.wear.compose.material3.CompactButton
-import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.SwitchButton
+import androidx.compose.ui.graphics.Color
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
@@ -107,6 +113,12 @@ private fun dayLabel(date: String): String {
  *  pending decision as advice. */
 private fun senderOf(line: Line): String =
     if (line.label.isNotBlank()) line.label else if (line.mine) "Du" else "Henry"
+
+/** The ONE place that decides the colour of the owner's own messages. Provisional
+ *  (owner 2026-09-25): dark blue from primaryContainer, deliberately NOT the accent
+ *  blue of the buttons. Switch the colour here and nowhere else. */
+@Composable
+private fun ownMessageColor(): Color = MaterialTheme.colorScheme.primaryContainer
 
 /** The mirror's three kinds, as the wrist names them. Mirrors
  *  cells/copilot/card_mirror.py's KIND_* constants; an unknown kind falls back
@@ -739,7 +751,19 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
         return
     }
     Box(modifier = Modifier.fillMaxSize()) {
-        ScreenScaffold(scrollState = columnState) { contentPadding ->
+        ScreenScaffold(
+            scrollState = columnState,
+            // "Sprechen", the one primary action: Google's EdgeButton slot (Button.kt /
+            // EdgeButton.kt KDoc), icon only. ALWAYS enabled, even while `busy`: a tap
+            // while Henry is still answering DICTATES a follow-up and queues it (see
+            // `dictate` above; bug report 2026-09-18: "passiert sichtbar nichts").
+            edgeButton = {
+                EdgeButton(
+                    onClick = { dictate.launch(speechIntent()) },
+                    buttonSize = EdgeButtonSize.ExtraSmall,
+                ) { Icon(WearIcons.Mic, contentDescription = "Sprechen") }
+            },
+        ) { contentPadding ->
             TransformingLazyColumn(
                 state = columnState,
                 contentPadding = contentPadding,
@@ -797,15 +821,18 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
 
                             is Row.Msg -> TitleCard(
                                 onClick = { detail = senderOf(row.line) to row.line.text },
-                                title = { Text(senderOf(row.line), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                // A card question: title "Frage", the card's name as subtitle.
+                                title = { Text(senderOf(row.line).substringBefore(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                subtitle = if (" · " !in senderOf(row.line)) null
+                                           else ({ Text(senderOf(row.line).substringAfter(" · "), maxLines = 1, overflow = TextOverflow.Ellipsis) }),
                                 // Omitted, not blanked, when there is no stamp: an
                                 // empty `time` slot would still reserve its space.
                                 time = if (row.line.ts.isBlank()) null
                                        else ({ Text(row.line.ts, maxLines = 1) }),
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isAmbient) WearTokens.canvas
-                                                     else if (row.line.mine) WearTokens.glow1
-                                                     else WearTokens.layer2,
+                                                     else if (row.line.mine) ownMessageColor()
+                                                     else MaterialTheme.colorScheme.surfaceContainer,
                                     contentColor = if (isAmbient) WearTokens.txtTertiary
                                                    else WearTokens.txtPrimary,
                                 ),
@@ -818,6 +845,14 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 Text(row.line.text, textAlign = TextAlign.Start,
                                     maxLines = 3, overflow = TextOverflow.Ellipsis)
                             }
+
+                            is Row.Header -> ListHeader(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, spec)
+                                    .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
+                                transformation = SurfaceTransformation(spec),
+                            ) { Text(row.text, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 
                             is Row.Option -> Button(
                                 onClick = { answerCard(row.card, row.label) },
@@ -843,23 +878,12 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                 transformation = SurfaceTransformation(spec),
                             ) { Text(row.label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
 
-                            // ALWAYS enabled, even while `busy`: a tap while Henry is
-                            // still answering DICTATES a follow-up and queues it (see
-                            // `dictate` above) rather than doing nothing (bug report
-                            // 2026-09-18: "passiert sichtbar nichts").
-                            is Row.Speak -> Button(
-                                onClick = { dictate.launch(speechIntent()) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .transformedHeight(this, spec)
-                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
-                                transformation = SurfaceTransformation(spec),
-                            ) { Text(if (queued != null) "Wartet …" else if (busy) "…" else "Sprechen",
-                                     maxLines = 1, overflow = TextOverflow.Ellipsis) }
-
-                            is Row.VoiceToggle -> OutlinedButton(
-                                onClick = {
-                                    voiceOn = !voiceOn
+                            // A setting, so Google's SwitchButton (SwitchButtonSample), not a
+                            // button that looks like a message.
+                            is Row.VoiceToggle -> SwitchButton(
+                                checked = voiceOn,
+                                onCheckedChange = { on ->
+                                    voiceOn = on
                                     DeviceStore.saveVoiceOn(context, voiceOn)
                                     // Switching off mid-sentence must stop THAT
                                     // sentence, not merely the next one.
@@ -870,21 +894,22 @@ fun HenryScreen(context: Context, onOpenBoard: () -> Unit) {
                                     .transformedHeight(this, spec)
                                     .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                                 transformation = SurfaceTransformation(spec),
-                            ) { Text(if (voiceOn) "Stimme aus" else "Stimme an",
-                                     maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                                icon = { Icon(WearIcons.VolumeUp, contentDescription = null) },
+                                label = { Text("Stimme", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            )
 
-                            // Lowest emphasis, but NOT invisible: a bare ChildButton
-                            // draws neither fill nor border and read as a caption on
-                            // the real watch, so it carries the same hairline as the
-                            // board's context rows (borderSubtle, from WearTokens).
-                            is Row.Board -> ChildButton(
+                            // Owner 2026-09-25: messages, answers and actions all looked
+                            // alike. Now: messages = TitleCard, the one primary action =
+                            // filled Button, everything else = FilledTonalButton with
+                            // an icon (Wear Compose M3 button hierarchy).
+                            is Row.Board -> FilledTonalButton(
                                 onClick = { VoicePlayer.stop(); onOpenBoard() },
-                                border = BorderStroke(1.dp, WearTokens.borderSubtle),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .transformedHeight(this, spec)
                                     .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                                 transformation = SurfaceTransformation(spec),
+                                icon = { Icon(WearIcons.Dashboard, contentDescription = null) },
                             ) { Text("Board", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         }
                     }

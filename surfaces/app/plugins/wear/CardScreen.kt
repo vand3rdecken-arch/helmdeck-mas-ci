@@ -23,6 +23,8 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,6 +32,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.ChildButton
+import androidx.wear.compose.material3.TitleCard
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.OutlinedCard
@@ -143,7 +147,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 // a SwipeDismissableNavHost, so the swipe-back gesture does not
                 // return to the board here.
                 item {
-                    Button(
+                    ChildButton(
                         onClick = { VoicePlayer.stop(); onBack() },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -155,8 +159,9 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 // The card's task, as a preview that opens in full.
                 val task = card.task.ifBlank { card.id }
                 item {
-                    Card(
+                    TitleCard(
                         onClick = { detail = "Aufgabe" to task },
+                        title = { Text("Aufgabe", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .transformedHeight(this, spec)
@@ -224,14 +229,26 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 if (q != null) {
                     for (qi in q.questions) {
                         item {
-                            Card(
+                            TitleCard(
                                 onClick = { detail = "Frage" to qi.question },
+                                title = { Text("Frage", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .transformedHeight(this, spec)
                                     .minimumVerticalContentPadding(CardDefaults.minimumVerticalListContentPadding),
                                 transformation = SurfaceTransformation(spec),
                             ) { Text(qi.question, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+                        }
+                        if (qi.options.isNotEmpty()) {
+                            item {
+                                ListHeader(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, spec)
+                                        .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
+                                    transformation = SurfaceTransformation(spec),
+                                ) { Text("Antworten", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            }
                         }
                         for (opt in qi.options) {
                             val selected = picks[qi.header] == opt.label
@@ -284,11 +301,13 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 }
 
                 item {
-                    Text(
-                        text = "Henry fragen", textAlign = TextAlign.Center,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
-                    )
+                    ListHeader(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, spec)
+                            .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
+                        transformation = SurfaceTransformation(spec),
+                    ) { Text("Henry fragen", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 item {
                     Button(
@@ -306,6 +325,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                             .transformedHeight(this, spec)
                             .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                         transformation = SurfaceTransformation(spec),
+                        icon = { Icon(WearIcons.Mic, contentDescription = null) },
                     ) { Text(if (henryBusy) "…" else "Sprechen", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
                 val reply = henryReply
@@ -328,7 +348,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
                 henrySuggestions?.questions?.forEach { sug ->
                     for (opt in sug.options) {
                         item {
-                            Button(
+                            FilledTonalButton(
                                 onClick = {
                                     askHenry(context, scope, card.id, opt.label,
                                         onBusy = { henryBusy = it },
