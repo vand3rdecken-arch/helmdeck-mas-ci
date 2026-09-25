@@ -367,6 +367,80 @@ def _desktop_gate(payload, tool):
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+# HENRY'S INLINE BUDGET (owner 2026-09-25 16:49: a board turn ran 17 inline
+# tool calls over five minutes - curl, grep, sed, rm, a commit, site stats -
+# and his next message "was ignored" until the whole chain ended). The brief
+# says "at most ~3 calls, then hand off"; measured, that prose lost. The
+# budget is counted HERE, the one place every tool call of his passes, per
+# TURN - the turn's identity is the start stamp the daemon writes at event
+# time into daemon/state/chat_turns.json (copilot._note_turn). A background
+# Agent/Task is the hand-off itself and never counts.
+INLINE_BUDGET = int(os.environ.get("HELMDECK_INLINE_BUDGET") or 6)
+
+
+def _state_dir():
+    return os.environ.get("HELMDECK_STATE_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "daemon", "state")
+
+
+def _inline_budget(tool, ti):
+    if tool in ("Agent", "Task") and ti.get("run_in_background"):
+        return
+    user = os.environ.get("HELMDECK_CHAT_USER") or ""
+    sd = _state_dir()
+    try:
+        with open(os.path.join(sd, "chat_turns.json"), encoding="utf-8") as f:
+            turn = (json.load(f) or {}).get(user)
+    except (OSError, ValueError):
+        return                     # no turn witness = no board turn to protect
+    if not turn:
+        return
+    path = os.path.join(sd, "copilot_inline_budget.json")
+    lock = path + ".lock"
+    import time as _t
+    fd = None
+    for _ in range(100):           # parallel tool calls run their hooks at once
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            try:
+                if _t.time() - os.path.getmtime(lock) > 10:
+                    os.remove(lock)            # a crashed hook's lock
+            except OSError:
+                pass
+            _t.sleep(0.05)
+    try:
+        try:
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f) or {}
+        except (OSError, ValueError):
+            doc = {}
+        cur = doc.get(user) or {}
+        if cur.get("turn") != turn:
+            cur = {"turn": turn, "n": 0}
+        cur["n"] = int(cur.get("n") or 0) + 1
+        doc[user] = cur
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        os.replace(tmp, path)
+        n = cur["n"]
+    finally:
+        if fd is not None:
+            os.close(fd)
+            try:
+                os.remove(lock)
+            except OSError:
+                pass
+    if n > INLINE_BUDGET:
+        _deny("card_tool_guard: dein Inline-Budget fuer diesen Turn (%d Tool-Aufrufe) ist "
+              "verbraucht - der Owner-Chat wartet auf dich. Gib den Rest ab: Lesen/Pruefen/"
+              "Recherche -> Agent mit \"run_in_background\": true, PC/Browser -> hands, "
+              "Aenderungen -> direct_task/file_card. Sag dem Owner in einem Satz, was du "
+              "hast und was jetzt im Hintergrund laeuft, und beende den Turn." % INLINE_BUDGET)
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -403,6 +477,8 @@ def main():
               "einem Satz sagen, was jetzt laeuft, und den Turn beenden. Das Ergebnis "
               "kommt als Kachel in den Chat und in deinen naechsten Turn.")
         return
+    if os.environ.get("HELMDECK_SURFACE") == "copilot" and os.environ.get("HELMDECK_CHAT_USER"):
+        _inline_budget(tool, ti)
 
     # THE DESKTOP LEASE (spine/git/desktop_lease.py): a windows-mcp CONTROL
     # call takes the one cursor right here, per call, and hands it back after

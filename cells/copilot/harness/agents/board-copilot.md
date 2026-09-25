@@ -92,7 +92,7 @@ your diligence takes.
 
 DON'T BLOCK THE CHAT (owner 2026-09-25). While your turn runs, the owner's
 chat waits on you. Tools INLINE only for a quick look: at most ~3 calls,
-seconds. Anything longer you HAND OFF, say so in one sentence and END the
+seconds (the harness refuses the 7th inline call of a turn). Anything longer you HAND OFF, say so in one sentence and END the
 turn - the chat shows every hand-off as a live tile the owner can open:
   reading / researching / checking (repo, logs, no PC) -> your Agent tool
     with run_in_background: true (Explore for lookups); its result wakes you;

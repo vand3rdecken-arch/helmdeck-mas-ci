@@ -809,7 +809,11 @@ def _persist_get(skey, cli_model, sid, system):
     argv += _lean_mcp_args()
     from spine.agent.drivers import _cmd_line
     from spine.agent.spawnenv import tool_path
-    p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
+    _env = tool_path()
+    # whose turns this process serves - the guard hook's inline budget reads
+    # that user's turn stamp in state/chat_turns.json (card_tool_guard)
+    _env["HELMDECK_CHAT_USER"] = skey.split("\x00", 1)[0] if isinstance(skey, str) else str(skey)
+    p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=_env,
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                          text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     with _persist_lock:

@@ -15,6 +15,8 @@ history(), the guard hook as a real subprocess):
  7. finish_all (Henry's process died) persists the failed state
  8. the guard hook denies a FOREGROUND Agent/Task in Henry's chat surface,
     lets a background one through, and leaves worker cards alone
+ 9. the inline budget: 6 inline calls per board turn (turn = the daemon's
+    chat_turns.json stamp), the 7th refused, the hand-off never counted
 Run: py -3.12 ops/tests/test_chat_runs_persist.py
 """
 import json, os, subprocess, sys, tempfile, time
@@ -173,12 +175,15 @@ check(r.get("status") == "failed" and "beendet" in (r.get("result") or ""),
 
 
 # 8) the guard hook, as the CLI runs it
-def guard(tool, ti, surface):
+def guard(tool, ti, surface, user=None, state=None):
     env = dict(os.environ)
-    env.pop("HELMDECK_WORKTREE", None)
-    env.pop("HELMDECK_SURFACE", None)
+    for k in ("HELMDECK_WORKTREE", "HELMDECK_SURFACE", "HELMDECK_CHAT_USER", "HELMDECK_STATE_DIR"):
+        env.pop(k, None)
     if surface:
         env["HELMDECK_SURFACE"] = surface
+    if user:
+        env["HELMDECK_CHAT_USER"] = user
+    env["HELMDECK_STATE_DIR"] = state or SANDBOX
     p = subprocess.run([sys.executable, os.path.join(ROOT, "ops", "tools", "card_tool_guard.py")],
                        input=json.dumps({"tool_name": tool, "tool_input": ti}), capture_output=True,
                        text=True, env=env, timeout=60)
@@ -197,6 +202,35 @@ check(guard("Agent", {"description": "x", "prompt": "y", "run_in_background": Tr
       "8. background Agent in Henry's chat passes")
 check(guard("Agent", {"description": "x", "prompt": "y"}, "") != "deny",
       "8. a worker card's foreground Agent is not this rule's business")
+
+# 9) the inline budget: a board turn gets 6 inline calls, then hands off
+STATE = os.path.join(SANDBOX, "budget-state")
+os.makedirs(STATE, exist_ok=True)
+
+
+def turn(stamp):
+    with open(os.path.join(STATE, "chat_turns.json"), "w", encoding="utf-8") as f:
+        json.dump({OWNER: stamp} if stamp else {}, f)
+
+
+turn(1000.0)
+got = [guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) for _ in range(6)]
+check("deny" not in got, "9. six inline calls in one turn pass (%r)" % got)
+check(guard("Bash", {"command": "git log"}, "copilot", OWNER, STATE) == "deny",
+      "9. the seventh inline call is refused")
+check(guard("Agent", {"description": "x", "prompt": "y", "run_in_background": True}, "copilot", OWNER, STATE) != "deny",
+      "9. the hand-off itself (background Agent) always passes")
+turn(2000.0)
+check(guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE) != "deny",
+      "9. a NEW turn starts a fresh budget")
+turn(None)
+for _ in range(8):
+    last = guard("Bash", {"command": "git status"}, "copilot", OWNER, STATE)
+check(last != "deny", "9. no turn witness (not a board turn) = no budget")
+turn(3000.0)
+for _ in range(8):
+    last = guard("Bash", {"command": "git status"}, "", None, STATE)
+check(last != "deny", "9. a worker card (no chat surface) is never budgeted")
 
 print("PASS test_chat_runs_persist" if not _fails else "FAIL test_chat_runs_persist (%d)" % len(_fails))
 sys.exit(1 if _fails else 0)
