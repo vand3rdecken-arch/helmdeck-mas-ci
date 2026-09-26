@@ -23,14 +23,14 @@ JS = """() => {
   const vw = innerWidth, vh = innerHeight, out = [];
   const box = (el) => { const r = el.getBoundingClientRect(); return {l:r.left, t:r.top, r:r.right, b:r.bottom, w:r.width, h:r.height}; };
   const inside = (r) => r.t >= -0.5 && r.l >= -0.5 && r.b <= vh + 0.5 && r.r <= vw + 0.5;
-  const hero = document.querySelector('.hero'), dl = document.getElementById('hero-dl');
+  const hero = document.querySelector('.hero');
   const bar = document.getElementById('cookiebar');
   const barBox = bar && !bar.hidden ? box(bar) : null;
   const hit = (a, b) => b && a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t;
   const r = {};
   r.hero = box(hero);
   if (r.hero.b > vh + 0.5) out.push('hero bottom ' + Math.round(r.hero.b) + ' > viewport ' + vh);
-  const need = [['download CTA', dl], ...[...document.querySelectorAll('.badge')].map((e, i) => ['badge ' + i, e]),
+  const need = [...[...document.querySelectorAll('.badge')].map((e, i) => ['badge ' + i, e]),
                 ...[...document.querySelectorAll('.hero h1, .hero .sub')].map((e, i) => ['hero text ' + i, e])];
   for (const [name, el] of need) {
     if (!el) { out.push(name + ' missing'); continue; }

@@ -236,13 +236,13 @@ function devicesHtml(t) {
 }
 const DEV_DE = {
   devPhoneH: "Handy", devPhoneP: "Android, iPhone. Rückfragen, Freigaben, Umlenken, für jeden im Team.",
-  devDeskH: "Desktop", devDeskP: "Windows, macOS. Hier arbeiten die Agenten eures Teams mit Claude Code.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. Hier laufen die KI-Agenten eures Teams.",
   devWatchH: "Uhr", devWatchP: "Apple Watch, Wear OS. Ja oder Nein vom Handgelenk.",
   devGlassH: "Brille", devGlassP: "Bald. Warteliste unten.",
 };
 const DEV_EN = {
   devPhoneH: "Phone", devPhoneP: "Android, iPhone. Questions, approvals, redirects, for anyone on the team.",
-  devDeskH: "Desktop", devDeskP: "Windows, macOS. This is where your team’s agents run Claude Code.",
+  devDeskH: "Desktop", devDeskP: "Windows, macOS. The desktop runs your team’s AI agents.",
   devWatchH: "Watch", devWatchP: "Apple Watch, Wear OS. Yes or no from your wrist.",
   devGlassH: "Glasses", devGlassP: "Soon. Waitlist below.",
 };
@@ -317,7 +317,7 @@ function page({ rel, joined, already, err, email, product }) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HelmDeck: Mobile agent orchestration for teams.</title>
-<meta name="description" content="Mobile agent orchestration for teams. Your team. Your AI agents. One rhythm. Anywhere. HelmDeck runs Claude Code on your own PC; your team steers it from the phone.">
+<meta name="description" content="Mobile agent orchestration for teams. Your team. Your AI agents. One rhythm. Anywhere. Your agents run on your own PC; your team steers them from the phone.">
 <meta property="og:title" content="HelmDeck: Mobile agent orchestration for teams.">
 <meta property="og:description" content="Your team. Your AI agents. One rhythm. Anywhere. Three theses on how agent harnesses must evolve, tested on HelmDeck itself.">
 <meta name="theme-color" content="#0E0F10">
@@ -559,6 +559,64 @@ h1{margin:0 0 1.1rem; max-width:none; font-size:clamp(2rem,2.6vw + .9rem,3.9rem)
   box-shadow:0 0 0 1px rgba(255,255,255,.22) inset; transition:box-shadow .15s, background .15s;
 }
 .badge:hover{box-shadow:0 0 0 1px rgba(255,255,255,.5) inset; background:#0a0a0a}
+.badge{flex:1 1 9.5rem; justify-content:center}
+.badge svg{width:1.55rem; height:1.55rem; flex:none; fill:currentColor}
+.badge span{display:flex; flex-direction:column; line-height:1.1; white-space:nowrap}
+.badge small{font-size:.66rem; letter-spacing:.01em; color:rgba(255,255,255,.78)}
+.badge b{font-size:1.06rem; font-weight:600; letter-spacing:-.01em}
+/* the stage: desktop window + phone, both real screenshots at native aspect */
+.hero-stage{position:relative; justify-self:end; width:100%; margin-right:-2vw}
+.hero-stage::before{
+  content:""; position:absolute; inset:-10% 0; z-index:-1; pointer-events:none;
+  background:radial-gradient(closest-side, rgba(35,150,229,.20), transparent 72%);
+}
+.hero-stage .demo-shot{margin:0; max-width:none}
+@keyframes rise{from{opacity:0; transform:translateY(10px)}}
+.theses{display:grid; grid-template-columns:1fr; gap:1rem; margin-top:1.4rem}
+@media (min-width:46rem){.theses{grid-template-columns:repeat(3,1fr)}}
+.thesis{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.4rem 1.4rem 1.5rem}
+.thesis .n{font-size:.82rem; font-weight:800; letter-spacing:.08em; color:var(--accent-hi)}
+.thesis h3{margin:.35rem 0 .8rem; font-size:1.4rem; line-height:1.2; letter-spacing:-.01em; text-wrap:balance}
+.thesis p{margin:0; font-size:.95rem; color:var(--ink-2); line-height:1.6}
+.phones{display:grid; grid-template-columns:repeat(2,1fr); gap:1rem .8rem; margin-top:1.4rem}
+@media (min-width:46rem){.phones{grid-template-columns:repeat(4,1fr); gap:1.2rem}}
+.phones figure{margin:0; display:flex; flex-direction:column; gap:.7rem}
+.phones img{display:block; width:100%; height:auto; border:1px solid var(--border-strong); border-radius:20px; box-shadow:0 16px 40px rgba(0,0,0,.45); background:var(--surface)}
+.phones figcaption b{display:block; font-size:.95rem; margin-bottom:.15rem}
+.phones figcaption span{font-size:.84rem; color:var(--ink-3); line-height:1.5}
+@media (max-width:480px){form button,form .btn{flex:1 1 100%}}
+/* ---- 2026-09-24 premium pass (brand register): full-viewport hero + calmer surfaces ---- */
+:root{--top:4rem; --bar:0px; --pad:clamp(1.25rem,4vw,4.5rem); --shell:80rem}
+.topbar{max-width:112rem; padding:.85rem var(--pad)}
+.topbar-fixed{background:rgba(14,15,16,.72); backdrop-filter:blur(14px); border-bottom-color:rgba(255,255,255,.07)}
+.lockup b{font-size:1.05rem; letter-spacing:-.005em}
+main{max-width:var(--shell); padding:0 var(--pad) 4rem}
+.hero{
+  border-top:0; position:relative; box-sizing:border-box; max-width:112rem; margin:0 auto;
+  height:calc(100svh - var(--top) - var(--bar));
+  display:grid; grid-template-columns:minmax(0,4.2fr) minmax(0,7.8fr); align-items:center;
+  column-gap:clamp(1.5rem,3vw,4rem); padding:clamp(.75rem,2.5vh,2.5rem) var(--pad);
+}
+.hero-copy{min-width:0}
+.hero .kicker{margin:0 0 1rem; font-size:.85rem; font-weight:600; letter-spacing:.01em; text-transform:none; color:var(--accent-hi)}
+h1{margin:0 0 1.1rem; max-width:none; font-size:clamp(2rem,2.6vw + .9rem,3.9rem); line-height:1.04; font-weight:700; letter-spacing:-.03em; text-wrap:balance}
+:lang(de) h1{hyphens:auto}
+.hero .sub{margin:0 0 1rem; max-width:34rem; font-size:clamp(1.05rem,.5vw + .95rem,1.35rem); font-weight:500; line-height:1.4; color:var(--ink-2); text-wrap:balance}
+.hero .objection{margin:0 0 1.6rem; max-width:32rem; font-size:.9rem; line-height:1.5; color:var(--ink-3)}
+.objection-m{display:none}
+.hero-actions{display:flex; gap:.7rem; flex-wrap:wrap; margin-bottom:1.1rem}
+.btn-lg{height:3.25rem; padding:0 1.6rem; font-size:1rem; border-radius:12px}
+.btn-primary{box-shadow:0 0 0 1px rgba(255,255,255,.14) inset, 0 8px 24px -6px rgba(35,150,229,.55)}
+.hero-actions .btn-ghost{border-color:transparent; color:var(--ink-2); padding:0 .5rem; height:2.6rem; font-size:.95rem}
+.hero-actions .btn-ghost:hover{border-color:var(--border-strong)}
+.badges{display:flex; gap:.6rem; flex-wrap:wrap}
+.badge{
+  display:inline-flex; align-items:center; gap:.6rem; height:3rem; padding:0 1rem 0 .85rem;
+  border-radius:10px; background:#000; color:#fff; text-decoration:none;
+  box-shadow:0 0 0 1px rgba(255,255,255,.22) inset; transition:box-shadow .15s, background .15s;
+}
+.badge:hover{box-shadow:0 0 0 1px rgba(255,255,255,.5) inset; background:#0a0a0a}
+.badge{flex:1 1 9.5rem; justify-content:center}
 .badge svg{width:1.55rem; height:1.55rem; flex:none; fill:currentColor}
 .badge span{display:flex; flex-direction:column; line-height:1.1; white-space:nowrap}
 .badge small{font-size:.66rem; letter-spacing:.01em; color:rgba(255,255,255,.78)}
@@ -584,28 +642,18 @@ h1{margin:0 0 1.1rem; max-width:none; font-size:clamp(2rem,2.6vw + .9rem,3.9rem)
 .hero-copy > *{animation:rise .6s cubic-bezier(.16,1,.3,1) both}
 .hero-copy > :nth-child(2){animation-delay:.05s}.hero-copy > :nth-child(3){animation-delay:.1s}
 .hero-copy > :nth-child(4){animation-delay:.14s}.hero-copy > :nth-child(5){animation-delay:.18s}.hero-copy > :nth-child(6){animation-delay:.22s}
-.hero-stage .win{animation:rise-r .8s cubic-bezier(.16,1,.3,1) .1s both}
-.hero-stage .ph{animation:rise .8s cubic-bezier(.16,1,.3,1) .3s both}
-@media (prefers-reduced-motion:reduce){.hero-copy > *,.hero-stage .win,.hero-stage .ph{animation:none}}
+.hero-stage .demo-shot{animation:rise-r .8s cubic-bezier(.16,1,.3,1) .1s both}
+@media (prefers-reduced-motion:reduce){.hero-copy > *,.hero-stage .demo-shot{animation:none}}
 @media (max-width:899px){
   .topnav{display:none}
-  .hero{display:flex; flex-direction:column; align-items:stretch; padding-bottom:0; row-gap:1rem}
+  .hero{display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; height:auto; min-height:calc(100svh - var(--top)); padding-bottom:1.5rem; row-gap:1rem}
   .hero .kicker,.hero .objection,.hero-actions .btn-ghost{display:none}
   .objection-m{display:block; margin:0 0 2rem; font-size:.9rem; color:var(--ink-3); max-width:36rem; padding-top:1.5rem}
   h1{margin-bottom:.7rem}
   .hero .sub{margin-bottom:.4rem}
-  .hero-actions{margin-bottom:.7rem}
-  .hero-actions .btn{flex:1 1 100%}
-  .badge{flex:1 1 0; justify-content:center}
-  .hero-stage{
-    flex:1 1 0; min-height:0; width:100%; aspect-ratio:auto; overflow:hidden; justify-self:auto;
-    display:flex; justify-content:center; align-items:flex-start;
-    -webkit-mask-image:linear-gradient(#000 78%,transparent); mask-image:linear-gradient(#000 78%,transparent);
-  }
+  .badge{flex:1 1 42%; justify-content:center}
+  .hero-stage{margin:0; flex:none}
   .hero-stage::before{inset:0}
-  .hero-stage .win{display:none}
-  .hero-stage .ph{position:static; width:min(66vw,16rem); flex:none; padding:.4rem; border-radius:2.2rem 2.2rem 0 0}
-  .hero-stage .ph img{border-radius:1.8rem 1.8rem 0 0}
 }
 @media (max-width:480px){
   .cookiebar{padding:.5rem .9rem; gap:.4rem .8rem}
@@ -650,28 +698,19 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <h1 data-i="h1">Mobile agent orchestration for teams.</h1>
     <p class="sub" data-i="sub">Your team. Your AI agents. One rhythm. Anywhere.</p>
     <p class="objection" data-i="objection">Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.</p>
-    <div class="hero-actions">
-      <a class="btn btn-primary btn-lg" id="hero-dl" href="#downloads" data-i="heroCtaPrimary">Get started</a>
-      <a class="btn btn-ghost btn-lg" href="#demo" data-i="heroCtaDemo">Watch the 30 second demo</a>
-    </div>
     <div class="badges">
       <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
       <a class="badge" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-cta="android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8 13.8 12 3.6 22.2c-.4-.2-.6-.6-.6-1.1V2.9c0-.5.2-.9.6-1.1zM15.2 13.4l2.5 2.5-11.6 6.6zM15.2 10.6 6.1 1.5l11.6 6.6 2.5 1.4c.7.4.7 1.2 0 1.6l-2.5 1.4z"/></svg><span><small data-i="badgePlaySmall">Get it on</small><b>Google Play</b></span></a>
+      <a class="badge" href="${dlHref(win)}" data-cta="windows"><span><small data-i="badgeDlSmall">Download for</small><b>Windows</b></span></a>
+      <a class="badge" href="${dlHref(macArm)}" data-cta="mac"><span><small data-i="badgeDlSmall">Download for</small><b>macOS</b></span></a>
     </div>
   </div>
   <div class="hero-stage">
-    <figure class="win"><img src="/shots/en/desk-board.webp" data-shot="desk-board.webp" width="1440" height="685" alt="HelmDeck desktop board: backlog, in progress, review, two goals need a decision" data-i-alt="heroDeskAlt"></figure>
-    <figure class="ph"><img src="/shots/en/01-board.webp" data-shot="01-board.webp" width="585" height="1300" alt="HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision" data-i-alt="sh1Alt"></figure>
+    <figure class="demo-shot"><video controls playsinline preload="none" poster="${DEMO_POSTER_URL}" width="1920" height="1080"><source src="${DEMO_VIDEO_URL}" type="video/mp4"></video></figure>
   </div>
 </section>
 <main>
   <p class="objection objection-m" data-i="objection">Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.</p>
-
-  <section id="demo">
-    <h2 data-i="demoTitle">HelmDeck in 30 seconds</h2>
-    <p class="section-sub" data-i="demoSub">From the board to the agent's question to the answer from your phone. Narrated in English.</p>
-    <figure class="demo-shot"><video controls playsinline preload="none" poster="${DEMO_POSTER_URL}" width="1920" height="1080"><source src="${DEMO_VIDEO_URL}" type="video/mp4"></video></figure>
-  </section>
 
   <section id="theses">
     <h2 data-i="thesesTitle">Three theses</h2>
@@ -949,7 +988,7 @@ ${wl("wearables")}
       heroCtaDemo:"Demo ansehen, 30 Sekunden",
       demoTitle:"HelmDeck in 30 Sekunden",
       demoSub:"Vom Board über die Frage des Agenten bis zur Antwort vom Handy. Auf Englisch vertont.",
-      badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei",
+      badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei", badgeDlSmall:"Herunterladen für",
       heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Ziele brauchen eine Entscheidung",
       thesesTitle:"Drei Thesen",
       thesesSub:"Diese drei Thesen stammen aus unserer eigenen Erfahrung. Wir haben sie beim Bau von HelmDeck selbst beobachtet.",
@@ -1021,7 +1060,7 @@ ${wl("wearables")}
       heroCtaDemo:"Watch the 30 second demo",
       demoTitle:"HelmDeck in 30 seconds",
       demoSub:"From the board to the agent's question to the answer from your phone. Narrated in English.",
-      badgeIosSmall:"Download on the", badgePlaySmall:"Get it on",
+      badgeIosSmall:"Download on the", badgePlaySmall:"Get it on", badgeDlSmall:"Download for",
       heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two goals need a decision",
       thesesTitle:"Three theses",
       thesesSub:"They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.",
