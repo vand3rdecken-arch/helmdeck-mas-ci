@@ -33,7 +33,10 @@ BUCKETS = ("needs_input", "failed", "attention", "running", "backlog", "done")
 
 def _bucket(t):
     st, lane = t.get("status"), t.get("lane")
-    if st == "needs_you":
+    # A turn that ends with a background task still running parks as
+    # needs_you + waiting_on="background" (turnrunner) - the WORKER is waiting,
+    # not the owner; blockers.py and pm.py already read it that way.
+    if st == "needs_you" and t.get("waiting_on") != "background":
         return "needs_input"
     if st in ("bounced", "failed", "canceled"):
         return "failed"
