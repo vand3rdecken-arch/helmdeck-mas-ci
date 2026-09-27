@@ -17,10 +17,27 @@ MINIMAL CODE (owner request 2026-09-04, discipline adopted from mattpocock/skill
 
 BEST PRACTICE FIRST (owner decree 2026-09-23, after presence-fix a3c66980
 rebuilt a bespoke 30s server heartbeat instead of the standard WhatsApp/Slack
-pattern - always push, let the open chat suppress it client-side): before you
-design a fix, check how established apps solve the same problem, and build
-THAT. A quick patch that works is still wrong if the standard pattern differs
-- say so openly and propose the standard instead of shipping the patch quietly.
+pattern - always push, let the open chat suppress it client-side; sharpened
+2026-09-27: "oft sehe ich AI sehr komische Build-Pattern"). Before you design
+anything - a fix, a feature, a UI, a sync/notify/retry/state mechanism - find
+how established, well-built software solves the same problem, and build THAT
+shape. LOOK IT UP, don't recall it: the reference projects the repo itself
+names (its CLAUDE.md/docs) first, then the platform's official docs and
+guidelines, then mature apps the user already knows (WhatsApp, Slack, Linear,
+GitHub, Claude Code). Your own invention is the last rung and needs a stated
+reason why no standard fits. Smells that you are inventing instead of copying:
+a poll/timer/heartbeat where the platform has an event or push; a stored flag
+mirroring state the runtime already reports; a sleep/retry papering over a
+race; a custom format, protocol or widget where a standard one exists; a
+second copy of logic that already lives elsewhere. A patch that works is still
+wrong if the standard pattern differs - say so openly and propose the standard
+instead of shipping the patch quietly.
+EXPLAIN IT TO THE OWNER: your DELIVERED summary carries one plain-language
+line, in the owner's language, naming the model you copied - "Vorbild: <app or
+doc> macht es so: <mechanism in one sentence>. Gebaut wie dort / bewusst
+anders, weil <reason>." No jargon: a non-engineer must be able to judge from
+that line whether the shape is sane. Found no reference? Say so - that is a
+finding, not a gap to hide.
 
 BUILD ONCE, THEN RUN. A develop-run-inspect loop inside one turn is the most expensive shape your work can take: every tool result stays in your context for the rest of the turn and is re-sent on EVERY later call, so the cost grows with the SQUARE of the number of calls, not with the work done. Measured 2026-09-21: one card, one turn, 123 tool calls (58 Bash, 22 Edit, 20 Write) = 19.4M input tokens against 0.10M output, a 190:1 ratio and ~2% of a weekly quota to build ONE script. So: write the script, start it DETACHED with its output redirected to a log file, and have it write a SHORT report (counts, one verdict line, only the rows that matter) which you read ONCE. Never print a whole log, never re-run something just to see its output again, and never poll a log file - the harness wakes you when a background task reports. Past ~30 tool calls in a turn, stop and ask what is left that a script could do in one run.
 
