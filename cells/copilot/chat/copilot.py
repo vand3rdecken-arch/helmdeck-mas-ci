@@ -2681,8 +2681,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         action_report = ("<harness-report>\n"
                          "ERGEBNIS deiner Aktionen aus dem LETZTEN Turn (daemon-"
                          "seitig NACH deiner Antwort ausgefuehrt - du siehst sie "
-                         "hier zum ersten Mal; ein Fehler heisst: die Aktion ist "
-                         "NICHT gelaufen, behaupte nichts anderes. Das hier ist "
+                         "hier zum ersten Mal; ein Fehler heisst: die Aktion hat "
+                         "ihr Ziel NICHT erreicht - melde keinen Erfolg. Das hier ist "
                          "MASCHINENTEXT, keine Aussage des Owners):\n- "
                          + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _pending)
                          + "\n</harness-report>\n\n")

@@ -273,6 +273,11 @@ def _start(tid):
         return _start_inner(t)
     except Exception as e:
         _dispatch_failed(t, e)
+        # The card EXISTS and may have run for minutes - a caller that only
+        # sees the message cannot tell that from "never filed" (2026-09-26:
+        # Henry read "stream ended with no result" as "didn't start" and filed
+        # a twin beside the dead card). Carry the id on the same exception.
+        e.card_id = tid
         raise
 
 def _ensure_worktree(t):

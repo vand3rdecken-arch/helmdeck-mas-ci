@@ -163,6 +163,18 @@ def _denied(kind, role, roles, key, extra=""):
             "%s aendern%s." % (kind, role, "/".join(roles), key, (" - " + extra) if extra else ""))
 
 
+def _start_failed(kind, e):
+    """A card-starting verb that raised. Two different facts share this door:
+    refused BEFORE a card existed (bad repo, policy off) vs. filed and STARTED,
+    then the turn died (dispatch._start tags those with card_id). The second
+    one used to read exactly like the first - see dispatch._start."""
+    tid = getattr(e, "card_id", None)
+    if not tid:
+        return "%s: %s" % (kind, e)
+    return ("%s: Karte %s wurde angelegt und gestartet, dann brach ihr Turn ab: %s"
+            % (kind, tid, e))
+
+
 # -- the repo-template verbs' helpers ----------------------------------------
 # The refusals below are the reason set_station is not a generic key setter.
 # "Schalt das Gate ab" is the ambiguous sentence the decree itself used as the
@@ -494,7 +506,7 @@ def _run_action(a, actor, role="operator"):
                 priority=a.get("priority", "medium"),
                 dispatch=a.get("dispatch", True) is not False)
         except RuntimeError as e:
-            return "machine_task: %s" % e
+            return _start_failed("machine_task", e)
         _tag(a, t)
         return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
                 "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
@@ -524,7 +536,7 @@ def _run_action(a, actor, role="operator"):
                 dispatch=a.get("dispatch", True) is not False,
                 fast_track=a.get("fast_track") is True)
         except RuntimeError as e:
-            return "direct_task: %s" % e
+            return _start_failed("direct_task", e)
         _tag(a, t)
         _file_links(a, t, actor)
         t = sessions._find(sessions._load(), t["id"]) or t
