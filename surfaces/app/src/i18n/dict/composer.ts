@@ -24,8 +24,8 @@ export const composer: Dict = {
   "composer.pickImage": { de: "Aus Fotos wählen", en: "Choose from photos" },
   "composer.pickImageWeb": { de: "Bild wählen", en: "Choose image" },
   "composer.pickFile": { de: "Datei wählen", en: "Choose file" },
-  "composer.attachLimits": { de: "max. {n} Anhänge · {mb} MB pro Datei",
-                             en: "max. {n} attachments · {mb} MB per file" },
+  "composer.attachLimits": { de: "max. {n} Anhänge · {mb} MB zusammen",
+                             en: "max. {n} attachments · {mb} MB in total" },
   "composer.attachPasteDrop": { de: " · Einfügen und Ablegen gehen auch",
                                 en: " · paste and drop work too" },
 
@@ -60,7 +60,8 @@ export const composer: Dict = {
                             en: "No access to the photo library." },
   "attach.noCameraAccess": { de: "Kein Zugriff auf die Kamera erlaubt.",
                              en: "No access to the camera." },
-  "attach.tooBig": { de: "{names}: über {mb} MB", en: "{names}: over {mb} MB" },
+  "attach.tooBig": { de: "{names}: passt nicht, max. {mb} MB pro Nachricht",
+                     en: "{names}: does not fit, max. {mb} MB per message" },
   "attach.tooMany": { de: "{n} weitere: max. {max} Anhänge",
                       en: "{n} more: max. {max} attachments" },
 

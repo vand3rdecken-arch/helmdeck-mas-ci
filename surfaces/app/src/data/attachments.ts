@@ -21,11 +21,20 @@ import { t } from "@/i18n";
 /** What the daemon accepts. `data` is BARE base64 (no data: prefix). */
 export interface Attach { name: string; data: string; mime?: string }
 
-// Mirror daemon/turnopts.py MAX_FILES / MAX_BYTES. The daemon SILENTLY SKIPS
-// anything oversized ("an attachment must never crash a turn"), so if we don't
-// check here the file just vanishes with no explanation. Enforce + explain.
+// Mirror daemon/turnopts.py MAX_FILES. The daemon SILENTLY SKIPS anything over
+// its caps ("an attachment must never crash a turn"), so if we don't check here
+// the file just vanishes with no explanation. Enforce + explain.
 export const MAX_FILES = 6;
-export const MAX_BYTES = 5 * 1024 * 1024;
+// The byte cap is per MESSAGE, not per file, and it is the RELAY's, not the
+// daemon's (turnopts allows 5 MB per file): the relay takes one sealed frame of
+// at most 4 MiB (surfaces/relay/worker MAX_BODY), and an attachment rides in it
+// base64'd twice - once in the JSON body, again when the frame is sealed - so
+// it costs ~1.78x its size. Two full-size phone photos were a "Relay error 413"
+// (2026-09-27). 2 MiB of files -> ~3.6 MiB frame, the rest is headroom for text.
+export const MAX_BYTES = 2 * 1024 * 1024;
+/** Images are shrunk to this long edge before sending. Claude downsamples
+ *  anything larger on its side anyway, so a 4000px photo only costs bytes. */
+const IMAGE_EDGE = 1568;
 /** The cap as the owner reads it - used in the limit hint and the refusal text. */
 export const MAX_MB = Math.round(MAX_BYTES / 1024 / 1024);
 
@@ -41,8 +50,6 @@ export function b64Bytes(b64: string): number {
   return Math.floor((b64.length * 3) / 4) - pad;
 }
 
-export function tooBig(a: Attach): boolean { return b64Bytes(a.data) > MAX_BYTES; }
-
 /** Strip a data: URL down to the bare base64 the daemon expects. */
 function bare(data: string): string {
   return data.includes(",") && data.startsWith("data:") ? data.split(",").slice(1).join(",") : data;
@@ -57,32 +64,41 @@ function extFor(mime?: string): string {
   return "img";
 }
 
-/** An image the agent cannot read (HEIC/HEIF/AVIF from an iPhone) is re-encoded
- *  to PNG. Uses manipulateAsync: deprecated in SDK 57 in favour of the
- *  context/hook API, but it is the only non-hook entry point, and picking runs
- *  from an event handler where hooks are not available. */
-async function toReadableImage(uri: string, name: string, mime?: string): Promise<Attach | null> {
+/** Re-encode an image as a JPEG of at most IMAGE_EDGE on the long side - for
+ *  one the agent cannot read (HEIC/HEIF/AVIF from an iPhone) and for one too
+ *  big to be worth its bytes. w/h unknown (web paste) -> measured first. Uses
+ *  manipulateAsync: deprecated in SDK 57 in favour of the context/hook API, but
+ *  it is the only non-hook entry point, and picking runs from an event handler
+ *  where hooks are not available. */
+async function toSendableImage(uri: string, name: string, w?: number, h?: number): Promise<Attach | null> {
   try {
-    const r = await manipulateAsync(uri, [], { format: SaveFormat.PNG, base64: true });
+    if (!w || !h) ({ width: w, height: h } = await manipulateAsync(uri, []));
+    const resize = Math.max(w, h) <= IMAGE_EDGE ? []
+      : [{ resize: w >= h ? { width: IMAGE_EDGE } : { height: IMAGE_EDGE } }];
+    const r = await manipulateAsync(uri, resize, { format: SaveFormat.JPEG, compress: 0.8, base64: true });
     if (!r.base64) return null;
-    return { name: name.replace(/\.[^.]+$/, "") + ".png", data: bare(r.base64), mime: "image/png" };
+    return { name: name.replace(/\.[^.]+$/, "") + ".jpg", data: bare(r.base64), mime: "image/jpeg" };
   } catch {
     return null;   // unreadable image: drop it rather than send something the agent chokes on
   }
 }
 
+/** Does this image need toSendableImage? GIFs stay as they are (animation). */
+function needsReencode(mime: string, w?: number, h?: number): boolean {
+  const m = mime.toLowerCase();
+  if (m === "image/gif") return false;
+  return !AGENT_IMAGE_MIME.includes(m) || !w || !h || Math.max(w, h) > IMAGE_EDGE;
+}
+
 async function fromImageAsset(a: ImagePicker.ImagePickerAsset, i: number): Promise<Attach | null> {
   const mime = a.mimeType || "image/jpeg";
   const name = a.fileName || `bild_${Date.now()}_${i}.${extFor(mime)}`;
-  if (!AGENT_IMAGE_MIME.includes(mime.toLowerCase())) {
-    return toReadableImage(a.uri, name, mime);
-  }
+  if (needsReencode(mime, a.width, a.height)) return toSendableImage(a.uri, name, a.width, a.height);
   if (!a.base64) return null;
   return { name, data: bare(a.base64), mime };
 }
 
-/** Photo library. Multi-select; quality 0.8 keeps a phone photo well under the
- *  5 MB cap without visible loss. */
+/** Photo library. Multi-select; big photos are shrunk in fromImageAsset. */
 export async function pickImages(): Promise<Attach[]> {
   if (!isWeb) {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -134,25 +150,35 @@ export async function recoverPendingImages(): Promise<Attach[]> {
   }
 }
 
-/** Web only: turn pasted/dropped browser File objects into attachments. */
+/** Web only: turn pasted/dropped browser File objects into attachments.
+ *  Images go through the same shrink as picked photos. */
 export function filesToAttachments(files: File[]): Promise<Attach[]> {
-  return Promise.all(files.map((f) => new Promise<Attach | null>((resolve) => {
+  return Promise.all(files.map((f) => new Promise<string>((resolve) => {
     const r = new FileReader();
-    r.onload = () => {
-      const s = typeof r.result === "string" ? r.result : "";
-      resolve(s ? { name: f.name || "pasted", data: bare(s), mime: f.type || undefined } : null);
-    };
-    r.onerror = () => resolve(null);
+    r.onload = () => resolve(typeof r.result === "string" ? r.result : "");
+    r.onerror = () => resolve("");
     r.readAsDataURL(f);
+  }).then((s): Attach | null | Promise<Attach | null> => {
+    if (!s) return null;
+    const name = f.name || "pasted";
+    if (f.type.startsWith("image/") && needsReencode(f.type)) return toSendableImage(s, name);
+    return { name, data: bare(s), mime: f.type || undefined };
   }))).then((xs) => xs.filter((x): x is Attach => !!x));
 }
 
-/** Merge new picks into the pending list, enforcing the daemon's caps and
- *  reporting what was refused (silently dropping is what the daemon does and
- *  exactly what we must not do in the UI). */
+/** Merge new picks into the pending list, enforcing the caps (file count, and
+ *  bytes per MESSAGE - see MAX_BYTES) and reporting what was refused (silently
+ *  dropping is what the daemon does and exactly what we must not do in the UI). */
 export function mergeAttachments(cur: Attach[], add: Attach[]): { next: Attach[]; problem?: string } {
-  const big = add.filter(tooBig).map((a) => a.name);
-  const ok = add.filter((a) => !tooBig(a));
+  let used = cur.reduce((n, a) => n + b64Bytes(a.data), 0);
+  const big: string[] = [];
+  const ok: Attach[] = [];
+  for (const a of add) {
+    const n = b64Bytes(a.data);
+    if (used + n > MAX_BYTES) { big.push(a.name); continue; }
+    used += n;
+    ok.push(a);
+  }
   const room = Math.max(0, MAX_FILES - cur.length);
   const taken = ok.slice(0, room);
   const over = ok.length - taken.length;
