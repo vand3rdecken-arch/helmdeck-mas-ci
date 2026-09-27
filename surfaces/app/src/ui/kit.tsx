@@ -1,4 +1,5 @@
 import React from "react";
+import { router } from "expo-router";
 import { StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { useTheme } from "@/theme";
 
@@ -47,9 +48,13 @@ export function Empty({ text }: { text: string }) {
 // hard dependency cycle with expo-router in the pure-UI kit.
 export function ScreenHeader({ title, onBack }: { title: string; onBack: () => void }) {
   const t = useTheme();
+  // A screen opened with no history behind it (desktop reload, deep link)
+  // made router.back() a silent no-op - a back arrow into nothing. Fall back
+  // to the board instead of a dead end.
+  const back = () => (router.canGoBack() ? onBack() : router.replace("/"));
   return (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
-      <Text onPress={onBack} style={{ color: t.txtSecondary, fontSize: 24, paddingHorizontal: 4 }}>‹</Text>
+      <Text onPress={back} style={{ color: t.txtSecondary, fontSize: 24, paddingHorizontal: 4 }}>‹</Text>
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{title}</Text>
     </View>
   );

@@ -272,8 +272,12 @@ export function Onboard() {
     );
   }
 
+  // SCROLLS: with the memory-import card above the QR this step is taller than
+  // a normal window, and a centered plain View clipped both ends - including
+  // the "open the board" button, the screen's only exit (2026-09-27).
   return (
-    <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: t.canvas }}
+      contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 28 }}>
       <View style={{ width: "100%", maxWidth: 560, gap: 18 }}>
         <View style={{ gap: 6 }}>
           <Text onPress={diagTap.onPress} suppressHighlighting
@@ -414,7 +418,7 @@ export function Onboard() {
           <Text style={{ color: t.txtTertiary, fontSize: 12.5, textAlign: "center" }}>{tr("onboard.skip")}</Text>
         </Pressable>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -489,13 +493,21 @@ export function useShowOnboard(): { show: boolean; unresolved: boolean } {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const giveUp = setTimeout(() => { if (alive) setOwns((cur) => (cur === null ? false : cur)); }, MAX_UNRESOLVED_MS);
+    // ONE answer per launch, then stop asking. This used to poll for the whole
+    // life of the window: on an already-running app, a single tick where the
+    // setup plane's 1.5s /tracks probe missed the daemon (a restart, a CPU
+    // spike) read as `!s.daemon`, latched `owns` true, and the first-run screen
+    // took over a provisioned machine with no way back (2026-09-27: "can't
+    // scroll, don't see the board"). Once resolved - true is latched anyway,
+    // false means this launch is not a first run - there is nothing left to
+    // learn from polling; only "unknown" retries.
     const tick = async () => {
       const s = await setupApi.state();
       if (!alive) return;
       if (!s) { timer = setTimeout(tick, 2000); return; }
       // The instance itself isn't up, or is actively installing something -
       // definitely still onboarding, no need to ask the daemon anything.
-      if (!s.daemon || s.running) { setOwns(true); timer = setTimeout(tick, 2000); return; }
+      if (!s.daemon || s.running) { setOwns(true); return; }
       // The daemon answers: ask IT the real question. setup_needed alone can
       // decide "still onboarding" here - repoTemplates needs a token, which
       // does not exist yet while an owner account is still outstanding, and
@@ -504,7 +516,7 @@ export function useShowOnboard(): { show: boolean; unresolved: boolean } {
       try {
         const auth = await api.authState();
         if (!alive) return;
-        if (auth.setup_needed) { setOwns(true); timer = setTimeout(tick, 2000); return; }
+        if (auth.setup_needed) { setOwns(true); return; }
         const repos = await api.repoTemplates().catch(() => null);
         if (!alive) return;
         const repoOutstanding = !!repos && (!repos.repos.length || repos.repos.some((r) => !r.template));
@@ -514,6 +526,7 @@ export function useShowOnboard(): { show: boolean; unresolved: boolean } {
         // pairing QR - see the docstring above. Only the FIRST resolution
         // (from null) may land on false; once true, stay true until dismiss().
         setOwns((cur) => cur === true || repoOutstanding);
+        return;
       } catch {
         // daemon answered /setup/state but not the real API yet - retry, but
         // don't leave `owns` stuck at null forever on a persistent failure
