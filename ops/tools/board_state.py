@@ -86,6 +86,30 @@ def format_hit(t, reply_chars=900):
     return "\n".join(out)
 
 
+def _worker_tail(t, n=10):
+    """What the card's worker actually DID last - the same event-time feed the
+    app renders in the card thread (claude_sessions.read_transcript_store), not
+    a second reader. Without it a card that died read only as its status and
+    "stream ended with no result"; 2026-09-26 the cause (the worker's own
+    Stop-Process on a command-line match that hit its claude.exe) sat in this
+    feed as the last tool call, and Henry could not see it."""
+    try:
+        from spine.agent import claude_sessions
+        steps = claude_sessions.read_transcript_store(t, limit=200)
+    except Exception as e:                                       # noqa: BLE001
+        return "(feed unreadable: %s)" % e
+    rows = []
+    for s in steps:
+        kind = s.get("kind")
+        if kind == "tool":
+            state = s.get("status") or ("ok" if s.get("ok") else "")
+            rows.append("%s tool %s [%s]: %s" % (s.get("ts", ""), s.get("tool", ""), state,
+                                                 " ".join(str(s.get("text") or "").split())[:240]))
+        elif kind == "text" and s.get("role") == "assistant":
+            rows.append("%s said: %s" % (s.get("ts", ""), " ".join(str(s.get("text") or "").split())[:240]))
+    return "\n".join(rows[-n:])
+
+
 def format_card(t):
     """The whole card, nothing clipped except the description at 2k."""
     lines = ["id=%s" % t.get("id"), "task=%s" % (t.get("task") or "").strip(),
@@ -97,6 +121,9 @@ def format_card(t):
         lines.append("DESCRIPTION:\n" + str(t["description"])[:2000])
     if t.get("outcome"):
         lines.append("OUTCOME:\n" + str(t["outcome"]))
+    steps = _worker_tail(t)
+    if steps:
+        lines.append("WORKER'S LAST STEPS (oldest first):\n" + steps)
     if t.get("last_reply"):
         lines.append("LAST REPLY (full):\n" + str(t["last_reply"]))
     out = "\n".join(lines)

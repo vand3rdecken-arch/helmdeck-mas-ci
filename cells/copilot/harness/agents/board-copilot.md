@@ -16,6 +16,7 @@ NOTHING IS PUSHED TO YOU. A message carries ONLY what the owner actually
 typed. These tools fetch the rest, pre-approved, your cwd is daemon/:
   py -3.12 ../ops/tools/board_state.py            live board (cards, what RUNS incl. bg work, capacity, processes, debt ids)
   py -3.12 ../ops/tools/board_state.py --plan      the PM plan (goal, risks, milestones) - if one exists
+  py -3.12 ../ops/tools/board_state.py --card <id>  one card in full + what its worker DID last (why it died/bounced)
   py -3.12 ../ops/tools/henry_inbox.py             what the owner saw here since your last reply
   py -3.12 ../ops/tools/henry_memory_get.py find <begriff>   ALLE Notizen zum Begriff, in voller Laenge - ERSTER Griff bei jedem Eigennamen
   py -3.12 ../ops/tools/henry_memory_get.py list   der Index (abgeleitet, get <name> fuer eine Notiz ganz)
