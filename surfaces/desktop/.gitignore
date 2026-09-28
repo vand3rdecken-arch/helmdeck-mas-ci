@@ -2,3 +2,4 @@ node_modules/
 release/
 assets/icon.ico
 build/embedded.provisionprofile
+build/appx-identity.json

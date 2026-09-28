@@ -1,0 +1,73 @@
+# Microsoft Store (MSIX/AppX) target - a THIRD packaging config alongside the
+# direct-download build (electron-builder.yml) and the Mac App Store build
+# (electron-builder.mas.yml), same `extends` pattern and the same reason: this
+# build disagrees with the direct build on things that must not leak into it -
+# identityName/publisher (Partner Center assigns these once the app is
+# registered there, not chosen here - see DEPLOY.md 1g), auto-update (the
+# Store forbids an app replacing its own package, same as MAS - see the
+# isWindowsStore guard in main.js), and autostart (an MSIX StartupTask
+# extension, declared but DISABLED, instead of the NSIS build's HKCU Run key).
+#
+# `extends` pulls in files/extraResources/dmg/nsis/mac from the base config
+# unchanged; `win`/`appx` below OVERRIDE it for this build only. `win.target`
+# is an ARRAY - electron-builder CONCATENATES extended arrays rather than
+# replacing them (measured on the mas config's own `mac.target`, see
+# build-mas.sh) - so build_msix.ps1 selects the target on the CLI
+# (`--win appx`) rather than relying on this file alone to exclude nsis.
+extends: ./electron-builder.yml
+win:
+  target:
+    - target: appx
+      arch:
+        - x64
+  # redeclared explicitly (not inherited) for the same reason electron-
+  # builder.mas.yml redeclares `mac.icon` - electron-builder derives the four
+  # required appx tile sizes (StoreLogo/Square150x150Logo/Square44x44Logo +
+  # splash) from this one icon automatically.
+  icon: assets/icon.ico
+  artifactName: "HelmDeck-${version}-${arch}.${ext}"
+appx:
+  # PLACEHOLDERS. Partner Center assigns the real identityName
+  # (Package/Identity/Name) and publisher (must equal the code-signing
+  # certificate's Subject, byte for byte) once the app is registered there -
+  # see DEPLOY.md 1g. build_msix.ps1 overrides both via
+  # `-c.appx.identityName=...`/`-c.appx.publisher=...`, read from env vars or
+  # a gitignored build/appx-identity.json - the same override shape
+  # build-mas.sh already uses for `-c.extraMetadata.version`. An UNSIGNED
+  # local test build works fine with these placeholders regardless: verified
+  # in the installed electron-builder's own AppxTarget.js
+  # (computePublisherName) - with no signing certificate present it logs
+  # "Windows Store only build" and always writes publisher "CN=ms" into the
+  # manifest, ignoring whatever is configured here.
+  identityName: HelmDeck.Placeholder
+  publisher: CN=ms
+  publisherDisplayName: HelmDeck
+  displayName: HelmDeck
+  # Manifest Application/Id must be alpha-numeric + periods only (no dashes) -
+  # identityName may not satisfy that once Partner Center assigns the real
+  # one, so this is set explicitly rather than derived from it.
+  applicationId: HelmDeck
+  backgroundColor: "#0b0f14"
+  languages:
+    - en-US
+    - de-DE
+  # A StartupTask extension, DECLARED but Enabled="false" - Microsoft Store
+  # review + this repo's own MAS precedent (main.js's isMas guard, Apple
+  # Guideline 2.4.5(iii)) both expect opt-in via the user's own toggle click,
+  # never auto-registered at first launch. electron-builder's own
+  # `addAutoLaunchExtension` does NOT produce that: read directly out of the
+  # installed package (node_modules/app-builder-lib/out/targets/AppxTarget.js,
+  # getExtensions()), it hardcodes `Enabled="true"` - the opposite of what's
+  # wanted here - so this uses the `customExtensionsPath` escape hatch that
+  # same file offers instead, with our own Enabled="false" markup. Reuses the
+  # toggle already built for macOS (bf2252bd, native:login-item:set /
+  # "Beim Anmelden starten") rather than inventing a second consent
+  # mechanism.
+  customExtensionsPath: build/appx-extensions.xml
+# The Store forbids an app from downloading/replacing its own package the
+# same way MAS does, and WindowsApps is READ-ONLY regardless of what policy
+# said - a Store-installed app cannot write into its own package directory at
+# all. Both updaters are already no-ops in a Windows Store build via the
+# isWindowsStore guard in main.js (same shape as isMas); this drops the
+# update-feed metadata electron-builder would otherwise write.
+publish: null

@@ -1,0 +1,19 @@
+<!--
+  Injected verbatim into <Extensions> by electron-builder's `appx.customExtensionsPath`
+  (AppxTarget.js getExtensions() reads this file and concatenates it - no macro
+  substitution is applied to it, unlike the rest of appxmanifest.xml, so the
+  Executable path below is hand-written and must be kept in sync with
+  electron-builder.yml's `productName: HelmDeck` if that ever changes: the
+  built-in (unused here) auto-launch extension derives the identical path as
+  `app\${productFilename}.exe`).
+
+  Enabled="false" is the entire point of this file over electron-builder's own
+  `appx.addAutoLaunchExtension` (which hardcodes Enabled="true" - see
+  electron-builder.appx.yml's comment). The user opts in via the existing
+  "Beim Anmelden starten" toggle (main.js native:login-item:set); Windows then
+  flips this task's state through the StartupTask API, which
+  app.setLoginItemSettings drives on a packaged Windows Store app.
+-->
+<desktop:Extension Category="windows.startupTask" Executable="app\HelmDeck.exe" EntryPoint="Windows.FullTrustApplication">
+  <desktop:StartupTask TaskId="HelmDeckStartup" Enabled="false" DisplayName="HelmDeck" />
+</desktop:Extension>
