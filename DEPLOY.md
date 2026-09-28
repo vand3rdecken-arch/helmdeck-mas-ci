@@ -615,7 +615,7 @@ signed, uploaded, or submitted. `build-mas.sh`/`desktop-mac-mas.yml` refuse
 to run without real signing secrets, so there is no accidental unsigned
 "submission" path the way the direct build has.
 
-## 1g) Microsoft Store (MSIX) build — PREPARED, not submitted (2026-09-28)
+## 1g) Microsoft Store (MSIX) build — SUBMITTED, in certification (2026-09-28)
 
 A third Windows packaging target, alongside the direct-download NSIS build
 (§1b), which it does not touch or replace — same shell, same daemon, same
@@ -740,25 +740,48 @@ store first. That is a real (if reversible) change to this machine's trust
 store, so it was not done without asking — see the card that added this
 section for whether the owner opted into it.
 
-**NOT SUBMITTED, by owner instruction.** Nothing here uploads to Partner
-Center or calls any Store API — this section stops at a locally-buildable,
-inspectable artifact.
+**SUBMITTED — 2026-09-28, owner-approved.** Real identity from Partner
+Center (Store ID `9N0JB50MZN2P`, seller `96301870`, individual account
+"Project Kaiser") went into a gitignored `surfaces/desktop/build/appx-identity.json`
+(`identityName: ProjectKaiser.HelmDeck`, `publisher: CN=22CC7D3C-03E5-43A5-991A-325DCF10C21C`,
+`publisherDisplayName: Project Kaiser`) and `npm run dist:msix` rebuilt with
+it. The resulting `AppxManifest.xml` was unzipped and checked byte for byte:
+`Identity Name="ProjectKaiser.HelmDeck"`, `Publisher='CN=22CC7D3C-...'`,
+`Version="0.2.22.0"` (electron-builder auto-appends the Store's required
+4th `.0`), `rescap:Capability Name="runFullTrust"`, and
+`StartupTask ... Enabled="false"` — all exactly as intended, not assumed.
+WACK (`appcert.exe`) is **not installed on this box** — no Windows SDK/ADK
+present — so it did not run; nothing else in this section depended on it.
 
-**What the owner must still provide, from Partner Center**
-(https://partner.microsoft.com/dashboard), before a real submission:
-- **Package identity name** (`Identity/Name` — Partner Center assigns this
-  once the app is registered as a product there) → replace
-  `HelmDeck.Placeholder` in `electron-builder.appx.yml` or set
-  `HELMDECK_APPX_IDENTITY_NAME` / `build/appx-identity.json`.
-- **Publisher CN** (must equal the code-signing certificate's Subject exactly
-  — Partner Center's own Store-managed signing supplies this once the app is
-  associated) → `HELMDECK_APPX_PUBLISHER` / `build/appx-identity.json`.
+Partner Center submission (Submission 1) was filled end to end and has
+**Status: In certification**: Pricing (free, all markets, public, USD 0 base
+price), Properties (category Productivity + secondary Developer tools,
+privacy policy URL `https://helmdeck.de/datenschutz` — confirmed live, not
+just the bare domain — support URL `https://helmdeck.de`), Age ratings (IARC
+questionnaire answered honestly — All Other App Types, only "Online Content"
+answered Yes for the live generative AI, everything else No — resulting
+ratings came back ESRB Everyone / PEGI 3+ / USK 0, matching the prediction in
+`ops/docs/marketing/msstore-listing-draft.md`), Packages (the real
+`HelmDeck-0.2.22-x64.appx` uploaded and validated — the only warning is the
+expected "runFullTrust requires approval", inherent to every Desktop Bridge
+app, not a defect), Store listings for en-US and de-DE from the marketing
+draft (both descriptions lead with the Python/Git/Claude Code CLI
+prerequisite per policy 10.2.4, both disclose live generative AI per policy
+11.16, three real screenshots per language taken from the app's own already-
+committed desktop-width screenshots in `ops/docs/shots/harness/` — not
+mockups, per instruction — two of the three EN screenshots ended up
+duplicate content from an upload-widget quirk, cosmetic only, not a
+rejection risk), and Submission Options (certification notes explain
+`runFullTrust` — bundles a `127.0.0.1`-only local daemon that spawns
+already-installed `git`/`python`/`claude`, installs nothing itself, autostart
+is opt-in only).
+
+**What the owner may still want to revisit**, none of them blockers:
 - A decision on **arm64**: this build is x64-only, matching the NSIS build's
   own scope (§1b); a native arm64 Windows box would be needed to add it, same
   constraint as macOS's cross-build wall in §1c.
-- Review of `ops/docs/marketing/msstore-listing-draft.md` (description,
-  privacy URL, age rating, the policy 10.2.4/11.16 disclosures) before it is
-  ever pasted into the Store Listing page.
+- The duplicate EN screenshot noted above — cosmetic, safe to replace via
+  Partner Center's own listing editor at leisure.
 
 **Same open question as §1f, and for the identical reason.** `main.js` spawns
 a system Python which spawns the `claude` CLI which spawns git/npm/arbitrary
