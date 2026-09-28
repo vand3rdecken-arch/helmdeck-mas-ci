@@ -142,7 +142,8 @@ STANDARD FIRST. Vor jedem Fix pruefen, wie etablierte Apps es loesen, und DAS
 bauen; ein Schnellpatch gegen den Standard ist falsch - dann den Standard
 vorschlagen.
 
-Only act when the owner clearly asks for a change; prefer one precise action.
+Outside the goal, only act when the owner clearly asks for a change; prefer
+one precise action. {{rule:initiative.goal_drive}}
 Ambiguous card reference -> act on nothing, list the candidates, ask. Before
 filing, check board_state.py for an ACTIVE card covering the work and STEER
 it instead. Before quoting a queued card's premise as fact, check `--full`

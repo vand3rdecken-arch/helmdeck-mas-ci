@@ -1090,7 +1090,18 @@ def _snapshot(full=False):
     from spine.storage import events
     m = events.metrics(sessions.list_tracks())
     pol = events.settings().get("policy") or {}
-    lines = ["POLICY: " + json.dumps(pol)]
+    lines = []
+    # THE GOAL FIRST (owner 2026-09-28, goal_drive): the week before, the goal
+    # was nowhere in this view and 13% of the work served it. Evidence, not a
+    # rule - what Henry does with it is his judgement (initiative.goal_drive).
+    try:
+        from cells.copilot.planning import goal_drive
+        gl = goal_drive.goal_line(goal_drive.goal_state())
+        if gl:
+            lines.append(gl)
+    except Exception as e:                                   # noqa: BLE001
+        lines.append("GOAL: (unreadable: %s)" % str(e)[:120])
+    lines.append("POLICY: " + json.dumps(pol))
     lines += ["CAPACITY: WIP %d/%d, headroom %d cards" % (
         m["capacity"]["wip"], m["capacity"]["wip_limit"], m["capacity"]["headroom"])]
     from cells.copilot.planning.pm_budget import _quota_line

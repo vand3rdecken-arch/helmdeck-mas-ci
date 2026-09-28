@@ -1587,6 +1587,16 @@ def _tick():
     except Exception as e:                                   # noqa: BLE001
         print("PM push sweep error:", e)
 
+    # THE GOAL WAKE (owner 2026-09-28, goal_drive): Henry gets a turn FOR the
+    # goal - a goal card delivered, the goal stalled, the deadline near - not
+    # only for card health. Same reason as the sweep for sitting outside the
+    # delta gate: "nothing moves" has no delta.
+    try:
+        from cells.copilot.planning import goal_drive
+        goal_drive.wake(st)
+    except Exception as e:                                   # noqa: BLE001
+        print("PM goal wake error:", e)
+
     # COMMUNICATE ONLY ON DELTA (position = live cards, no plan any more).
     pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], None)
     _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)

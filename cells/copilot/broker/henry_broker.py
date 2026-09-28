@@ -251,6 +251,13 @@ def _snapshot():
     """One screenful of system truth - derived live at read time, never a
     stored flag (the no-monkey-patch law)."""
     lines = []
+    try:                               # the goal first - see goal_drive
+        from cells.copilot.planning import goal_drive
+        gl = goal_drive.goal_line(goal_drive.goal_state())
+        if gl:
+            lines += gl.split("\n")
+    except Exception as e:                                   # noqa: BLE001
+        lines.append("GOAL: (unreadable: %s)" % str(e)[:120])
     try:
         from spine.storage.trackstore import _load
         from spine.agent import drivers
@@ -489,11 +496,11 @@ def _decide(esc):
           "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
           "im Turn ist - NIE taskkill/schtasks selbst tippen). "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|ignore",\n'
+          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
           ' "kind": "bei ship: none|ota|native",\n'
-          ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
+          ' "text": "bei did: was du getan hast; bei direct_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "why": "ein satz begruendung"}')
     if not privileged:
         # This card was filed by a client-role account, not owner/operator -
@@ -531,14 +538,14 @@ def _decide(esc):
     kind = (d.get("kind") or "").strip()
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
-    if action == "did" and not privileged:
+    if action in ("did", "direct_task") and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
         # escalation does not get closed via "did" - stays open for a
         # privileged human/owner to see, same shape as the GxP refusal
         # below (_execute's did/move gate).
         escalations.record_note(esc["id"],
-            "Henry versuchte 'did' auf einer client-Karte ohne Haende - "
-            "abgelehnt, bleibt offen")
+            "Henry versuchte '%s' auf einer client-Karte ohne Haende - "
+            "abgelehnt, bleibt offen" % action)
         return False
     if not _execute(action, card, lane, text, esc, kind=kind, why=why):
         return False   # malformed verb - stays open for the next attempt
@@ -570,7 +577,7 @@ def _decide(esc):
     # print the same reply for the same event.
     _machine_done = action == "move" and lane == "done" and bool(
         (_find_track(card) or {}).get("machine"))
-    if action in ("did", "ship", "restart", "rerun_deploy", "steer") or (
+    if action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task") or (
             action == "move" and not _machine_done):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
@@ -802,6 +809,33 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
         return True
     if action == "notify_owner":
         _notify_owner("Henry (%s): %s" % (esc["kind"], text or esc.get("detail") or ""), t)
+        return True
+    if action == "direct_task" and text:
+        # START the next piece of work (owner 2026-09-28, goal_drive): the
+        # chat's direct_task verb, reachable from a judgement too - without it
+        # a goal-move turn could only do the work inline ("did") or talk about
+        # it. Same policy switch as the chat verb (policy.machine.enabled);
+        # _decide only lets a privileged judgement get here. A card filed
+        # from a goal-move is goal work BY RECORD (goal=true), which is what
+        # goal_drive counts - never inferred from the task text.
+        from cells.engineer.cards import sessions
+        from spine.storage import events
+        if not sessions.machine_policy().get("enabled", True):
+            escalations.record_note(esc["id"], "direct_task: policy.machine.enabled=false")
+            return False
+        repo = events.settings().get("default_repo") or ""
+        if not repo:
+            escalations.record_note(esc["id"], "direct_task: kein default_repo gesetzt")
+            return False
+        try:
+            nt = sessions.new_direct_task(repo, text, actor="henry", priority="high")
+        except Exception as e:
+            escalations.record_note(esc["id"], "direct_task: Start fehlgeschlagen: %s" % str(e)[:250])
+            return False
+        if esc.get("kind") == "goal-move":
+            from spine.storage.trackstore import _mutate
+            _mutate(nt["id"], lambda x: x.__setitem__("goal", True))
+        escalations.record_note(esc["id"], "direct_task: Karte %s gestartet" % nt["id"])
         return True
     return False
 

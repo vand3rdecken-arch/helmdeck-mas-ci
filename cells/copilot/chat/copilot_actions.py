@@ -45,7 +45,7 @@ ACTION_KINDS = frozenset((
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
-    "share_note", "delete_project", "attach_process", "set_goal",
+    "share_note", "delete_project", "attach_process", "set_goal", "mark_goal",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
     # "wrong object" unreachable there rather than merely discouraged. We add
@@ -301,6 +301,21 @@ def _tag(a, t):
     return t
 
 
+def _mark_goal(a, t):
+    """`"goal": true` on a filing action -> the card IS goal work, by record
+    (owner 2026-09-28, goal_drive). goal_drive's share and wake count exactly
+    these cards (plus the goal process' own steps); guessing goal-ness from
+    the task text would be a heuristic, this is the record, written once at
+    filing time by the one who decided it."""
+    if a.get("goal") is True and t and t.get("id"):
+        try:
+            from spine.storage.trackstore import _mutate
+            _mutate(t["id"], lambda x: x.__setitem__("goal", True))
+        except Exception:                                    # noqa: BLE001
+            pass
+    return t
+
+
 def _one_process(ref):
     """A process by id or request fragment, or the reason it could not be
     resolved (same resolution accept_steps uses)."""
@@ -508,6 +523,7 @@ def _run_action(a, actor, role="operator"):
         except RuntimeError as e:
             return _start_failed("machine_task", e)
         _tag(a, t)
+        _mark_goal(a, t)
         return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
                 "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
     if kind == "direct_task":
@@ -538,6 +554,7 @@ def _run_action(a, actor, role="operator"):
         except RuntimeError as e:
             return _start_failed("direct_task", e)
         _tag(a, t)
+        _mark_goal(a, t)
         _file_links(a, t, actor)
         t = sessions._find(sessions._load(), t["id"]) or t
         if t.get("isolated_from"):
@@ -566,6 +583,7 @@ def _run_action(a, actor, role="operator"):
                                actor=actor, priority=a.get("priority", "medium"),
                                due=a.get("due", ""))
         _tag(a, t)
+        _mark_goal(a, t)
         _file_links(a, t, actor)
         return "filed card %s (%s)" % (t["id"], t["lane"])
     if kind == "set_goal":
@@ -586,6 +604,20 @@ def _run_action(a, actor, role="operator"):
         processes.attach_card(p["id"], t["id"], actor=actor)
         _tag(a, t)
         return "Karte %s ist jetzt Schritt im Prozess %s" % (t["id"], p["id"])
+    if kind == "mark_goal":
+        # An EXISTING card becomes (or stops being) goal work - the same record
+        # _mark_goal writes at filing time (owner 2026-09-28, goal_drive: the
+        # Product Hunt step already on the board served the goal but counted
+        # nowhere, because it predates the flag).
+        t = _find_card(a.get("card", ""))
+        if t is None or isinstance(t, list):
+            return _card_hint("mark_goal", a.get("card", ""), t if isinstance(t, list) else [])
+        on = a.get("goal", True) is not False
+        from spine.storage.trackstore import _mutate
+        _mutate(t["id"], lambda x: x.__setitem__("goal", on))
+        _tag(a, t)
+        return ("Karte %s zaehlt jetzt als Ziel-Arbeit" if on
+                else "Karte %s zaehlt nicht mehr als Ziel-Arbeit") % t["id"]
     # An explicit-object alias is the SAME verb, normalised once here so every
     # branch below keeps one name to reason about - and so delete_card reaches
     # the card branch at all.

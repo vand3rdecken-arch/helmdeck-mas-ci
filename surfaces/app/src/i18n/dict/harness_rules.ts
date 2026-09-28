@@ -254,6 +254,11 @@ export const harnessRules: Dict = {
     de: "An: ist die Arbeit fertig und die Prüfung grün, nimmt er sie selbst ab. Aus: er legt sie dir zur Abnahme hin. Die Prüfung läuft in beiden Fällen.",
     en: "On: when work is done and the check is green he accepts it himself. Off: he hands it to you. The check runs either way.",
   },
+  "rule.init.goalDrive": { de: "Ziel selbst vorantreiben", en: "Drive the goal himself" },
+  "rule.init.goalDrive.desc": {
+    de: "An: er startet den nächsten Schritt zum Ziel ohne Anstoß und bereitet deine Schritte auf einen Tap vor. Posten, Geld und Unumkehrbares fragt er immer. Aus: auch beim Ziel wartet er auf dich.",
+    en: "On: he starts the next step toward the goal unasked and cuts your steps to one tap. Posting, money and anything irreversible always ask. Off: he waits for you on the goal too.",
+  },
   "rule.init.questions": { de: "Rückfragen bei unklarem Auftrag", en: "Questions when unclear" },
   "rule.init.questions.desc": {
     de: "Wie viele Fragen er bei einem großen oder vagen Auftrag stellt, bevor er anfängt. 0 heißt: er legt mit dem los, was dasteht.",
