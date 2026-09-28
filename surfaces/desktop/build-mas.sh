@@ -3,12 +3,14 @@
 # same daemon, same surfaces/app/dist, DIFFERENT packaging (electron-builder.mas.yml -
 # App Sandbox on, appId app.helmdeck, target mas -> .pkg, no publish feed).
 #
-#   bash surfaces/desktop/build-mas.sh                       # both arches
+#   bash surfaces/desktop/build-mas.sh                       # universal (arm64+x64 in one .pkg)
 #   bash surfaces/desktop/build-mas.sh --version 0.2.17      # stamp a release version
-#   bash surfaces/desktop/build-mas.sh --arch arm64          # Apple silicon only
+#   bash surfaces/desktop/build-mas.sh --arch arm64          # Apple silicon only (single-arch, dev use)
 #   bash surfaces/desktop/build-mas.sh --no-web               # reuse an existing surfaces/app/dist
 #
-# Produces in surfaces/desktop/release/: HelmDeck-<version>-{arm64,x64}.pkg
+# Produces in surfaces/desktop/release/: HelmDeck-<version>-universal.pkg
+# (a single-arch --arch build produces HelmDeck-<version>-{arm64,x64}.pkg instead -
+# dev/debug only, Apple's App Store validator rejects a single-arch mas upload)
 #
 # MUST RUN ON macOS, same reason as build-mac.sh: codesign/productbuild are
 # macOS-only tools.
@@ -41,7 +43,7 @@ cd "$ROOT/desktop" || exit 1
   exit 2
 }
 
-VERSION=""; ARCH="both"; NO_WEB=0
+VERSION=""; ARCH="universal"; NO_WEB=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="${2:-}"; shift ;;
@@ -75,10 +77,10 @@ fi
 # it has no Developer ID cert for). CLI target selection bypasses that merge.
 EB_ARGS=(--mac mas --config electron-builder.mas.yml --publish never)
 case "$ARCH" in
-  arm64) EB_ARGS+=(--arm64) ;;
-  x64)   EB_ARGS+=(--x64) ;;
-  both)  EB_ARGS+=(--arm64 --x64) ;;
-  *) echo "unknown --arch '$ARCH' (arm64|x64|both)"; exit 2 ;;
+  arm64)     EB_ARGS+=(--arm64) ;;
+  x64)       EB_ARGS+=(--x64) ;;
+  universal) EB_ARGS+=(--universal) ;;
+  *) echo "unknown --arch '$ARCH' (arm64|x64|universal)"; exit 2 ;;
 esac
 
 # electron-builder REWRITES package.json in place when extraMetadata is set -

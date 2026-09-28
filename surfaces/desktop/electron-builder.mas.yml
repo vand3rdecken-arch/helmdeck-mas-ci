@@ -15,12 +15,19 @@
 # unchanged; everything below OVERRIDES the base for this build only.
 extends: ./electron-builder.yml
 appId: app.helmdeck
+# ONE universal .pkg (both arm64 + x86_64 slices in one binary), not the
+# direct-download build's separate-per-arch shape: Apple's own validator
+# rejects a single-arch mas upload (error 90869, measured 2026-09-28 on the
+# 0.2.22 submission - "must include the x86_64 architecture... to support
+# arm64 only, your deployment target must be 12.0+") and recommends exactly
+# this ("Standard Architectures", one universal binary) - the download-size
+# tradeoff that justifies separate arm64/x64 artifacts for the direct build
+# does not apply here: the App Store thins the universal binary per device
+# on Apple's own infrastructure, same as every other Mac App Store app.
 mac:
   target:
     - target: mas
-      arch:
-        - arm64
-        - x64
+      arch: universal
   artifactName: "HelmDeck-${version}-${arch}.${ext}"
   category: public.app-category.developer-tools
   icon: assets/icon-mac-1024.png

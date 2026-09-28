@@ -85,18 +85,14 @@ jobs:
         run: find surfaces/desktop/release -maxdepth 4 2>&1 || echo "(no release dir)"
 
       # the mas target nests its .pkg under a per-arch appOutDir
-      # (release/mas/, release/mas-arm64/), unlike dmg/zip which electron-
-      # builder flattens into release/ - measured 2026-09-10, glob accordingly.
+      # (release/mas-universal/ for the universal build), unlike dmg/zip
+      # which electron-builder flattens into release/ - measured 2026-09-10,
+      # glob accordingly.
       - name: Verify the artifact set
         run: |
           cd surfaces/desktop/release
           find . -maxdepth 2 -name '*.pkg'
-          missing=0
-          for pat in "mas*/*-arm64.pkg" "mas*/*-x64.pkg"; do
-            # shellcheck disable=SC2086
-            if ! compgen -G "$pat" > /dev/null; then echo "!!! missing: $pat"; missing=1; fi
-          done
-          [ "$missing" = "0" ] || exit 1
+          compgen -G "mas*/*-universal.pkg" > /dev/null || { echo "!!! missing: mas*/*-universal.pkg"; exit 1; }
 
       # Two alternative transports, never both (same discipline as
       # desktop-mac.yml): a dispatch that attaches to a release has no use
@@ -121,4 +117,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ inputs.release_tag }}" --clobber \
-            surfaces/desktop/release/mas/*.pkg surfaces/desktop/release/mas-arm64/*.pkg
+            surfaces/desktop/release/mas-universal/*.pkg
