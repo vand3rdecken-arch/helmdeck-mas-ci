@@ -12,7 +12,7 @@ the app shows a create-owner setup screen (POST /auth/setup, only works while
 the user table is empty)."""
 import hashlib, hmac, json, os, secrets, threading, time
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 # The legacy on-disk path, read ONLY by the one-time db migration (ledger step
 # 13, spine/storage/db.py's _m13) that folds daemon/users.json into the `users`
 # table and archives the file as .imported - never written or read again after

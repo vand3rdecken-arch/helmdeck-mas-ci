@@ -19,6 +19,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))   # daemon/, always - this
 DAEMON_ROOT = _HERE
 REPO_ROOT = os.path.dirname(_HERE)
 
+# Writable-state root. Identical to DAEMON_ROOT (and therefore a complete
+# no-op) unless HELMDECK_DATA_ROOT is set in the environment - which only
+# happens when the Electron shell detects it is running as a Microsoft
+# Store (MSIX) package, whose install directory is READ-ONLY. Every module
+# that writes runtime state (db, settings, auth, recordings, caches, ...)
+# must derive its path from DATA_ROOT, never DAEMON_ROOT directly - modules
+# that only ever READ bundled/shipped content (agent briefs, harness
+# settings under REPO_ROOT) are unaffected and must NOT be changed.
+DATA_ROOT = os.environ.get("HELMDECK_DATA_ROOT") or DAEMON_ROOT
+
 
 # config-consolidation phase 7 (owner decree: daemon/ was ~20 loose json/
 # jsonl files with no grouping - config/state/content interleaved).

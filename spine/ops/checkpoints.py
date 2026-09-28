@@ -17,7 +17,7 @@ checkpoint since silently held NO config and diff()/restore() rolled back
 nothing but connectors. The config is read from its store now (the db rows)
 into <checkpoint>/config.json, and restore() writes those rows back."""
 import json, os, shutil, time
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 CPDIR = os.path.join(ROOT, "checkpoints")
 os.makedirs(CPDIR, exist_ok=True)
 KEEP = 60

@@ -5,7 +5,7 @@ attachments); the run's RECORD is the `runs` row (state-into-db phase F,
 (owner decision) - nothing here ever deletes a run."""
 import os, time
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 REC = os.path.join(ROOT, "recordings")
 
 

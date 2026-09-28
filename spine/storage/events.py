@@ -12,7 +12,7 @@ the human question is utilization/headroom, not dollars."""
 import threading
 import json, os, re, secrets, time
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 # events.jsonl is gone (state-into-db phase H): the `events` table is the
 # record, ops/tools/export_events.py renders a file on demand.
 SET = os.path.join(ROOT, "settings.json")

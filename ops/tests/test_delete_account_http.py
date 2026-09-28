@@ -26,6 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(HERE)))
 _SANDBOX = tempfile.mkdtemp(prefix="hd-delacct-")
 import daemon.paths
 daemon.paths.DAEMON_ROOT = _SANDBOX
+daemon.paths.DATA_ROOT = _SANDBOX        # MSIX data root - a separate constant now,
+                                          # not derived from DAEMON_ROOT at read time
 
 from spine.auth import auth                     # noqa: E402
 from spine.storage import db, events            # noqa: E402

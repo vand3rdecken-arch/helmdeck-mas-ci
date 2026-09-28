@@ -13,7 +13,7 @@ import threading as _threading
 import time
 from spine.storage import db as _db
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 
 

@@ -6,7 +6,7 @@ ACTIONS the daemon executes (file cards, move lanes, steer sessions, create
 processes, accept steps). Text in, board changes out."""
 import json, os, re, shutil, subprocess, threading, time, uuid
 
-from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
+from daemon.paths import DATA_ROOT as ROOT, REPO_ROOT as _REPO_ROOT
 # Session pointers and per-conversation model prefs are runtime_doc rows
 # (state-into-db phase D). The chat log itself moves in phase E.
 _SESS_KEY = "copilot_sessions"

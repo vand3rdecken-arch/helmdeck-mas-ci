@@ -22,6 +22,8 @@ sys.path.insert(0, DAEMON)
 SANDBOX = tempfile.mkdtemp(prefix="hd-hookidle-")
 import daemon.paths
 daemon.paths.DAEMON_ROOT = SANDBOX
+daemon.paths.DATA_ROOT = SANDBOX         # MSIX data root - a separate constant now,
+                                          # not derived from DAEMON_ROOT at read time
 from spine.storage import db
 # BOTH, not just DBPATH: _migrate() derives its legacy-file paths (settings.
 # json, events.jsonl, ...) from db.ROOT, not from DBPATH's dirname. Patching

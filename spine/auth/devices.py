@@ -19,7 +19,7 @@ import os
 import secrets
 import time
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 
 # (the devices file is gone - see _load; state-into-db phase G)
 

@@ -52,7 +52,7 @@ RESIDUAL RISK, STATED
 import json
 import os
 
-from daemon.paths import DAEMON_ROOT
+from daemon.paths import DATA_ROOT as DAEMON_ROOT
 
 LOCK = os.path.join(DAEMON_ROOT, "gxp.lock")
 

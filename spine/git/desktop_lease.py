@@ -54,7 +54,7 @@ def _path():
     p = os.environ.get("HELMDECK_DESKTOP_LEASE")
     if p:
         return p
-    from daemon.paths import DAEMON_ROOT
+    from daemon.paths import DATA_ROOT as DAEMON_ROOT
     return os.path.join(DAEMON_ROOT, "state", "desktop.lease")
 
 

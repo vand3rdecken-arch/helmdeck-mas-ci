@@ -33,6 +33,8 @@ sys.path.insert(0, os.path.join(ROOT, "ops", "tools"))
 _SANDBOX = tempfile.mkdtemp(prefix="hd-events-")
 import daemon.paths                      # noqa: E402
 daemon.paths.DAEMON_ROOT = _SANDBOX
+daemon.paths.DATA_ROOT = _SANDBOX        # MSIX data root - a separate constant now,
+                                          # not derived from DAEMON_ROOT at read time
 from spine.storage import db, events     # noqa: E402
 assert db.DBPATH.startswith(_SANDBOX), "REFUSING TO RUN: db points at %s" % db.DBPATH
 

@@ -29,7 +29,7 @@ import threading
 import time
 import uuid
 
-from daemon.paths import DAEMON_ROOT
+from daemon.paths import DATA_ROOT as DAEMON_ROOT
 
 _lock = threading.Lock()
 _tasks = {}          # id -> {title, status, since, updated, detail, result, pid, user, skey, card}

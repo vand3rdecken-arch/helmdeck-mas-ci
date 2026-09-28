@@ -4,7 +4,7 @@ One ffmpeg process, two outputs: screen.mp4 (the recording) and live.jpg (newest
 overwritten ~1/s - the Herald-cast-style glance feed the APK/glasses viewer reads)."""
 import json, os, signal, subprocess, threading
 
-from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DATA_ROOT as _DAEMON_ROOT
 
 # imageio_ffmpeg is a pip package, and requirements.txt states the law for
 # those in as many words (edge-tts: "OPTIONAL - a box that never installs

@@ -678,13 +678,15 @@ def serve(port=8140, takeover=False):
     _hydrate_registry_env()      # + JAVA_HOME/ANDROID_HOME/user-PATH from the registry (build env)
     _take_singleton_lock(port, takeover=takeover)   # THE gate: mutex, then (takeover only) evict
     from spine.storage import db
-    from daemon.paths import DAEMON_ROOT
+    from daemon.paths import DATA_ROOT
     # A sandbox boot (a harness that repointed db.DBPATH, the same signal as
-    # db._migrate's guard) does not own the pid/port tables under DAEMON_ROOT/
+    # db._migrate's guard) does not own the pid/port tables under DATA_ROOT/
     # state: they belong to the LIVE daemon, and the reapers below kill every
     # process listed there. Measured 2026-09-25: e2e_lane_http killed a card's
-    # own claude and Henry's chat port this way.
-    owns_root = os.path.dirname(os.path.abspath(db.DBPATH)) == os.path.abspath(DAEMON_ROOT)
+    # own claude and Henry's chat port this way. DATA_ROOT (not DAEMON_ROOT) so
+    # this still recognizes "the live daemon" on an MSIX install, where the
+    # pid/port tables live under HELMDECK_DATA_ROOT, not the read-only install dir.
+    owns_root = os.path.dirname(os.path.abspath(db.DBPATH)) == os.path.abspath(DATA_ROOT)
     # role="daemon": loading the store AS THE DAEMON structurally devalues any
     # persisted 'running'/'gating' (db._devalue_persisted_running - the old
     # serve()-side sweep_zombies call, now part of the load path itself).

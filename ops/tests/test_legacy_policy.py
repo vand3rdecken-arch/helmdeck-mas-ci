@@ -34,6 +34,8 @@ sys.path.insert(0, ROOT)
 _SANDBOX = tempfile.mkdtemp(prefix="hd-legacypol-")
 import daemon.paths
 daemon.paths.DAEMON_ROOT = _SANDBOX
+daemon.paths.DATA_ROOT = _SANDBOX        # MSIX data root - a separate constant now,
+                                          # not derived from DAEMON_ROOT at read time
 
 from spine.registry import behavior                           # noqa: E402
 from spine.storage import db, events, legacypolicy, projectconfig   # noqa: E402

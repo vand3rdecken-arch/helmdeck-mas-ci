@@ -33,7 +33,7 @@ import secrets
 import threading
 import time
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DATA_ROOT as ROOT
 
 # (the invites file is gone - see _load; state-into-db phase G)
 

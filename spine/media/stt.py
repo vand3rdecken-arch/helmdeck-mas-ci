@@ -60,7 +60,7 @@ def _pick(d, sub):
 def _model():
     global _MODEL, _MODEL_NAME
     from spine.storage import events
-    from daemon.paths import DAEMON_ROOT
+    from daemon.paths import DATA_ROOT as DAEMON_ROOT
     name = (events.settings().get("voice_stt_model") or "parakeet").strip() or "parakeet"
     with _LOCK:
         if _MODEL is not None and _MODEL_NAME == name:

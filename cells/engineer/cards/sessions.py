@@ -11,7 +11,7 @@ control. Escalate a track to bypassPermissions only deliberately (owner decision
 import json, os, re, shutil, subprocess, time
 from spine.ops.runs import REC
 
-from daemon.paths import DAEMON_ROOT as ROOT, REPO_ROOT
+from daemon.paths import DATA_ROOT as ROOT, REPO_ROOT
 STORE = os.path.join(ROOT, "tracks.json")
 DEFAULT_PERM = os.environ.get("HELMDECK_PERM", "auto")   # 2026-09-12: Claude auto mode - "nur fragen wenn notwendig"
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring

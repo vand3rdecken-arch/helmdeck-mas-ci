@@ -9,7 +9,7 @@ import os
 import socket
 import subprocess
 
-from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DATA_ROOT as _DAEMON_ROOT
 
 
 def _tls_config():

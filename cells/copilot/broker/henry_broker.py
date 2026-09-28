@@ -28,7 +28,7 @@ import threading
 import time
 import traceback
 
-from daemon.paths import DAEMON_ROOT as ROOT
+from daemon.paths import DAEMON_ROOT as ROOT, DATA_ROOT as _DATA_ROOT
 from spine.registry import escalations
 from spine.git.locks import _direct_lock_for
 
@@ -762,7 +762,7 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
             repo = events.settings().get("default_repo") or ""
             if not repo:
                 return False
-            t = {"id": "-", "repo": repo, "run_dir": os.path.join(ROOT, "recordings", "_henry"),
+            t = {"id": "-", "repo": repo, "run_dir": os.path.join(_DATA_ROOT, "recordings", "_henry"),
                  "worktree": repo}
             os.makedirs(t["run_dir"], exist_ok=True)
         # Fail LOUD, not quiet (found live 2026-08-27): _repo_hook silently

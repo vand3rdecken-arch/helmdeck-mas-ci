@@ -26,7 +26,7 @@ import json, urllib.request
 
 import base64, json as _json, os, threading, time as _time
 
-from daemon.paths import DAEMON_ROOT as _DAEMON_ROOT
+from daemon.paths import DATA_ROOT as _DAEMON_ROOT
 _SA = os.path.join(_DAEMON_ROOT, "fcm_service_account.json")
 _tok = {"val": None, "exp": 0}
 _tok_lock = threading.Lock()

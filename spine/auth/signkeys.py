@@ -49,7 +49,7 @@ import shutil
 import subprocess
 import time
 
-from daemon.paths import DAEMON_ROOT
+from daemon.paths import DATA_ROOT as DAEMON_ROOT
 
 KEYS_DIR = os.path.join(DAEMON_ROOT, "signkeys")
 
