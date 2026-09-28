@@ -5509,6 +5509,50 @@ DEBT = [
         "since": "2026-09-21",
         "order": 78,
     },
+    {
+        "id": "goal-deadline-from-text",
+        "title": "The goal's deadline is regex-read from the goal prose",
+        "status": "open",
+        "what": "pm_push.goal_deadline takes the FIRST YYYY-MM-DD in the goal "
+                "sentence as the deadline. Since 2026-09-28 goal_drive's countdown, "
+                "its deadline wake (T-3) and the goal-setting section of Henry's "
+                "brief lean on it ('the date in the text is what goal_drive counts "
+                "down from') - a heuristic reading of prose, not a recorded field.",
+        "why_it_bites": "A goal without a date gets no deadline wake at all; a goal "
+                        "that mentions two dates ('seit 2026-09-19, bis 2026-11-15') "
+                        "counts down from the WRONG one; a German date (15.11.) is "
+                        "not seen.",
+        "trigger": "a goal whose countdown in the GOAL line is missing or wrong",
+        "fix": "set_goal gets a structured `due` (YYYY-MM-DD) stored beside the goal "
+               "text (workspace pm config / project row); goal_deadline reads that "
+               "field and the regex is deleted.",
+        "since": "2026-09-28",
+        "order": 79,
+    },
+    {
+        "id": "spend-cumulative-session-cost",
+        "title": "Henry's spend rows record the CLI's cumulative session cost per turn",
+        "status": "open",
+        "what": "econ.record_spend(source, models, usage, total_cost_usd) is fed the "
+                "result event's total_cost_usd for chat/judge/compact/memory_save. "
+                "On a resumed or persistent session the CLI reports the SESSION's "
+                "running total (restored on --resume), not this turn's cost: "
+                "measured 2026-09-28, every chat/judge row read $45-50 and climbed "
+                "turn by turn (45.18, 45.69, 47.04 ... 50.23). Token counts are "
+                "per turn and correct.",
+        "why_it_bites": "events.plan_calibration divides by the summed cost "
+                        "(cost_per_pct), so every plan-share reading and the burn/"
+                        "quota watchdogs built on it are inflated by roughly 100x for "
+                        "Henry's own turns - the budget evidence Henry plans with is "
+                        "wrong.",
+        "trigger": "any cost or % of plan figure that includes kind 'spend' rows",
+        "fix": "Record the per-turn DELTA of total_cost_usd per session (one owner "
+               "keeps the last seen total per session id), or price the turn from its "
+               "own usage via price_turn(models, usage, None); add a test that two "
+               "consecutive resumed turns record two turn-sized costs.",
+        "since": "2026-09-28",
+        "order": 80,
+    },
 ]
 
 def list_debt():
