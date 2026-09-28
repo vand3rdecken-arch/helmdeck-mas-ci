@@ -615,6 +615,161 @@ signed, uploaded, or submitted. `build-mas.sh`/`desktop-mac-mas.yml` refuse
 to run without real signing secrets, so there is no accidental unsigned
 "submission" path the way the direct build has.
 
+## 1g) Microsoft Store (MSIX) build — PREPARED, not submitted (2026-09-28)
+
+A third Windows packaging target, alongside the direct-download NSIS build
+(§1b), which it does not touch or replace — same shell, same daemon, same
+`surfaces/app/dist`, different config (`surfaces/desktop/electron-builder.appx.yml`,
+`extends:` the base config) and a dedicated build script
+(`surfaces/desktop/build_msix.ps1` / `npm run dist:msix`), same `extends` shape
+as the Mac App Store build in §1f:
+
+| | direct download (§1b) | Microsoft Store |
+|---|---|---|
+| config | `electron-builder.yml` | `electron-builder.appx.yml` |
+| target | `nsis` | `appx` (electron-builder's Store target) |
+| identity | `appId work.21stgen.helmdeck` | `identityName`/`publisher` — Partner Center assigns both |
+| writable state | beside the install | `%LOCALAPPDATA%\HelmDeck\daemon-data` (WindowsApps is read-only) |
+| updates | relay OTA + electron-updater | **none** — the Store handles all updates |
+| autostart | HKCU Run key, auto-enabled | MSIX StartupTask extension, **disabled by default** |
+| output | `HelmDeck-Setup-<v>-x64.exe` | `HelmDeck-<v>-x64.appx` |
+| build script | `build-win.ps1` | `build_msix.ps1` |
+
+Detected via `process.windowsStore` (a real, documented Electron property —
+true only inside an MSIX/AppX package, the exact Windows twin of `process.mas`
+in §1f) as `isWindowsStore` in `main.js`, gating the same things `isMas`
+already gates for macOS **plus one Windows-specific problem macOS's sandbox
+has no equivalent for**:
+
+**1) Writable state moves out of the read-only package.** WindowsApps installs
+a Store app into a directory the user's own account cannot write to — unlike
+NSIS's Program Files, which it owns. The daemon resolves every writable path
+(`helmdeck.db`, `settings.json`/`relay_feed.json`, `recordings/`, this shell's
+own `daemon.out.log`) relative to `daemon.paths.DAEMON_ROOT`, which **is** the
+install directory — so every one of those writes would throw
+`PermissionError` on first run. Fixed at the one place path roots are allowed
+to be hardcoded (`daemon/paths.py`'s own docstring: "every other module
+imports REPO_ROOT/DAEMON_ROOT from here"): a new `DATA_ROOT` constant,
+identical to `DAEMON_ROOT` (and therefore a complete no-op) unless
+`HELMDECK_DATA_ROOT` is set in the environment — which only happens when
+`main.js` detects `isWindowsStore` and points it at
+`app.getPath("userData")\daemon-data`, a folder Electron guarantees is
+writable regardless of packaging. `DAEMON_ROOT`/`REPO_ROOT` themselves are
+**never** touched, so reads of bundled package content (agent briefs,
+`cells/*/harness/settings/*.json`) are unaffected — only genuinely
+runtime-generated state moved. NSIS/dev behavior is byte-for-byte unchanged
+(the env var is never set there). `ops/tests/test_msix_data_root.py` pins
+this: it fails against the pre-fix code (every path still resolves under the
+real `daemon/` dir with the env var set) and passes with the fix.
+
+**2) Both updaters are disabled**, same shape and same two reasons as MAS
+(§1f): Store policy forbids an app replacing its own package, and it's
+impossible anyway — WindowsApps is read-only. `updater.js` (relay OTA) is
+never started and `native-updater.js`'s `isPackaged` flag is forced false when
+`isWindowsStore`; `publish: null` in the appx config drops the update-feed
+metadata electron-builder would otherwise write.
+
+**3) Autostart is opt-in, not automatic.** The NSIS build's block that
+auto-registers the HKCU Run key at first launch is skipped for
+`isWindowsStore`, same as it already is for `isMas`. The appx manifest
+declares a `windows.startupTask` extension via
+`surfaces/desktop/build/appx-extensions.xml` (electron-builder's own
+`appx.addAutoLaunchExtension` hardcodes `Enabled="true"` — verified in the
+installed `AppxTarget.js`, the opposite of what's wanted here — so this uses
+its `customExtensionsPath` escape hatch instead) with **`Enabled="false"`**;
+the user opts in through the same "Beim Anmelden starten" toggle added for
+macOS (`bf2252bd`, `native:login-item:set`) — no second consent mechanism was
+invented. `surfaces/desktop/tray.py` (the standalone PyInstaller supervisor,
+`build_exe.md`) was never part of the Electron shell's own
+`extraResources` allowlist in the first place, so there was nothing to
+exclude from the Store package for it.
+
+**4) The setup wizard no longer runs global installs.** Store policy 10.2.4
+forbids an app downloading/installing additional executable code except
+through the Store itself — `setup.js`'s `npm install -g`, its embeddable-
+Python download, and its `winget install` fallback all look exactly like that
+to a reviewer. `startSetupServer` now takes a `windowsStore` flag from
+`main.js`; when set, `provisionWindowsStore()` replaces the normal install
+flow with **detection only** — probes Python/git/Claude Code/Node.js
+(`findGit` is new, mirroring `findNpm`) and reports a plain-language
+instruction for whichever is missing, in German like the rest of the setup
+log. Once everything needed is already installed, it still starts the
+already-present daemon — running installed software is not "installing"
+anything.
+
+**5) Packaging.** `identityName`/`publisher` are placeholders in the committed
+config (Partner Center assigns the real values once the app is registered
+there — see the owner-input table below); `build_msix.ps1` overrides both via
+`-c.appx.identityName=…`/`-c.appx.publisher=…`, read from env vars or a
+gitignored `surfaces/desktop/build/appx-identity.json`, the same override
+shape `build-mas.sh` already uses for `-c.extraMetadata.version`. Capabilities:
+`runFullTrust` is hardcoded into electron-builder's own appx manifest template
+(`node_modules/app-builder-lib/templates/appx/appxmanifest.xml` — not a config
+field at all) and is mandatory for any Electron app; `internetClient` was
+**deliberately not added** — that capability exists to lift the AppContainer
+loopback/network restriction on a *sandboxed* UWP app, and `runFullTrust`
+(the Desktop Bridge model this app uses, same as every other Electron-on-Store
+app) already has unrestricted network access with no capability declaration
+needed. Building the target needs **no separate Windows SDK install**:
+electron-builder's own `winCodeSign` tool cache (already used for NSIS
+signing, already present on this box) bundles `makeappx.exe` — verified by
+reading `AppxTarget.js`'s `getSignVendorPath()` and finding
+`windows-10/x64/makeappx.exe` inside the cached bundle directly, not assumed
+from docs.
+
+**Built locally, unsigned, 2026-09-28** — `npm run dist:msix` (from
+`surfaces/desktop/`) — produced
+`surfaces/desktop/release/HelmDeck-0.2.22-x64.appx`, **118.2 MB**, build log
+confirms `AppX is not signed  reason=Windows Store only build` (the exact
+fallback `electron-builder.appx.yml`'s own comment predicted, not guessed).
+Unsigned is not a stop-gap here the way it would be for §1c/§1f: Partner
+Center signs every package on ingestion, so a local build's only job is
+proving the manifest/identity/capabilities are correct, which an unsigned
+`.appx` already does.
+
+**NOT installed on this box — verified why, not assumed.** This machine has
+no Windows developer license (`Get-WindowsDeveloperLicense` → "There is no
+developer license on this computer"), and `Add-AppxPackage` on the built
+`.appx` fails with `0x800B0100 "No signature was present in the subject" —
+The app package must be digitally signed for signature validation.` This is
+**not** just a Developer Mode switch away: Developer Mode enables *loose*
+(unpackaged) app registration, but a packaged `.appx`/`.msix` file itself
+requires a valid signature chain regardless — even a local test install needs
+a self-signed certificate generated and trusted in this machine's certificate
+store first. That is a real (if reversible) change to this machine's trust
+store, so it was not done without asking — see the card that added this
+section for whether the owner opted into it.
+
+**NOT SUBMITTED, by owner instruction.** Nothing here uploads to Partner
+Center or calls any Store API — this section stops at a locally-buildable,
+inspectable artifact.
+
+**What the owner must still provide, from Partner Center**
+(https://partner.microsoft.com/dashboard), before a real submission:
+- **Package identity name** (`Identity/Name` — Partner Center assigns this
+  once the app is registered as a product there) → replace
+  `HelmDeck.Placeholder` in `electron-builder.appx.yml` or set
+  `HELMDECK_APPX_IDENTITY_NAME` / `build/appx-identity.json`.
+- **Publisher CN** (must equal the code-signing certificate's Subject exactly
+  — Partner Center's own Store-managed signing supplies this once the app is
+  associated) → `HELMDECK_APPX_PUBLISHER` / `build/appx-identity.json`.
+- A decision on **arm64**: this build is x64-only, matching the NSIS build's
+  own scope (§1b); a native arm64 Windows box would be needed to add it, same
+  constraint as macOS's cross-build wall in §1c.
+- Review of `ops/docs/marketing/msstore-listing-draft.md` (description,
+  privacy URL, age rating, the policy 10.2.4/11.16 disclosures) before it is
+  ever pasted into the Store Listing page.
+
+**Same open question as §1f, and for the identical reason.** `main.js` spawns
+a system Python which spawns the `claude` CLI which spawns git/npm/arbitrary
+shells across whatever repo path the owner names. `runFullTrust` (Desktop
+Bridge) does **not** sandbox those child processes the way MAS's App Sandbox
+would — a full-trust MSIX app has the same process/filesystem access as a
+plain Win32 install once it's running — so this concern is **narrower** here
+than the MAS one in §1f, not absent: it is worth re-confirming with a real
+install (`Add-AppxPackage`) before a submission candidate, but is not expected
+to be the same order of blocker `mac-app-store-sandbox-scope` is for macOS.
+
 ## 2) Native APK build
 
 Prereqs (once per machine):
