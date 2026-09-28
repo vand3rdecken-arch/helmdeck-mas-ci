@@ -656,6 +656,7 @@ export const screens: Dict = {
   "updates.desktop.bundleCurrent": { de: "Aktuell - Relay-Kanal liefert dieselbe Version.", en: "Up to date - the relay channel serves this version." },
   "updates.desktop.unavailable": { de: "Auto-Update in diesem Build nicht aktiv (unsignierter oder Store-Build).", en: "Auto-update inactive in this build (unsigned or store build)." },
   "updates.desktop.unknown": { de: "Status wird geladen…", en: "Loading status…" },
+  "updates.desktop.loginItem": { de: "Beim Anmelden starten", en: "Launch at login" },
 
   // ---- connection health --------------------------------------------------
   "health.reconnecting": {

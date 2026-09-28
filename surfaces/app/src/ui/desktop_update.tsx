@@ -26,6 +26,7 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
+import { Toggle } from "@/ui/settings_sections";
 
 type UpdateStatus = { state: string; version: string | null; message: string | null };
 
@@ -39,6 +40,10 @@ type HelmdeckNative = {
   // added 2026-09-22 (main.js "native:app-info"); optional because a JS
   // bundle can arrive by OTA before the shell that exposes it is installed
   getAppInfo?: () => Promise<{ shellVersion?: string | null }>;
+  // added 2026-09-28 (main.js "native:login-item:*", MAS rejection fix);
+  // same optional-bridge-method guard as getAppInfo.
+  getLoginItem?: () => Promise<{ openAtLogin: boolean; status: string | null; isMas: boolean }>;
+  setLoginItem?: (enabled: boolean) => Promise<{ openAtLogin: boolean; status: string | null; isMas: boolean }>;
 };
 
 function nativeBridge(): HelmdeckNative | null {
@@ -154,6 +159,24 @@ export function DesktopUpdatesPanel() {
   }, []);
   const bundleVersion = Constants.expoConfig?.version ?? "?";
 
+  // "Beim Anmelden starten" - never pre-checked by the shell itself on a MAS
+  // build (Apple Guideline 2.4.5(iii)); this toggle is the only place that
+  // ever asks main.js to turn it on.
+  const [loginItem, setLoginItemState] = useState<{ openAtLogin: boolean } | null>(null);
+  useEffect(() => {
+    const b = nativeBridge();
+    if (!b?.getLoginItem) return;
+    let alive = true;
+    b.getLoginItem().then((s) => { if (alive) setLoginItemState(s); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const toggleLoginItem = (v: boolean) => {
+    const b = nativeBridge();
+    if (!b?.setLoginItem) return;
+    setLoginItemState({ openAtLogin: v });
+    b.setLoginItem(v).then((s) => setLoginItemState(s)).catch(() => {});
+  };
+
   const line = (s: UpdateStatus | null, kind: "native" | "js") => {
     if (!s) return tr("updates.desktop.unknown");
     const v = s.version ?? "?";
@@ -189,6 +212,11 @@ export function DesktopUpdatesPanel() {
       <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{tr("updates.desktop.bundleLine")}</Text>
       <Text style={{ color: js?.state === "error" ? t.danger : t.txtSecondary, fontSize: 12 }}>{line(js, "js")}</Text>
       {js?.state === "staged" ? action(tr("updates.native.installNow"), () => nativeBridge()?.applyJsUpdateNow()) : null}
+      {loginItem ? (
+        <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+          <Toggle label={tr("updates.desktop.loginItem")} value={loginItem.openAtLogin} onChange={toggleLoginItem} />
+        </View>
+      ) : null}
     </Panel>
   );
 }

@@ -175,5 +175,57 @@ check("## Downloads" in readme,
 check(os.path.exists(os.path.join(ROOT, "ops", "docs", "repo-map.md")),
       "the internal repo map lives at ops/docs/repo-map.md")
 
+
+# -- 7. login item never self-enables on a MAS build --------------------------
+# Guideline 2.4.5(iii) "app sets itself to automatically launch without user
+# consent" - a real rejection (submission 1e62fefb, review 2026-09-27) of
+# main.js's old unconditional `app.setLoginItemSettings({openAtLogin:true})`
+# on every packaged start. Regex, not execution (main.js requires "electron"
+# and cannot be imported in plain Node/Python) - these pin the two facts that
+# must hold in the source: the startup auto-register is gated on !isMas, and
+# an isMas-blind `if (app.isPackaged) { ... setLoginItemSettings` block (the
+# exact old shape) is gone.
+main_js = read(DESK, "main.js")
+# Scoped to setLoginItemSettings itself, not just "somewhere in the file" -
+# an unrelated `if (app.isPackaged && !isMas)` already guards the updater
+# init a few lines above (line ~118) and would otherwise false-pass this
+# check even against the pre-fix code.
+good_startup = re.search(
+    r'if\s*\(app\.isPackaged\s*&&\s*!isMas\)\s*\{[^}]{0,2500}setLoginItemSettings',
+    main_js, re.S)
+check(good_startup is not None,
+      "the startup login-item auto-register is gated on !isMas, not just "
+      "isPackaged - a MAS build must never register itself")
+bad_startup = re.search(r'if\s*\(app\.isPackaged\)\s*\{[^}]{0,400}setLoginItemSettings',
+                         main_js, re.S)
+check(bad_startup is None,
+      "no isMas-blind isPackaged-only block calls setLoginItemSettings "
+      "directly (the exact shape Apple rejected)")
+check('ipcMain.handle("native:login-item:get"' in main_js
+      and 'ipcMain.handle("native:login-item:set"' in main_js,
+      "get/set IPC handlers exist so the Settings toggle is the only place "
+      "that can turn a MAS build's login item on")
+
+# -- 8. an application menu with a way to reopen the window --------------------
+# Guideline 4 "no way to reopen the main window after closing it" (same
+# rejection): no Menu.setApplicationMenu anywhere, win.on("closed") just
+# nulled `win`, and the only way back in was the Dock icon.
+check("Menu.setApplicationMenu" in main_js,
+      "main.js installs a real application menu (was: Electron's bare default)")
+for role in ('"appMenu"', '"editMenu"', '"viewMenu"', '"windowMenu"'):
+    check(role in main_js, "the menu template carries the %s role" % role)
+menu_fn = re.search(r'function applyMacMenu\(\)\s*\{.*?\n\}', main_js, re.S)
+check(menu_fn is not None, "applyMacMenu() is defined")
+if menu_fn:
+    body = menu_fn.group(0)
+    check("Show HelmDeck" in body,
+          "the Window menu carries an explicit reopen item")
+    check("createWindow()" in body,
+          "the reopen item can recreate the window if fully closed, not just "
+          "focus one that no longer exists")
+check(re.search(r'if\s*\(process\.platform === "darwin"\)\s*applyMacMenu\(\)', main_js) is not None,
+      "the custom menu is installed on macOS only - Windows/Linux keep "
+      "Electron's own default menu, unchanged")
+
 print("FAILURES: %d" % len(_fails))
 raise SystemExit(1 if _fails else 0)

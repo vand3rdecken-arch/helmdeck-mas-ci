@@ -7,7 +7,7 @@
 // Requirements on the user's machine (same as HelmDeck itself):
 //   - Python 3.12 (the `py -3.12` launcher on Windows, or `python3`)
 //   - the `claude` CLI (Claude Code) - the agent runtime cards execute in
-const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, shell, ipcMain, Menu } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -151,6 +151,52 @@ ipcMain.on("native-update:install", () => nativeUpdater.quitAndInstall());
 ipcMain.handle("native:app-info", () => ({
   shellVersion: app.getVersion(), platform: process.platform, packaged: app.isPackaged,
 }));
+
+// Login item ("Beim Anmelden starten"). Both get and set are thin wrappers
+// around Electron's own app.getLoginItemSettings/setLoginItemSettings, which
+// on macOS 13+ (mas or Developer-ID) go through SMAppService.mainApp under
+// the hood - the modern API that lets the app register ITSELF as a login
+// item with no separate helper bundle. `status` ('not-registered' | 'enabled'
+// | 'requires-approval' | 'not-found') is macOS-only; Windows/Linux only ever
+// report openAtLogin.
+//
+// MAS builds must NEVER call the `set` side of this except in direct
+// response to the user's own toggle click (Apple Guideline 2.4.5(iii): "app
+// sets itself to automatically launch without user consent") - see the
+// isMas branch in whenReady() below, which deliberately does nothing here.
+function loginItemPrefPath() {
+  return path.join(app.getPath("userData"), "login-item-pref.json");
+}
+function readLoginItemPref() {
+  try { return JSON.parse(require("fs").readFileSync(loginItemPrefPath(), "utf8")); }
+  catch { return null; }
+}
+// Written ONLY at the moment the user flips the Settings toggle (event time,
+// one owner) - never inferred or re-derived. It exists solely to distinguish
+// "never asked" from "user explicitly turned it off" on non-MAS platforms,
+// a distinction the OS's own login-item status does not reliably expose
+// (disabling via System Settings and never-having-registered can both read
+// back as 'not-registered').
+function writeLoginItemPref(enabled) {
+  try { require("fs").writeFileSync(loginItemPrefPath(), JSON.stringify({ enabled })); }
+  catch { /* best-effort - worst case the next launch re-asks via the default */ }
+}
+function loginItemStatus() {
+  try {
+    const s = app.getLoginItemSettings();
+    return { openAtLogin: s.openAtLogin, status: s.status || null, isMas };
+  } catch (e) { return { openAtLogin: false, status: null, isMas, error: e.message }; }
+}
+ipcMain.handle("native:login-item:get", () => loginItemStatus());
+ipcMain.handle("native:login-item:set", (_e, enabled) => {
+  try {
+    app.setLoginItemSettings(process.platform === "darwin"
+      ? { openAtLogin: !!enabled }
+      : { openAtLogin: !!enabled, path: process.execPath, args: [] });
+  } catch { /* non-fatal: report whatever the OS now says below */ }
+  writeLoginItemPref(!!enabled);
+  return loginItemStatus();
+});
 
 // The repo-path step (repo_type_picker.tsx) was a bare free-text field with
 // no way to browse for a folder - owner report 2026-09-14, screenshot of the
@@ -443,6 +489,40 @@ function createWindow() {
   watchPageLoad(win);
 }
 
+// Guideline 4 "no way to reopen the main window after closing it" (a real
+// 0.2.18 rejection, 2026-09-27): win.on("closed") nulls `win`, the app stays
+// alive with no windows on macOS (window-all-closed below), and until now
+// the ONLY way back in was the Dock icon's "activate" event - invisible if
+// the user doesn't know to click it, and Electron's fully-default menu (what
+// runs when nothing ever calls setApplicationMenu) has no window-reopen item
+// of its own. Standard Electron/Apple shape: a real application menu with
+// the four platform roles plus one custom entry in the Window menu. Windows/
+// Linux are intentionally untouched - they keep Electron's automatic default
+// menu, which already has a working taskbar affordance for this.
+function applyMacMenu() {
+  const reopen = () => {
+    if (win && !win.isDestroyed()) { win.show(); win.focus(); }
+    else if (!failed) createWindow();
+  };
+  const template = [
+    { role: "appMenu" },
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    {
+      role: "windowMenu",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        { type: "separator" },
+        { label: "Show HelmDeck", accelerator: "Cmd+0", click: reopen },
+        { type: "separator" },
+        { role: "front" },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 // A black window must never be silent. The BrowserWindow paints its
 // backgroundColor until the SPA's first frame, so anything that keeps the
 // page from loading - a stuck request to the local UI server, a renderer
@@ -554,20 +634,37 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    if (process.platform === "darwin") applyMacMenu();
     // Auto-start at login so the daemon + relay bridge are up whenever the
     // machine is - otherwise the phone shows "Desktop nicht erreichbar" until
     // someone opens the app by hand. Only the packaged build registers itself
     // (a dev `electron .` run must not wire the dev binary into startup).
-    if (app.isPackaged) {
-      try {
-        // On macOS the login item IS the .app bundle, registered by the OS -
-        // handing it process.execPath (the helper binary buried in
-        // Contents/MacOS) registers a path the user cannot recognise and
-        // Ventura+ may refuse. openAtLogin alone is the supported form there.
-        app.setLoginItemSettings(process.platform === "darwin"
-          ? { openAtLogin: true }
-          : { openAtLogin: true, path: process.execPath, args: [] });
-      } catch { /* non-fatal: startup registration is a convenience, not required */ }
+    //
+    // MAS builds must NEVER do this on their own (Apple Guideline 2.4.5(iii):
+    // "app sets itself to automatically launch without user consent" - a real
+    // 0.2.18 rejection, 2026-09-27). The user opts in explicitly via the
+    // Settings "Beim Anmelden starten" toggle (native:login-item:set above);
+    // nothing runs here for a mas build.
+    //
+    // Developer-ID mac and Windows keep the previous default (existing
+    // installs must not have this silently turned off - on Windows the login
+    // item is part of how the daemon survives a reboot without the user
+    // opening the app by hand), but an explicit opt-out via that same toggle
+    // must stick across restarts instead of being overwritten back to true
+    // on every launch.
+    if (app.isPackaged && !isMas) {
+      const pref = readLoginItemPref();
+      if (!pref || pref.enabled !== false) {
+        try {
+          // On macOS the login item IS the .app bundle, registered by the OS -
+          // handing it process.execPath (the helper binary buried in
+          // Contents/MacOS) registers a path the user cannot recognise and
+          // Ventura+ may refuse. openAtLogin alone is the supported form there.
+          app.setLoginItemSettings(process.platform === "darwin"
+            ? { openAtLogin: true }
+            : { openAtLogin: true, path: process.execPath, args: [] });
+        } catch { /* non-fatal: startup registration is a convenience, not required */ }
+      }
     }
     // The onboarding control plane comes up FIRST and always: it is what the
     // screen talks to when Python/Claude/the daemon are not there yet.

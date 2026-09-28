@@ -31,4 +31,7 @@ contextBridge.exposeInMainWorld("helmdeckNative", {
   pickFolder: () => ipcRenderer.invoke("native:pick-folder"),
 
   getAppInfo: () => ipcRenderer.invoke("native:app-info"),
+
+  getLoginItem: () => ipcRenderer.invoke("native:login-item:get"),
+  setLoginItem: (enabled) => ipcRenderer.invoke("native:login-item:set", enabled),
 });
