@@ -19,9 +19,10 @@ initiative.goal_drive.
 DERIVED, NOT STORED (CLAUDE.md law): every number here is computed at read
 time from the card store, the process store and the event log. Goal
 membership is a RECORD, never a guess from task text: a card is goal work when
-it was filed with goal=true (copilot_actions / the broker's direct_task verb
-write that flag at event time) or when it is a step of the goal's own process
-(pm_goal records that pid). Cards filed before 2026-09-28 carry no flag - the
+its `goal` field names the CURRENT goal (filed with "goal": true or marked via
+mark_goal - copilot_actions / the broker's direct_task verb write the goal
+sentence at event time, current_tag) or when it is a step of the goal's own
+process (pm_goal records that pid, pm_push checks it is still this goal's). Cards filed before 2026-09-28 carry no flag - the
 share says so ("noch keine Ziel-Karten markiert") instead of guessing.
 
 The wake latches in the PM loopstate (st["goal_wake"]) are DEDUP, not truth:
@@ -58,10 +59,25 @@ def _epoch(s):
     return 0.0
 
 
-def _goal_ids(tracks, goal_pid):
+def norm(goal):
+    return " ".join((goal or "").split())
+
+
+def current_tag():
+    """What a card's `goal` field holds when it serves the CURRENT goal: the
+    goal sentence itself, whitespace-normalized. A bare True would outlive
+    the goal it was set for - after a set_goal the old goal's cards kept
+    counting as work for the new one (found 2026-09-28 in the adversarial
+    pass, before any goal change happened live)."""
+    from cells.copilot.planning.pm import get_goal
+    return norm(get_goal())
+
+
+def _goal_ids(tracks, goal_pid, goal):
     return {t["id"] for t in tracks
             if not t.get("example") and (
-                t.get("goal") is True or (goal_pid and t.get("process") == goal_pid))}
+                (goal and norm(t.get("goal") if isinstance(t.get("goal"), str) else "") == goal)
+                or (goal_pid and t.get("process") == goal_pid))}
 
 
 def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_pid=None):
@@ -72,7 +88,7 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
     if goal is None:
         from cells.copilot.planning.pm import get_goal
         goal = get_goal() or ""
-    goal = " ".join((goal or "").split())
+    goal = norm(goal)
     if not goal:
         return None
     if tracks is None:
@@ -84,7 +100,7 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
         from spine.storage import events
         ev = events.read_events()
     from spine.storage.events import turn_tokens
-    ids = _goal_ids(tracks, goal_pid)
+    ids = _goal_ids(tracks, goal_pid, goal)
     since = now - SHARE_WINDOW_S
     tok_all = tok_goal = 0
     last_move = 0.0

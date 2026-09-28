@@ -834,7 +834,10 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
             return False
         if esc.get("kind") == "goal-move":
             from spine.storage.trackstore import _mutate
-            _mutate(nt["id"], lambda x: x.__setitem__("goal", True))
+            from cells.copilot.planning.goal_drive import current_tag
+            tag = current_tag()
+            if tag:
+                _mutate(nt["id"], lambda x: x.__setitem__("goal", tag))
         escalations.record_note(esc["id"], "direct_task: Karte %s gestartet" % nt["id"])
         return True
     return False

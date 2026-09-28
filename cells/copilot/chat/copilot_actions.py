@@ -310,7 +310,10 @@ def _mark_goal(a, t):
     if a.get("goal") is True and t and t.get("id"):
         try:
             from spine.storage.trackstore import _mutate
-            _mutate(t["id"], lambda x: x.__setitem__("goal", True))
+            from cells.copilot.planning.goal_drive import current_tag
+            tag = current_tag()
+            if tag:
+                _mutate(t["id"], lambda x: x.__setitem__("goal", tag))
         except Exception:                                    # noqa: BLE001
             pass
     return t
@@ -614,7 +617,11 @@ def _run_action(a, actor, role="operator"):
             return _card_hint("mark_goal", a.get("card", ""), t if isinstance(t, list) else [])
         on = a.get("goal", True) is not False
         from spine.storage.trackstore import _mutate
-        _mutate(t["id"], lambda x: x.__setitem__("goal", on))
+        from cells.copilot.planning.goal_drive import current_tag
+        tag = current_tag() if on else ""
+        if on and not tag:
+            return "mark_goal: es ist kein Ziel gesetzt - erst set_goal."
+        _mutate(t["id"], lambda x: x.__setitem__("goal", tag or False))
         _tag(a, t)
         return ("Karte %s zaehlt jetzt als Ziel-Arbeit" if on
                 else "Karte %s zaehlt nicht mehr als Ziel-Arbeit") % t["id"]

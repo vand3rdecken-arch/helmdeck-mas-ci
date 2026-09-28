@@ -74,11 +74,15 @@ def turn(track, n, h_ago=5):
 
 
 print("1. goal_state")
-tracks = [card("g1", goal=True), card("p1", process="PGOAL"), card("side")]
+tracks = [card("g1", goal=GOAL), card("p1", process="PGOAL"), card("side"),
+          card("old", goal="Altes Ziel bis 2026-09-01.")]
 ev = [turn("g1", 100), turn("p1", 100), turn("side", 800), turn("side", 5000, h_ago=24 * 9),
       {"kind": "lane", "track": "g1", "ts": ts(30), "to": "working"}]
 gs = goal_drive.goal_state(NOW, tracks=tracks, processes=[], ev=ev, goal=GOAL, goal_pid="PGOAL")
-check(gs["goal_cards"] == 2, "goal flag + goal-process step count, the side card does not (%s)" % gs["goal_cards"])
+check(gs["goal_cards"] == 2, "flag for THIS goal + goal-process step count; side card and old-goal card do not (%s)" % gs["goal_cards"])
+gsn = goal_drive.goal_state(NOW, tracks=tracks, processes=[], ev=ev, goal="Neues Ziel bis 2026-11-15.", goal_pid="")
+check(gsn["goal_cards"] == 0 and gsn["share"] is None,
+      "after a goal change the old goal's cards stop counting (%s)" % gsn["goal_cards"])
 check(abs(gs["share"] - 0.2) < 1e-9, "share over 7 days only: 200 of 1000 (%s)" % gs["share"])
 check(gs["days_left"] == 2, "deadline from the goal text via pm_push (%s)" % gs["days_left"])
 check(gs["last_move"] and abs(gs["last_move"] - (NOW - 30 * 3600)) < 2,
@@ -159,7 +163,7 @@ try:
     ok = henry_broker._execute("direct_task", "", "", "PH-Eintrag vorbereiten", esc)
     check(ok and started and started[0][1] == "henry", "direct_task starts a card as henry (%r)" % started)
     mine = [t for t in sessions._load() if t.get("task") == "PH-Eintrag vorbereiten"]
-    check(mine and mine[0].get("goal") is True, "a goal-move card is goal work by record")
+    check(mine and mine[0].get("goal") == GOAL, "a goal-move card records the goal it serves")
     check(not henry_broker._execute("direct_task", "", "", "", esc), "no task text -> refused, stays open")
     # a client-card judgement: no hands, so no direct_task either
     henry_broker._find_track = lambda c: {"id": "c1", "dispatched_by": "kunde"}
@@ -179,12 +183,12 @@ print("5. file_card goal flag")
 r = copilot_actions._run_action({"type": "file_card", "task": "Landing-Umfrage bauen", "repo": repo,
                                  "goal": True}, "tien", "owner")
 t = [x for x in sessions._load() if x.get("task") == "Landing-Umfrage bauen"]
-check(t and t[0].get("goal") is True, "file_card with goal:true records the flag (%s)" % r)
+check(t and t[0].get("goal") == GOAL, "file_card with goal:true records the current goal (%s)" % r)
 copilot_actions._run_action({"type": "file_card", "task": "Nebensache", "repo": repo}, "tien", "owner")
 t = [x for x in sessions._load() if x.get("task") == "Nebensache"]
 check(t and not t[0].get("goal"), "without it the card is not goal work")
 r = copilot_actions._run_action({"type": "mark_goal", "card": t[0]["id"]}, "tien", "owner")
-check(sessions._find(sessions._load(), t[0]["id"]).get("goal") is True,
+check(sessions._find(sessions._load(), t[0]["id"]).get("goal") == GOAL,
       "mark_goal makes an existing card goal work (%s)" % r)
 copilot_actions._run_action({"type": "mark_goal", "card": t[0]["id"], "goal": False}, "tien", "owner")
 check(sessions._find(sessions._load(), t[0]["id"]).get("goal") is False, "... and goal:false undoes it")

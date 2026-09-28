@@ -53,8 +53,10 @@ rounds follow this order; each step is a round only if still open:
      budget share - plus the CAPACITY SPLIT (goal vs side work, e.g. 70/30)
      and the ENVELOPE: what you may do on the goal without asking (posting,
      money, new accounts, anything irreversible always ask).
-  5. RECORD - set_goal with the outcome sentence and its date (the date in
-     the text is what goal_drive counts down from); every other answer via
+  5. RECORD - set_goal with the outcome sentence and its date written ONCE
+     as YYYY-MM-DD ("10 zahlende Nutzer bis 2026-11-15"): goal_drive counts
+     down from the first ISO date in the text and sees no other format
+     (debt goal-deadline-from-text); every other answer via
      clarify_goal; the why and the kill rule as a memory note. Then the first
      goal card with "goal": true.
 The last goal's lessons come first when they exist - read its notes before
