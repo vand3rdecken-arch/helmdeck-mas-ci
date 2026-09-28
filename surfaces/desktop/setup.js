@@ -141,6 +141,16 @@ function findNpm() {
   return r.status === 0 ? cmd : null;
 }
 
+/** git - needed by every card's worktree/commit machinery, not installed by
+ *  this file at all (detect-only everywhere, not just in the Store build:
+ *  there is no safe one-command install for it the way npmInstallGlobal
+ *  covers Claude/Codex). Reported to the Store-build prerequisite screen
+ *  (provisionWindowsStore) and disclosed in the Store listing draft. */
+function findGit() {
+  const r = runQ("git", ["--version"]);
+  return r.status === 0 ? (r.stdout || "").trim() : null;
+}
+
 /** The full engine catalog the picker shows. `tier` reflects EXACTLY what this
  *  file can actually do for each - the whole point of this list is to keep
  *  the picker from promising a capability the code doesn't have:
@@ -663,6 +673,67 @@ function startSetupServer(ctx) {
       installed: !!hit, version: hit ? hit.version : "" };
   });
 
+  /** Microsoft Store policy 10.2.4 forbids an app downloading/installing
+   *  additional executable code except through the Store itself - a
+   *  background `npm install -g`, a fetched embeddable Python runtime, or a
+   *  winget install (everything provision() below does for a direct-
+   *  distribution build) all look exactly like that to a reviewer. So a
+   *  Store build's provisioning is DETECTION ONLY: report what's present for
+   *  the prerequisites the Store listing itself discloses up front (Python,
+   *  git, the Claude Code CLI, Node.js - see
+   *  ops/docs/marketing/msstore-listing-draft.md's policy-10.2.4 opening
+   *  paragraph) and hand the user the plain command to fix whichever is
+   *  missing. Starting the daemon once everything is ALREADY installed is
+   *  not "installing" anything, so that part of provision() still runs. */
+  async function provisionWindowsStore() {
+    say("Microsoft-Store-Version: prüfe vorhandene Voraussetzungen (keine automatische Installation).");
+    const py = findPython(ctx.resourcesDir);
+    const claude = findClaude();
+    const git = findGit();
+    const npm = findNpm();
+    const report = (label, found, hint) => say((found ? "✓ " : "✗ ") + label
+      + (found ? " gefunden" : " fehlt — " + hint), found ? "ok" : "err");
+    report("Python 3.12+", !!py, "installiere von https://python.org (3.12 oder neuer)");
+    report("git", !!git, "installiere von https://git-scm.com");
+    report("Claude Code CLI", !!claude, "installiere von https://claude.com/product/claude-code"
+      + " (oder, mit Node.js: npm install -g @anthropic-ai/claude-code)");
+    report("Node.js/npm (optional)", !!npm, "installiere von https://nodejs.org — nur nötig, um"
+      + " Claude Code selbst per npm zu installieren");
+    if (!py || !claude || !git) {
+      say("Bitte die fehlenden Voraussetzungen installieren, dann HelmDeck neu starten.", "hint");
+      return;
+    }
+    if (!claudeAuthed(claude)) {
+      say("Claude Code ist nicht angemeldet — öffne ein Anmeldefenster…");
+      if (!openClaudeLoginTerminal(claude)) {
+        say("Konnte kein Terminal öffnen — führe `claude` im Terminal aus und melde dich an.", "err");
+        return;
+      }
+      say("Melde dich im geöffneten Fenster an — ich warte…", "hint");
+      if (!(await waitForAuth(claude, 5 * 60 * 1000))) {
+        say("Noch nicht angemeldet — melde dich an und drücke dann hier erneut Start.", "err");
+        return;
+      }
+    }
+    say("Claude ist angemeldet.", "ok");
+    if (!(await daemonUp(ctx.daemonPort))) {
+      say("Starte HelmDeck-Instanz…");
+      ctx.startDaemon(py);
+      for (let i = 0; i < 40 && !(await daemonUp(ctx.daemonPort)); i++) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    if (!(await daemonUp(ctx.daemonPort))) {
+      say("Die Instanz antwortet nicht.", "err");
+      const tail = daemonLogTail(ctx.daemonDir);
+      if (tail.length) { say("Letzte Zeilen aus daemon.out.log:"); for (const l of tail) say(l, "err"); }
+      return;
+    }
+    say("Instanz läuft auf :" + ctx.daemonPort, "ok");
+    done = true;
+    say("Fertig — jetzt anmelden.", "ok");
+  }
+
   async function provision(selected) {
     if (running) return;
     // The picker's selection; "claude" is force-included regardless of what
@@ -673,6 +744,7 @@ function startSetupServer(ctx) {
     selected.add("claude");
     running = true; done = false;
     try {
+      if (ctx.windowsStore) { await provisionWindowsStore(); return; }
       // 1) Claude Code — the one thing the user must own (their account), but
       //    NOT the one thing they must type a terminal command for: the app
       //    installs the CLI itself (Paseo's own-CLI installLatest, applied

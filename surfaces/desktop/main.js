@@ -74,6 +74,29 @@ function resolveDaemonDir() {
   return bundled;
 }
 const daemonDir = resolveDaemonDir();
+
+// A Microsoft Store (MSIX/AppX) build - electron-builder's `appx` target
+// (electron-builder.appx.yml, surfaces/desktop/build_msix.ps1). Electron sets
+// this itself only when the running package carries an MSIX/AppX package
+// identity - a real, documented Electron property, the exact Windows twin of
+// `process.mas` below. WindowsApps installs it into are READ-ONLY (unlike
+// Program Files under NSIS, which the owner's account still owns), so this
+// flag gates the same things isMas gates for the Mac Store build - self-
+// updating and autostart consent - PLUS one Windows has no macOS-sandbox
+// equivalent for: WHERE the daemon may write. See dataRoot below and
+// daemon/paths.py's DATA_ROOT for the Python side of that split.
+const isWindowsStore = process.windowsStore === true;
+
+// Everything the daemon WRITES (helmdeck.db, settings.json/relay_feed.json,
+// recordings/, this shell's own daemon.out.log) normally lives beside its
+// CODE (daemonDir) - fine under NSIS/dev, where the owner's account can write
+// there. Under MSIX, daemonDir resolves inside the read-only package, so only
+// the WRITE root moves to a per-user folder Electron guarantees is writable
+// regardless of packaging; the daemon keeps running its code straight out of
+// the (unchanged) daemonDir - same "one pointer, everything downstream
+// follows" shape resolveDaemonDir() already uses above, applied to data
+// instead of code.
+const dataRoot = isWindowsStore ? path.join(app.getPath("userData"), "daemon-data") : daemonDir;
 // The UI is now the single Expo/React-Native web export (expo export --platform
 // web), replacing the old Next.js server. Same static SPA that ships to the
 // phone/web; the desktop just serves it locally and points it at the daemon.
@@ -112,10 +135,15 @@ const sendToWindow = (channel, payload) => { if (win && !win.isDestroyed()) win.
 // installed bundle). Electron sets process.mas=true only in a mas-target
 // build (surfaces/desktop/electron-builder.mas.yml), never in the
 // direct-distribution build this same main.js also produces.
+//
+// The Microsoft Store build (isWindowsStore, electron-builder.appx.yml) is
+// gated the same way and for the same two reasons: Store policy forbids an
+// app replacing its own package, and the app-dist swap is impossible anyway -
+// WindowsApps is read-only regardless of what the policy said.
 const isMas = process.mas === true;
 
 let updater = null;
-if (app.isPackaged && !isMas) {
+if (app.isPackaged && !isMas && !isWindowsStore) {
   const { createUpdater, readRelayUrl, DEFAULT_FEED } = require("./updater");
   // A fresh install has no relay pairing yet (relay_feed.json missing/empty),
   // so readRelayUrl() returns null - fall back to the public relay rather
@@ -139,7 +167,7 @@ ipcMain.on("js-update:apply-now", () => {
 
 const { createNativeUpdater } = require("./native-updater");
 const nativeUpdater = createNativeUpdater({
-  log, isPackaged: app.isPackaged && !isMas,
+  log, isPackaged: app.isPackaged && !isMas && !isWindowsStore,
   notify: (status) => sendToWindow("native-update:changed", status),
 });
 ipcMain.handle("native-update:get", () => nativeUpdater.getStatus());
@@ -353,6 +381,10 @@ function startDaemon(pyOverride) {
     }
     const py = pyOverride || resolvePython();
     const fs = require("fs");
+    // dataRoot is a brand-new folder on a fresh MSIX install (Electron's own
+    // userData dir, never created by the installer) - make it exist before
+    // anything tries to open a log or a db file in it.
+    if (isWindowsStore) { try { fs.mkdirSync(dataRoot, { recursive: true }); } catch { /* best-effort */ } }
     // detached needs a real sink, not an inherited pipe that dies with Electron -
     // append to a log file so the daemon is fully independent yet still logged.
     // openSync can hit a transient sharing violation (AV/indexer briefly
@@ -366,8 +398,13 @@ function startDaemon(pyOverride) {
     // this whole run: a frozen canonical log with an unrelated pinned handle
     // must not silence every daemon start until a reboot clears the pin.
     let out = "ignore", usedPath = null;
-    const logPath = path.join(daemonDir, "daemon.out.log");
-    const fallbackPath = path.join(daemonDir, "daemon.out." + process.pid + ".log");
+    // This shell's own log for the daemon's stdout/stderr, NOT the daemon's
+    // own state - but it lives beside daemonDir (code) the same way the
+    // daemon's state normally does, so it has the identical MSIX problem and
+    // the identical fix: write it to dataRoot instead when the package
+    // directory is read-only.
+    const logPath = path.join(dataRoot, "daemon.out.log");
+    const fallbackPath = path.join(dataRoot, "daemon.out." + process.pid + ".log");
     let openErr = null;
     for (const candidate of [logPath, fallbackPath]) {
       openErr = null;
@@ -402,7 +439,14 @@ function startDaemon(pyOverride) {
       // resolveDaemonDir() override (userData daemon-dir.txt pointing at a
       // dev checkout) still resolves `daemon` as a package from the right
       // place, exactly like the bundled case.
-      { cwd: path.dirname(daemonDir), env: { ...process.env, PYTHONUNBUFFERED: "1" }, windowsHide: true,
+      { cwd: path.dirname(daemonDir), env: { ...process.env, PYTHONUNBUFFERED: "1",
+          // Unset (undefined) when not a Store build - the daemon's own
+          // DATA_ROOT (daemon/paths.py) then falls back to DAEMON_ROOT
+          // exactly as before, so NSIS/dev behavior is byte-for-byte
+          // unchanged. Only a Store package needs its writable state pulled
+          // out of the read-only install directory.
+          ...(isWindowsStore ? { HELMDECK_DATA_ROOT: dataRoot } : {}) },
+        windowsHide: true,
         shell: daemonNeedsShell, detached: true,
         stdio: ["ignore", out, out] });
     daemon.on("error", (e) => log("daemon", "start failed: " + e.message + "\n"));
@@ -646,13 +690,19 @@ if (!app.requestSingleInstanceLock()) {
     // Settings "Beim Anmelden starten" toggle (native:login-item:set above);
     // nothing runs here for a mas build.
     //
-    // Developer-ID mac and Windows keep the previous default (existing
+    // Same for the Microsoft Store build: the appx manifest already declares
+    // a StartupTask extension for this app (electron-builder.appx.yml, via
+    // build/appx-extensions.xml) with Enabled="false" - Store review expects
+    // exactly the Mac-Store shape, opt-in via the user's own toggle click,
+    // never auto-registered at first launch.
+    //
+    // Developer-ID mac and Windows (NSIS) keep the previous default (existing
     // installs must not have this silently turned off - on Windows the login
     // item is part of how the daemon survives a reboot without the user
     // opening the app by hand), but an explicit opt-out via that same toggle
     // must stick across restarts instead of being overwritten back to true
     // on every launch.
-    if (app.isPackaged && !isMas) {
+    if (app.isPackaged && !isMas && !isWindowsStore) {
       const pref = readLoginItemPref();
       if (!pref || pref.enabled !== false) {
         try {
@@ -671,6 +721,7 @@ if (!app.requestSingleInstanceLock()) {
     setupSrv = startSetupServer({
       resourcesDir: root, daemonDir, daemonPort: DAEMON_PORT,
       startDaemon: (py) => startDaemon(py),
+      windowsStore: isWindowsStore,
     });
     startDaemon();
     // A verified staged bundle (own download, or one the tray staged while the
