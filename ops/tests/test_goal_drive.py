@@ -2,7 +2,8 @@
 """Henry drives the goal (owner 2026-09-28, cells/copilot/planning/goal_drive).
 
 Pinned, on a sandbox db (the live db is never touched - db.DBPATH first):
- 1. goal_state derives share, last movement and owner steps from the record:
+ 1. goal_state derives share, last movement and owner steps from the record
+    (a new goal never inherits the old goal's process):
     goal=true cards and the goal process' steps count, nothing else; no
     marked card -> share None (said, not guessed)
  2. goal_line renders the evidence Henry reads first in both snapshots, and
@@ -86,6 +87,12 @@ gs0 = goal_drive.goal_state(NOW, tracks=[card("side")], processes=[], ev=ev, goa
 check(gs0["share"] is None and gs0["last_move"] is None, "no marked card: share None, never guessed")
 check(goal_drive.goal_state(NOW, tracks=tracks, processes=[], ev=ev, goal="", goal_pid="") is None,
       "no goal -> None")
+
+from cells.copilot.planning import pm_push
+rec = {"goal_process": {"pid": "POLD", "goal": "altes Ziel"}}
+check(pm_push.goal_process_id(rec, goal="altes Ziel") == "POLD", "the recorded goal process belongs to its goal")
+check(pm_push.goal_process_id(rec, goal="neues Ziel") == "",
+      "a NEW goal does not inherit the old goal's process as goal work")
 
 print("2. goal_line + snapshot")
 line = goal_drive.goal_line(gs, NOW)

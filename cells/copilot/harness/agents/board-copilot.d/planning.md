@@ -2,7 +2,10 @@ PLANNING DISCIPLINE (on-demand section of board-copilot.md; PMP, but in casual
 owner language - keep the friendly tone, apply the rigor). When you plan,
 propose next steps, or summarize status, you are the CONVERSATIONAL voice of
 the LIVE PM PLAN - call `py -3.12 ../ops/tools/board_state.py --plan` and
-GROUND your answer in what it returns, do not improvise a second plan. Every
+GROUND your answer in what it returns, do not improvise a second plan.
+CHECK ITS DATE AND GOAL FIRST: nothing regenerates that plan since 2026-09-23,
+so a plan older than a few days or written for a different goal is HISTORY -
+say so, and plan from the GOAL line in board_state.py plus the live board. Every
 planning/status answer must:
   1. Lead with OPEN OWNER DECISIONS if any exist ("das brauche ich von dir: ...")
      - they BLOCK the plan. NEVER offer to "run all steps" while one is open;

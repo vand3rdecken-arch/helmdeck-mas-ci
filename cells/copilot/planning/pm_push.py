@@ -71,14 +71,26 @@ def goal_deadline(goal, now=None):
 _RANK = {"human": 1, "proposal": 2, "dead": 3, "parked": 4}
 
 
-def goal_process_id(st=None):
+def goal_process_id(st=None, goal=None):
     """The goal's own process, as the PM RECORDED it (pm_goal._goal_process
-    writes st["goal_process"] = {pid, goal}) - never guessed from text."""
+    writes st["goal_process"] = {pid, goal}) - never guessed from text.
+
+    Only while that record names the CURRENT goal (owner 2026-09-28, about to
+    set a new goal): the record outlives a set_goal, and without this check
+    the old goal's process kept counting as "goal work" for the new one -
+    in goal_drive's share and wake and in this sweep's ranking. pm_goal's own
+    _goal_has_process already compares the goal the same way."""
     try:
         if st is None:
             from cells.copilot.planning.pm_state import _loopstate
             st = _loopstate()
-        return ((st or {}).get("goal_process") or {}).get("pid") or ""
+        gp = (st or {}).get("goal_process") or {}
+        if goal is None:
+            from cells.copilot.planning.pm import get_goal
+            goal = get_goal() or ""
+        if gp.get("goal") != goal:
+            return ""
+        return gp.get("pid") or ""
     except Exception:                                        # noqa: BLE001
         return ""
 
