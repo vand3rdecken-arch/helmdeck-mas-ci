@@ -1,0 +1,10 @@
+Henry: answer_card verb relays the owner's answer to a parked card
+
+steer is HELD while a card waits on an owner question, so answers given in the
+board chat never reached the worker. answer_card hands the owner's words to
+sessions.answer_question (actor owner-via-henry, request_id = current question,
+audit row with the underlying owner message). Refused without an owner message
+in the turn (broker/wakes); stale question -> 409. Card question rows with
+option buttons already exist (card_mirror + card_question.tsx).
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

@@ -41,7 +41,7 @@ def _strip_actions_live(partial):
 # instead of the ```actions block, owner 2026-09-16 19:33 'Warum keine Karte').
 ACTION_KINDS = frozenset((
     "configure", "apply_template", "set_station", "machine_task", "direct_task", "file_card",
-    "move", "steer", "delete", "archive", "hands", "agent", "stop", "follow_up", "resolve_blocker", "resolve_conflict",
+    "move", "steer", "delete", "archive", "hands", "agent", "stop", "answer_card", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
@@ -350,7 +350,7 @@ def _file_links(a, t, actor):
         sessions._mutate(t["id"], _o)
 
 
-def _run_action(a, actor, role="operator"):
+def _run_action(a, actor, role="operator", owner_msg=""):
     from cells.engineer.cards import sessions
     from cells.engineer.chains import processes
     from spine.storage import events
@@ -690,12 +690,46 @@ def _run_action(a, actor, role="operator"):
             _tag(a, t)
             return ("HELD: card %s is parked on an OWNER question - '%s'. Your "
                     "instruction is queued and delivered with the answer. Do not "
-                    "re-steer; bring the question to the owner, only he can answer it."
+                    "re-steer; if the owner's message THIS turn answers it use answer_card, "
+                    "else bring him the question."
                     % (t["branch"], ask.summary(t["question"])[:160]))
         bgthread.spawn("track:steer:" + t["id"], lambda: sessions.steer(
             t["id"], a["text"], actor=actor, source="board copilot"))
         _tag(a, t)
         return "steer sent to %s (agent working in background)" % t["branch"]
+    if kind == "answer_card":
+        # RELAY, never decide: the owner answered a worker's question in THIS
+        # turn's message (board chat, watch, voice) and Henry hands his words to
+        # the card through the one door every surface uses, sessions.
+        # answer_question. `owner_msg` is set only by copilot.chat for a real
+        # owner-typed turn; the broker / wakes / hands reports never pass it, so
+        # Henry has no way to answer a card on his own judgement (owner 2026-09-29).
+        if not owner_msg.strip():
+            return ("answer_card REFUSED: no owner message in this turn - only the "
+                    "owner answers a card's question, you cannot decide it. Bring "
+                    "him the question.")
+        t = _find_card(a.get("card", ""))
+        if t is None or isinstance(t, list):
+            return _card_hint(kind, a.get("card", ""), t if isinstance(t, list) else [])
+        text = str(a.get("text") or "").strip()
+        q = t.get("question") or {}
+        if not q:
+            return "answer_card 409: card %s has no open question." % t["branch"]
+        rid = str(a.get("request_id") or "")
+        if rid and rid != (q.get("id") or ""):
+            return "answer_card 409: that question was already answered or replaced."
+        routed, answers, qid = sessions.reply_door(t, text)
+        if routed != "answer":
+            return ("answer_card: card %s asks %d questions - one sentence cannot "
+                    "settle them; the owner answers in the card." % (
+                        t["branch"], len((q.get("questions") or []))))
+        from spine.ops import bgthread
+        events.emit("answer_card", t["id"], actor="owner-via-henry", request_id=qid,
+                    owner_msg=owner_msg.strip()[:500], text=text[:500])
+        bgthread.spawn("track:answer:" + t["id"], lambda: sessions.answer_question(
+            t["id"], answers, request_id=qid, actor="owner-via-henry", echo_chat=False))
+        _tag(a, t)
+        return "answer sent to %s (agent continues in background)" % t["branch"]
     if kind == "hands":
         # Henry's hands: a one-shot sub-agent with the machine tools, no card
         # (cells/copilot/chat/hands.py). The result comes back into Henry's

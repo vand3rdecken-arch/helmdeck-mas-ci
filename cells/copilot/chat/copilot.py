@@ -3431,7 +3431,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             done = []
             for a in acts:
                 try:
-                    done.append(_run_action(a, user, role))
+                    # answer_card is only valid on a real owner message; a
+                    # harness-initiated turn (hands report wake) has none
+                    done.append(_run_action(a, user, role,
+                                            owner_msg="" if harness_note else message))
                 except Exception as e:
                     done.append("action failed: %s" % str(e)[:200])
                 if not card_run_dir:
