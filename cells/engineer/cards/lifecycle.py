@@ -214,7 +214,8 @@ def sweep_zombies(min_idle_s=0):
             # waiting_on gate is cleared so the card is handed back.
             n = sessions.reconcile_bg(t["id"], why="Mit dem Daemon-Neustart abgebrochen")   # lazy: bg-task cluster still in sessions.py
             _mutate(t["id"], lambda tt: tt.__setitem__("waiting_on", "you")
-                    if tt.get("waiting_on") == "background" else None)
+                    if tt.get("waiting_on") == "background"
+                    and not sessions.running_bg(tt) else None)
             if n:
                 try:
                     ActionLog(t["run_dir"]).log(

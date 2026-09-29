@@ -54,6 +54,11 @@ def _card_env(t):
     out = {}
     if t.get("id"):
         out["HELMDECK_CARD"] = str(t["id"])     # desktop-lease owner (card_tool_guard)
+    try:
+        from cells.engineer.cards import sessions_bg
+        out["HELMDECK_DETACH_DIR"] = sessions_bg._spool_dir()   # ops/tools/detach.py spool
+    except Exception:
+        pass
     if t.get("dev_port"):
         out["HELMDECK_DEV_PORT"] = str(t["dev_port"])
     if t.get("worktree"):

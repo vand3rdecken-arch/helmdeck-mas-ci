@@ -16,6 +16,8 @@ module at module level to re-export these names unchanged for existing
 callers (lifecycle.py, drivers.py, claude_sessions.py all already call
 sessions.bg_upsert/reconcile_bg directly), so a top-level import back would
 cycle."""
+import json
+import os
 import threading as _threading
 import time
 
@@ -26,7 +28,7 @@ _BG_MAX_WAIT_S = 6 * 3600    # stop watching a task that never reports (6h)
 _bg_watcher_started = False
 
 
-def bg_upsert(tid, uid, title=None, detail=None, status="running", result=None):
+def bg_upsert(tid, uid, title=None, detail=None, status="running", result=None, extra=None):
     """Fold ONE background-task LIFECYCLE event onto the track - Paseo's
     ProviderSubagentStore.apply(): a descriptor per task with an explicit status
     (running -> completed|failed|canceled), maintained at EVENT TIME by the pump,
@@ -50,6 +52,8 @@ def bg_upsert(tid, uid, title=None, detail=None, status="running", result=None):
         cur["status"] = status
         if result is not None:
             cur["result"] = str(result)[:2000]
+        if extra:
+            cur.update(extra)
         cur["updated"] = now
         tasks[uid] = cur
         # bound the TERMINAL history (last N by finish time); a running task is
@@ -78,7 +82,9 @@ def reconcile_bg(tid, status="canceled", why="Prozess beendet, bevor der Task me
             return False
         n = 0
         for v in tasks.values():
-            if v.get("status", "running") == "running":
+            # a DETACHED job is not a child of the worker: it survives the
+            # worker's death and a daemon restart, _sweep_detached owns its end
+            if v.get("status", "running") == "running" and not v.get("detached"):
                 v["status"] = status
                 v["updated"] = time.time()
                 v.setdefault("result", why)
@@ -91,7 +97,7 @@ def reconcile_bg(tid, status="canceled", why="Prozess beendet, bevor der Task me
     return box.get("n", 0)
 
 
-def running_bg(t):
+def running_bg(t, killable_only=False):
     """Titles of this card's background tasks that are STILL RUNNING - the ONE
     reading of the descriptors for everyone who asks "does this card still
     work?" (board snapshot, daemonctl's restart refusal, restart_daemon.py).
@@ -104,7 +110,8 @@ def running_bg(t):
     if not isinstance(tasks, dict):
         return []
     return [str(v.get("title") or k) for k, v in tasks.items()
-            if isinstance(v, dict) and v.get("status", "running") == "running"]
+            if isinstance(v, dict) and v.get("status", "running") == "running"
+            and not (killable_only and v.get("detached"))]
 
 
 def _bg_continue_on(t):
@@ -115,18 +122,24 @@ def _bg_continue_on(t):
     return bool(pol.get("auto_continue", True))
 
 
-def _continue_prompt():
+def _continue_prompt(t=None):
     """Tagged as harness-injected so the card feed renders it as a system note
     instead of a message the owner appears to have typed (ask.harness_msg)."""
     from spine.ops import ask
+    done = "".join(
+        "\n[%s] %s\n%s\n" % (v.get("status"), v.get("title"), v.get("result") or "")
+        for v in ((t or {}).get("bg_tasks") or {}).values()
+        if isinstance(v, dict) and v.get("detached") and v.get("status") in BG_TERMINAL
+        and time.time() - (v.get("updated") or 0) < 3600)
     return ask.harness_msg(
         "background-done",
         "Dein Hintergrund-Task ist fertig - das hier ist ein automatischer "
         "Hinweis des Harness, keine Nachricht vom Owner.\n"
-        "Hol dir seine Ausgabe (BashOutput bzw. das Task-Ergebnis) und arbeite "
+        "Hol dir seine Ausgabe (BashOutput bzw. das Task-Ergebnis; bei einem "
+        "losgeloesten Lauf steht das Log-Ende unten) und arbeite "
         "genau dort weiter, wo du auf ihn gewartet hast. Wenn die Ausgabe zeigt, "
         "dass etwas fehlgeschlagen ist, behebe es oder sag klar, was der Owner "
-        "entscheiden muss.")
+        "entscheiden muss." + done)
 
 
 def _repair_bg_gate(t):
@@ -188,6 +201,87 @@ def _repair_bg_gate(t):
     return fixed
 
 
+def _spool_dir():
+    d = os.environ.get("HELMDECK_DETACH_DIR")
+    if not d:
+        from daemon.paths import DATA_ROOT
+        d = os.path.join(DATA_ROOT, "state", "detached")
+    return d
+
+
+def _log_tail(path, n=1500):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - n))
+            return f.read().decode("utf-8", "replace").strip()
+    except (OSError, TypeError):
+        return ""
+
+
+def _drop(path, r):
+    for p in (path, r.get("exit")):
+        try:
+            os.remove(p)
+        except (OSError, TypeError):
+            pass
+
+
+def _sweep_detached():
+    """Detached jobs (ops/tools/detach.py) as REAL background tasks: the tool
+    drops a spool record {tid,pid,ctime,log,title,exit}; this pass (the ONE
+    mutator of tracks) registers it as a 'running' descriptor, and once
+    pid+creation time no longer match a live process folds completed/failed
+    (exit code from the wrapper's exit file) with the log tail. The wake is the
+    existing auto-continue - no second mechanism. State lives in the spool file,
+    so a daemon restart loses nothing; a recycled PID fails the ctime check."""
+    from cells.engineer.cards.sessions import _load, _find
+    from spine.ops import procwatch
+    d = _spool_dir()
+    if not os.path.isdir(d):
+        return
+    tracks = _load()
+    seen = set()
+    for name in os.listdir(d):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(d, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                r = json.load(f)
+        except (OSError, ValueError):
+            continue
+        tid, uid = r.get("tid"), "detached:%s" % name[:-5]
+        t = _find(tracks, tid) if tid else None
+        if t is None:
+            _drop(path, r)
+            continue
+        seen.add((tid, uid))
+        cur = (t.get("bg_tasks") or {}).get(uid)
+        if cur is None:
+            bg_upsert(tid, uid, title=r.get("title"), detail=r.get("log"),
+                      extra={"detached": True, "pid": r.get("pid")})
+        elif cur.get("status") != "running":
+            _drop(path, r)
+            continue
+        if procwatch.alive(r.get("pid"), r.get("ctime")):
+            continue
+        code = None
+        try:
+            with open(r.get("exit") or "") as f:
+                code = int(f.read().strip())
+        except (OSError, ValueError):
+            pass
+        bg_upsert(tid, uid, status="failed" if code else "completed",
+                  result="exit %s\n%s" % ("?" if code is None else code, _log_tail(r.get("log"))))
+        _drop(path, r)
+    # a running detached descriptor whose spool record vanished can never report
+    for t in tracks:
+        for uid, v in (t.get("bg_tasks") or {}).items():
+            if v.get("detached") and v.get("status") == "running" and (t["id"], uid) not in seen:
+                bg_upsert(t["id"], uid, status="canceled", result="Spool-Eintrag fehlt")
+
+
 def _sweep_background():
     """One pass: continue every card whose background task has finished.
 
@@ -200,6 +294,10 @@ def _sweep_background():
     the tasks were long done - and with it the idle-eviction protection
     (drivers._running_cards), leaking the very session it no longer needed."""
     from cells.engineer.cards.sessions import _load, _find, _mutate, steer
+    try:
+        _sweep_detached()
+    except Exception as e:
+        print("detached sweep error:", e)
     for t in _load():
         t = _repair_bg_gate(t) or t
         if t.get("waiting_on") != "background" or t.get("status") == "running":
@@ -298,7 +396,7 @@ def _sweep_background():
         # takes the card's own lock.
         def _go(tid=t["id"]):
             try:
-                steer(tid, _continue_prompt(), actor="daemon", source="background-task")
+                steer(tid, _continue_prompt(_find(_load(), tid)), actor="daemon", source="background-task")
             except Exception as e:
                 print("auto-continue failed for %s: %s" % (tid, e))
 

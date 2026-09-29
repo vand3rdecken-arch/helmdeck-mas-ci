@@ -74,7 +74,7 @@ def background_work():
         from spine.storage import db
         from cells.engineer.cards import sessions_bg
         for t in db.tracks_all():
-            titles = sessions_bg.running_bg(t)
+            titles = sessions_bg.running_bg(t, killable_only=True)   # detached jobs survive a restart
             if titles:
                 out[t.get("id")] = titles
     except Exception:

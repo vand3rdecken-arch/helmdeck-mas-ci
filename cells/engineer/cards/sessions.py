@@ -1491,7 +1491,7 @@ def answer_question(tid, answers, request_id="", actor="owner", echo_chat=True):
 from cells.engineer.cards.sessions_bg import (
     _BG_HISTORY_CAP, BG_TERMINAL, _BG_POLL_S, _BG_MAX_WAIT_S, _bg_watcher_started,
     bg_upsert, reconcile_bg, _bg_continue_on, _continue_prompt, _sweep_background,
-    _epoch_of, start_background_watcher)
+    _epoch_of, start_background_watcher, running_bg)
 
 
 def start_engineer_lifecycle():
