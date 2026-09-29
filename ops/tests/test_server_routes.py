@@ -214,6 +214,10 @@ def main():
         status, body = req("GET", "/tracks", cookie=sid, expect=200)
         ok(isinstance(body, list) and body == [], "/tracks: empty list on a fresh sandboxed DB")
 
+        # the card screen fetches ONE card by id (the list can be stale/summary)
+        status, body = req("GET", "/tracks/no-such-card", cookie=sid, expect=404)
+        ok(isinstance(body, dict) and body.get("error"), "/tracks/<id>: unknown card is a 404, not the list")
+
         status, body = req("GET", "/dashboard/data", cookie=sid, expect=200)
         ok(isinstance(body, dict) and "capacity" in body, "/dashboard/data shape: capacity present")
 

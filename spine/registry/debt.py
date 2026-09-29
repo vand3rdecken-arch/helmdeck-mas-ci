@@ -5553,6 +5553,26 @@ DEBT = [
         "since": "2026-09-28",
         "order": 80,
     },
+    {
+        "id": "tracks-list-unbounded",
+        "title": "GET /tracks still returns EVERY card (summary rows, no paging)",
+        "status": "open",
+        "what": "routes_tracks.tracks_list_get slims each row (no bg_tasks, "
+                "last_reply capped) but still lists all non-hidden cards in one "
+                "reply: 1.6 MB / ~2.25 MB sealed for 422 cards on 2026-09-29, "
+                "against the relay Worker's 4 MiB frame cap (MAX_BODY). Before "
+                "the slimming it was 4.23 MB sealed -> 413 -> the phone kept a "
+                "stale list and new cards opened as an empty screen.",
+        "why_it_bites": "~3.7 KB per card and ~30 cards a day: the cap is hit "
+                        "again in weeks, and the failure is silent (stale list, "
+                        "the card screen now survives via GET /tracks/<id>, but "
+                        "the board itself stops showing new cards).",
+        "trigger": "sealed /tracks reply nears 4 MiB (~1000 cards)",
+        "fix": "Page or window the list (open cards + recent done, archive on "
+               "demand) or gzip the sealed frame; the board's Archive scope "
+               "asks for the rest.",
+        "order": 81,
+    },
 ]
 
 def list_debt():

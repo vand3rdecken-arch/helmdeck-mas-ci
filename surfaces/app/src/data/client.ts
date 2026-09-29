@@ -934,6 +934,7 @@ export const api = {
 
   // board / cards
   tracks: () => req<Track[]>("GET", "/tracks"),
+  track: (id: string) => req<Track>("GET", `/tracks/${id}`),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   engines: (refresh = false) => req<{ engines: EngineEntry[] }>("GET", "/engines" + (refresh ? "?refresh=1" : "")),
   usage: () => req<Usage>("GET", "/usage"),
