@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GET /tracks?since= (board delta sync, 2026-09-29). Owner: 'Warum nicht
+"""GET /tracks?cookie= (board delta pull, Replicache shape, 2026-09-29). Owner: 'Warum nicht
 gecacht auf Handy' - the phone re-downloaded the whole ~1.6 MB list per open.
 
 Pins: (1) with a current cursor the reply is tiny and carries only the card
@@ -39,25 +39,30 @@ def get(path):
     routes_tracks.tracks_list_get(h, {"role": "owner", "name": "o"})
     return h.body, len(json.dumps(h.body))
 
+def keys(r, op): return sorted(p["key"] for p in r["patch"] if p["op"] == op)
+
 for tid in STORE: db.bump(tid)
-base, base_len = get("/tracks?since=0&epoch=0")
-ok(base["full"] and len(base["changed"]) == 399 and base["gone"] == ["c000"], "baseline = every non-archived card")
-cur = base["v"]
+base, base_len = get("/tracks?cookie=")
+ok(base["patch"][0] == {"op": "clear"} and len(keys(base, "put")) == 399 and "c000" in keys(base, "del"),
+   "empty cookie = clear + every non-archived card")
+ck = base["cookie"]
 
 STORE["c005"]["title"] = "moved"; db.bump("c005")
-d, n = get("/tracks?since=%d&epoch=%d" % (cur, db.TRACK_EPOCH))
-ok(not d["full"] and [t["id"] for t in d["changed"]] == ["c005"] and d["gone"] == [], "delta = only the moved card")
+d, n = get("/tracks?cookie=" + ck)
+ok(len(d["patch"]) == 1 and d["patch"][0]["op"] == "put" and d["patch"][0]["key"] == "c005", "pull with the cookie = only the moved card")
 ok(n < base_len / 50, "delta reply is small (%d B vs %d B baseline)" % (n, base_len))
 
 STORE["c006"]["archived"] = True; db.bump("c006")
 del STORE["c007"]; db.bump("c007")
-d, _ = get("/tracks?since=%d&epoch=%d" % (d["v"], db.TRACK_EPOCH))
-ok(sorted(d["gone"]) == ["c006", "c007"] and d["changed"] == [], "archived + deleted cards land in gone")
+d, _ = get("/tracks?cookie=" + d["cookie"])
+ok(keys(d, "del") == ["c006", "c007"] and not keys(d, "put"), "archived + deleted cards become del")
 
-d, _ = get("/tracks?since=5&epoch=%d" % (db.TRACK_EPOCH + 1))
-ok(d["full"] and len(d["changed"]) == 397, "foreign epoch re-baselines")
+d, _ = get("/tracks?cookie=%d.5" % (db.TRACK_EPOCH + 1))
+ok(d["patch"][0]["op"] == "clear" and len(keys(d, "put")) == 397, "foreign epoch re-baselines")
+d, _ = get("/tracks?cookie=garbage")
+ok(d["patch"][0]["op"] == "clear", "malformed cookie re-baselines")
 legacy, _ = get("/tracks")
-ok(isinstance(legacy, list) and len(legacy) == 399, "no since = legacy full array (old apps)")
+ok(isinstance(legacy, list) and len(legacy) == 399, "no cookie param = legacy full array (old apps)")
 
 print("\n%d FAILED" % len(_fails) if _fails else "\nall ok")
 sys.exit(1 if _fails else 0)
