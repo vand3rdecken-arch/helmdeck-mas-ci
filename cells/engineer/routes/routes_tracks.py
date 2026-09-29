@@ -32,6 +32,22 @@ def _client_safe(steps, user):
     return [s for s in steps if s.get("byKind") != "henry" and s.get("to") != "henry"]
 
 
+# The LIST is a summary, the card GET is the full record (Slack/Linear/GitHub:
+# list = summary rows, detail = one fetch by id). The list used to carry every
+# card's whole record - 3.0 MB for 422 cards, ~4.2 MB once sealed for the relay,
+# past the Worker's 4 MiB frame cap (MAX_BODY) - so the phone's refresh got 413
+# and kept a stale list, and any card newer than that cache rendered as an empty
+# "Card" screen forever (2026-09-29). Fields only the card screen reads stay out.
+_LIST_REPLY_MAX = 400          # the board previews two lines of last_reply
+
+
+def _summary(t):
+    s = {k: v for k, v in t.items() if k != "bg_tasks"}
+    if len(s.get("last_reply") or "") > _LIST_REPLY_MAX:
+        s["last_reply"] = s["last_reply"][:_LIST_REPLY_MAX]
+    return s
+
+
 def tracks_list_get(self, user):
     from cells.engineer.cards import sessions
     from spine.auth import auth
@@ -40,8 +56,17 @@ def tracks_list_get(self, user):
     # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
     # research card - see lanemachine.request_ship_decision's docstring.
     ts = [sessions.present(t) for t in sessions.list_tracks() if not t.get("board_hidden")]
-    ts = [t for t in ts if auth.owns_card(user, t)]   # clients: own cards only
+    ts = [_summary(t) for t in ts if auth.owns_card(user, t)]   # clients: own cards only
     return self._send(200, json.dumps(ts))
+
+
+def tracks_get(self, user, tid):
+    from cells.engineer.cards import sessions
+    from spine.auth import auth
+    t = sessions.get_track(tid)
+    if not t or not auth.owns_card(user, t):
+        return self._send(404, json.dumps({"error": "no such card"}))
+    return self._send(200, json.dumps(sessions.present(t)))
 
 
 def tracks_live_get(self, user, tid):

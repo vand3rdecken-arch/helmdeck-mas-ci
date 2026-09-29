@@ -669,7 +669,14 @@ export default function CardScreen() {
   const { data: tracks } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks });
   // tracks can arrive as a non-array {error} object over the relay (pairing/pin
   // mismatch) — guard before .find so the card screen doesn't white-screen.
-  const k: Track | undefined = (Array.isArray(tracks) ? tracks : []).find((x) => x.id === id);
+  const inList: Track | undefined = (Array.isArray(tracks) ? tracks : []).find((x) => x.id === id);
+  // The list is a summary (no bg_tasks, capped last_reply) and can be STALE -
+  // a card newer than the cached list is absent from it, which left this screen
+  // on a bare spinner. The card is fetched by id; key ["tracks", id] shares the
+  // prefix every ["tracks"] invalidation already uses, so both refresh together.
+  const { data: one } = useQuery({ queryKey: ["tracks", id], queryFn: () => api.track(id!), enabled: !!id });
+  const oneOk = one && !(one as { error?: string }).error ? one : undefined;
+  const k: Track | undefined = inList || oneOk ? { ...inList, ...oneOk } as Track : undefined;
   const running = k?.status === "running";
 
   // Live transcript via LONG-POLL PUSH (api.transcriptLive): the daemon holds

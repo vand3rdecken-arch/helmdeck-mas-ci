@@ -364,6 +364,8 @@ class H(BaseHTTPRequestHandler):
             if p in routes_takeout.GET_ROUTES:
                 return routes_takeout.GET_ROUTES[p](self, user)
             parts = p.strip("/").split("/")
+            if len(parts) == 2 and parts[0] == "tracks":
+                return routes_tracks.tracks_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "live":
                 return routes_tracks.tracks_live_get(self, user, parts[1])
             if len(parts) == 3 and parts[0] == "tracks" and parts[2] == "turns":
