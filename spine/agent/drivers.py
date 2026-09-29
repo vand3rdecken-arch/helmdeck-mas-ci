@@ -1236,6 +1236,11 @@ class _ClaudeSession:
                           if isinstance(p, dict) and p.get("type") == "tool_use")
             if n_tools:
                 cur["turn_tools"] = cur.get("turn_tools", 0) + n_tools
+                # BEST PRACTICE FIRST is a brief rule nobody could see kept:
+                # count research calls so the delivered-parked cue can state it.
+                cur["turn_web"] = cur.get("turn_web", 0) + sum(
+                    1 for p in msg["content"] if isinstance(p, dict)
+                    and p.get("type") == "tool_use" and p.get("name") in ("WebSearch", "WebFetch"))
             u = msg.get("usage")
             if isinstance(u, dict) and u:
                 cur["turn_in"] = cur.get("turn_in", 0) + int(u.get("input_tokens") or 0) \
@@ -1607,7 +1612,7 @@ class _ClaudeSession:
                 "ctx_usage": cur.get("ctx_usage") or {},
                 # turn-shape snapshot (order 77) - the driver's own live fold,
                 # not re-derived from cumulative tokens_in/out (_record_turn_shape).
-                "turn_tools": cur.get("turn_tools", 0),
+                "turn_tools": cur.get("turn_tools", 0), "turn_web": cur.get("turn_web", 0),
                 "turn_in": cur.get("turn_in", 0), "turn_out": cur.get("turn_out", 0)}
         # a compaction that ran INSIDE this turn (system/compact_boundary seen
         # by the pump): {trigger, pre_tokens, post_tokens, duration_ms}. The

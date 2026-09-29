@@ -1215,6 +1215,25 @@ daemon is hammering the CPU — dismiss with the "Wait" button and retry.
 
 ---
 
+## 4b) Web viewport check without a device: `ops/tools/app_shot.py` (one call)
+
+```bash
+py -3.12 ops/tools/app_shot.py board            # route without leading slash also works
+py -3.12 ops/tools/app_shot.py card/d1 --offline
+# -> route=/card/d1 text=1.2k chars shot=.shots/card-d1.png offline=yes
+```
+Junctions the main repo's `surfaces/app/node_modules` into the worktree, starts
+`expo start --web --offline` on `$HELMDECK_DEV_PORT`, opens the route in Playwright
+at 430x932 (mobile, 2x, `domcontentloaded`, logged in via the DEMO flag
+`helmdeck.demo`; demo cards are `d1`..`d6`), writes `.shots/<route>.png` + `.txt`
+(visible text), stops the server and removes the junction. `--offline` cuts the
+network after the first load, so you see the offline state. Traps: the junction
+is removed with `rmdir` ONLY (`rm -r` would empty the main repo's modules through
+the link); the headless PATH has no node, prefix `C:\Program Files\nodejs`; the
+first bundle takes up to a minute.
+
+---
+
 ## 5) Pairing / relay (how the phone reaches the desktop)
 
 - The "desktop" IS your PC's daemon (`swarm.py serve 8140`), fronted by the
