@@ -88,11 +88,27 @@ def conn():
         _local.c = c
     return c
 
-def bump():
+# Per-card change cursor for GET /tracks?since= (delta sync, Linear/Slack style).
+# Stamped in the SAME lock as the _version bump, at event time, by the one
+# writer set (track_put/track_delete/tracks_replace): a reader that snapshots
+# _version first can never miss a card whose write lands after the snapshot.
+# In-process only, so TRACK_EPOCH names this process's numbering: after a
+# daemon restart an old cursor no longer matches and the client re-baselines.
+TRACK_EPOCH = int(time.time() * 1000)
+_track_rev = {}                   # card id -> _version of its last write/delete
+
+def bump(tid=None):
     global _version
     with _version_cond:
         _version += 1
+        if tid is not None:
+            _track_rev[tid] = _version
         _version_cond.notify_all()
+
+def tracks_changed_since(since):
+    """Ids written OR deleted after cursor `since` (current _version read first)."""
+    with _version_cond:
+        return _version, [i for i, r in _track_rev.items() if r > since]
 
 def bump_chat():
     """The chat transcript moved. ONE caller by construction: copilot._append_log,
@@ -544,20 +560,22 @@ def track_put(t):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO tracks(id,data) VALUES(?,?)",
                   (t["id"], json.dumps(t)))
-    bump()
+    bump(t["id"])
 
 def track_delete(tid):
     with conn() as c:
         c.execute("DELETE FROM tracks WHERE id=?", (tid,))
-    bump()
+    bump(tid)
 
 def tracks_replace(tracks):
     with conn() as c:
+        old = [r[0] for r in c.execute("SELECT id FROM tracks")]
         c.execute("DELETE FROM tracks")
         for t in tracks:
             c.execute("INSERT INTO tracks(id,data) VALUES(?,?)",
                       (t["id"], json.dumps(t)))
-    bump()
+    for i in old + [t["id"] for t in tracks]:
+        bump(i)
 
 # -- projects -------------------------------------------------------------
 

@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, dehydrate, hydrate } from "@tanstack/react-query";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { persistQueryClient, removeOldestQuery } from "@tanstack/query-persist-client-core";
+import { QueryClient } from "@tanstack/react-query";
 
 // How long a value stays trustworthy without a refetch - the horizon shared by
 // BOTH halves of the cache (in-memory gcTime below, persisted blob further
@@ -33,99 +35,45 @@ export const queryClient = new QueryClient({
 });
 
 // --- Cross-launch cache -----------------------------------------------------
-// Within a session the in-memory cache already means navigating never full-
-// reloads (served from cache, refetched in the background). The gap was the COLD
-// START: process killed -> cache empty -> the whole board loads from scratch over
-// the slow relay. So we persist the query cache to AsyncStorage and hydrate it
-// before the tree mounts: the last-known board paints instantly and every query
-// is then silently revalidated (stale-while-revalidate). Net effect on the wire
-// is delta-like - you see data immediately and only changes visibly move.
-// AsyncStorage is app-private and holds the same board data already in memory;
-// pairing secrets live in the config store, never in the query cache.
-const CACHE_KEY = "helmdeck.qcache.v1";
+// The stock TanStack pattern, as Bluesky (social-app src/lib/react-query.tsx)
+// runs it in production: persistQueryClient + createAsyncStoragePersister.
+// Read from TanStack/query packages/query-persist-client-core/src/persist.ts
+// (restore, drop when older than maxAge or when `buster` differs, hydrate;
+// then subscribe and save on every cache event) and
+// packages/query-async-storage-persister/src (JSON serialize, saves throttled
+// to one per `throttleTime`, `retry` on a failed setItem - removeOldestQuery
+// is the shipped retryer for a full store). The cold start paints the last-
+// known board instantly and every query then revalidates (stale-while-
+// revalidate). AsyncStorage is app-private; pairing secrets live in the config
+// store, never in the query cache.
+//
+// CACHE_BUSTER is the schema version (Bluesky uses the app version; here every
+// OTA would wipe the cache, so it is bumped by hand when a cached shape changes).
+const CACHE_BUSTER = "v2";
+const persister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "helmdeck.qcache",
+  throttleTime: 1500,
+  retry: removeOldestQuery,   // one oversized setItem must not kill the whole cache
+});
 
-export async function restoreCache(): Promise<void> {
-  try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.state || typeof parsed.at !== "number") return;
-    if (Date.now() - parsed.at > CACHE_MAX_AGE) return;   // too old to trust - start clean
-    hydrate(queryClient, parsed.state);
-  } catch {
-    /* corrupt/absent cache is never fatal - just start empty */
-  }
-}
-
-// Keep the persisted blob inside Android's AsyncStorage budget (~6MB total,
-// and one oversized setItem fails SILENTLY - which would kill the cross-launch
-// cache for EVERYTHING, board included). Transcripts are the only unbounded
-// entries, so bound them: keep the newest steps per card, and if the whole
-// blob is still too big, drop transcript entries largest-first. The board and
-// small queries always survive; a clipped transcript just re-fetches its older
-// steps from the daemon on open (the feed protocol sends the full list then
-// deltas), so nothing is lost - only re-downloaded.
-const PERSIST_MAX_BYTES = 3_500_000;   // headroom under the ~6MB Android cap
-const PERSIST_STEPS_PER_CARD = 200;    // newest steps kept per transcript
-
-function boundedState() {
-  // shouldDehydrateQuery defaults to status==='success' only - an errored
-  // refetch (daemon unreachable) flips a query to 'error' while React Query
-  // KEEPS its last-known data in memory, and the default silently dropped
-  // that data from the very next persisted write. Net effect during an
-  // outage: the screen still shows last-known data (served from memory),
-  // but disk quietly loses it - so a process kill mid-outage (routine on
-  // Android) woke up to an empty cache instead of last-known data (owner
-  // report 2026-09-03, the "Keine Verbindung" screen with nothing behind
-  // it). Persist any query that HAS data, regardless of status - that is
-  // the whole point of a last-known-good cache.
-  const state = dehydrate(queryClient, {
-    shouldDehydrateQuery: (q) => q.state.data !== undefined,
+// The ONE deliberate difference from Bluesky (status === "success" only): an
+// errored refetch flips a query to 'error' while React Query KEEPS its data,
+// and 'success' only dropped that data from the next write - so a process kill
+// mid-outage woke up to an empty cache (owner report 2026-09-03). Persist any
+// query that HAS data.
+export function startCachePersist(): [() => void, Promise<void>] {
+  return persistQueryClient({
+    queryClient,
+    persister,
+    maxAge: CACHE_MAX_AGE,
+    buster: CACHE_BUSTER,
+    dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.data !== undefined },
   });
-  interface Q { queryKey: readonly unknown[]; state: { data?: unknown } }
-  const qs = state.queries as unknown as Q[];
-  for (const q of qs) {
-    const d = q.state?.data;
-    if (q.queryKey?.[0] === "transcript" && Array.isArray(d) && d.length > PERSIST_STEPS_PER_CARD) {
-      q.state.data = d.slice(-PERSIST_STEPS_PER_CARD);
-    }
-  }
-  let out = JSON.stringify({ at: Date.now(), state });
-  while (out.length > PERSIST_MAX_BYTES) {
-    const idx = qs.reduce((best, q, i) =>
-      q.queryKey?.[0] === "transcript" &&
-      (best < 0 || JSON.stringify(q.state?.data ?? null).length >
-                   JSON.stringify(qs[best].state?.data ?? null).length) ? i : best, -1);
-    if (idx < 0) break;                  // nothing droppable left - persist as-is
-    qs.splice(idx, 1);
-    out = JSON.stringify({ at: Date.now(), state });
-  }
-  return out;
-}
-
-// Persist on cache settle, debounced so a burst of query updates writes once.
-let _timer: ReturnType<typeof setTimeout> | null = null;
-export function startCachePersist(): () => void {
-  const flush = () => {
-    _timer = null;
-    try {
-      AsyncStorage.setItem(CACHE_KEY, boundedState()).catch(() => {});
-    } catch {
-      /* persistence must never break the app */
-    }
-  };
-  const unsub = queryClient.getQueryCache().subscribe(() => {
-    if (_timer) return;
-    _timer = setTimeout(flush, 1500);
-  });
-  return () => {
-    if (_timer) { clearTimeout(_timer); _timer = null; }
-    unsub();
-  };
 }
 
 // Drop the persisted board - call on unpair/logout so the next user never sees a
 // prior session's cards flash before their own load.
 export async function clearCache(): Promise<void> {
-  try { await AsyncStorage.removeItem(CACHE_KEY); } catch { /* nothing to clear */ }
+  try { await persister.removeClient(); } catch { /* nothing to clear */ }
 }

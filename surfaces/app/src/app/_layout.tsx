@@ -14,7 +14,7 @@ import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { boot } from "@/boot";
 import { KernelProvider } from "@/kernel/react";
 import type { Kernel } from "@/kernel";
-import { queryClient, restoreCache, startCachePersist } from "@/data/query";
+import { queryClient, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
 import { api } from "@/data/client";
 import { useHealth } from "@/data/health";
@@ -398,8 +398,8 @@ function useCacheGate() {
     // async store. Warmed alongside the board cache (and not awaited separately)
     // so it cannot add a second gate to the launch path.
     void warmProfileCache();
-    restoreCache().finally(() => { done = true; clearTimeout(timer); setRestored(true); });
-    const stop = startCachePersist();
+    const [stop, restore] = startCachePersist();
+    restore.catch(() => {}).finally(() => { done = true; clearTimeout(timer); setRestored(true); });
     return () => { clearTimeout(timer); stop(); };
   }, []);
   return restored;

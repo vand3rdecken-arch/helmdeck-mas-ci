@@ -738,7 +738,14 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // (the daemon's 409 "another phone is paired…") comes back as an {error}
   // OBJECT, not an array — `?? []` doesn't catch that, and calling .filter on
   // it white-screened the whole board. Guard the shape and surface the message.
-  const rows: Track[] = Array.isArray(data) ? data : [];
+  // The synced board (["tracks"]) holds the non-archived view only; the Archive
+  // filter has its own list, fetched only while it is open.
+  const { data: archivedData } = useQuery({
+    queryKey: ["tracksArchived"], queryFn: api.tracksArchived, enabled: eff === "archived",
+  });
+  const rows: Track[] = eff === "archived"
+    ? (Array.isArray(archivedData) ? archivedData : [])
+    : Array.isArray(data) ? data : [];
   const dataErr = !Array.isArray(data) && data && typeof data === "object"
     ? String((data as { error?: unknown }).error ?? "") : "";
   // Offer the sample board wherever the board is UNUSABLE with nothing to show:
@@ -823,7 +830,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       paddingBottom: 120 + insets.bottom, gap: 10, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}
       refreshControl={undefined}>
       {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-      {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || tr("ui.offline")}</Text> : null}
+      {error || dataErr ? <Text style={{ color: t.danger }}>{dataErr || (rows.length ? tr("board.stale") : tr("ui.offline"))}</Text> : null}
       {showDemoInvite ? <DemoInvite /> : null}
       {busy ? <ActivityIndicator color={t.accent} /> : null}
       {/* Batch sign-off bar. Only when there is more than one card to sign -
