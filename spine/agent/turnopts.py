@@ -63,18 +63,18 @@ _EASY = re.compile(r"^\s*(hi|hey|hello|thanks|thank you|ok|okay|yes|no|got it)\b
 #
 # The routing tier and the window are independent facts: picking "cheap because
 # the message is trivial" is only valid if cheap can still carry the history.
+# FAMILY fallback only (owner decree 2026-09-29: a per-ID table goes stale
+# with every new release - see the CLAUDE_MODELS comment above for the same
+# staleness problem in the picker). model_window()'s REAL source is the live
+# /v1/models snapshot's max_input_tokens field (measured 2026-09-29: the API
+# returns it per model id, e.g. claude-sonnet-5-5 -> 1_000_000). This table is
+# only what a model gets BEFORE the cache has ever seen it (fresh install,
+# fully offline) - one entry per family, not per dated id.
 CTX_WINDOWS = {
-    "claude-haiku-4-5":  200_000,
-    "claude-sonnet-4-6": 1_000_000,
-    "claude-sonnet-5":   1_000_000,
-    "claude-sonnet-5-5": 1_000_000,
-    "claude-opus-4-6":   1_000_000,
-    "claude-opus-4-7":   1_000_000,
-    "claude-opus-4-8":   1_000_000,
-    "claude-opus-5":     1_000_000,
-    "claude-opus-5-5":   1_000_000,  # measured 2026-09-22 via claude -p modelUsage.contextWindow
-    "claude-fable-5":    1_000_000,
-    "claude-fable-5-1":  1_000_000,
+    "claude-haiku":  200_000,
+    "claude-sonnet": 1_000_000,
+    "claude-opus":   1_000_000,
+    "claude-fable":  1_000_000,
 }
 # room the resumed transcript is NOT allowed to occupy: the board snapshot, the
 # system brief, this turn's text and the reply all ride on top of ctx_tokens.
@@ -84,21 +84,50 @@ CTX_HEADROOM = 32_000
 _CTX_LADDER = ("claude-sonnet-5", "claude-opus-5")
 
 
+def _cached_window(m):
+    """max_input_tokens for `m` from the last /v1/models snapshot (the API's
+    own measured number, cached by _discovered()/refresh_models() - no live
+    fetch here, this runs on the routing hot path). None if the cache hasn't
+    seen this id (empty cache, offline box, or a model younger than the last
+    refresh) - the caller falls through to the CTX_WINDOWS family rule."""
+    from spine.storage import db
+    try:
+        cache = db.doc_get(_MODELS_CACHE_KEY) or {}
+    except Exception:                                            # noqa: BLE001
+        return None
+    for row in cache.get("models", []):
+        rid = (row.get("id") or "").lower()
+        win = row.get("max_input_tokens")
+        if win and rid and (m == rid or m.startswith(rid + "-")):
+            return int(win)
+    return None
+
+
 def model_window(mid):
     """Context window for a model id, or None when UNKNOWN.
 
-    Two witnesses, both from the runtime itself (sessions._record_econ parity):
-    the "[1m]" suffix the CLI stamps on a 1M-tier id, and the measured table
-    above. Anything else returns None - never a guess. A None window means the
-    fit check declines to act: we only ever exclude a model we positively KNOW
-    is too small, so a newly shipped model can't be mis-escalated by this code
-    on the day it appears."""
+    Witnesses in order, most-measured first: the "[1m]" suffix the CLI stamps
+    on a 1M-tier id; the cached /v1/models snapshot (the API's own
+    max_input_tokens, refreshed daily + at boot - see refresh_models()); the
+    CTX_WINDOWS family rule for anything the cache hasn't seen yet. Anything
+    else returns None - never a guess. A None window means the fit check
+    declines to act: we only ever exclude a model we positively KNOW is too
+    small, so a newly shipped model can't be mis-escalated by this code on the
+    day it appears.
+
+    The priority order is measured, not stylistic: claude-opus-4-5-20251101
+    has max_input_tokens 200_000 while every other Opus is 1_000_000 - the
+    family rule alone would get that one wrong, which is exactly why the live
+    cache must win when it has an answer."""
     m = (mid or "").strip().lower()
     if not m:
         return None
     if "[1m]" in m:
         return 1_000_000
     m = m.split("[")[0]
+    live = _cached_window(m)
+    if live:
+        return live
     for known, win in CTX_WINDOWS.items():
         if m == known or m.startswith(known + "-"):   # dated ids: ...-20251001
             return win
@@ -169,7 +198,11 @@ def _oauth_token():
 
 
 def _fetch_models():
-    """Live [{id, display_name}] from Anthropic /v1/models, or None on failure."""
+    """Live [{id, display_name, max_input_tokens}] from Anthropic /v1/models,
+    or None on failure. max_input_tokens is the API's OWN measured context
+    window per model (confirmed present 2026-09-29 via this same call) - the
+    real source for model_window()'s CTX_WINDOWS fallback below is this field,
+    not a hand-maintained table."""
     tok = _oauth_token()
     if not tok:
         return None
@@ -181,23 +214,26 @@ def _fetch_models():
                      "anthropic-beta": "oauth-2025-04-20"})
         with urllib.request.urlopen(req, timeout=6) as r:
             data = json.load(r)
-        out = [{"id": m["id"], "display_name": m.get("display_name") or m["id"]}
+        out = [{"id": m["id"], "display_name": m.get("display_name") or m["id"],
+                "max_input_tokens": m.get("max_input_tokens")}
                for m in data.get("data", []) if m.get("id")]
         return out or None
     except Exception:
         return None
 
 
-def _discovered():
-    """Cached live models (24h TTL). Fetches when stale; on failure serves the
-    last good cache; [] if none (then the manifest stands alone)."""
+def _discovered(force=False):
+    """Cached live models (24h TTL, or `force` to bypass it - used once at
+    daemon boot so a fresh process serves current data immediately instead of
+    whatever was true up to 24h ago). Fetches when stale/forced; on failure
+    serves the last good cache; [] if none (then the manifest stands alone)."""
     now = time.time()
     from spine.storage import db
     try:
         cache = db.doc_get(_MODELS_CACHE_KEY)
     except Exception:                                            # noqa: BLE001
         cache = None
-    if cache and (now - cache.get("at", 0)) < _DISCOVER_TTL:
+    if not force and cache and (now - cache.get("at", 0)) < _DISCOVER_TTL:
         return cache.get("models", [])
     fresh = _fetch_models()
     if fresh is not None:
@@ -207,6 +243,14 @@ def _discovered():
             pass
         return fresh
     return (cache or {}).get("models", [])   # stale cache, or [] -> manifest only
+
+
+def refresh_models():
+    """Force a live /v1/models fetch now. Called once at daemon boot
+    (spine/http/server.py _warm_henry) so the picker and model_window() see
+    current data from process start, on top of the 24h TTL that keeps it
+    current afterward. Best-effort - same fallback chain as the lazy path."""
+    return _discovered(force=True)
 
 
 def list_models():

@@ -849,6 +849,17 @@ def serve(port=8140, takeover=False):
             _copilot._start_keepalive_loop()
         except Exception as e:                                   # noqa: BLE001
             print("KEEPALIVE: not started (%s)" % str(e)[:120], flush=True)
+        # MODEL LIST: force a live /v1/models fetch at boot, on top of the 24h
+        # TTL that refreshes it afterward - a freshly (re)started daemon should
+        # not serve the picker/context-window whatever was cached up to a day
+        # ago (spine/agent/turnopts.py: CLAUDE_MODELS is the offline fallback
+        # only; the API is the source of truth). Best-effort: no token/offline
+        # falls back to the existing cache exactly like the lazy path.
+        try:
+            from spine.agent import turnopts as _turnopts
+            _turnopts.refresh_models()
+        except Exception as e:                                   # noqa: BLE001
+            print("MODELS: refresh skipped (%s)" % str(e)[:120], flush=True)
     threading.Timer(3.0, _warm_henry).start()
     try:
         try:

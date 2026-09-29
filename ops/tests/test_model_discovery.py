@@ -41,7 +41,8 @@ KNOWN_IDS = {m["id"] for m in turnopts.CLAUDE_MODELS} | set(turnopts.CTX_WINDOWS
 check(UNLISTED_ID not in KNOWN_IDS, "sanity: the probe id is genuinely absent from the manifest")
 
 # 1) a live discovery run surfaces the unlisted model
-turnopts._fetch_models = lambda: [{"id": UNLISTED_ID, "display_name": "Ghost 9 (preview)"}]
+turnopts._fetch_models = lambda: [{"id": UNLISTED_ID, "display_name": "Ghost 9 (preview)",
+                                    "max_input_tokens": 555_000}]
 models = turnopts.list_models()
 ids = {m["id"] for m in models}
 check(UNLISTED_ID in ids, "an unlisted model appears in list_models() after discovery")
@@ -50,6 +51,9 @@ check(found.get("label") == "Ghost 9 (preview)" and found.get("desc") == "auto-d
       "discovered entry carries the API's display_name and is marked auto-discovered")
 check(all(m["id"] in ids for m in turnopts.CLAUDE_MODELS),
       "the curated manifest still stands (seed, not replaced)")
+check(turnopts.model_window(UNLISTED_ID) == 555_000,
+      "model_window() reads the API's own max_input_tokens for a model the "
+      "family-rule fallback has never heard of, not a guess")
 
 # 2) cached in the db - a second call within the TTL does not re-fetch
 calls = {"n": 0}
