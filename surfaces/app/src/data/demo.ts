@@ -338,7 +338,7 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
     if (p.has("c")) out.c = Number(p.get("c") ?? 0);
     return out;
   }
-  if (path === "/tracks" && method === "GET") return rows.map(materialize);
+  if (path.split("?")[0] === "/tracks" && method === "GET") return rows.map(materialize);   // full list; syncTracks takes an array as a re-baseline
   if (path === "/me") return ME;
   if (path === "/dashboard/data") return metrics();
   // GET /usage (spine/ops/usage.py): the account's plan windows - the chat's

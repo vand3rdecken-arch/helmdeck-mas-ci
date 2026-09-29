@@ -91,6 +91,7 @@ export const board: Dict = {
   "board.layout.board": { de: "Board", en: "Board" },
   "board.layout.timeline": { de: "Timeline", en: "Timeline" },
   "board.moveTo": { de: "Verschieben nach…", en: "Move to…" },
+  "board.stale": { de: "Offline – letzter bekannter Stand", en: "Offline – showing the last known board" },
   "board.stepDone": { de: "Step erledigt – die Kette rückt vor", en: "Step done – the chain moves on" },
   "board.emptyNeedsYou": { de: "Nichts wartet gerade auf dich.", en: "Nothing is waiting on you right now." },
 

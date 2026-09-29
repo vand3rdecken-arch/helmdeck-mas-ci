@@ -48,16 +48,49 @@ def _summary(t):
     return s
 
 
-def tracks_list_get(self, user):
-    from cells.engineer.cards import sessions
+def _visible(t, user):
     from spine.auth import auth
+    return t and not t.get("board_hidden") and auth.owns_card(user, t)   # clients: own cards only
+
+
+def tracks_list_get(self, user):
+    from urllib.parse import parse_qs, urlparse
+    from cells.engineer.cards import sessions
+    from spine.storage import db
     # present(): stored 'running' is never believed on the way OUT -
     # only a live turn (drivers.turn_active) may render a spinner.
     # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
     # research card - see lanemachine.request_ship_decision's docstring.
-    ts = [sessions.present(t) for t in sessions.list_tracks() if not t.get("board_hidden")]
-    ts = [_summary(t) for t in ts if auth.owns_card(user, t)]   # clients: own cards only
-    return self._send(200, json.dumps(ts))
+    q = parse_qs(urlparse(self.path).query)
+    if "since" not in q:                       # legacy full list (old apps, tools)
+        arch = q.get("archived", [""])[0] == "1"   # the Archive filter's own list
+        ts = [sessions.present(t) for t in sessions.list_tracks()
+              if _visible(t, user) and (not arch or t.get("archived"))]
+        return self._send(200, json.dumps([_summary(t) for t in ts]))
+    # Delta sync (Linear/Slack): the phone keeps the board in its persisted
+    # cache and asks only for what moved. The view is the NON-archived board;
+    # `gone` = deleted OR archived since the cursor (both leave that view).
+    # A cursor from another daemon process (epoch) or none = re-baseline.
+    try:
+        since, epoch = int(q["since"][0]), int(q.get("epoch", ["0"])[0])
+    except ValueError:
+        since = epoch = 0
+    full = since <= 0 or epoch != db.TRACK_EPOCH
+    v, ids = db.tracks_changed_since(0 if full else since)
+    if full:
+        rows = sessions.list_tracks()
+    else:
+        rows = [db.track_get(i) for i in ids]
+    changed, gone = [], []
+    for i, t in zip(ids if not full else [None] * len(rows), rows):
+        if t is None:
+            gone.append(i)
+        elif _visible(t, user) and not t.get("archived"):
+            changed.append(_summary(sessions.present(t)))
+        else:
+            gone.append(t["id"])
+    return self._send(200, json.dumps(
+        {"epoch": db.TRACK_EPOCH, "v": v, "full": full, "changed": changed, "gone": gone}))
 
 
 def tracks_get(self, user, tid):

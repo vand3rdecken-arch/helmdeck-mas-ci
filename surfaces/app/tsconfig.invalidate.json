@@ -35,5 +35,5 @@
     }
   },
   "include": [],
-  "files": ["src/data/__invalidate_selftest__.ts"]
+  "files": ["src/data/__invalidate_selftest__.ts", "src/data/__tracks_sync_selftest__.ts"]
 }

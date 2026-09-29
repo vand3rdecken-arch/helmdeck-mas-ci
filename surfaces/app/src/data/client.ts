@@ -1,4 +1,6 @@
 import { track } from "./analytics";
+import { queryClient } from "./query";
+import { syncTracks, type TracksDelta } from "./tracks_sync";
 import { useAuthGate } from "./authgate";
 import { deviceLabel, useConfig } from "./config";
 import { demoRespond, useDemo } from "./demo";
@@ -933,7 +935,8 @@ export const api = {
     req<{ v: number; c?: number }>("GET", `/stream/wait?v=${v}&c=${c}`),
 
   // board / cards
-  tracks: () => req<Track[]>("GET", "/tracks"),
+  tracks: () => syncTracks(queryClient, (p) => req<TracksDelta | Track[]>("GET", p)),
+  tracksArchived: () => req<Track[]>("GET", "/tracks?archived=1"),
   track: (id: string) => req<Track>("GET", `/tracks/${id}`),
   metrics: () => req<Metrics>("GET", "/dashboard/data"),
   engines: (refresh = false) => req<{ engines: EngineEntry[] }>("GET", "/engines" + (refresh ? "?refresh=1" : "")),
