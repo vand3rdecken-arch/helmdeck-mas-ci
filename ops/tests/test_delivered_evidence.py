@@ -42,6 +42,12 @@ out = turnrunner._evidence_lines(t, {"turn_web": 3})
 check("app file + 2 shots + 3 web calls reported",
       "App-Dateien geaendert: ja, .shots/: 2 Dateien" in out and "WebSearch/WebFetch im Turn: 3" in out)
 
+check("no ref_code reads -> 'keiner'", "Vorbild-Code gelesen: keiner" in out)
+open(os.path.join(wt, ".refs.log"), "w").write(chr(10).join(["getpaseo/paseo:docs/x.md"] * 2 + ["foo/bar:a.ts"]))
+out = turnrunner._evidence_lines(t, {})
+check("ref_code reads listed once each",
+      "Vorbild-Code gelesen: foo/bar:a.ts, getpaseo/paseo:docs/x.md" in out)
+
 # the escalation itself carries both lines
 from spine.registry import escalations
 sent = []
@@ -53,6 +59,6 @@ turnrunner._emit_delivered_parked({"id": "c1", "lane": "working", "task": "x", "
                                   "needs_you", "done", {"turn_web": 1})
 d = sent[0][1]["detail"] if sent else ""
 check("delivered-parked detail has both fact lines",
-      "App-Dateien geaendert" in d and "WebSearch/WebFetch im Turn: 1" in d)
+      "App-Dateien geaendert" in d and "WebSearch/WebFetch im Turn: 1" in d and "Vorbild-Code gelesen: foo/bar" in d)
 
 sys.exit(1 if fails else 0)

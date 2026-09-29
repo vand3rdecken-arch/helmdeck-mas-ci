@@ -559,8 +559,15 @@ def _evidence_lines(t, meta):
               for n in names)
     shots = os.path.join(wt, ".shots")
     n_shots = len([f for f in os.listdir(shots) if f.lower().endswith(".png")]) if os.path.isdir(shots) else 0
+    try:                                # .refs.log = one 'repo:file' per excerpt ops/tools/ref_code.py printed
+        with open(os.path.join(wt, ".refs.log"), encoding="utf-8") as f:
+            refs = sorted({l.strip() for l in f if l.strip()})
+    except OSError:
+        refs = []
     return ("\nApp-Dateien geaendert: %s, .shots/: %d Dateien\nWebSearch/WebFetch im Turn: %d"
-            % ("ja" if app else "nein", n_shots, int((meta or {}).get("turn_web") or 0)))
+            "\nVorbild-Code gelesen: %s"
+            % ("ja" if app else "nein", n_shots, int((meta or {}).get("turn_web") or 0),
+               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner"))
 
 
 
