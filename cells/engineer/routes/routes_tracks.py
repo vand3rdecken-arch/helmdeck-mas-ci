@@ -48,16 +48,47 @@ def _summary(t):
     return s
 
 
-def tracks_list_get(self, user):
-    from cells.engineer.cards import sessions
+def _visible(t, user):
     from spine.auth import auth
+    return t and not t.get("board_hidden") and auth.owns_card(user, t)   # clients: own cards only
+
+
+def tracks_list_get(self, user):
+    from urllib.parse import parse_qs, urlparse
+    from cells.engineer.cards import sessions
+    from spine.storage import db
     # present(): stored 'running' is never believed on the way OUT -
     # only a live turn (drivers.turn_active) may render a spinner.
     # board_hidden (owner decree 2026-09-14): a landing's own ship-decide
     # research card - see lanemachine.request_ship_decision's docstring.
-    ts = [sessions.present(t) for t in sessions.list_tracks() if not t.get("board_hidden")]
-    ts = [_summary(t) for t in ts if auth.owns_card(user, t)]   # clients: own cards only
-    return self._send(200, json.dumps(ts))
+    q = parse_qs(urlparse(self.path).query, keep_blank_values=True)   # `?cookie=` = first pull
+    if "cookie" not in q:                     # legacy full list (old apps, tools)
+        arch = q.get("archived", [""])[0] == "1"   # the Archive filter's own list
+        ts = [sessions.present(t) for t in sessions.list_tracks()
+              if _visible(t, user) and (not arch or t.get("archived"))]
+        return self._send(200, json.dumps([_summary(t) for t in ts]))
+    # PULL, Replicache-style (rocicorp/mono packages/replicache/src/puller.ts
+    # PullResponseOKV1 + patch-operation.ts): the client sends the opaque
+    # `cookie` it got last time; the reply is {cookie, patch:[put|del|clear]}.
+    # The view is the NON-archived board, so a card that got archived or
+    # deleted is a `del`. A cookie from another daemon process (epoch), a
+    # malformed one or the empty one gets `clear` + every card = re-baseline.
+    try:
+        epoch, since = (int(x) for x in q["cookie"][0].split("."))
+    except ValueError:
+        epoch, since = 0, 0
+    full = epoch != db.TRACK_EPOCH
+    v, ids = db.tracks_changed_since(0 if full else since)
+    rows = sessions.list_tracks() if full else [db.track_get(i) for i in ids]
+    patch = [{"op": "clear"}] if full else []
+    for i, t in zip(ids if not full else [None] * len(rows), rows):
+        if t is None:
+            patch.append({"op": "del", "key": i})
+        elif _visible(t, user) and not t.get("archived"):
+            patch.append({"op": "put", "key": t["id"], "value": _summary(sessions.present(t))})
+        else:
+            patch.append({"op": "del", "key": t["id"]})
+    return self._send(200, json.dumps({"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch}))
 
 
 def tracks_get(self, user, tid):
