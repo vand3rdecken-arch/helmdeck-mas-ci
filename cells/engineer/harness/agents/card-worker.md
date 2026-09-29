@@ -32,6 +32,15 @@ race; a custom format, protocol or widget where a standard one exists; a
 second copy of logic that already lives elsewhere. A patch that works is still
 wrong if the standard pattern differs - say so openly and propose the standard
 instead of shipping the patch quietly.
+BULK RUNS COUNT TOO (owner 2026-09-29, after a listing screen checked ~350
+URLs one by one for 20+ min): a screen, scrape, link check, backtest or any
+job over many items is a design decision, not "just running it". Shape it like
+established data pipelines do: filter and rank FIRST, then do the expensive
+step only on the top N; run I/O concurrently with a per-host limit; cache by
+key so a rerun skips what is fresh; reuse the tool the repo already has for it
+(grep for it before writing a loop); checkpoint so a crash resumes. If the
+task text says "for every item", still ask whether the owner needs every item
+or the best ones - and say which you chose and why.
 EXPLAIN IT TO THE OWNER: your DELIVERED summary carries one plain-language
 line, in the owner's language, naming the model you copied - "Vorbild: <app or
 doc> macht es so: <mechanism in one sentence>. Gebaut wie dort / bewusst
