@@ -500,11 +500,11 @@ def _finish_turn(tid, sid, result, meta, log):
     # the turn's lifecycle as its OWN typed event (Paseo turn_completed/
     # turn_failed/turn_canceled + usage), woven into the card feed by `ta`.
     _log_turn_end(log, meta, box.get("cost"))
-    _emit_delivered_parked(t, box.get("reason", "needs_you"), cleaned)
+    _emit_delivered_parked(t, box.get("reason", "needs_you"), cleaned, meta)
     return t, box.get("reason", "needs_you")
 
 
-def _emit_delivered_parked(t, reason, cleaned):
+def _emit_delivered_parked(t, reason, cleaned, meta=None):
     """A worker that PARKS on needs_you with no question and no background
     task is HANDING WORK BACK (is_delivered - the harness's own definition of
     finished) - and nobody drives it from there. Henry owns FINISH-WHAT-YOU-
@@ -538,9 +538,36 @@ def _emit_delivered_parked(t, reason, cleaned):
             return                      # judged minutes ago - the next turn is not news
         escalations.emit("delivered-parked", card=t["id"],
                          detail="Worker meldet fertig, Karte parkt in working: %s"
-                                % (t.get("task") or "")[:140])
+                                % (t.get("task") or "")[:140] + _evidence_lines(t, meta))
     except Exception:
         pass                            # a cue is never worth failing a turn
+
+
+def _evidence_lines(t, meta):
+    """Two FACT lines for Henry's judgement, no new rule (owner 2026-09-29): did
+    the card touch app files and leave phone-viewport shots (.shots/, written by
+    ops/tools/app_shot.py), and did the turn research (WebSearch/WebFetch).
+    App files = uncommitted or committed-since-main in the card worktree; a
+    direct card that autocommitted on main reads 'nein' (known ceiling)."""
+    import subprocess
+    wt = t.get("worktree") or ""
+    names = set()
+    for cmd in (["status", "--porcelain", "-uall"], ["diff", "--name-only", "main...HEAD"]):
+        r = subprocess.run(["git", "-C", wt] + cmd, capture_output=True, text=True, timeout=20)
+        names.update(l[3:] if cmd[0] == "status" else l for l in r.stdout.splitlines())
+    app = any(n.replace(chr(92), "/").startswith("surfaces/app/") or "/ui/" in n.replace(chr(92), "/")
+              for n in names)
+    shots = os.path.join(wt, ".shots")
+    n_shots = len([f for f in os.listdir(shots) if f.lower().endswith(".png")]) if os.path.isdir(shots) else 0
+    try:                                # .refs.log = one 'repo:file' per excerpt ops/tools/ref_code.py printed
+        with open(os.path.join(wt, ".refs.log"), encoding="utf-8") as f:
+            refs = sorted({l.strip() for l in f if l.strip()})
+    except OSError:
+        refs = []
+    return ("\nApp-Dateien geaendert: %s, .shots/: %d Dateien\nWebSearch/WebFetch im Turn: %d"
+            "\nVorbild-Code gelesen: %s"
+            % ("ja" if app else "nein", n_shots, int((meta or {}).get("turn_web") or 0),
+               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner"))
 
 
 
