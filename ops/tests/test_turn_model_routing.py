@@ -56,7 +56,7 @@ def _track(tid, **kw):
     return t
 
 
-CONCRETE = {"claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"}
+CONCRETE = {"claude-sonnet-5-5", "claude-opus-5", "claude-haiku-4-5"}
 
 # 1) no model anywhere -> Auto resolves to a concrete id (the old leak: cfg
 #    carried no model at all and the CLI global decided)
@@ -106,7 +106,7 @@ check(captured["cfg"].get("model") == "claude-opus-5",
 
 t2 = _track("t-no-override", repo=os.path.join(SANDBOX, "other-repo"))
 sessions._turn(t2, "ordinary text, no escalation signal at all")
-check(captured["cfg"].get("model") == "claude-sonnet-5",
+check(captured["cfg"].get("model") == "claude-sonnet-5-5",
       "a repo with no override still gets the workspace default (%r)" % captured["cfg"].get("model"))
 
 projectconfig.revert(proj, before, actor="test")

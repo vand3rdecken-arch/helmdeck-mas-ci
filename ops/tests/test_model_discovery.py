@@ -87,12 +87,13 @@ check(ids == {m["id"] for m in turnopts.CLAUDE_MODELS},
       "no token/offline with no cache -> exactly the manifest, never empty")
 check(len(models) > 0, "the picker is never empty even fully offline")
 
-# 5) discovery never moves the Auto routing default (owner decree 2026-09-04)
-check(turnopts.DEFAULT_ROUTING_POLICY["auto_model"] == "claude-sonnet-5",
-      "Auto default stays Sonnet 5 regardless of what discovery finds")
+# 5) discovery never moves the Auto routing default (owner decree 2026-09-04,
+#    value updated 2026-09-29: Sonnet 5.5 is Auto)
+check(turnopts.DEFAULT_ROUTING_POLICY["auto_model"] == "claude-sonnet-5-5",
+      "Auto default stays Sonnet 5.5 regardless of what discovery finds")
 picked = turnopts.pick_model("please fix the flaky test in ci")
-check(picked == "claude-sonnet-5",
-      "an ordinary Auto turn still routes to Sonnet 5 (%r), not a newly discovered model" % picked)
+check(picked == "claude-sonnet-5-5",
+      "an ordinary Auto turn still routes to Sonnet 5.5 (%r), not a newly discovered model" % picked)
 
 print()
 if _fails:

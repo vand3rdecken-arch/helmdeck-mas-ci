@@ -283,9 +283,10 @@ def _allowed_ids():
 # escalate_urgent) and pass the effective policy in. turnopts itself stays
 # the MECHANISM - whitelist, window law, explicit-wins - never the policy
 # owner (owner decree 2026-09-04: routing policy is Henry/engineer logic per
-# project, not a spine constant).
+# project, not a spine constant; owner decree 2026-09-29: auto_model is
+# Sonnet 5.5).
 DEFAULT_ROUTING_POLICY = {
-    "auto_model": "claude-sonnet-5",
+    "auto_model": "claude-sonnet-5-5",
     "strong_model": "claude-opus-5",
     "cheap_model": "claude-haiku-4-5",
     "escalate_value": HIGH_VALUE,

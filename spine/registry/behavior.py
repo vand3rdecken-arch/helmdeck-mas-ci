@@ -103,6 +103,22 @@ BLOCKS = (
 #   readonly - shown with its source, never editable (kind is always "fixed")
 WIRINGS = ("slot", "code", "readonly")
 
+
+def _model_options():
+    """Live model ids for a `single` rule whose options are the model list -
+    spine/agent/turnopts.list_models() is already the ONE manifest (curated +
+    auto-discovered + settings.json), so a rule never keeps a second hand-kept
+    id list that can drift from it. Called lazily (from `options` below, and
+    by check_value/describe) rather than at import time, so a rule table
+    import never touches the db. Falls back to the two ids the picker always
+    had if the live list cannot be read (offline box, broken cache)."""
+    try:
+        from spine.agent.turnopts import list_models
+        return [m["id"] for m in list_models()]
+    except Exception:                                            # noqa: BLE001
+        return ["claude-sonnet-5", "claude-opus-5"]
+
+
 BEHAVIOR_RULES = [
     # ---------------------------------------------------------------- tone --
     {"key": "tone.length", "block": "tone", "wire": "slot", "kind": "policy",
@@ -508,15 +524,15 @@ BEHAVIOR_RULES = [
      "source": "cells/engineer/harness/agents/ship-worker.md"},
 
     {"key": "routing.auto_model", "block": "routing", "wire": "code", "kind": "policy",
-     "control": "single", "options": ["claude-sonnet-5", "claude-opus-5"],
+     "control": "single", "options": _model_options,
      "scope": "project", "binds": [],
      "labelKey": "rule.routing.autoModel", "descKey": "rule.routing.autoModel.desc",
-     "why": "Sonnet 5 ist heute der Auto-Default fuer Karten (Owner-Decree "
-            "2026-09-04). Ein Kundenprojekt mit hoeherem Risiko will "
-            "moeglicherweise durchgaengig die staerkere Stufe - pro Projekt, "
-            "nicht workspace-weit.",
+     "why": "Sonnet 5.5 ist der Auto-Default fuer Karten (Owner-Decree "
+            "2026-09-29, vorher Sonnet 5 seit 2026-09-04). Ein Kundenprojekt "
+            "mit hoeherem Risiko will moeglicherweise durchgaengig die "
+            "staerkere Stufe - pro Projekt, nicht workspace-weit.",
      "reads": "cells/engineer/cards/turnrunner.py::_routing_policy",
-     "surfaces": {"all": {"default": "claude-sonnet-5", "renders": None}},
+     "surfaces": {"all": {"default": "claude-sonnet-5-5", "renders": None}},
      "source": "spine/agent/turnopts.py:pick_model"},
 
     {"key": "routing.escalate_value", "block": "routing", "wire": "code", "kind": "policy",
@@ -688,6 +704,8 @@ def check_value(rule, surface, val):
             return "%s cannot be negative" % rule["key"]
     elif ctl == "single":
         opts = rule.get("options") or []
+        if callable(opts):
+            opts = opts()
         if val not in opts:
             return "%s takes one of: %s" % (rule["key"], ", ".join(map(str, opts)))
     elif ctl == "text":
@@ -1104,10 +1122,11 @@ def describe(project=""):
                           "value": value(r["key"], s, project),
                           "default": default_of(r, s),
                           "layer": got["layer"], "inherited": got["inherited"]})
+        opts = r.get("options")
         out.append({
             "key": r["key"], "block": r["block"], "wire": r["wire"],
             "kind": r["kind"], "control": r["control"],
-            "options": r.get("options"), "scope": r.get("scope"),
+            "options": opts() if callable(opts) else opts, "scope": r.get("scope"),
             "binds": r.get("binds") or [], "labelKey": r["labelKey"],
             "descKey": r["descKey"], "why": r["why"], "source": r["source"],
             "reads": r.get("reads"), "surfaces": surfs,
