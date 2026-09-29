@@ -8,10 +8,14 @@
 // image-block channel. The agent opens the files with its own Read tool.
 //
 // Expo SDK 57 specifics (checked against the installed .d.ts, not from memory -
-// see surfaces/app/AGENTS.md): both pickers return base64 directly via `base64: true`,
-// so no expo-file-system read is needed, and `mediaTypes` takes a MediaType[]
-// ("images"), NOT the deprecated MediaTypeOptions enum.
+// see surfaces/app/AGENTS.md): expo-image-picker's `base64: true` works on every
+// platform, but expo-document-picker's is `@platform web` ONLY (types.d.ts on
+// both the option and the asset field) - on Android/iOS `asset.base64` is
+// always undefined regardless of the option, so pickFiles() below reads the
+// cache copy itself. `mediaTypes` takes a MediaType[] ("images"), NOT the
+// deprecated MediaTypeOptions enum.
 import * as DocumentPicker from "expo-document-picker";
+import { EncodingType, readAsStringAsync } from "expo-file-system/legacy";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { Platform } from "react-native";
@@ -125,15 +129,20 @@ export async function takePhoto(): Promise<Attach[]> {
 }
 
 /** Any file. copyToCacheDirectory so the uri stays readable after the picker
- *  closes; base64 so we never touch the filesystem ourselves. */
+ *  closes. On web `base64` comes back on the asset directly; on Android/iOS
+ *  it never does (see the import comment above), so we read the cache copy
+ *  via expo-file-system there. A read failure throws (no silent drop) - it
+ *  reaches runPick's catch and shows the owner a real Alert. */
 export async function pickFiles(): Promise<Attach[]> {
   const res = await DocumentPicker.getDocumentAsync({
     multiple: true, copyToCacheDirectory: true, base64: true,
   });
   if (res.canceled) return [];
-  return res.assets
-    .map((a): Attach | null => (a.base64 ? { name: a.name, data: bare(a.base64), mime: a.mimeType } : null))
-    .filter((x): x is Attach => !!x);
+  const out = await Promise.all(res.assets.map(async (a): Promise<Attach | null> => {
+    const data = a.base64 ?? await readAsStringAsync(a.uri, { encoding: EncodingType.Base64 });
+    return data ? { name: a.name, data: bare(data), mime: a.mimeType } : null;
+  }));
+  return out.filter((x): x is Attach => !!x);
 }
 
 /** Android can kill the app's activity while the system picker is in front.
