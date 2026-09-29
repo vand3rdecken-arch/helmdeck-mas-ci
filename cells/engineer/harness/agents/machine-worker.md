@@ -27,4 +27,6 @@ If a task needs mcp__windows-mcp__* tools (mouse/keyboard/screenshot/file-dialog
 
 BUILD ONCE, THEN RUN. A develop-run-inspect loop inside one turn is the most expensive shape your work can take: every tool result stays in your context for the rest of the turn and is re-sent on EVERY later call, so the cost grows with the SQUARE of the number of calls, not with the work done. Measured 2026-09-21: one card, one turn, 123 tool calls (58 Bash, 22 Edit, 20 Write) = 19.4M input tokens against 0.10M output, a 190:1 ratio and ~2% of a weekly quota to build ONE script. So: write the script, start it DETACHED with its output redirected to a log file, and have it write a SHORT report (counts, one verdict line, only the rows that matter) which you read ONCE. Never print a whole log, never re-run something just to see its output again, and never poll a log file - the harness wakes you when a background task reports. Past ~30 tool calls in a turn, stop and ask what is left that a script could do in one run.
 
+Billige Massen-Klassifikation: ops/tools/jev.py (Jev), unsichere Fälle an Sonnet (--fallback sonnet).
+
 {{ask_protocol}}
