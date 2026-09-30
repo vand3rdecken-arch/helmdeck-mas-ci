@@ -137,10 +137,16 @@ A client request follows. Break it into 3-8 concrete, orderable steps.
 
 For each step decide the best execution mode:
   do      = an AI agent can complete it alone (code, research, documents, browser/desktop work)
-  prepare = an AI agent should DRAFT it but a human must review/send it (emails to people, proposals, designs)
-  cowork  = human and agent should work it together interactively
+  prepare = an AI agent DRAFTS it and a human sends it - ONLY when the result leaves the building
+            (a message to a real person, a public post, a payment)
+  cowork  = the agent needs the human's live input to do it at all (his taste, his account, his voice)
   teach   = a repetitive machine sequence a human should demonstrate once so it becomes a playbook
-  human   = only a human can do it (signatures, phone calls, physical actions, approvals by named people)
+  human   = ONLY what no agent can physically do: sign, call, meet or talk to a person, pay,
+            act in the physical world
+
+The agents decide on their own. "Confirm", "approve", "review", "pick the best", "agree on
+criteria" are NEVER steps - an agent decides that and reports it. Do not invent a human step
+to get a sign-off.
 
 Reply with ONLY a JSON array, no prose:
 [{"title": "...", "desc": "one sentence of what done looks like", "mode": "do|prepare|cowork|teach|human", "days": <estimated working days, 1-5>}]
@@ -198,12 +204,15 @@ def _lay_dates(p):
         acc += s.get("days", 1)
         s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
 
-def create(request_text, client="", due="", actor="owner", steps=None, template_id=None):
+def create(request_text, client="", due="", actor="owner", steps=None, template_id=None,
+           propose=True):
     """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
     milestones) we ADOPT them directly and skip the generic proposer - the steps are
     already intelligent + gated. With `template_id` instead, the steps come from a
     saved template (deterministic, no LLM call). Without either, the background
-    proposer runs as before."""
+    proposer runs - unless propose=False: then the process is born EMPTY and
+    running, a folder the work fills (attach_card) - the goal's process
+    (pm_goal.ensure_goal_process), whose steps are the cards Henry files."""
     if template_id and not steps:
         tmpl = get_template(template_id)
         if not tmpl:
@@ -224,12 +233,14 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
         p["steps"] = steps
         p["status"] = "ready"
         _lay_dates(p)
+    elif not propose:
+        p["status"] = "running"
     with _lock:
         ps = _load(); ps.insert(0, p); _save(ps)
     from spine.storage import events
     events.emit("process", pid, action="filed", actor=actor)
-    if steps:
-        return p                       # adopted the plan's steps; no proposer needed
+    if steps or not propose:
+        return p                       # adopted the plan's steps / empty folder; no proposer
     def go():
         try:
             steps, cost = _propose_steps(request_text)
@@ -856,3 +867,74 @@ def attach_card(pid, tid, actor="owner"):
         _save(ps)
     _tag_card(tid, pid, request, step_no, t.get("mode") or "do")
     return get(pid)
+
+
+def accept_all(pid, repo, actor="owner"):
+    """Every step without a card -> a card (accept_step each). The one body
+    behind the chat verb accept_steps and the broker's accept_steps, so
+    Henry deciding a proposal and the owner tapping it do the same thing.
+    Returns (process, [new card ids])."""
+    p = get(pid)
+    if not p:
+        raise RuntimeError("no such process")
+    made = []
+    for i in range(len(p["steps"])):
+        if not p["steps"][i].get("track"):
+            p = accept_step(pid, i, repo, actor=actor)
+            made.append(p["steps"][i].get("track"))
+    return p, [x for x in made if x]
+
+
+def detach_card(pid, tid, actor="owner"):
+    """The inverse of attach_card: the card stops being a step of `pid`
+    (mark_goal off). Bookkeeping only, like remove_step - the card itself
+    keeps running; its process pointer is cleared by _tag_card's owner."""
+    from spine.storage.trackstore import _mutate
+    with _lock:
+        ps = _load()
+        p = next((q for q in ps if q["id"] == pid), None)
+        if p is None:
+            raise RuntimeError("no such process: %s" % pid)
+        p["steps"] = [s for s in p["steps"] if s.get("track") != tid]
+        _save(ps)
+
+    def _t(tt):
+        if tt.get("process") == pid:
+            for k in ("process", "process_title", "process_step"):
+                tt.pop(k, None)
+    _mutate(tid, _t)
+    from spine.storage import events
+    events.emit("process", pid, action="detached", card=tid, actor=actor)
+    return get(pid)
+
+
+def set_next(pid, what, at, actor="henry"):
+    """THE NEXT MOVE of a process, as a record: what happens next and WHEN
+    (YYYY-MM-DD[ HH:MM]). A conversation that ends in "als Naechstes X" used
+    to leave that intent in chat prose only - nothing could wake on it.
+    process_drive wakes Henry once `at` is reached. Empty `what` clears it."""
+    what = " ".join((what or "").split())[:300]
+    at = (at or "").strip()
+    if what:
+        ok = False
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                time.strptime(at[:16], fmt); ok = True; break
+            except ValueError:
+                continue
+        if not ok:
+            raise ValueError("at must be YYYY-MM-DD or YYYY-MM-DD HH:MM, got %r" % at)
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid:
+                if what:
+                    p["next"] = {"what": what, "at": at[:16],
+                                 "set": time.strftime("%Y-%m-%d %H:%M:%S"), "by": actor}
+                else:
+                    p.pop("next", None)
+                _save(ps)
+                from spine.storage import events
+                events.emit("process", pid, action="next", actor=actor, what=what, at=at[:16])
+                return p
+    raise RuntimeError("no such process")

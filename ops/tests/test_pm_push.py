@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """The push sweep (cells/copilot/planning/pm_push.py) - the PM half that asks
 whether filed work is actually moving. Pins the four stall kinds, oldest-first
-order, the once-a-day latch that re-arms on a NEW stall, and the length law on
+order, WHO each stall belongs to (owner 2026-09-30: only what no agent can
+move reaches the owner - the rest is Henry's via process_drive), the
+once-a-day latch that re-arms on a NEW owner stall, and the length law on
 the question line. Pure derivation over injected processes/tracks: no db, no
 daemon, no LLM."""
 import os
@@ -83,7 +85,18 @@ check(not any(x["card"] == "c-arch-parked" for x in items), "an archived parked 
 check(sum(1 for x in items if x["kind"] == "proposal") == 2, "two never-accepted processes")
 check(sum(1 for x in items if x["kind"] == "human") == 1, "one human step waiting")
 check(sum(1 for x in items if x["kind"] == "dead") == 1, "archived + missing step cards collapse to ONE dead item per process")
-check(next(x for x in items if x["kind"] == "dead")["label"].endswith("2 Schritt-Karten weg, Kette steht"), "dead item counts its steps")
+check(next(x for x in items if x["kind"] == "dead")["label"].startswith("Kette steht, 2 Schritt-Karten weg: "), "dead item counts its steps, meaning first")
+check(next(x for x in items if x["kind"] == "proposal")["label"].startswith("4 Schritte vorgeschlagen, nie gestartet: "),
+      "proposal label leads with its meaning, the title is what a truncation eats")
+
+# 2b) who: the owner only for a ready human step and a card outside any process
+who = {x["kind"]: x["who"] for x in items}
+check(who == {"proposal": "henry", "dead": "henry", "human": "owner", "parked": "owner"},
+      "proposal/dead -> henry, human step + process-less parked card -> owner (%r)" % who)
+pc = TRACKS + [{"id": "c-proc-parked", "lane": "working", "status": "needs_you", "task": "step q",
+                "process": "p-run", "created": "2026-09-20 10:00:00", "updated": "2026-09-20 10:00:00"}]
+pw = [x for x in pp.derive(NOW, processes=PROCS, tracks=pc, goal_pid="") if x["card"] == "c-proc-parked"]
+check(pw and pw[0]["who"] == "henry", "a PROCESS card parked on its question is Henry's first")
 check(sum(1 for x in items if x["kind"] == "parked") == 1, "one parked card")
 
 # 3) order: the GOAL process first, then human > proposal > dead > parked, oldest within
@@ -120,12 +133,23 @@ ok1 = pp.sweep(st, NOW, ask=lambda l, o, h: sent.append((l, o, h)) or True,
 ok2 = pp.sweep(st, NOW + 3600, ask=lambda l, o, h: sent.append((l, o, h)) or True,
                feed=lambda k, m: feed.append(m), save=lambda s: None)
 check(ok1 and not ok2 and len(sent) == 1, "asked once, not again an hour later")
-check(st["push_asked"]["day"] == "20260923" and len(st["push_asked"]["keys"]) == len(items), "latch carries day + keys")
-check(feed and feed[0].startswith("Vorantreiben: %d Stillstaende" % len(items)), "activity feed line")
-# a new stall the same day -> asks again
+mine = [x for x in items if x["who"] == "owner"]
+check(st["push_asked"]["day"] == "20260923" and sorted(st["push_asked"]["keys"]) == sorted(x["key"] for x in mine),
+      "latch carries day + the OWNER's keys only")
+check(feed and feed[0].startswith("Vorantreiben: %d Stillstaende" % len(mine)), "activity feed line")
+check(not any(o["label"].startswith(("Starten: ", "Streichen: ")) for o in sent[0][1]),
+      "the owner is never asked to start a proposal or drop a chain (%r)" % [o["label"] for o in sent[0][1]])
+# a new HENRY stall the same day does not reach the owner
 more = PROCS + [{"id": "p-new", "status": "ready", "created": "2026-09-23 15:00:00", "request": "neu",
                  "steps": [{"title": "a", "mode": "do", "state": "proposed", "track": None}]}]
 pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, more, TRACKS, "p-goal")
+check(not pp.sweep(st, NOW + 5400, ask=lambda l, o, h: sent.append((l, o, h)) or True,
+                   feed=lambda k, m: None, save=lambda s: None) and len(sent) == 1,
+      "a new proposal the same day does NOT re-ask the owner")
+# a new OWNER stall the same day -> asks again
+morec = TRACKS + [{"id": "c-parked2", "lane": "working", "status": "needs_you", "task": "neue Frage",
+                   "created": "2026-09-21 10:00:00", "updated": "2026-09-21 12:00:00"}]
+pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, more, morec, "p-goal")
 ok3 = pp.sweep(st, NOW + 7200, ask=lambda l, o, h: sent.append((l, o, h)) or True,
                feed=lambda k, m: None, save=lambda s: None)
 check(ok3 and len(sent) == 2, "a NEW stall the same day re-arms the question")

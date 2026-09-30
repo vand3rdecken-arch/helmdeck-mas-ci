@@ -7,7 +7,8 @@ Pinned through the real action runner and GET /chat/threads' builder:
     it; without repo it is the workspace goal (and the fallback)
  2. /chat/threads serves the goals, the open processes with the right
     done/total (sync owns completion: state/done, never step.status), and
-    `needs` from pm_push.derive (a proposal nobody accepted)
+    `needs` from pm_push.derive - owner items only: a proposal nobody
+    accepted is Henry's (process_drive), never a row in the owner's list
  3. a process that completes says so in the owner's chat
 Run: py -3.12 ops/tests/test_goals_plans.py
 """
@@ -74,8 +75,8 @@ check(goals.get("alphaloop") == "50 zahlende Nutzer bis Oktober" and goals.get(N
       "2. threads serve project + workspace goals (%r)" % goals)
 pl = [x for x in th["processes"] if x["id"] == p["id"]]
 check(pl and pl[0]["total"] == 2 and pl[0]["done"] == 0, "2. the open plan is listed with 0/2 (%r)" % pl)
-check(any(n["kind"] == "proposal" and n["process"] == p["id"] for n in th.get("needs", [])),
-      "2. an unaccepted plan is under needs (%r)" % th.get("needs"))
+check(not any(n["process"] == p["id"] for n in th.get("needs", [])),
+      "2. an unaccepted plan is NOT the owner's need - starting it is Henry's call (%r)" % th.get("needs"))
 
 # done/total counts sync's completion, not step.status
 for i in range(2):

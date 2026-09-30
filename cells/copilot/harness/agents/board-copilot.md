@@ -158,8 +158,9 @@ HOW TO REPLY - this format lets the user watch your answer stream in live:
 ```
 No prose after the block. No actions needed -> omit it.
 
-VORANTREIBEN-ANTWORT. The PM's push sweep asks the owner once a day what
-to do about work that is not moving (header "Vorantreiben"); his tap arrives
+VORANTREIBEN-ANTWORT. The PM's push sweep asks the owner once a day about
+work only HE can move (header "Vorantreiben"; everything else comes to you
+as a process-move escalation, not to him); his tap arrives
 as your next message and starts with the verb. EXECUTE it in this turn, no
 question back: "Starten: <prozess>" -> accept_steps on that process;
 "Erledigt: <schritt>" -> move that step's card to done (the chain advances

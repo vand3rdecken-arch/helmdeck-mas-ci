@@ -2,19 +2,16 @@
 """PM goal->process (PMP epic) management - extracted from pm.py (god-file
 breakup, see spine/registry/debt.py daemon-god-files).
 
-PMP initiation: a new goal becomes a PROCESS (the epic) so goal <-> timeline
-<-> cost are analysable through the existing process/SoW machinery instead of
-a flat card list, built from the BRAIN's plan once it passes the golden
-triage (Budget/Timeline/Scope green) - the steps ARE the vetted, dated
-milestones, not a context-blind checklist.
+A goal has exactly one process: an EMPTY folder, created on first need
+(ensure_goal_process), whose steps are the goal cards Henry files
+(goal_drive.link_card -> processes.attach_card). Until 2026-09-30 this was
+PMP initiation - proposed steps the owner had to accept - which ran beside
+Henry's goal cards as a second, never-started plan.
 
-pm.py's own functions (get_goal, latest_plan, _epic_description) are
+pm.py's own functions (get_goal) are
 imported LAZILY inside the function bodies that need them - pm.py imports
 THIS module at module level to re-export these names unchanged for existing
 callers, so a top-level import back would cycle."""
-import re
-
-from cells.copilot.planning.pm_budget import _pace, _days, _triage_green
 from cells.copilot.planning.pm_state import _save_loopstate
 from cells.copilot.planning.pm_comm import _say
 
@@ -26,58 +23,46 @@ def _goal_has_process(st):
     return bool(gp.get("pid")) and gp.get("goal") == get_goal()
 
 
-def _goal_process(pm, st):
-    """PMP initiation: a new goal becomes a PROCESS (the epic) so goal <-> timeline
-    <-> cost are analysable through the existing process/SoW machinery instead of a
-    flat card list. Proposes the step breakdown once per goal (processes.create runs
-    the proposer in the background, laying end-to-end due dates), and asks the owner
-    for the deadline/scope/budget so the schedule and budget are real - the intake
-    the PM was missing. The owner reviews/accepts steps in the Prozesse tab; each
-    accepted step becomes a card linked to the process (step.track)."""
-    from cells.copilot.planning.pm import get_goal, latest_plan, _epic_description
+def ensure_goal_process(st=None):
+    """The goal's process id, created EMPTY when there is none yet (owner
+    2026-09-30: goal and process were two parallel records - Henry's goal
+    cards carried a `goal` tag, the PM's goal process held 7 proposed steps
+    nobody accepted, and neither knew the other: 10 goal cards, process 0/7,
+    and the owner asked to start work that was already done). ONE link now:
+    a card is goal work iff it is a step of this process (attach_card). The
+    process is a folder the work fills, not a plan waiting for a sign-off -
+    so no proposer and nothing to accept. Returns "" without a goal."""
+    from cells.copilot.planning.pm import get_goal
+    from cells.copilot.planning.pm_state import _loopstate
+    if st is None:
+        st = _loopstate()
     goal = get_goal()
-    if not goal or _goal_has_process(st):
+    if not goal:
+        return ""
+    if _goal_has_process(st):
+        return st["goal_process"]["pid"]
+    from cells.engineer.chains import processes
+    p = processes.create(goal, client="", due="", actor="pm", propose=False)
+    st["goal_process"] = {"goal": goal, "pid": p["id"]}
+    _save_loopstate(st)
+    return p["id"]
+
+
+def _goal_process(pm, st):
+    """A new goal gets its (empty) process - see ensure_goal_process. The old
+    PMP initiation (proposer or vetted milestones as `proposed` steps the
+    owner had to accept) is gone: it produced exactly the parallel track the
+    owner found on 2026-09-30. Henry drives the goal (goal_drive) and files
+    the steps as cards; the process only collects them."""
+    if _goal_has_process(st):
         return
-    # Build the epic from the BRAIN's plan - but only once that plan passed the golden
-    # triage (Budget/Timeline/Scope green). While it's blocked, the TRIAGE gate/ask drives
-    # (missing deadline/scope/budget/recruitment is surfaced there); we don't commit a
-    # process on a shaky plan. This is the fix for "the process came from the dumb proposer":
-    # the steps ARE the vetted, dated milestones now, not a context-blind checklist.
-    # A vetted plan for THIS goal (manual make_plan / clarify_goal) still gives
-    # the best steps. Without one - the nightly plan is gone since 2026-09-23
-    # (owner: "lese ich nicht - weg") - the goal itself is the request and the
-    # background proposer breaks it down; the push sweep (pm_push) then asks
-    # the owner to start it instead of leaving it on `ready` forever, which is
-    # exactly what happened to the goal process filed on 2026-09-19.
-    plan = latest_plan() or {}
-    steps = []
-    if plan.get("goal") == goal and _triage_green(plan):
-        mss = [m for m in (plan.get("milestones") or []) if str(m.get("status")) != "done"]
-        pace = _pace(plan.get("economics") or {})
-        for m in mss:
-            title = re.sub(r"^\s*M\d+\s*[:\-]\s*", "", (m.get("name") or "").strip())
-            if not title:
-                continue
-            steps.append({"title": title[:120], "desc": _epic_description(m), "mode": "do",
-                          "days": max(1, _days(int(m.get("est_turns") or 0), pace)),
-                          "status": "proposed", "track": None, "due": ""})
     try:
-        from cells.engineer.chains import processes
-        p = processes.create(goal, client="", due="", actor="pm", steps=steps or None)
+        pid = ensure_goal_process(st)
     except Exception as e:
         print("PM goal_process error:", e)
         return
-    st["goal_process"] = {"goal": goal, "pid": p["id"]}
-    _save_loopstate(st)
-    # STAYS in the chat (owner decree 2026-08-30): the steps are 'proposed' and
-    # nothing dispatches until he accepts them, so this genuinely is his move -
-    # but as ONE sentence naming that move, not three explaining the triage.
-    if steps:
-        _say("Ziel-Plan steht: %d datierte Schritte im Prozesse-Tab warten auf deine "
-             "Abnahme, dann laufen die Ziel-Karten." % len(steps))
-    else:
-        _say("Ziel notiert - ich lasse die Schritte vorschlagen und frage dich dann, "
-             "was starten soll.")
+    if pid:
+        _say("Ziel notiert. Henry treibt es, seine Ziel-Karten sammeln sich als Plan.")
 
 
 def _goal_process_status(st):
@@ -95,8 +80,10 @@ def _goal_process_status(st):
     if not p:
         return None
     steps = p.get("steps") or []
-    done = sum(1 for s in steps if s.get("status") == "done")
-    nxt = next((s for s in steps if s.get("status") != "done"), None)
+    # sync() owns completion (state/done); a step's `status` is only
+    # proposed/accepted and never "done" - counting it said 0/N forever
+    done = sum(1 for s in steps if s.get("state") == "done" or s.get("done"))
+    nxt = next((s for s in steps if not (s.get("state") == "done" or s.get("done"))), None)
     return {"next": (nxt or {}).get("title"), "next_due": (nxt or {}).get("due"),
             "process_due": p.get("due"), "done": done, "total": len(steps),
             "status": p.get("status")}

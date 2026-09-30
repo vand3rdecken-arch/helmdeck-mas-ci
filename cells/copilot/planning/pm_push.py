@@ -24,7 +24,12 @@ existing tap-with-options channel (_ask_owner). A tapped option becomes the
 owner's next chat message to Henry, whose brief (VORANTREIBEN-ANTWORT)
 turns "Starten: X" / "Erledigt: X" / "Streichen: X" / "Zeig mir: X" into the
 verb he already has (accept_steps / move done / cancel_process / show the
-card's question). No new autonomy anywhere."""
+card's question).
+
+Since 2026-09-30 the owner is asked only about what ONLY he can move
+(derive's who="owner"); starting a proposal, dropping a dead chain and a
+process card's open question are Henry's (process_drive wakes him with the
+same items). derive() stays the one place that computes every stall."""
 import hashlib
 import re
 import time
@@ -97,7 +102,14 @@ def goal_process_id(st=None, goal=None):
 
 def derive(now=None, processes=None, tracks=None, goal_pid=None):
     """Every stalled thing on the board, goal first, then oldest. Each item:
-        {key, kind, label, option, desc, since, process, step, card}
+        {key, kind, who, label, option, desc, since, process, step, card}
+    who: "owner" - only a human can move it (a ready HUMAN step, or a card
+                   outside any process parked on its question)
+         "henry" - a decision an agent can take (start a proposal, drop a
+                   dead chain, answer a process card's question); these go
+                   to Henry through process_drive, never to the owner (owner
+                   2026-09-30: "bei process viele Sachen die Menschen nicht
+                   brauchen trotzdem fragen")
     kind: proposal   - a process whose steps were proposed and never accepted
           human      - a human step that is ready and waiting on the owner
           dead       - a process whose chain cannot move: a step's card is
@@ -126,8 +138,8 @@ def derive(now=None, processes=None, tracks=None, goal_pid=None):
         if not any(s.get("track") for s in steps):
             since = _epoch(p.get("created"))
             items.append({
-                "key": "proposal:" + p["id"], "kind": "proposal",
-                "label": "%s: %d Schritte vorgeschlagen, nie gestartet" % (head, len(steps)),
+                "key": "proposal:" + p["id"], "kind": "proposal", "who": "henry",
+                "label": "%d Schritte vorgeschlagen, nie gestartet: %s" % (len(steps), head),
                 "option": "Starten: " + head,
                 "desc": "%d Schritte annehmen, die Kette laeuft an" % len(steps),
                 "since": since, "process": p["id"], "step": None, "card": None})
@@ -145,17 +157,17 @@ def derive(now=None, processes=None, tracks=None, goal_pid=None):
                     and t.get("lane") == "backlog"):
                 since = _epoch(t.get("created") or p.get("created"))
                 items.append({
-                    "key": "human:%s:%d" % (p["id"], i), "kind": "human",
-                    "label": "%s: wartet auf dich" % _short_title(s.get("title"), 40),
+                    "key": "human:%s:%d" % (p["id"], i), "kind": "human", "who": "owner",
+                    "label": "Dein Schritt: %s" % _short_title(s.get("title"), 60),
                     "option": "Erledigt: " + _short_title(s.get("title"), 26),
                     "desc": "Schritt abhaken, die naechsten Schritte starten",
                     "since": since, "process": p["id"], "step": i, "card": t["id"]})
             prev_done = prev_done and done
         if dead:
             items.append({
-                "key": "dead:" + p["id"], "kind": "dead",
-                "label": "%s: %d Schritt-Karte%s weg, Kette steht" % (
-                    head, len(dead), "" if len(dead) == 1 else "n"),
+                "key": "dead:" + p["id"], "kind": "dead", "who": "henry",
+                "label": "Kette steht, %d Schritt-Karte%s weg: %s" % (
+                    len(dead), "" if len(dead) == 1 else "n", head),
                 "option": "Streichen: " + head,
                 "desc": "Prozess abbrechen - laufende Karten bleiben unberuehrt",
                 "since": min(e for _, e in dead) or _epoch(p.get("created")),
@@ -168,7 +180,8 @@ def derive(now=None, processes=None, tracks=None, goal_pid=None):
             if since and now - since >= STALL_AGE_S:
                 items.append({
                     "key": "parked:" + t["id"], "kind": "parked",
-                    "label": "%s: wartet auf dich" % _short_title(t.get("task"), 40),
+                    "who": "henry" if t.get("process") else "owner",
+                    "label": "Wartet auf Antwort: %s" % _short_title(t.get("task"), 60),
                     "option": "Zeig mir: " + _short_title(t.get("task"), 26),
                     "desc": "die offene Frage dieser Karte im Chat",
                     "since": since, "process": t.get("process"), "step": None, "card": t["id"]})
@@ -205,7 +218,7 @@ def sweep(st, now=None, ask=None, feed=None, save=None):
     for tests; the daemon wires pm_comm._ask_owner / _activity and the
     loopstate writer."""
     now = now or time.time()
-    items = derive(now)
+    items = [x for x in derive(now) if x.get("who") == "owner"]
     if not items:
         if st.get("push_asked"):
             st.pop("push_asked", None)

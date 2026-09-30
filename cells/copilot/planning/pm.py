@@ -1597,6 +1597,17 @@ def _tick():
     except Exception as e:                                   # noqa: BLE001
         print("PM goal wake error:", e)
 
+    # THE PROCESS WAKE (owner 2026-09-30, process_drive): the same drive for
+    # every open process - a step delivered, a stall, a due date, a recorded
+    # next move, a decision an agent can take - aimed at Henry, not the owner.
+    # Same switch as the goal wake (rule initiative.goal_drive).
+    try:
+        from cells.copilot.planning import goal_drive, process_drive
+        if goal_drive._enabled():
+            process_drive.wake(st)
+    except Exception as e:                                   # noqa: BLE001
+        print("PM process wake error:", e)
+
     # COMMUNICATE ONLY ON DELTA (position = live cards, no plan any more).
     pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], None)
     _pkey = json.dumps(pos, sort_keys=True, ensure_ascii=False)

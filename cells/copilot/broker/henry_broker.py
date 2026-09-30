@@ -496,11 +496,12 @@ def _decide(esc):
           "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
           "im Turn ist - NIE taskkill/schtasks selbst tippen). "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|ignore",\n'
+          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|accept_steps|cancel_process|set_next|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
           ' "kind": "bei ship: none|ota|native",\n'
           ' "text": "bei did: was du getan hast; bei direct_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
+          ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
           ' "why": "ein satz begruendung"}')
     if not privileged:
         # This card was filed by a client-role account, not owner/operator -
@@ -538,7 +539,9 @@ def _decide(esc):
     kind = (d.get("kind") or "").strip()
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
-    if action in ("did", "direct_task") and not privileged:
+    at = (d.get("at") or "").strip()
+    if action in ("did", "direct_task", "accept_steps", "cancel_process", "set_next") \
+            and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
         # escalation does not get closed via "did" - stays open for a
         # privileged human/owner to see, same shape as the GxP refusal
@@ -547,7 +550,7 @@ def _decide(esc):
             "Henry versuchte '%s' auf einer client-Karte ohne Haende - "
             "abgelehnt, bleibt offen" % action)
         return False
-    if not _execute(action, card, lane, text, esc, kind=kind, why=why):
+    if not _execute(action, card, lane, text, esc, kind=kind, why=why, at=at):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why,
                                 kind=kind if action == "ship" else "")
@@ -611,11 +614,51 @@ def _find_track(card):
         return None
 
 
-def _execute(action, card, lane, text, esc, kind="", why=""):
+def _esc_process(esc):
+    """The process an escalation is about: its own `process` record
+    (process_drive), or the goal's process for a goal-move."""
+    if esc.get("process"):
+        return esc["process"]
+    if esc.get("kind") == "goal-move":
+        from cells.copilot.planning.pm_goal import ensure_goal_process
+        return ensure_goal_process()
+    return ""
+
+
+def _execute(action, card, lane, text, esc, kind="", why="", at=""):
     from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
     if action == "ignore":
+        return True
+    if action in ("accept_steps", "cancel_process", "set_next"):
+        # PROCESS DECISIONS are Henry's (owner 2026-09-30: the process asked
+        # the owner things no human is needed for). Only on an escalation
+        # that names its process - never a guessed one.
+        from cells.engineer.chains import processes
+        from spine.storage import events
+        pid = _esc_process(esc)
+        if not pid or not processes.get(pid):
+            escalations.record_note(esc["id"], "%s: kein Prozess an dieser Eskalation" % action)
+            return False
+        try:
+            if action == "accept_steps":
+                repo = events.settings().get("default_repo") or ""
+                if not repo:
+                    escalations.record_note(esc["id"], "accept_steps: kein default_repo gesetzt")
+                    return False
+                _p, made = processes.accept_all(pid, repo, actor="henry")
+                escalations.record_note(esc["id"], "accept_steps: %s -> %s" % (
+                    pid, ", ".join(made) or "nichts offen"))
+            elif action == "cancel_process":
+                processes.cancel_process(pid, actor="henry")
+                escalations.record_note(esc["id"], "cancel_process: %s" % pid)
+            else:
+                processes.set_next(pid, text, at, actor="henry")
+                escalations.record_note(esc["id"], "set_next: %s - %s" % (at, text[:200]))
+        except (RuntimeError, ValueError) as e:
+            escalations.record_note(esc["id"], "%s: %s" % (action, str(e)[:250]))
+            return False
         return True
     # THE OPEN-QUESTION RAIL (owner report 2026-09-05, screenshot: a card that
     # ASKED him "vc91 ready to upload - how do you want to proceed?" got
@@ -816,8 +859,8 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
         # a goal-move turn could only do the work inline ("did") or talk about
         # it. Same policy switch as the chat verb (policy.machine.enabled);
         # _decide only lets a privileged judgement get here. A card filed
-        # from a goal-move is goal work BY RECORD (goal=true), which is what
-        # goal_drive counts - never inferred from the task text.
+        # from a goal-move or process-move is a STEP of that process BY RECORD
+        # (attach_card below) - never inferred from the task text.
         from cells.engineer.cards import sessions
         from spine.storage import events
         if not sessions.machine_policy().get("enabled", True):
@@ -832,12 +875,16 @@ def _execute(action, card, lane, text, esc, kind="", why=""):
         except Exception as e:
             escalations.record_note(esc["id"], "direct_task: Start fehlgeschlagen: %s" % str(e)[:250])
             return False
-        if esc.get("kind") == "goal-move":
-            from spine.storage.trackstore import _mutate
-            from cells.copilot.planning.goal_drive import current_tag
-            tag = current_tag()
-            if tag:
-                _mutate(nt["id"], lambda x: x.__setitem__("goal", tag))
+        # the new card is a STEP of the process the escalation is about - the
+        # goal's process for a goal-move - by record, at filing time
+        pid = _esc_process(esc)
+        if pid:
+            try:
+                from cells.engineer.chains import processes
+                processes.attach_card(pid, nt["id"], actor="henry")
+            except Exception as e:                           # noqa: BLE001
+                escalations.record_note(esc["id"], "direct_task: Prozess-Link fehlgeschlagen: %s"
+                                        % str(e)[:200])
         escalations.record_note(esc["id"], "direct_task: Karte %s gestartet" % nt["id"])
         return True
     return False

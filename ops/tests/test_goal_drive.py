@@ -2,19 +2,20 @@
 """Henry drives the goal (owner 2026-09-28, cells/copilot/planning/goal_drive).
 
 Pinned, on a sandbox db (the live db is never touched - db.DBPATH first):
- 1. goal_state derives share, last movement and owner steps from the record
-    (a new goal never inherits the old goal's process):
-    goal=true cards and the goal process' steps count, nothing else; no
-    marked card -> share None (said, not guessed)
+ 1. goal_state derives share, last movement and owner steps from the ONE
+    record - card.process == the goal's process (a new goal never inherits
+    the old goal's process); a legacy `goal` sentence on a card counts for
+    nothing any more; no goal card -> share None (said, not guessed)
  2. goal_line renders the evidence Henry reads first in both snapshots, and
     copilot._snapshot really carries it
  3. wake: history never fires, stalled/deadline once a day, a delivery fires
     even the same day, an open goal-move blocks without swallowing the
     delivery, the rule toggle turns it off
- 4. the broker's direct_task verb starts a card and records goal=true for a
-    goal-move; a client-card judgement cannot use it
- 5. file_card with "goal": true through the real action runner records the flag;
-    mark_goal flips it on an existing card
+ 4. the broker's direct_task verb starts a card that becomes a step of the
+    goal's process for a goal-move; a client-card judgement cannot use it
+ 5. file_card with "goal": true through the real action runner makes the card
+    a step of the goal's (auto-created, EMPTY, never proposing) process;
+    mark_goal attaches / detaches an existing card
 Run: py -3.12 ops/tests/test_goal_drive.py
 """
 import os, subprocess, sys, tempfile, time
@@ -74,12 +75,12 @@ def turn(track, n, h_ago=5):
 
 
 print("1. goal_state")
-tracks = [card("g1", goal=GOAL), card("p1", process="PGOAL"), card("side"),
-          card("old", goal="Altes Ziel bis 2026-09-01.")]
+tracks = [card("g1", process="PGOAL"), card("p1", process="PGOAL"), card("side"),
+          card("legacy", goal=GOAL), card("other", process="POTHER")]
 ev = [turn("g1", 100), turn("p1", 100), turn("side", 800), turn("side", 5000, h_ago=24 * 9),
       {"kind": "lane", "track": "g1", "ts": ts(30), "to": "working"}]
 gs = goal_drive.goal_state(NOW, tracks=tracks, processes=[], ev=ev, goal=GOAL, goal_pid="PGOAL")
-check(gs["goal_cards"] == 2, "flag for THIS goal + goal-process step count; side card and old-goal card do not (%s)" % gs["goal_cards"])
+check(gs["goal_cards"] == 2, "goal-process steps count; side card, legacy tag and another process do not (%s)" % gs["goal_cards"])
 gsn = goal_drive.goal_state(NOW, tracks=tracks, processes=[], ev=ev, goal="Neues Ziel bis 2026-11-15.", goal_pid="")
 check(gsn["goal_cards"] == 0 and gsn["share"] is None,
       "after a goal change the old goal's cards stop counting (%s)" % gsn["goal_cards"])
@@ -102,7 +103,7 @@ print("2. goal_line + snapshot")
 line = goal_drive.goal_line(gs, NOW)
 check(line.startswith("GOAL: Ersten fremden User") and "noch 2 Tage" in line and "20%" in line
       and "vor 30 h" in line, "the evidence line (%r)" % line)
-check("noch keine Ziel-Karten markiert" in goal_drive.goal_line(gs0, NOW),
+check("noch keine Ziel-Karten" in goal_drive.goal_line(gs0, NOW),
       "unmarked board says so")
 pm.set_goal(GOAL)
 snap = copilot._snapshot()
@@ -163,7 +164,13 @@ try:
     ok = henry_broker._execute("direct_task", "", "", "PH-Eintrag vorbereiten", esc)
     check(ok and started and started[0][1] == "henry", "direct_task starts a card as henry (%r)" % started)
     mine = [t for t in sessions._load() if t.get("task") == "PH-Eintrag vorbereiten"]
-    check(mine and mine[0].get("goal") == GOAL, "a goal-move card records the goal it serves")
+    gpid = pm_push.goal_process_id()
+    check(mine and gpid and mine[0].get("process") == gpid,
+          "a goal-move card is a step of the goal's process (%s)" % (mine and mine[0].get("process")))
+    gp = processes.get(gpid)
+    check(gp and gp["status"] == "running" and [x["track"] for x in gp["steps"]] == [mine[0]["id"]],
+          "the goal process was born EMPTY + running and holds exactly that card (%r)"
+          % ((gp and (gp["status"], gp["steps"])),))
     check(not henry_broker._execute("direct_task", "", "", "", esc), "no task text -> refused, stays open")
     # a client-card judgement: no hands, so no direct_task either
     henry_broker._find_track = lambda c: {"id": "c1", "dispatched_by": "kunde"}
@@ -183,15 +190,21 @@ print("5. file_card goal flag")
 r = copilot_actions._run_action({"type": "file_card", "task": "Landing-Umfrage bauen", "repo": repo,
                                  "goal": True}, "tien", "owner")
 t = [x for x in sessions._load() if x.get("task") == "Landing-Umfrage bauen"]
-check(t and t[0].get("goal") == GOAL, "file_card with goal:true records the current goal (%s)" % r)
+gpid = pm_push.goal_process_id()
+check(t and t[0].get("process") == gpid, "file_card with goal:true -> step of the goal process (%s)" % r)
 copilot_actions._run_action({"type": "file_card", "task": "Nebensache", "repo": repo}, "tien", "owner")
 t = [x for x in sessions._load() if x.get("task") == "Nebensache"]
-check(t and not t[0].get("goal"), "without it the card is not goal work")
+check(t and not t[0].get("process"), "without it the card is not goal work")
 r = copilot_actions._run_action({"type": "mark_goal", "card": t[0]["id"]}, "tien", "owner")
-check(sessions._find(sessions._load(), t[0]["id"]).get("goal") == GOAL,
+check(sessions._find(sessions._load(), t[0]["id"]).get("process") == gpid,
       "mark_goal makes an existing card goal work (%s)" % r)
 copilot_actions._run_action({"type": "mark_goal", "card": t[0]["id"], "goal": False}, "tien", "owner")
-check(sessions._find(sessions._load(), t[0]["id"]).get("goal") is False, "... and goal:false undoes it")
+check(not sessions._find(sessions._load(), t[0]["id"]).get("process")
+      and t[0]["id"] not in [x.get("track") for x in processes.get(gpid)["steps"]],
+      "... and goal:false detaches it from card AND process")
+gs_live = goal_drive.goal_state()
+check(gs_live and gs_live["goal_cards"] == 2, "the live goal_state sees exactly the two linked cards (%s)"
+      % (gs_live and gs_live["goal_cards"]))
 
 print("PASS test_goal_drive" if not _fails else "FAIL test_goal_drive (%d)" % len(_fails))
 sys.exit(1 if _fails else 0)

@@ -45,7 +45,7 @@ ACTION_KINDS = frozenset((
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "process_status",
-    "share_note", "delete_project", "attach_process", "set_goal", "mark_goal",
+    "share_note", "delete_project", "attach_process", "set_goal", "mark_goal", "set_next",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
     # "wrong object" unreachable there rather than merely discouraged. We add
@@ -303,19 +303,17 @@ def _tag(a, t):
 
 def _mark_goal(a, t):
     """`"goal": true` on a filing action -> the card IS goal work, by record
-    (owner 2026-09-28, goal_drive). goal_drive's share and wake count exactly
-    these cards (plus the goal process' own steps); guessing goal-ness from
-    the task text would be a heuristic, this is the record, written once at
-    filing time by the one who decided it."""
-    if a.get("goal") is True and t and t.get("id"):
+    (owner 2026-09-28, goal_drive): it becomes a step of the goal's process
+    (goal_drive.link_card, the one goal link since 2026-09-30). Guessing
+    goal-ness from the task text would be a heuristic, this is the record,
+    written once at filing time by the one who decided it. An explicit
+    `process` on the same action wins - a card is a step of ONE process."""
+    if a.get("goal") is True and not a.get("process") and t and t.get("id"):
         try:
-            from spine.storage.trackstore import _mutate
-            from cells.copilot.planning.goal_drive import current_tag
-            tag = current_tag()
-            if tag:
-                _mutate(t["id"], lambda x: x.__setitem__("goal", tag))
-        except Exception:                                    # noqa: BLE001
-            pass
+            from cells.copilot.planning import goal_drive
+            goal_drive.link_card(t["id"], actor="henry")
+        except Exception as e:                               # noqa: BLE001
+            print("goal link failed:", t.get("id"), e)
     return t
 
 
@@ -607,6 +605,29 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         processes.attach_card(p["id"], t["id"], actor=actor)
         _tag(a, t)
         return "Karte %s ist jetzt Schritt im Prozess %s" % (t["id"], p["id"])
+    if kind == "set_next":
+        # THE NEXT MOVE as a record (owner 2026-09-30: "man bespricht etwas
+        # ... aber es gibt kein Follow-up"). A conversation that ends in "als
+        # Naechstes X am Y" writes it onto the process; process_drive wakes
+        # Henry when Y is reached. The goal's process when none is named.
+        ref = a.get("process")
+        if ref:
+            p = _one_process(ref)
+            if isinstance(p, str):
+                return p
+            pid = p["id"]
+        else:
+            from cells.copilot.planning.pm_goal import ensure_goal_process
+            pid = ensure_goal_process()
+            if not pid:
+                return "set_next: welcher Prozess? (process: id oder Stichwort; es ist kein Ziel gesetzt)"
+        try:
+            processes.set_next(pid, a.get("what") or a.get("text") or "", a.get("at") or "", actor=actor)
+        except (RuntimeError, ValueError) as e:
+            return "set_next: %s" % e
+        what = a.get("what") or a.get("text") or ""
+        return ("Naechster Zug fuer %s vermerkt: %s (%s) - dann melde ich mich." % (pid, what, a.get("at"))
+                if what else "Naechster Zug fuer %s geloescht." % pid)
     if kind == "mark_goal":
         # An EXISTING card becomes (or stops being) goal work - the same record
         # _mark_goal writes at filing time (owner 2026-09-28, goal_drive: the
@@ -616,12 +637,9 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         if t is None or isinstance(t, list):
             return _card_hint("mark_goal", a.get("card", ""), t if isinstance(t, list) else [])
         on = a.get("goal", True) is not False
-        from spine.storage.trackstore import _mutate
-        from cells.copilot.planning.goal_drive import current_tag
-        tag = current_tag() if on else ""
-        if on and not tag:
+        from cells.copilot.planning import goal_drive
+        if not goal_drive.link_card(t["id"], actor=actor, on=on):
             return "mark_goal: es ist kein Ziel gesetzt - erst set_goal."
-        _mutate(t["id"], lambda x: x.__setitem__("goal", tag or False))
         _tag(a, t)
         return ("Karte %s zaehlt jetzt als Ziel-Arbeit" if on
                 else "Karte %s zaehlt nicht mehr als Ziel-Arbeit") % t["id"]
@@ -956,12 +974,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         if len(ps) != 1:
             return "accept_steps failed: process ref ambiguous or not found"
         repo = a.get("repo") or events.settings().get("default_repo")
-        p = ps[0]
-        made = []
-        for i in range(len(p["steps"])):
-            if not p["steps"][i].get("track"):
-                p = processes.accept_step(p["id"], i, repo, actor=actor)
-                made.append(p["steps"][i].get("track"))
+        p, made = processes.accept_all(ps[0]["id"], repo, actor=actor)
         if made:
             ct = _find_card(made[0])
             if ct and not isinstance(ct, list):

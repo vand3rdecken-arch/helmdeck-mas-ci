@@ -27,12 +27,17 @@ def _append(rec):
     return rec
 
 
-def emit(kind, card=None, detail=""):
+def emit(kind, card=None, detail="", process=None):
     """Reporting seam for ANY cell: record the exception, note it on the card,
-    never decide anything here."""
+    never decide anything here. `process` names the process an escalation is
+    about (process_drive) - a RECORD the broker acts on, never parsed back out
+    of the detail prose."""
     eid = "%s-%d" % (kind, int(time.time() * 1000))
-    _append({"event": "open", "id": eid, "kind": kind, "card": card,
-             "detail": str(detail)[:1500]})
+    rec = {"event": "open", "id": eid, "kind": kind, "card": card,
+           "detail": str(detail)[:1500]}
+    if process:
+        rec["process"] = process
+    _append(rec)
     try:
         from spine.storage import events
         events.emit("escalation", card or "-", kind=kind, esc=eid)

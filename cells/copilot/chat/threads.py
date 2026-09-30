@@ -167,12 +167,13 @@ def _goals():
 
 
 def _needs():
-    """What waits on the OWNER beyond card questions: proposals nobody
-    accepted, human steps that are ready, dead chains, long-parked cards -
-    pm_push.derive is the one place that computes them; served, not re-derived."""
+    """What waits on the OWNER beyond card questions: ready human steps and
+    long-parked cards outside any process - pm_push.derive is the one place
+    that computes them (who="owner"); served, not re-derived. Everything an
+    agent can decide is Henry's (process_drive) and never lands here."""
     try:
         from cells.copilot.planning import pm_push
         return [{k: it.get(k) for k in ("key", "kind", "label", "since", "process", "card")}
-                for it in pm_push.derive()][:12]
+                for it in pm_push.derive() if it.get("who") == "owner"][:12]
     except Exception:                                    # noqa: BLE001
         return []

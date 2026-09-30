@@ -18,12 +18,15 @@ initiative.goal_drive.
 
 DERIVED, NOT STORED (CLAUDE.md law): every number here is computed at read
 time from the card store, the process store and the event log. Goal
-membership is a RECORD, never a guess from task text: a card is goal work when
-its `goal` field names the CURRENT goal (filed with "goal": true or marked via
-mark_goal - copilot_actions / the broker's direct_task verb write the goal
-sentence at event time, current_tag) or when it is a step of the goal's own
-process (pm_goal records that pid, pm_push checks it is still this goal's). Cards filed before 2026-09-28 carry no flag - the
-share says so ("noch keine Ziel-Karten markiert") instead of guessing.
+membership is a RECORD, never a guess from task text, and there is exactly
+ONE: a card is goal work iff it is a step of the goal's own process
+(card.process == goal pid; pm_goal.ensure_goal_process owns the pid,
+pm_push checks it is still this goal's). Filing with "goal": true, mark_goal
+and the broker's direct_task on a goal-move all go through link_card ->
+processes.attach_card at event time. Until 2026-09-30 there was a second
+record, a `goal` sentence on the card, that the goal process never saw - 10
+goal cards, process 0/7, the owner asked to start finished work. That tag is
+no longer written or read.
 
 The wake latches in the PM loopstate (st["goal_wake"]) are DEDUP, not truth:
 they only stop the same reason from firing twice a day.
@@ -45,7 +48,10 @@ _ASK = (
     "Absatz), recherchieren, Entwuerfe vorbereiten, einen Owner-Schritt so "
     "vorbereiten, dass ihm ein Tap bleibt, und ihn dann mit EINER konkreten "
     "Frage melden (notify_owner). Nie ohne den Owner: veroeffentlichen/posten, "
-    "Geld ausgeben, neue Accounts, Unumkehrbares, Deploys. Laeuft bereits eine "
+    "Geld ausgeben, neue Accounts, Unumkehrbares, Deploys. Wartet der naechste "
+    "Zug auf einen Zeitpunkt (Test laeuft, Zahlen kommen): action \"set_next\" "
+    "(text = was, at = YYYY-MM-DD[ HH:MM]) - dann weckt dich das Ziel genau dann. "
+    "Laeuft bereits eine "
     "Ziel-Karte, die das abdeckt, oder gibt es gerade nichts Sinnvolles: "
     "ignore mit einem Satz Grund.")
 
@@ -63,21 +69,28 @@ def norm(goal):
     return " ".join((goal or "").split())
 
 
-def current_tag():
-    """What a card's `goal` field holds when it serves the CURRENT goal: the
-    goal sentence itself, whitespace-normalized. A bare True would outlive
-    the goal it was set for - after a set_goal the old goal's cards kept
-    counting as work for the new one (found 2026-09-28 in the adversarial
-    pass, before any goal change happened live)."""
-    from cells.copilot.planning.pm import get_goal
-    return norm(get_goal())
+def link_card(tid, actor="henry", on=True):
+    """Make card `tid` goal work (or stop it being): a step of the goal's
+    process. Creates the (empty) goal process on first use. Returns the goal
+    pid, or "" when no goal is set. The ONE entry every goal-marking path
+    uses (copilot_actions file/direct/mark_goal, henry_broker direct_task)."""
+    from cells.copilot.planning.pm_goal import ensure_goal_process
+    from cells.engineer.chains import processes
+    pid = ensure_goal_process()
+    if not pid:
+        return ""
+    if on:
+        processes.attach_card(pid, tid, actor=actor)
+    else:
+        processes.detach_card(pid, tid, actor=actor)
+    return pid
 
 
-def _goal_ids(tracks, goal_pid, goal):
+def _goal_ids(tracks, goal_pid, goal=None):
+    if not goal_pid:
+        return set()
     return {t["id"] for t in tracks
-            if not t.get("example") and (
-                (goal and norm(t.get("goal") if isinstance(t.get("goal"), str) else "") == goal)
-                or (goal_pid and t.get("process") == goal_pid))}
+            if not t.get("example") and t.get("process") == goal_pid}
 
 
 def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_pid=None):
@@ -120,7 +133,8 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
         if t["id"] in ids:
             last_move = max(last_move, _epoch(t.get("created")))
     needs = [x for x in pm_push.derive(now, processes, tracks, goal_pid)
-             if (goal_pid and x.get("process") == goal_pid) or x.get("card") in ids]
+             if x.get("who") == "owner"
+             and ((goal_pid and x.get("process") == goal_pid) or x.get("card") in ids)]
     done = sorted(t["id"] for t in tracks if t["id"] in ids and t.get("lane") == "done")
     live = [t for t in tracks if t["id"] in ids and not t.get("archived")
             and t.get("lane") in ("backlog", "working", "review")]
@@ -153,7 +167,7 @@ def goal_line(gs, now=None):
     if d is not None:
         parts.append(("noch %d Tage" % d) if d >= 0 else ("Frist seit %d Tagen vorbei" % -d))
     if gs["share"] is None:
-        parts.append("Ziel-Anteil 7T: noch keine Ziel-Karten markiert (goal=true beim Anlegen)")
+        parts.append("Ziel-Anteil 7T: noch keine Ziel-Karten (goal=true beim Anlegen haengt sie an den Ziel-Prozess)")
     else:
         parts.append("Ziel-Anteil 7T: %d%% der Kartenarbeit" % round(100 * gs["share"]))
     parts.append("%d Ziel-Karte%s laufen" % (len(gs["live"]), "" if len(gs["live"]) == 1 else "n"))
