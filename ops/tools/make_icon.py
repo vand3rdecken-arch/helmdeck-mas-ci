@@ -25,6 +25,8 @@ white-on-transparent or white-on-black 1024x1024 PNG, any source), then:
 Outputs:
     surfaces/desktop/assets/icon-1024.png, surfaces/desktop/assets/icon.ico   (Windows/Electron)
     surfaces/desktop/assets/icon-mac-1024.png                        (macOS icon grid)
+    surfaces/desktop/build/appx/*.png                                (Microsoft Store package tiles)
+    surfaces/desktop/store-images/store-{300,150,71}.png             (Partner Center listing images)
     surfaces/app/assets/images/icon.png                              (Expo unified)
     surfaces/app/assets/images/favicon.png                           (web tab)
     surfaces/app/assets/images/android-icon-background.png           (adaptive bg)
@@ -361,6 +363,42 @@ def write_site_logo(mask):
     print("wrote", SITE_LOGO)
 
 
+def tile_canvas(mask, w, h, glyph_ratio=0.62):
+    """Full-bleed gradient w x h with the H centred at glyph_ratio of the
+    shorter side - Windows tiles/splash are square-cornered (the shell masks)."""
+    side = max(w, h)
+    canvas = gradient_tile(side).crop((0, 0, w, h)) if w == h else \
+        gradient_tile(side).resize((w, h), Image.LANCZOS)
+    glyph = flat_glyph(mask, GLYPH_COLOR)
+    glyph = glyph.crop(glyph.getbbox())
+    scale = min(w, h) * glyph_ratio / max(glyph.size)
+    glyph = glyph.resize((round(glyph.width * scale), round(glyph.height * scale)), Image.LANCZOS)
+    canvas.alpha_composite(glyph, ((w - glyph.width) // 2, (h - glyph.height) // 2))
+    return canvas
+
+
+# electron-builder's appx target reads surfaces/desktop/build/appx/ (NOT
+# icon.ico) and falls back to its bundled Electron-logo samples for any name
+# missing there - which is what the Store showed until 2026-09-30.
+APPX_ASSETS = {  # file name electron-builder expects -> (w, h)
+    "StoreLogo.png": (50, 50), "Square44x44Logo.png": (44, 44),
+    "Square150x150Logo.png": (150, 150), "Wide310x150Logo.png": (310, 150),
+    "SmallTile.png": (71, 71), "LargeTile.png": (310, 310),
+    "SplashScreen.png": (620, 300),
+}
+STORE_LISTING_SIZES = (300, 150, 71)  # Partner Center 'Store display images'
+
+
+def write_windows_store_assets(mask, master):
+    appx = os.path.join(DESK, "..", "build", "appx")
+    for name, (w, h) in APPX_ASSETS.items():
+        ratio = 0.55 if w == 620 else (0.7 if w == 310 and h == 150 else 0.62)
+        save_png(tile_canvas(mask, w, h, ratio), os.path.join(appx, name))
+    listing = os.path.join(DESK, "..", "store-images")
+    for s in STORE_LISTING_SIZES:
+        save_png(master.resize((s, s), Image.LANCZOS), os.path.join(listing, f"store-{s}x{s}.png"))
+
+
 def save_png(img, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
@@ -378,6 +416,7 @@ def main():
     print("wrote", os.path.join(DESK, "icon.ico"))
 
     save_png(mac_master(master), os.path.join(DESK, "icon-mac-1024.png"))
+    write_windows_store_assets(mask, master)
 
     # Expo unified icon + web favicon share the same rounded tile
     save_png(master, os.path.join(APPIMG, "icon.png"))
