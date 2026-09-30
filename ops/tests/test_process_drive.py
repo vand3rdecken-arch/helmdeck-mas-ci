@@ -13,7 +13,8 @@ Pinned, on a sandbox db (the live db is never touched - db.DBPATH first):
  4. the broker's process verbs on a process-move: accept_steps turns the
     proposal into cards, set_next records, cancel_process stops the chain,
     direct_task files a card that is a step of THAT process; an escalation
-    without a process refuses them
+    without a process refuses them; direct_task with "goal": true from ANY
+    escalation (the 2026-09-30 idle-check card) lands in the goal's process
  5. processes.create(propose=False) is born empty + running (no proposer)
 Run: py -3.12 ops/tests/test_process_drive.py
 """
@@ -175,6 +176,16 @@ try:
     lone = {"id": escalations.emit("idle-check", None, "x"), "kind": "idle-check", "card": None}
     check(not henry_broker._execute("accept_steps", "", "", "", lone),
           "an escalation without a process refuses process verbs")
+    from cells.copilot.planning import pm
+    pm.set_goal("Nebeneinkommen finden bis 2026-12-31.")
+    check(henry_broker._execute("direct_task", "", "", "Nachfrage messen", lone, goal=True),
+          "direct_task with goal=true from an idle-check executes")
+    gpid = pm_push.goal_process_id()
+    gt = [t for t in sessions._load() if t.get("task") == "Nachfrage messen"]
+    check(gpid and gt and gt[0].get("process") == gpid, "... and the card is a step of the goal's process")
+    henry_broker._execute("direct_task", "", "", "Nebenbei", lone)
+    nb = [t for t in sessions._load() if t.get("task") == "Nebenbei"]
+    check(nb and not nb[0].get("process"), "without goal=true it is not goal work")
 finally:
     sessions.new_direct_task = real_direct
     events.settings = real_settings

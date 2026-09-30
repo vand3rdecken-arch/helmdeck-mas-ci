@@ -502,6 +502,7 @@ def _decide(esc):
           ' "kind": "bei ship: none|ota|native",\n'
           ' "text": "bei did: was du getan hast; bei direct_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
+          ' "goal": "bei direct_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
           ' "why": "ein satz begruendung"}')
     if not privileged:
         # This card was filed by a client-role account, not owner/operator -
@@ -540,6 +541,7 @@ def _decide(esc):
     text = (d.get("text") or "").strip()
     why = (d.get("why") or "").strip()
     at = (d.get("at") or "").strip()
+    goal = d.get("goal") is True
     if action in ("did", "direct_task", "accept_steps", "cancel_process", "set_next") \
             and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
@@ -550,7 +552,7 @@ def _decide(esc):
             "Henry versuchte '%s' auf einer client-Karte ohne Haende - "
             "abgelehnt, bleibt offen" % action)
         return False
-    if not _execute(action, card, lane, text, esc, kind=kind, why=why, at=at):
+    if not _execute(action, card, lane, text, esc, kind=kind, why=why, at=at, goal=goal):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why,
                                 kind=kind if action == "ship" else "")
@@ -614,18 +616,22 @@ def _find_track(card):
         return None
 
 
-def _esc_process(esc):
+def _esc_process(esc, goal=False):
     """The process an escalation is about: its own `process` record
-    (process_drive), or the goal's process for a goal-move."""
+    (process_drive), or the goal's process for a goal-move - or when Henry's
+    judgement says the new card serves the goal ("goal": true). Measured
+    2026-09-30: card 20260930-004651 ("ZIEL-KARTE, Nachfrage-Messung") was
+    started from an idle-check and never counted as goal work - only a
+    goal-move could mark one."""
     if esc.get("process"):
         return esc["process"]
-    if esc.get("kind") == "goal-move":
+    if esc.get("kind") == "goal-move" or goal:
         from cells.copilot.planning.pm_goal import ensure_goal_process
         return ensure_goal_process()
     return ""
 
 
-def _execute(action, card, lane, text, esc, kind="", why="", at=""):
+def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
     from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
@@ -876,8 +882,8 @@ def _execute(action, card, lane, text, esc, kind="", why="", at=""):
             escalations.record_note(esc["id"], "direct_task: Start fehlgeschlagen: %s" % str(e)[:250])
             return False
         # the new card is a STEP of the process the escalation is about - the
-        # goal's process for a goal-move - by record, at filing time
-        pid = _esc_process(esc)
+        # goal's process for a goal-move or "goal": true - by record, at filing time
+        pid = _esc_process(esc, goal=goal)
         if pid:
             try:
                 from cells.engineer.chains import processes
