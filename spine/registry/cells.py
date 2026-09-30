@@ -243,16 +243,13 @@ CELLS = [
                 "pm_loop], pm_plans, pm_activity, escalations (shared bus); "
                 "state/copilot_log.json (moves in state-into-db phase E)",
         harness_file="cells/copilot/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
-        # cells/copilot/harness/agents/pm.md rides in repo_files below (harness_file
-        # stays singular - board-copilot.md is Henry's primary identity brief,
-        # pm.md is a report-shape charter fed to a one-shot planning call).
         route_modules=("routes.routes_copilot", "routes.routes_pm"),
         # Henry's judgement half of the escalation channel (spine/registry/
         # escalations.py is the bus; engineer emits; THIS cell decides), AND
         # the backlog planning loop that used to be pm's own - copilotEnabled
         # off now stops both, per the cell-lifecycle contract.
         start=(("broker.henry_broker", "start_broker"), ("planning.pm", "start_loop")),
-        repo_files=("cells/copilot/ui/surface.tsx", "cells/copilot/harness/agents/pm.md"),
+        repo_files=("cells/copilot/ui/surface.tsx",),
         ui_files=("src/app/chat.tsx", "src/ui/pm_panel.tsx", "src/app/loopmap.tsx"),
         # WHERE THIS CELL ACTS on the board: `board` is the fallback/declared
         # half (backlog planning, formerly pm's own station) - apimeta.

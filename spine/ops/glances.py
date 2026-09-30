@@ -156,7 +156,7 @@ def glance_payload(tracks, m):
     the glasses.
 
     `yours` is a SECOND, separate bucket: cards only the owner can ever start
-    (mode human/teach/cowork), which every auto-dispatch path structurally
+    (mode human/teach), which every auto-dispatch path structurally
     skips. They are unstarted work rather than stuck work, so merging them into
     needs_you would bury a red gate under a backlog - but leaving them out
     entirely is how they became invisible everywhere at once.

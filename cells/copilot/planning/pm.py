@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
-"""PM / CTO planning ROLE, run by the thin harness here.
+"""The PM loop - mechanics, not a planner.
 
-The PM's brain is DATA (cells/copilot/harness/agents/pm.md + settings.pm), not code. This module only:
-  - gathers signals (board + REAL economics + quota/velocity + goal),
-  - runs the configured role for ONE plan-mode turn,
-  - prices/times the plan in code (LLM judges effort in turns, code converts to
-    days at the measured velocity and to shadow-€ at the real cost/turn),
-  - writes a reviewable artifact,
-  - and hands the actionable items to whoever executes (the night ticker).
+Since 2026-09-30 (owner: "wieviel planning, process etc. gibt es schon -
+warum nicht als eines", "alles zusammen legen") Henry is the ONE planner and
+process_drive the ONE wake. This module keeps the loop around them: the goal
+setting and the owner's clarifications, economics, delivery notices, the
+burn guard, the push sweep for owner-only steps, the drive call, and the
+backlog RESOLVE/DISPATCH states while the owner is away. make_plan/brief
+(the Plan button, /pm/report) wake Henry through the drive; the PM brain's
+own plan turn and its brief (pm.md) are gone.
 
-On a flat plan (settings.pm.plan == "max") the bottleneck is quota-TIME, not €,
-so timelines are in DAYS and the € is leverage/ROI, not cash. Nothing here
-executes work; turning items into cards stays an explicit, gated step.
+On a flat plan (settings.pm.plan == "max") the bottleneck is quota-TIME, not
+EUR, so economics are shares of the weekly quota.
 """
 import json, math, os, re, subprocess, threading, time
 
@@ -152,28 +152,6 @@ def add_clarification(text, actor="owner", source="chat", card=None):
         return st["clarifications"]
 
 
-def _clarifications_block():
-    """Only clarifications recorded against the CURRENT goal text - a goal edit
-    (set_goal) makes prior answers stale, so they drop out here rather than
-    misleading a re-scoped plan."""
-    goal = get_goal()
-    cl = [c for c in (_loopstate().get("clarifications") or []) if c.get("goal") == goal]
-    if not cl:
-        return ""
-    lines = ["\n\nOWNER CLARIFICATIONS (answered live in chat - trust these as GROUND TRUTH, "
-             "they supersede any guess/assumption in a prior plan or the snapshot):"]
-    lines += ["  - %s (%s)" % (c["text"], c.get("at", "")) for c in cl]
-    return "\n".join(lines)
-
-
-def _role():
-    # The role is DATA in the harness layer (cells/copilot/harness/agents/pm.md - owner-
-    # editable, versioned). brief() is total: a missing/mangled file degrades
-    # to the short JSON-shape floor in harness._DEFAULTS, never breaks a plan.
-    from spine.registry import harness
-    role = harness.brief("pm")
-    extra = (_pm().get("role_extra") or "").strip()
-    return role + ("\n\n## House additions\n" + extra if extra else "")
 
 
 def economics(tracks=None, m=None):
@@ -262,8 +240,7 @@ from cells.copilot.planning.pm_state import touch, _loopstate, _save_loopstate, 
 # Re-imported here so every existing pm.<name> caller (routes_pm.py,
 # sessions.py's on_card_done hook) stays unchanged.
 from cells.copilot.planning.pm_triangle import (
-    live_plan, _gate_triangle, _triage_shape, on_card_done, _on_card_done,
-    RECONCILE_PROMPT, reconcile_corner)
+    live_plan, _gate_triangle, _triage_shape)
 
 
 def _ask(prompt, model="", system="", hands=False, timeout=300):
@@ -426,29 +403,8 @@ def _scratch_cwd():
     return d
 
 
-def _memory_index():
-    """Henry's memory INDEX (names + one-liners, ~4k chars) - progressive
-    disclosure: the note itself is fetched with `find`/`get` only when it
-    turns out to matter. The PLANNER's own context; Henry's board turn no
-    longer auto-carries this (card chat-henry-kontext-pruning, "voller
-    Umbau" - he pulls it himself via henry_memory_get.py get MEMORY)."""
-    try:
-        from cells.copilot.chat import copilot_memory
-        return copilot_memory.digest()
-    except Exception:                                            # noqa: BLE001
-        return ""
 
 
-def _hidden_history_count():
-    """How many cards the LIVE snapshot hides (finished + archived) - the
-    number the planner is told to go fetch behind, so 'history exists' is a
-    measured fact in the prompt, not a hope."""
-    try:
-        from cells.engineer.cards import sessions
-        return sum(1 for t in sessions.list_tracks()
-                   if not t.get("example") and (t.get("archived") or t.get("lane") == "done"))
-    except Exception:                                            # noqa: BLE001
-        return 0
 
 
 def _write_artifact(out):
@@ -469,39 +425,8 @@ def latest_plan():
         return None
 
 
-def _memory(prev, econ):
-    """The PM's memory: its previous plan + a hard calibration signal (turns
-    actually spent since, and progress) so it self-corrects instead of guessing
-    fresh each time. Empty on the first ever plan."""
-    if not prev:
-        return ""
-    lines = ["\n\nYOUR PREVIOUS PLAN (%s) - MEMORY. Compare against it: call out what "
-             "SLIPPED or was mis-estimated, and CALIBRATE this plan's est_turns from "
-             "what actually happened (don't just re-guess):" % prev.get("generated_at", "?")]
-    lines.append("  prev done_pct: %s" % prev.get("done_pct"))
-    pe = (prev.get("economics") or {}).get("turns_to_date")
-    if pe is not None:
-        lines.append("  turns actually spent SINCE that plan: %d" % max(0, (econ.get("turns_to_date", 0) or 0) - pe))
-    pb = prev.get("budget") or {}
-    if pb.get("est_turns_to_goal") is not None:
-        lines.append("  you then estimated %s turns / ~%s days to goal - was that on track?"
-                     % (pb.get("est_turns_to_goal"), pb.get("eta_days")))
-    for m in (prev.get("milestones") or [])[:6]:
-        lines.append("  - %s: was %s turns" % (m.get("name"), m.get("est_turns")))
-    return "\n".join(lines)
 
 
-def _reconcile_block(prev):
-    """When the owner ran a corner reconciliation (reconcile_corner), the vetted
-    EVIDENCE it gathered is fed back to the planner as FACTS to trust over the raw
-    snapshot - so the re-plan actually re-scopes on the real world (e.g. 'users
-    already set up' stops being counted as open scope)."""
-    rec = (prev or {}).get("reconcile") or {}
-    if not rec:
-        return ""
-    return ("\n\nRECONCILED EVIDENCE (the owner ran a check on a RED triangle corner - "
-            "trust these observed FACTS over the snapshot when scoping):\n"
-            + json.dumps(rec, ensure_ascii=False)[:1500])
 
 
 # -- owner questions: one question, ONE identity ------------------------------
@@ -562,19 +487,6 @@ def _same_question(a, b):
     return len(ta & tb) / float(len(ta | tb)) >= _Q_SAME
 
 
-def _merge_questions(open_qs, must_ask):
-    """Two question lists (or one list against an empty second one, for plain
-    self-dedup) as ONE list with one entry per DISTINCT question. First
-    wording wins; order is preserved so _needs_from_owner still asks the top
-    question first."""
-    out = []
-    for q in list(open_qs or []) + list(must_ask or []):
-        if not isinstance(q, str) or not q.strip():
-            continue
-        q = q.strip()
-        if not any(_same_question(q, k) for k in out):
-            out.append(q)
-    return out
 
 
 # -- duplicate-title check: SUGGEST, never judge -----------------------------
@@ -612,8 +524,6 @@ def _suggestion_due(sig):
     return True
 
 
-def _normalize_title(s):
-    return " ".join(sorted(_q_tokens(s)))
 
 
 def duplicate_titles():
@@ -658,35 +568,6 @@ def duplicate_check_async():
     threading.Thread(target=run, daemon=True, name="pm-dup-check").start()
 
 
-def _dispose_questions(raw):
-    """(kept, evidence, dropped) from the planner's open_questions. Accepts
-    both shapes - a plain string (legacy) and {"question", "checked"} - and
-    KEEPS only questions that carry a non-empty `checked` trail (what was
-    searched: tools run, notes/cards read). A bare string or an empty
-    `checked` means the planner never looked, so it does not get to block
-    the Scope corner on it; it lands in `dropped` (artifact + activity line)
-    where the owner can still see what the planner wanted to know."""
-    kept, evidence, dropped = [], {}, []
-    for q in raw or []:
-        if isinstance(q, dict):
-            text = str(q.get("question") or "").strip()
-            checked = q.get("checked")
-            if isinstance(checked, (list, tuple)):
-                checked = "; ".join(str(c).strip() for c in checked if str(c).strip())
-            checked = str(checked or "").strip()
-        else:
-            text, checked = str(q or "").strip(), ""
-        if not text:
-            continue
-        if checked:
-            kept.append(text)
-            evidence[text] = checked[:400]
-        else:
-            dropped.append(text)
-    if dropped:
-        _activity("planned", "Frage(n) ohne Belegsuche verworfen: %s"
-                  % "; ".join(d[:80] for d in dropped[:3]))
-    return kept, evidence, dropped
 
 
 _STALE_Q_PLANS = 3
@@ -702,125 +583,16 @@ def _recent_plans(n):
         return []
 
 
-def _stale_question_guard(questions, prev):
-    """A question the planner has now asked in >= _STALE_Q_PLANS consecutive
-    plans without an answer is not going to be answered by asking again
-    (measured: scope stayed blocked 12 days straight, 2026-09-01..12). Hand
-    it to Henry - he has the chat, the memory and the owner - as ONE open
-    exception (escalations dedupe by kind while it is open), instead of
-    letting the gate sit red in silence. The question stays in the plan; this
-    adds a route, it never removes the block."""
-    if not questions:
-        return
-    history = _recent_plans(_STALE_Q_PLANS)
-    if len(history) < _STALE_Q_PLANS:
-        return
-    for q in questions:
-        if all(any(_same_question(q, k) for k in (h.get("open_questions") or [])
-                   if isinstance(k, str)) for h in history):
-            _to_henry("pm-question-stale",
-                      "Der Planer stellt diese Frage seit %d Plaenen ohne Antwort - der Scope "
-                      "bleibt deshalb rot und nichts wird gestartet: \u201e%s\u201c\n"
-                      "Klaer sie: aus deinem Gedaechtnis/den Karten beantworten (dann als "
-                      "clarify_goal festhalten) oder den Owner EINMAL konkret mit Optionen fragen."
-                      % (_STALE_Q_PLANS, q),
-                      feed="Frage seit %d Plaenen offen - an Henry: %s" % (_STALE_Q_PLANS, q[:80]))
-            return
 
 
 def brief(goal=None, model=""):
-    """The PM/CTO report: milestones, next actions, risks. ONE model turn
-    (pm-lean-advisor, 2026-09-04: the old verify/repair/re-verify loop - up
-    to 4 turns, ~7 minutes, measured - was the self-verification anti-pattern
-    research shows makes reasoning WORSE, not better; the endless-red
-    Play-Store gate was its predicted symptom). `goal` overrides + persists
-    the MVP goal. CODE, not this turn, now owns dates/triage/plan_status -
-    see _gate_triangle in pm_triangle.py."""
-    from cells.copilot.chat import copilot
-    from spine.agent import turnopts
-    from spine.storage import events
-    if goal is not None and goal.strip():
+    """/pm/report and a goal clarification - same ONE planner as make_plan:
+    wakes Henry for the goal through process_drive (no separate PM model
+    turn since 2026-09-30). `goal` is applied first when given."""
+    if goal:
         set_goal(goal)
-    goal = (goal or "").strip() or get_goal()
-    econ = economics()
-    quota = _quota_signal()
-    prev = latest_plan()      # MEMORY: read the last plan BEFORE we overwrite it
-    cli_model, _ = turnopts.resolve_model(model or "auto", goal or "plan the mvp",
-                                          False, signals={"priority": "high"})
-    # SYSTEM = the role only (stable bytes, cacheable); TURN = every volatile
-    # fact, the memory INDEX and the evidence tools (planner-with-hands,
-    # 2026-09-12 - see _ask's docstring and EVIDENCE_TOOLS).
-    system = _role()
-    turn = ("GOAL:\n" + (goal or "(no goal set - infer a reasonable MVP from the board and debt)")
-            + "\n\nPOLICY:\n" + json.dumps(events.settings().get("policy") or {})
-            + "\n\nECONOMICS (real, to date):\n" + json.dumps(econ)
-            + "\n\nQUOTA/BUDGET (live - judge budget-fit against THIS):\n" + json.dumps(quota)
-            + "\n\nSYSTEM STATE (provisioned OUTSIDE the card lanes - derive scope from THIS too, "
-              "not just the cards):\n" + _system_state()
-            + _reconcile_block(prev)
-            + _clarifications_block()
-            + _memory(prev, econ)
-            + _memory_index()
-            + "\n\nBOARD SNAPSHOT (%s):\n" % time.strftime("%Y-%m-%d %H:%M") + copilot._snapshot()
-            + EVIDENCE_TOOLS % _hidden_history_count())
-    out = _ask(turn, cli_model, system=system, hands=True, timeout=900)
-
-    # Effort in CODE: the LLM judges est_turns per milestone; code sums the
-    # REMAINING work (done + calendar_wait milestones cost nothing - a wait is
-    # not your throughput). No dates are derived here at all anymore - see
-    # pm_triangle._eta_range, which turns this sum + measured pace into a
-    # RANGE, never a single invented day.
-    est_turns = 0
-    for ms in out.get("milestones", []):
-        done = str(ms.get("status")) == "done"
-        tt = 0 if (done or ms.get("calendar_wait")) else int(ms.get("est_turns") or 0)
-        ms["est_turns"] = int(ms.get("est_turns") or 0)
-        est_turns += tt
-
-    out["economics"] = econ
-    # carry forward any owner-run corner reconciliations so the evidence persists
-    # across re-plans (and stays visible to the NEXT brief's _reconcile_block).
-    if (prev or {}).get("reconcile"):
-        out["reconcile"] = prev["reconcile"]
-    out["goal"] = goal
-    out["model"] = cli_model or "default"
-    out["generated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    # Style law: clip LLM prose at the SOURCE so every surface inherits the cap.
-    out["summary"] = _clip_prose((out.get("summary") or "").strip(), 300)
-    # "Der Weg": the ONE thing StatusPanel shows standing (pm-lean-advisor
-    # phase 3.1, 2026-09-04). Malformed/oversized entries degrade to nothing
-    # rather than a half-rendered chain - the UI falls back to milestones.
-    cp = []
-    for step in (out.get("critical_path") or [])[:4]:
-        if not isinstance(step, dict) or not str(step.get("step") or "").strip():
-            continue
-        who = step.get("who") if step.get("who") in ("du", "agent", "extern") else "agent"
-        cp.append({"step": _clip_prose(str(step["step"]).strip(), 90), "who": who,
-                   "why": _clip_prose(str(step.get("why") or "").strip(), 110),
-                   "card": step.get("card") or None})
-    out["critical_path"] = cp
-    # self-dedupe (the planner can still repeat itself in one turn) - the old
-    # verifier-vs-planner merge is gone with the verifier, the utility stays
-    # useful for this narrower job (ops/tests/test_pm_clarifications.py pins it).
-    # QUESTION DISCIPLINE (code disposes, 2026-09-12): a question reaches the
-    # owner only with its evidence trail - what the planner searched and did
-    # not find. An unchecked question is dropped (kept visible in the
-    # artifact), and one the planner keeps asking plan after plan is handed
-    # to Henry instead of blocking the gate in silence for another day.
-    out["open_questions"], out["question_evidence"], out["dropped_questions"] = \
-        _dispose_questions(out.get("open_questions"))
-    out["open_questions"] = _merge_questions(out["open_questions"], [])
-    _stale_question_guard(out["open_questions"], prev)
-    out["evidence"] = {k: v for k, v in (out.pop("_meta", None) or {}).items() if v is not None}
-    # pm.py PROPOSES (milestones, scope, questions); pm_triangle DISPOSES -
-    # plan_status/triage/gate/eta are entirely CODE-derived from here on,
-    # never re-graded by a second model pass. Scope is blocked exactly when
-    # open_questions is non-empty: an unresolved owner decision IS the
-    # unbounded scope, measured rather than a second LLM's opinion about it.
-    _gate_triangle(out, econ, est_turns, pace=_pace(econ))
-    _write_artifact(out)
-    return out
-
+    from cells.copilot.planning import process_drive
+    return {"planning": process_drive.request_plan(actor="owner")}
 
 def _epic_description(ms):
     """The PMP-scoped, owner-language body for ONE epic card: a user story,
@@ -978,48 +750,13 @@ def _limit_hit(track):
 
 
 def make_plan(actor="owner"):
-    """Run the PM role now and file its NEW items as backlog cards (deduped).
-    The reviewable brief is the day's plan artifact. One planning brain."""
-    from cells.engineer.cards import sessions
-    items, brief = plan_items()
-    # When a goal is set it is managed as a PROCESS (epic): the process owns the goal-path
-    # cards (step -> card, dated, in a SoW), built from THIS plan's vetted milestones once
-    # triage is green. Keep the brief as the analysis artifact but never flat-file cards for
-    # a goal - that was the duplication that left tickets unassigned.
-    if get_goal():
-        items = []
-    have = {t.get("task", "").strip().lower() for t in sessions.list_tracks()}
-    allow = {os.path.normcase(r) for r in (_pm().get("repos") or [])}
-    filed = 0
-    for it in items:
-        repo = it.get("repo") or ""
-        if not repo or not os.path.isdir(repo):
-            continue
-        if allow and os.path.normcase(repo) not in allow:
-            continue                      # safety allowlist
-        if it["title"].strip().lower() in have:
-            continue
-        sessions.new_track(
-            repo, "pm-" + re.sub(r"[^a-z0-9]+", "-", it["title"].lower())[:24],
-            it["title"], lane="backlog", description=it.get("description", ""),
-            priority=it.get("priority", "medium"), actor="pm")
-        filed += 1
-        have.add(it["title"].strip().lower())
-    st = _loopstate()
-    st["last_plan"] = time.strftime("%Y-%m-%d %H:%M")
-    st.setdefault(_today(), {"dispatched": [], "paused_at": 0})
-    _save_loopstate(st)
-    summary = (brief.get("summary") or "").strip()
-    _activity("planned", (("Geplant: %d neue Aufgabe(n) angelegt." % filed)
-                          + ((" " + summary[:350]) if summary else "")) if filed
-              else "Plan geprüft – nichts Neues nötig.")
-    # DASHBOARD ONLY (owner decree 2026-08-30): filing cards is the PM doing its
-    # job, not a decision for the owner - the new cards are on the board and the
-    # line above is in the activity feed. The chat version carried 350 chars of
-    # LLM plan summary on top, which is the "zu viel info" shape exactly.
-    print("PM plan: %d Kandidaten, %d neue Karten" % (len(items), filed))
-    return {"filed": filed, "candidates": len(items), "brief": brief}
-
+    """The Plan button (/nightshift/plan, the goal editor's silent re-scope).
+    ONE planner since 2026-09-30 (owner: "alles zusammen legen"): Henry,
+    woken through process_drive with a planning move on the goal's process -
+    the PM brain's own model turn (brief/milestones/triage) no longer runs.
+    Returns {"planning": pid-or-""}."""
+    from cells.copilot.planning import process_drive
+    return {"planning": process_drive.request_plan(actor=actor)}
 
 def _notify_deliveries(day, tracks, st, pm):
     """Essential-only, rate-limited PUSH (the 'notify' channel): when a card the
@@ -1086,7 +823,7 @@ def _backlog(tracks, pm, day):
     return sorted(
         (t for t in tracks
          if t.get("lane") == "backlog" and t["id"] not in day.get("dispatched", [])
-         and t.get("mode") not in ("human", "teach", "cowork")
+         and t.get("mode") not in ("human", "teach")
          and not t.get("example")
          and (not allow or os.path.normcase(t.get("repo") or "") in allow)),
         key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
@@ -1409,29 +1146,8 @@ def _stakeholder_update(st):
                header="Budget vs. Ziel", title=_i18n.t("push.pmQuota"))
 
 
-def _overview_stale(plan, tracks):
-    """True if the dashboard layout isn't set yet. Used to give each card its
-    milestone's target date on the board Timeline (pm-lean-advisor, 2026-09-04:
-    retired - milestones no longer carry any date at all, LLM-estimated or
-    otherwise; stamping an LLM's est_turns-derived date onto a card's real due
-    field was exactly the invented-calendar-date class this rewrite removes)."""
-    from spine.storage import events
-    return not (events.settings().get("policy") or {}).get("dashboard", {}).get("tiles")
 
 
-def _build_overview(plan):
-    """OVERVIEW state action: ensure a sensible DASHBOARD layout exists.
-    (Per-milestone Timeline due-dating retired - see _overview_stale.)
-    Reversible edits only; this is a LOOP STATE, not bespoke capability code."""
-    from spine.storage import events
-    pol = dict(events.settings().get("policy") or {})
-    if not (pol.get("dashboard") or {}).get("tiles"):
-        pol["dashboard"] = {"tiles": ["value_delivered", "ai_spend", "margin", "yield", "automation", "leverage"],
-                            "panels": ["capacity", "gates", "work"]}
-        events.save_settings({"policy": pol})
-        _activity("overview", "Uebersicht gebaut: Dashboard-Layout gesetzt.")
-        return 1
-    return 0
 
 
 # The proactive loop is now a STATE MACHINE - same idea as ops/tools/loop_state.py:
@@ -1587,26 +1303,17 @@ def _tick():
     except Exception as e:                                   # noqa: BLE001
         print("PM push sweep error:", e)
 
-    # THE GOAL WAKE (owner 2026-09-28, goal_drive): Henry gets a turn FOR the
-    # goal - a goal card delivered, the goal stalled, the deadline near - not
-    # only for card health. Same reason as the sweep for sitting outside the
-    # delta gate: "nothing moves" has no delta.
+    # THE DRIVE (process_drive - owner 2026-09-30, "alles zusammen legen"):
+    # the ONE wake that gives Henry a turn FOR a piece of work - every open
+    # process, the goal's first: a step delivered, a stall, a deadline, a
+    # recorded next move, a decision an agent can take. Outside the delta
+    # gate for the same reason as the sweep: "nothing moves" has no delta.
+    # Switch: rule initiative.goal_drive.
     try:
-        from cells.copilot.planning import goal_drive
-        goal_drive.wake(st)
+        from cells.copilot.planning import process_drive
+        process_drive.wake(st)
     except Exception as e:                                   # noqa: BLE001
-        print("PM goal wake error:", e)
-
-    # THE PROCESS WAKE (owner 2026-09-30, process_drive): the same drive for
-    # every open process - a step delivered, a stall, a due date, a recorded
-    # next move, a decision an agent can take - aimed at Henry, not the owner.
-    # Same switch as the goal wake (rule initiative.goal_drive).
-    try:
-        from cells.copilot.planning import goal_drive, process_drive
-        if goal_drive._enabled():
-            process_drive.wake(st)
-    except Exception as e:                                   # noqa: BLE001
-        print("PM process wake error:", e)
+        print("PM drive error:", e)
 
     # COMMUNICATE ONLY ON DELTA (position = live cards, no plan any more).
     pos = _position([t for t in tracks if not t.get("archived") and not t.get("example")], None)
@@ -1702,7 +1409,7 @@ def activity():
         (blockers if b["reason"] in _STUCK else needs).append(lbl(t))
     rank = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
-                   and t.get("mode") not in ("human", "teach", "cowork")),
+                   and t.get("mode") not in ("human", "teach")),
                   key=lambda t: (rank.get(t.get("priority"), 2), t.get("created") or ""))
     sname, sreason = _state()
     return {

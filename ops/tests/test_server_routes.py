@@ -367,8 +367,6 @@ def main():
         ok(isinstance(body, dict) and body.get("error"), "/pm/consolidate refuses a client (owner only)")
         status, body = req("POST", "/pm/report", {}, cookie=csid, expect=403)
         ok(isinstance(body, dict) and body.get("error"), "/pm/report refuses a client (owner/operator only)")
-        status, body = req("POST", "/pm/reconcile", {}, cookie=csid, expect=403)
-        ok(isinstance(body, dict) and body.get("error"), "/pm/reconcile refuses a client (owner/operator only)")
 
         # -- misc group (routes_misc.py) -----------------------------------------
         status, body = req("GET", "/processes", cookie=sid, expect=200)

@@ -45,7 +45,7 @@ SETTINGS = os.path.join(HARNESS, "settings")
 # ops/harness/ - they are not any one cell's policy.
 AGENT_CELL = {
     "card-worker": "engineer", "machine-worker": "engineer", "ship-worker": "engineer",
-    "board-copilot": "copilot", "pm": "copilot", "ship-advisor": "copilot", "hands": "copilot", "delegate": "copilot",
+    "board-copilot": "copilot", "ship-advisor": "copilot", "hands": "copilot", "delegate": "copilot",
     "glass-brief": "copilot", "voice-style": "copilot", "wear-brief": "copilot",
 }
 SETTINGS_CELL = {"card": "engineer", "copilot": "copilot", "pm": "copilot"}
@@ -268,15 +268,6 @@ _DEFAULTS = {
     # file now ships with EVERY install (git checkout; the desktop bundle
     # carries ops/harness as an extraResource). If this stub ever speaks, the
     # installation is broken and says so - errors() carries the missing path.
-    # The PM's floor is the JSON-shape one-liner pm.py used to carry inline -
-    # the plan PARSER depends on that shape, so the floor keeps plans parseable
-    # even on a broken install (and the real 8.8 KB role is ops/harness/agents/
-    # pm.md, shipped with every install like the other briefs).
-    "pm": (
-        "You are the HelmDeck PM/CTO. Reply with JSON: "
-        "{summary, done_pct, milestones, next, risks}.",
-        {"name": "pm", "settings": "", "setting_sources": "",
-         "ask_protocol": False}),
     "board-copilot": (
         "You are HENRY, HelmDeck's board agent. Your full role file "
         "(cells/copilot/harness/agents/board-copilot.md) is MISSING from this "

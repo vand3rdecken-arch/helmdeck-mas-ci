@@ -1362,11 +1362,6 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
             _i18n.t("say.shipHenry") if _ship_eid else "") + _by)
         from spine.comms import notify
         notify.card_event(t, "done")
-        try:
-            from cells.copilot.planning import pm
-            pm.on_card_done(tid)   # re-judge the golden triangle at event time
-        except Exception:
-            pass
         if t.get("connector"):
             from cells.engineer.connectors import connectors
             from spine.ops import checkpoints

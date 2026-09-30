@@ -147,8 +147,9 @@ BOARD = [
 ]
 
 # cards the machine STRUCTURALLY never starts - every auto-dispatch path skips
-# these modes (pm._backlog, pm.activity's todo, processes._advance)
-MANUAL_IDS = {"m-manual", "m-teach", "m-cowork"}
+# these modes (pm._backlog, pm.activity's todo, processes._advance). cowork
+# is agent work since 2026-09-30 - it starts, so it is not the owner's move.
+MANUAL_IDS = {"m-manual", "m-teach"}
 
 TRACKS = [dict(c) for c, _ in BOARD]
 BLOCKED_IDS = {c["id"] for c, r in BOARD if r}
@@ -260,7 +261,7 @@ def test_glance_payload():
 
 
 def test_manual_backlog_is_its_own_bucket():
-    """Cards the machine will NEVER start (mode human/teach/cowork). They are
+    """Cards the machine will NEVER start (mode human/teach). They are
     unstarted work, not stuck work: folding them into needs_you would bury a red
     gate under a backlog, but dropping them is how they became invisible in
     EVERY surface at once - pm.activity's todo list excludes them too."""

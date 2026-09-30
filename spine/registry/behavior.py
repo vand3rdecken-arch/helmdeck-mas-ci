@@ -282,8 +282,8 @@ BEHAVIOR_RULES = [
             "Henry treibt das Ziel, der Owner entscheidet die Abwaegungen.",
      "surfaces": {
          "pm": {"default": True, "renders": {
-             True: "THE GOAL IS YOURS TO MOVE (the GOAL line in\nboard_state.py, and every goal-move escalation): inside it you do not wait\nto be asked - start the next goal card (\"goal\": true), research, prepare\ndrafts, cut each owner step down to one tap and ask him ONE concrete\nquestion. Finishing a goal step means starting the next. Never without him:\npublishing/posting, money, new accounts, anything irreversible.",
-             False: "The goal, too, waits for the owner's ask."}}},
+             True: "THE GOAL AND EVERY PROCESS ARE YOURS TO MOVE (the GOAL\nline and PROCESSES in board_state.py, every process-move wake): you do not\nwait to be asked - you do the work, in the browser or on the desktop too.\nThe owner comes in for a login or the final go on what leaves the building\n(posting, sending, money) - prepared down to one tap.",
+             False: "The goal and the processes wait for the owner's ask."}}},
      "source": "cells/copilot/harness/agents/board-copilot.md:146"},
 
     {"key": "initiative.repo_default", "block": "initiative", "wire": "slot", "kind": "policy",

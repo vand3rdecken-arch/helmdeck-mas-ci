@@ -8,9 +8,7 @@ Pinned, on a sandbox db (the live db is never touched - db.DBPATH first):
     nothing any more; no goal card -> share None (said, not guessed)
  2. goal_line renders the evidence Henry reads first in both snapshots, and
     copilot._snapshot really carries it
- 3. wake: history never fires, stalled/deadline once a day, a delivery fires
-    even the same day, an open goal-move blocks without swallowing the
-    delivery, the rule toggle turns it off
+ 3. (the wake lives in process_drive now - test_process_drive.py)
  4. the broker's direct_task verb starts a card that becomes a step of the
     goal's process for a goal-move; a client-card judgement cannot use it
  5. file_card with "goal": true through the real action runner makes the card
@@ -45,7 +43,6 @@ from spine.comms import notify
 notify.card_event = lambda *a, **k: None
 notify.push_fcm = lambda *a, **k: True
 notify.chat_reply = lambda *a, **k: None
-processes._propose_steps = lambda text: []
 
 _fails = []
 
@@ -109,43 +106,16 @@ pm.set_goal(GOAL)
 snap = copilot._snapshot()
 check(snap.startswith("GOAL: Ersten fremden User"), "copilot._snapshot leads with the goal (%r)" % snap[:80])
 check(henry_broker._snapshot().startswith("GOAL: Ersten fremden User"), "the broker snapshot too")
+# the owner's clarifications ride in the goal evidence (the PM plan prompt that
+# used to read them is gone - Henry is the one planner)
+r = copilot_actions._run_action({"type": "clarify_goal", "text": "Nur DACH, Firmenkonto vorhanden"},
+                                "tien", "owner")
+check("Owner-Fakt: Nur DACH, Firmenkonto vorhanden" in copilot._snapshot(),
+      "clarify_goal lands as an Owner-Fakt in the snapshot Henry reads (%s)" % r)
+check("Plan wird" not in r, "no second planner turn is started (%s)" % r)
 
-print("3. wake")
-emitted = []
-def emit(kind, c, detail):
-    emitted.append((kind, detail))
-    return "goal-move-%d" % len(emitted)
-saves = []
-st = {}
-fresh = dict(gs, last_move=NOW - 3600, done=["old1"], days_left=10)
-r = goal_drive.wake(st, NOW, gs=fresh, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check(r is None and not emitted, "first look: an already-done card is history, nothing fires")
-check(st["goal_wake"]["seen_done"] == ["old1"], "... but it is recorded as seen")
-stalled = dict(fresh, last_move=NOW - 30 * 3600)
-r = goal_drive.wake(st, NOW, gs=stalled, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check(r and emitted[-1][0] == "goal-move" and "stalled" in emitted[-1][1] and "Frage:" in emitted[-1][1],
-      "stalled 30 h -> one goal-move with the goal line and the question")
-n = len(emitted)
-goal_drive.wake(st, NOW + 600, gs=stalled, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check(len(emitted) == n, "stalled fires once a day, not every tick")
-deliv = dict(stalled, done=["old1", "new2"])
-r = goal_drive.wake(st, NOW + 900, gs=deliv, emit=emit, save=saves.append, enabled=True, open_exists=True)
-check(r is None and st["goal_wake"]["seen_done"] == ["old1"],
-      "an open goal-move blocks - and the delivery is NOT swallowed")
-r = goal_drive.wake(st, NOW + 1200, gs=deliv, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check(r and "delivered" in emitted[-1][1] and "new2" in emitted[-1][1],
-      "once free: the delivery fires the same day")
-st2 = {}
-near = dict(fresh, days_left=2)
-goal_drive.wake(st2, NOW, gs=near, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check("deadline: noch 2 Tage" in emitted[-1][1], "T-2 fires the deadline reason")
-n = len(emitted)
-check(goal_drive.wake({}, NOW, gs=stalled, emit=emit, save=saves.append, enabled=False,
-                      open_exists=False) is None and len(emitted) == n,
-      "initiative.goal_drive off -> no wake")
-idle_saves = len(saves)
-goal_drive.wake(st, NOW + 1500, gs=deliv, emit=emit, save=saves.append, enabled=True, open_exists=False)
-check(len(saves) == idle_saves, "an idle tick writes nothing")
+# 3. the WAKE moved to process_drive (one drive for every process, the goal
+#    first) - pinned in ops/tests/test_process_drive.py.
 
 print("4. broker direct_task")
 repo = os.path.join(SANDBOX, "helmdeck")

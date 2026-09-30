@@ -24,7 +24,7 @@ cells/<id>/harness/
   settings/   that cell's settings layers
 
 cells/engineer/harness/{agents,settings}/   card-worker.md, machine-worker.md, card.json
-cells/copilot/harness/{agents,settings}/    board-copilot.md, pm.md, ship-advisor.md,
+cells/copilot/harness/{agents,settings}/    board-copilot.md, ship-advisor.md,
                                              glass-brief.md, voice-style.md, wear-brief.md,
                                              copilot.json
 

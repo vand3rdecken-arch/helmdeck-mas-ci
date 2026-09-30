@@ -47,7 +47,7 @@ def blocker(t):
 
     Where the line is drawn, deliberately: a card nobody has started is not
     BLOCKED, it is unstarted. A `queued` backlog card the PM will never dispatch
-    on its own (mode human/teach/cowork, or a quota-paused day) is the owner's
+    on its own (mode human/teach, or a quota-paused day) is the owner's
     WORK, not his decision - it belongs on a board, and putting it here would
     bury the six cards that really are stuck under fifty that merely wait."""
     t = t or {}
@@ -89,7 +89,7 @@ def blocker(t):
 # processes._advance), and teach/human get no driver at all (MODE_DRIVER). A
 # `do` card in the backlog is waiting its TURN; one of these is waiting for a
 # human, forever, and nothing anywhere used to say so.
-MANUAL_MODES = ("human", "teach", "cowork")
+MANUAL_MODES = ("human", "teach")
 
 
 def manual_backlog(tracks):

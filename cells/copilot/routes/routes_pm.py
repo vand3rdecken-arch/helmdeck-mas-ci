@@ -3,13 +3,13 @@
 split (see routes_auth.py for the pattern/rationale). GET /pm/economics
 (cheap no-LLM snapshot), GET /pm/plan (cached briefing + live economics),
 POST /pm/config (owner sets the loop policy - whitelisted keys only), POST
-/pm/consolidate (propose/apply the small-cards rollup), POST /pm/report (ONE
-model turn - the proactive briefing), POST /pm/reconcile (re-derive a red
-golden-triangle corner from real evidence). Bodies are byte-identical to the
+/pm/consolidate (propose/apply the small-cards rollup), POST /pm/report (wakes
+the one planner, Henry, via process_drive - no own model turn since
+2026-09-30). Bodies are byte-identical to the
 inline blocks they replace.
 
 Capability-gated (ops/docs/backlog/rbac-gxp card 2, spine/auth/permissions.py):
-pm.view (owner+operator - economics/plan/report/reconcile) and pm.manage
+pm.view (owner+operator - economics/plan/report) and pm.manage
 (owner-only - config/consolidate, both change the loop's own policy).
 """
 import json
@@ -81,19 +81,6 @@ def pm_report_post(self, user, body):
         return self._send(500, json.dumps({"error": str(e)[:300]}))
 
 
-def pm_reconcile_post(self, user, body):
-    # Gather real evidence behind a RED golden-triangle corner and re-plan
-    # (pm.reconcile_corner). The agent supplies facts; the gate re-derives
-    # the corner (no monkey patch). Owner+operator (pm.view), same tier as
-    # report - despite the name, this isn't config-changing (pm.manage).
-    from cells.copilot.planning import pm
-    try:
-        return self._send(200, json.dumps(pm.reconcile_corner(
-            body.get("corner", ""), actor=user["name"])))
-    except Exception as e:
-        return self._send(500, json.dumps({"error": str(e)[:300]}))
-
-
 GET_ROUTES = {
     "/pm/economics": pm_economics_get,
     "/pm/plan": pm_plan_get,
@@ -102,7 +89,6 @@ POST_ROUTES = {
     "/pm/config": pm_config_post,
     "/pm/consolidate": pm_consolidate_post,
     "/pm/report": pm_report_post,
-    "/pm/reconcile": pm_reconcile_post,
 }
 GET_CAPS = {
     "/pm/economics": "pm.view",
@@ -112,5 +98,4 @@ POST_CAPS = {
     "/pm/config": "pm.manage",
     "/pm/consolidate": "pm.manage",
     "/pm/report": "pm.view",
-    "/pm/reconcile": "pm.view",
 }

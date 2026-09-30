@@ -107,7 +107,7 @@ def _bounced_to_resolve(tracks, pm, day):
             if t.get("status") == "bounced" and t["id"] not in given_up
             and t["id"] not in busy
             and attempts.get(t["id"], 0) < _RESOLVE_MAX
-            and t.get("mode") not in ("human", "teach", "cowork")
+            and t.get("mode") not in ("human", "teach")
             and not t.get("autopilot")   # autopilot drives its own cards (processes._autopilot)
             and (not allow or os.path.normcase(t.get("repo") or "") in allow)]
 

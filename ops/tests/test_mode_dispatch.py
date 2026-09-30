@@ -80,10 +80,12 @@ def main():
                   _card("t-do", mode="do"), _card("t-human", mode="human"),
                   _card("t-teach", mode="teach"), _card("t-cowork", mode="cowork")]
         got = {t["id"] for t in pm._backlog(tracks, {"repos": []}, {"dispatched": []})}
-        assert got == {"t-none", "t-auto", "t-do"}, \
+        # cowork dispatches since 2026-09-30 (owner: agent work starts; the
+        # agent asks for a login / the final go through its ASK protocol)
+        assert got == {"t-none", "t-auto", "t-do", "t-cowork"}, \
             "wrong dispatch candidates: %r" % got
-        print("PASS pm._backlog: mode None/'auto'/'do' dispatchable, "
-              "human/teach/cowork excluded")
+        print("PASS pm._backlog: mode None/'auto'/'do'/'cowork' dispatchable, "
+              "human/teach excluded")
 
         # -- processes._autopilot on the exact live launch-card shape:
         #    backlog + autopilot=true + completion stat mode='auto' -----------

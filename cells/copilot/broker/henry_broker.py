@@ -496,13 +496,13 @@ def _decide(esc):
           "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
           "im Turn ist - NIE taskkill/schtasks selbst tippen). "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|accept_steps|cancel_process|set_next|ignore",\n'
+          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|set_next|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
           ' "kind": "bei ship: none|ota|native",\n'
-          ' "text": "bei did: was du getan hast; bei direct_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
+          ' "text": "bei did: was du getan hast; bei direct_task/machine_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
           ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
-          ' "goal": "bei direct_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
+          ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
           ' "why": "ein satz begruendung"}')
     if not privileged:
         # This card was filed by a client-role account, not owner/operator -
@@ -542,7 +542,8 @@ def _decide(esc):
     why = (d.get("why") or "").strip()
     at = (d.get("at") or "").strip()
     goal = d.get("goal") is True
-    if action in ("did", "direct_task", "accept_steps", "cancel_process", "set_next") \
+    if action in ("did", "direct_task", "machine_task", "accept_steps", "cancel_process",
+                  "set_next") \
             and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
         # escalation does not get closed via "did" - stays open for a
@@ -582,7 +583,8 @@ def _decide(esc):
     # print the same reply for the same event.
     _machine_done = action == "move" and lane == "done" and bool(
         (_find_track(card) or {}).get("machine"))
-    if action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task") or (
+    if action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
+                  "machine_task") or (
             action == "move" and not _machine_done):
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
@@ -859,27 +861,34 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
     if action == "notify_owner":
         _notify_owner("Henry (%s): %s" % (esc["kind"], text or esc.get("detail") or ""), t)
         return True
-    if action == "direct_task" and text:
+    if action in ("direct_task", "machine_task") and text:
         # START the next piece of work (owner 2026-09-28, goal_drive): the
-        # chat's direct_task verb, reachable from a judgement too - without it
-        # a goal-move turn could only do the work inline ("did") or talk about
-        # it. Same policy switch as the chat verb (policy.machine.enabled);
-        # _decide only lets a privileged judgement get here. A card filed
-        # from a goal-move or process-move is a STEP of that process BY RECORD
-        # (attach_card below) - never inferred from the task text.
+        # chat's direct_task / machine_task verbs, reachable from a judgement
+        # too - without them a wake could only do the work inline ("did") or
+        # talk about it. machine_task = the owner's PC as workplace (windows-
+        # mcp + browser, owner 2026-09-30: work that needs the desktop starts
+        # directly). Same policy switch as the chat verbs (policy.machine.
+        # enabled); _decide only lets a privileged judgement get here. A card
+        # filed from a goal-move or process-move is a STEP of that process BY
+        # RECORD (attach_card below) - never inferred from the task text.
         from cells.engineer.cards import sessions
         from spine.storage import events
         if not sessions.machine_policy().get("enabled", True):
-            escalations.record_note(esc["id"], "direct_task: policy.machine.enabled=false")
-            return False
-        repo = events.settings().get("default_repo") or ""
-        if not repo:
-            escalations.record_note(esc["id"], "direct_task: kein default_repo gesetzt")
+            escalations.record_note(esc["id"], "%s: policy.machine.enabled=false" % action)
             return False
         try:
-            nt = sessions.new_direct_task(repo, text, actor="henry", priority="high")
+            if action == "machine_task":
+                import os as _os
+                nt = sessions.new_machine_task(_os.path.expanduser("~"), text,
+                                               actor="henry", priority="high")
+            else:
+                repo = events.settings().get("default_repo") or ""
+                if not repo:
+                    escalations.record_note(esc["id"], "direct_task: kein default_repo gesetzt")
+                    return False
+                nt = sessions.new_direct_task(repo, text, actor="henry", priority="high")
         except Exception as e:
-            escalations.record_note(esc["id"], "direct_task: Start fehlgeschlagen: %s" % str(e)[:250])
+            escalations.record_note(esc["id"], "%s: Start fehlgeschlagen: %s" % (action, str(e)[:250]))
             return False
         # the new card is a STEP of the process the escalation is about - the
         # goal's process for a goal-move or "goal": true - by record, at filing time
@@ -889,9 +898,9 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
                 from cells.engineer.chains import processes
                 processes.attach_card(pid, nt["id"], actor="henry")
             except Exception as e:                           # noqa: BLE001
-                escalations.record_note(esc["id"], "direct_task: Prozess-Link fehlgeschlagen: %s"
+                escalations.record_note(esc["id"], "Prozess-Link fehlgeschlagen: %s"
                                         % str(e)[:200])
-        escalations.record_note(esc["id"], "direct_task: Karte %s gestartet" % nt["id"])
+        escalations.record_note(esc["id"], "%s: Karte %s gestartet" % (action, nt["id"]))
         return True
     return False
 

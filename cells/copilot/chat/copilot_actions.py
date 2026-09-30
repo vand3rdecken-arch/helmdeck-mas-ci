@@ -936,25 +936,10 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         if not pm.get_goal():
             return "clarify_goal: kein Ziel gesetzt - nichts zum Klarstellen"
         pm.add_clarification(text, actor=actor)
-        # Re-Plan im HINTERGRUND (owner decree 2026-09-05): pm.brief() ist ein
-        # eigener Modell-Call (~2,5min gemessen 07:32->07:34:52) und lief hier
-        # SYNCHRON - Henrys Actions laufen sequenziell, also blockierte er
-        # jede spaetere Action im selben Block. Der Owner sah "Gebongt, startet
-        # gleich" und dann minutenlang nichts, weil sein new_process hinter
-        # einem Re-Plan wartete, der mit ihm nichts zu tun hat. bgthread (nicht
-        # ein nackter Thread) traegt das Crash-Reporting: ein gestorbener
-        # Re-Plan wird eskaliert statt zu verschwinden. Der frueher hier
-        # angehaengte automatische Ziel-Abgleich (goal_check, nur Titel) ist
-        # seit 2026-09-13 gestrichen (Owner: "Henry fragt dumme Fragen").
-        from spine.ops import bgthread
-
-        def _replan():
-            try:
-                pm.brief()
-            except Exception as e:                           # noqa: BLE001
-                print("clarify_goal re-plan failed:", str(e)[:200])
-        bgthread.spawn("pm:replan", _replan)
-        return "Notiert: „%s“ - Plan wird im Hintergrund neu gerechnet." % text[:150]
+        # The fact is recorded; the ONE planner (Henry, via process_drive)
+        # picks it up with the goal's next move - no second planner turn
+        # (owner 2026-09-30, "alles zusammen legen").
+        return "Notiert: „%s“" % text[:150]
     if kind == "new_process":
         p = processes.create(a["request"], client=a.get("client", ""),
                              due=a.get("due", ""), actor=actor)
@@ -1047,8 +1032,10 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             title = (a.get("title") or "").strip()
             if not title:
                 return "add_step: title required"
-            processes.add_step(p["id"], title, a.get("mode", "do"))
-            return "step '%s' added to %s" % (title[:60], p["id"])
+            q = processes.add_step(p["id"], title, a.get("mode", "do"),
+                                   desktop=a.get("desktop") is True, actor=actor)
+            tr = next((s.get("track") for s in reversed(q["steps"]) if s.get("title") == title[:120]), None)
+            return "step '%s' added to %s%s" % (title[:60], p["id"], (" - Karte %s" % tr) if tr else "")
         step_frag = (a.get("step") or "").lower()
         idx = next((i for i, s in enumerate(p["steps"])
                    if step_frag in (s.get("title") or "").lower()), None)

@@ -7,19 +7,11 @@ developer account exists while eight FINISHED cards, a live card and a memory
 note documented the submission - because brief() inlined only the live board,
 gave the turn no tools, and let an unchecked question block the Scope gate.
 
-Under test (the REAL brief() prompt-assembly path, _ask stubbed at the
-process boundary - no daemon, no model):
-  1. brief() runs the planner WITH HANDS: the role rides as the system prompt
-     (stable prefix), the turn carries the memory INDEX + the EVIDENCE TOOLS
-     block + the hidden-history count, and _ask is called with hands=True.
-     (Fails on the old code: no `system`, no hands, no tools in the prompt.)
-  2. board_state.find_cards / henry_memory_get.find_notes find a finished
+Under test (the planner turn it was written for is gone since 2026-09-30 -
+Henry is the one planner; what stays true stays pinned):
+  3. board_state.find_cards / henry_memory_get.find_notes find a finished
      card / a note by content words - archived and done included, titles
-     alone not required (the Play-Store lesson).
-  3. _dispose_questions keeps a question ONLY with a non-empty `checked`
-     trail; a bare string or empty trail is dropped and reported.
-  4. _stale_question_guard hands a question repeated in 3 consecutive plans
-     to Henry once (escalation kind pm-question-stale), never removes it.
+     alone not required (the Play-Store lesson). Henry's evidence tools.
   5. The steer fold skips daemon hand-backs so clarifications stay owner
      ground truth (sessions.steer, actor="daemon").
 
@@ -93,32 +85,6 @@ pm._ask = fake_ask
 henry_calls = []
 pm._to_henry = lambda kind, detail, card=None, feed="": henry_calls.append((kind, detail)) or "e1"
 
-print("1. brief() runs the planner with hands, role as system, tools + index in the turn")
-out = pm.brief(goal="HelmDeck launchen")
-check(len(seen) == 1, "exactly one planner turn")
-call = seen[0]
-check(call["hands"] is True, "_ask called with hands=True (permission default + pm.json allowlist)")
-check("PM / CTO role" in call["system"] or "PM/CTO" in call["system"], "role rides as the SYSTEM prompt")
-check("PM / CTO role" not in call["prompt"], "role is NOT duplicated in the turn text")
-check("EVIDENCE TOOLS" in call["prompt"] and "hd.py board --find" in call["prompt"]
-      and "hd.py memory find" in call["prompt"], "turn carries the evidence tools block")
-check("DEIN GEDAECHTNIS" in call["prompt"], "turn carries the memory INDEX (progressive disclosure)")
-check("2 finished/archived cards" in call["prompt"], "turn states the measured hidden-history count")
-check("GOAL:\nHelmDeck launchen" in call["prompt"], "goal + volatile facts stay in the turn")
-
-print("2. question discipline: only questions with a checked trail survive")
-check(out["open_questions"] == ["Zaehlt gelauncht erst mit dem Produktionsrelease?"],
-      "bare-string and empty-trail questions dropped: %r" % out["open_questions"])
-check(set(out["dropped_questions"]) == {"Hat der Owner ein Google Play Developer-Konto?", "Ohne Trail"},
-      "dropped questions stay visible in the artifact")
-check(out["question_evidence"].get("Zaehlt gelauncht erst mit dem Produktionsrelease?", "").startswith("memory find"),
-      "the kept question carries its evidence trail")
-check(out["evidence"].get("num_turns") == 4 and "_meta" not in out,
-      "CLI accounting lands under `evidence`, _meta stripped")
-check(out["triage"]["scope"] == "blocked", "a checked question still blocks Scope (decree kept)")
-act = " ".join(a["msg"] for a in pm_comm._read_activity(50))
-check("ohne Belegsuche verworfen" in act, "dropping is reported in the activity feed")
-
 print("3. evidence tools find by content, done + archived included, examples excluded")
 hits = board_state.find_cards(["play", "konto"], TRACKS)
 check([h["id"] for h in hits] == ["20260831-071411-machine"],
@@ -132,22 +98,6 @@ notes = {"MEMORY": {"content": "index"},
          "other": {"content": "nothing", "updated_at": "2026-09-01"}}
 found = henry_memory_get.find_notes(notes, ["zieldatum"])
 check([n for n, _ in found] == ["helmdeck-launch-planung"], "memory find matches content, skips the index")
-
-print("4. a question repeated in 3 consecutive plans is handed to Henry once, never removed")
-# step 1 wrote today's artifact - the guard runs BEFORE the write in brief(),
-# so clear the plans table and seed three consecutive days (pm_plans rows)
-with db.conn() as _c:
-    _c.execute("DELETE FROM pm_plans")
-for d in ("20260909", "20260910", "20260911"):
-    db.pm_plan_put(d, {"open_questions": ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"]})
-qs = ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"]
-pm._stale_question_guard(qs, None)
-check(len(henry_calls) == 1 and henry_calls[0][0] == "pm-question-stale",
-      "stale question escalated to Henry as pm-question-stale")
-check(qs == ["Wie viel vom Wochenkontingent soll das Launch-Ziel bekommen?"], "the question itself stays in the plan")
-henry_calls.clear()
-pm._stale_question_guard(["Ganz neue Frage?"], None)
-check(not henry_calls, "a fresh question is not escalated")
 
 print("5. steer fold ignores daemon hand-backs")
 src = open(os.path.join(ROOT, "cells", "engineer", "cards", "sessions.py"), encoding="utf-8").read()

@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
-"""Processes - the n8n half. A client request ("get this document approved")
-is not one card: an agent PROPOSES a step sequence, the human adjusts it, and
-each accepted step becomes a normal board card with an execution mode:
+"""Processes - longer work as ONE record: the goal is a process, a theme is a
+process, and every step is a card. Since 2026-09-30 (owner: "alles zusammen
+legen", "Prozesse die Browser oder windows-mcp benoetigen direkt starten -
+nur User holen bei letzter Entscheidung oder Login") there is no separate
+proposer and no sign-off: Henry files the steps (as cards, or as a template)
+and they start. Two kinds of step:
 
-  do      - agent executes it fully (claude / claude-desktop driver)
-  prepare - agent drafts, human finishes & sends (email, proposal, sketch)
-  cowork  - interactive: dispatched, human steers alongside
-  teach   - human records the sequence once on the machine (teach-mode),
-            the playbook executes it after
-  human   - a person does it; the card only tracks it
+  do     - an agent does it; `desktop: true` makes its card a MACHINE card
+           (windows-mcp + browser on the owner's PC), otherwise a repo card
+           (browser included). The agent asks the owner only for a login or
+           the final go (its ASK protocol) - the step does not wait for him.
+  human  - only a person can do it (sign, call, meet); the card tracks it.
+The older modes prepare/cowork/teach still read from stored steps and map
+to do / do / human.
 
-Dates: the proposer estimates days per step; due dates are laid end-to-end
+Dates: a step's `days` lays due dates end-to-end
 from today (capped by the process due date when set). `due` is a DEADLINE.
 A step may also carry `not_before` (YYYY-MM-DD): the chain will not mark it
 ready before that day even when its predecessor is long done. That is what
@@ -20,11 +24,15 @@ processes table (migrated from the old processes.json flat file - db.init()
 imports it once and renames it *.imported, same safeguard as tracks/events).
 Steps link to their card (track id) once accepted; the timeline groups cards
 by process so one client engagement reads as a swimlane."""
-import json, os, re, shutil, subprocess, threading, time
+import os, re, threading, time
 
-from daemon.paths import DAEMON_ROOT as ROOT
-from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
-MODES = ("do", "prepare", "cowork", "teach", "human")
+MODES = ("do", "prepare", "cowork", "teach", "human")   # stored values; see step_mode()
+_MODE_MAP = {"do": "do", "prepare": "do", "cowork": "do", "teach": "human", "human": "human"}
+
+
+def step_mode(mode):
+    """The effective kind of a step: 'do' (an agent) or 'human'."""
+    return _MODE_MAP.get(mode or "do", "do")
 _lock = threading.Lock()
 
 # -- process TEMPLATES: the config half of this module ----------------------
@@ -36,18 +44,21 @@ _lock = threading.Lock()
 # auch config, wie trennen" - a run and its shape were one JSON blob and the
 # shape never accumulated anywhere an owner could export it). Kept in this
 # module, not a separate one: it owns MODES and the step shape already.
-TEMPLATE_STEP_FIELDS = ("title", "desc", "mode", "days")
+TEMPLATE_STEP_FIELDS = ("title", "desc", "mode", "days", "desktop")
 
 
 def _clean_template_step(s):
     """The closed step shape - strips every RUNTIME field a live process
     step carries (done/lane/track/state/ready/auto_dispatched/...). Same
-    validation _propose_steps already applies to a fresh LLM step, reused
-    here so a template can never smuggle a runtime field back in."""
-    return {"title": str(s.get("title", ""))[:120],
-            "desc": str(s.get("desc", ""))[:300],
-            "mode": s.get("mode") if s.get("mode") in MODES else "do",
-            "days": min(5, max(1, int(s.get("days", 1) or 1)))}
+    validation any fresh step gets, so a template can never smuggle a
+    runtime field back in."""
+    out = {"title": str(s.get("title", ""))[:120],
+           "desc": str(s.get("desc", ""))[:300],
+           "mode": step_mode(s.get("mode")),
+           "days": min(5, max(1, int(s.get("days", 1) or 1)))}
+    if s.get("desktop"):
+        out["desktop"] = True
+    return out
 
 
 def _slugify(name, existing):
@@ -132,62 +143,6 @@ def get(pid):
             return p
     return None
 
-PROPOSE_PROMPT = """You are a process designer for an agent-execution board.
-A client request follows. Break it into 3-8 concrete, orderable steps.
-
-For each step decide the best execution mode:
-  do      = an AI agent can complete it alone (code, research, documents, browser/desktop work)
-  prepare = an AI agent DRAFTS it and a human sends it - ONLY when the result leaves the building
-            (a message to a real person, a public post, a payment)
-  cowork  = the agent needs the human's live input to do it at all (his taste, his account, his voice)
-  teach   = a repetitive machine sequence a human should demonstrate once so it becomes a playbook
-  human   = ONLY what no agent can physically do: sign, call, meet or talk to a person, pay,
-            act in the physical world
-
-The agents decide on their own. "Confirm", "approve", "review", "pick the best", "agree on
-criteria" are NEVER steps - an agent decides that and reports it. Do not invent a human step
-to get a sign-off.
-
-Reply with ONLY a JSON array, no prose:
-[{"title": "...", "desc": "one sentence of what done looks like", "mode": "do|prepare|cowork|teach|human", "days": <estimated working days, 1-5>}]
-
-REQUEST:
-%s"""
-
-def _propose_steps(request_text):
-    from spine.agent import drivers
-    # drivers._cmd_line, not ["cmd","/c",...] - the cmd.exe route mangles quoted
-    # args on a .cmd shim (see drivers._real_claude_exe).
-    # encoding="utf-8" is REQUIRED (the documented Windows trap, same as
-    # copilot.py's turn spawn): with text=True alone, Windows decodes claude's
-    # UTF-8 JSON as cp1252, so a proposed step's German title/desc arrives
-    # double-encoded ("für" -> "fÃ¼r"). That mojibake then rode into the card
-    # task, the delivered-parked escalation and Henry's chat message unaltered
-    # (owner screenshot 2026-09-05: "UI/UX-Entwurf fÃ¼r watchOS").
-    r = subprocess.run(drivers._cmd_line([CLAUDE, "-p", "--output-format", "json",
-                                          "--permission-mode", "plan"]),
-                       input=PROPOSE_PROMPT % request_text,
-                       capture_output=True, text=True, timeout=300,
-                       encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    d = json.loads(r.stdout)
-    try:                                  # the plan calibration's share of it
-        from spine.turn import econ
-        econ.record_spend("proposal", list((d.get("modelUsage") or {}).keys()),
-                          d.get("usage"), d.get("total_cost_usd"))
-    except Exception:                                        # noqa: BLE001
-        pass
-    txt = d.get("result", "")
-    m = re.search(r"\[.*\]", txt, re.S)
-    steps = json.loads(m.group(0)) if m else []
-    out = []
-    for s in steps[:8]:
-        out.append({"title": str(s.get("title", ""))[:120],
-                    "desc": str(s.get("desc", ""))[:300],
-                    "mode": s.get("mode") if s.get("mode") in MODES else "do",
-                    "days": min(5, max(1, int(s.get("days", 1)))),
-                    "status": "proposed", "track": None, "due": ""})
-    return out, d.get("total_cost_usd")
-
 def _lay_dates(p):
     """End-to-end schedule from today; compress into the process due if set."""
     total = sum(s.get("days", 1) for s in p["steps"]) or 1
@@ -205,14 +160,13 @@ def _lay_dates(p):
         s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
 
 def create(request_text, client="", due="", actor="owner", steps=None, template_id=None,
-           propose=True, open_ended=False):
-    """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
-    milestones) we ADOPT them directly and skip the generic proposer - the steps are
-    already intelligent + gated. With `template_id` instead, the steps come from a
-    saved template (deterministic, no LLM call). Without either, the background
-    proposer runs - unless propose=False: then the process is born EMPTY and
-    running, a folder the work fills (attach_card) - the goal's process
-    (pm_goal.ensure_goal_process), whose steps are the cards Henry files.
+           open_ended=False, repo=None):
+    """File a process. With `steps` (or a `template_id`) the steps START: each
+    becomes a card at once (accept_all into `repo`, default_repo when not
+    given) and the chain runs them - nobody signs them off first. Without
+    steps the process is born EMPTY and running, a folder the work fills
+    (attach_card / Henry's cards with "process"); process_drive wakes Henry
+    to file the first ones. There is no LLM proposer any more.
     open_ended=True: finishing every step so far does NOT finish the process
     (sync never auto-completes it) - a goal is not reached because the cards
     filed for it so far are done. Measured 2026-09-30: the goal process with
@@ -230,40 +184,24 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
     # sortable within a second, so `ORDER BY id DESC` stays chronological.
     pid = time.strftime("%Y%m%d-%H%M%S") + "-%03d-proc" % (int(time.time() * 1000) % 1000)
     p = {"id": pid, "request": request_text, "client": client, "due": due,
-         "status": "proposing", "steps": [], "cost": 0.0,
+         "status": "running", "steps": [], "cost": 0.0,
          "created": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor,
          "template_id": template_id or None}
     if steps:
         p["steps"] = steps
         p["status"] = "ready"
         _lay_dates(p)
-    elif not propose:
-        p["status"] = "running"
     if open_ended:
         p["open_ended"] = True
     with _lock:
         ps = _load(); ps.insert(0, p); _save(ps)
     from spine.storage import events
     events.emit("process", pid, action="filed", actor=actor)
-    if steps or not propose:
-        return p                       # adopted the plan's steps / empty folder; no proposer
-    def go():
-        try:
-            steps, cost = _propose_steps(request_text)
-            err = "" if steps else "proposer returned no steps - add them manually"
-        except Exception as e:
-            steps, cost, err = [], 0, str(e)[:200]
-        with _lock:
-            ps = _load()
-            for q in ps:
-                if q["id"] == pid:
-                    q["steps"] = steps
-                    q["cost"] = cost or 0.0
-                    q["status"] = "ready" if steps else "failed"
-                    q["error"] = err
-                    _lay_dates(q)
-            _save(ps)
-    threading.Thread(target=go, daemon=True).start()
+    if steps:
+        if repo is None:
+            repo = events.settings().get("default_repo") or ""
+        if repo:
+            p, _made = accept_all(pid, repo, actor=actor)
     return p
 
 # -- process-LEVEL editing (owner report 2026-09-03: "+Schritt war die
@@ -379,7 +317,7 @@ def update_step(pid, idx, patch):
         for p in ps:
             if p["id"] == pid and 0 <= idx < len(p["steps"]):
                 s = p["steps"][idx]
-                for k in ("title", "desc", "mode", "due", "days"):
+                for k in ("title", "desc", "mode", "due", "days", "desktop"):
                     if k in patch:
                         s[k] = patch[k]
                 if "not_before" in patch:
@@ -394,17 +332,30 @@ def update_step(pid, idx, patch):
                 return s
     raise RuntimeError("no such step")
 
-def add_step(pid, title, mode="do"):
+def add_step(pid, title, mode="do", desktop=False, repo=None, actor="owner"):
+    """A new step STARTS: it becomes a card at once (accept_step) when the
+    process is running and a repo is known - nobody signs a step off."""
     with _lock:
         ps = _load()
         for p in ps:
             if p["id"] == pid:
-                p["steps"].append({"title": title[:120], "desc": "", "mode": mode,
-                                   "days": 1, "status": "proposed", "track": None,
-                                   "due": p.get("due", "")})
+                st = {"title": title[:120], "desc": "", "mode": step_mode(mode),
+                      "days": 1, "status": "proposed", "track": None,
+                      "due": p.get("due", "")}
+                if desktop:
+                    st["desktop"] = True
+                p["steps"].append(st)
+                idx = len(p["steps"]) - 1
                 _save(ps)
-                return p
-    raise RuntimeError("no such process")
+                break
+        else:
+            raise RuntimeError("no such process")
+    if repo is None:
+        from spine.storage import events
+        repo = events.settings().get("default_repo") or ""
+    if repo and p.get("status") not in ("cancelled",):
+        return accept_step(pid, idx, repo, actor=actor)
+    return get(pid)
 
 def remove_step(pid, idx):
     """Drops a step from the process's OWN bookkeeping list - never the
@@ -499,7 +450,7 @@ def sync():
                 # accepting it would merge the branch and discard the question.
                 if auto_accept and p.get("status") != "cancelled" and s["ready"] \
                    and sessions.is_delivered(t) \
-                   and s.get("mode") in auto_modes and not s.get("auto_accepted"):
+                   and step_mode(s.get("mode")) in auto_modes and not s.get("auto_accepted"):
                     ok, _problems = _probe_gate(t)
                     if ok:
                         s["auto_accepted"] = True
@@ -509,7 +460,7 @@ def sync():
                                          daemon=True).start()
                 # auto-run agent steps the moment the chain reaches them
                 if p.get("status") != "cancelled" and s["ready"] \
-                   and s.get("mode") in auto_modes \
+                   and step_mode(s.get("mode")) in auto_modes \
                    and t.get("lane") == "backlog" and not s.get("auto_dispatched") \
                    and not t.get("example"):
                     s["auto_dispatched"] = True
@@ -634,7 +585,7 @@ def _priority_dispatch():
     wip = sum(1 for t in tracks if t.get("lane") == "working")
     headroom = events.wip_limit_of(s) - wip
     todo = sorted((t for t in tracks if t.get("lane") == "backlog"
-                   and not t.get("mode") in ("human", "teach", "cowork")
+                   and not t.get("mode") in ("human", "teach")
                    and not t.get("priority_dispatched")
                    and not t.get("example")
                    and order.get(t.get("priority", "medium"), 2) <= order[floor]),
@@ -799,22 +750,22 @@ def accept_step(pid, idx, repo, actor="owner"):
     s = p["steps"][idx]
     if s.get("track"):
         return p
-    mode = s.get("mode", "do")
+    mode = step_mode(s.get("mode"))
     task = s["title"]
     if s.get("desc"):
         task += "\n\n" + s["desc"]
-    if mode == "prepare":
-        task = "PREPARE (draft only - a human reviews and sends/finishes): " + task
-    elif mode == "cowork":
-        task = "COWORK (start, then wait for the human's steers): " + task
-    elif mode == "teach":
-        task = "TEACH: human demonstrates this once (swarm.py teach), playbook runs it after: " + task
-    elif mode == "human":
+    prio = "high" if idx == 0 else "medium"
+    if mode == "human":
         task = "HUMAN STEP (tracked only): " + task
-    branch = "proc-" + pid.split("-")[0] + "-s%d" % (idx + 1)
-    t = sessions.new_track(repo, branch, task, lane="backlog", client=p.get("client", ""),
-                           driver=MODE_DRIVER.get(mode) or "claude", actor=actor,
-                           priority="high" if idx == 0 else "medium", due=s.get("due", ""))
+    if mode == "do" and s.get("desktop"):
+        # the owner's PC is the workplace: windows-mcp + browser (machine card)
+        t = sessions.new_machine_task(os.path.expanduser("~"), task, actor=actor,
+                                      priority=prio, dispatch=False)
+    else:
+        branch = "proc-" + pid.split("-")[0] + "-s%d" % (idx + 1)
+        t = sessions.new_track(repo, branch, task, lane="backlog", client=p.get("client", ""),
+                               driver=MODE_DRIVER.get(mode) or "claude", actor=actor,
+                               priority=prio, due=s.get("due", ""))
     t_id = t["id"]
     # human/teach steps never auto-dispatch; agent modes wait in backlog for the drag
     with _lock:

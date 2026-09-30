@@ -308,7 +308,8 @@ def processes_sub_post(self, user, body, pid, step):
                 return self._send(200, json.dumps(processes.remove_step(pid, idx)))
             if act == "add":
                 return self._send(200, json.dumps(processes.add_step(
-                    pid, body.get("title", "new step"), body.get("mode", "do"))))
+                    pid, body.get("title", "new step"), body.get("mode", "do"),
+                    desktop=body.get("desktop") is True, actor=user["name"])))
             if act == "move":
                 direction = body.get("direction")
                 return self._send(200, json.dumps(

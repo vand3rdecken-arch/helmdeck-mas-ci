@@ -37,7 +37,7 @@ CLEARABLE = ("project_id",)
 # and can never be set as a side effect of a touch-free acceptance.
 # For the same reason a CARD's mode is never compared against
 # policy.auto_dispatch_modes (that gates process STEPS in processes.sync):
-# card dispatch only excludes the needs-a-person modes human/teach/cowork,
+# card dispatch only excludes the needs-a-person modes human/teach,
 # so the 'auto' stat on an accepted card can never block a (re)dispatch
 # (test_mode_dispatch.py pins this).
 BOOLFIELDS = ("autopilot", "fast_track", "gxp")

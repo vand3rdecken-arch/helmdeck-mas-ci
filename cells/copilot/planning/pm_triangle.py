@@ -6,23 +6,18 @@ The LLM plan proposes each triangle corner's colour (Budget/Timeline/Scope)
 from narrative; _gate_triangle replaces that with a MEASURED verdict that can
 only DOWNGRADE (green -> red), never upgrade a red the planner set - same
 "only tightens" law as the verifier and gate-before-review. live_plan()
-re-measures on every read (no LLM call); on_card_done re-judges the instant a
-card lands in Done, cheap by default, only spending a re-scope when a corner
-actually crosses the ok<->blocked line; reconcile_corner is the OWNER-
-triggered evidence-gathering path for a red corner.
+re-measures on every read (no LLM call). The re-plan triggers that lived
+here (on_card_done's re-scope on a corner flip, reconcile_corner) are gone
+since 2026-09-30: Henry is the one planner, woken by process_drive.
 
 pm.py's own functions (get_goal, latest_plan, _write_artifact, economics,
 _system_state, _ask, brief, make_plan) are imported LAZILY inside the
 function bodies that need them - pm.py imports THIS module at module level
 (to re-export these names unchanged for existing callers), so a top-level
 import back would cycle."""
-import threading
 import time
 
 from cells.copilot.planning.pm_budget import _pace, _budget_assess
-from cells.copilot.planning.pm_state import _loopstate, _save_loopstate
-from cells.copilot.planning.pm_comm import _activity
-from cells.copilot.planning.pm_resolve import _resolving_lock
 
 
 def live_plan(econ=None):
@@ -202,95 +197,3 @@ def _triage_shape(plan):
         return None
     return {k: ("blocked" if tri.get(k) == "blocked" else "ok")
             for k in ("budget", "timeline", "scope")}
-
-
-def on_card_done(tid):
-    """EVENT hook (sessions calls it when a card lands in Done): re-judge the golden
-    triangle NOW rather than waiting for the daily plan. A completion moves real
-    signals - economics, and via _system_state the world a card just changed. Cheap
-    by default: live_plan() re-measures with NO model call. Only when a corner
-    CROSSES the ok<->blocked line do we spend one re-scope (make_plan), so a normal
-    completion costs zero planning turns. Threaded so the accept path never blocks
-    on a model call (mirrors review_burn)."""
-    from spine.registry import cells
-    # "copilot", NOT "pm" - merged cell id; enabled_id fails OPEN on unknown
-    # ids, so the stale name would have made this guard a no-op.
-    if not cells.enabled_id("copilot"):
-        return
-    threading.Thread(target=_on_card_done, args=(tid,), daemon=True,
-                     name="pm-card-done").start()
-
-
-def _on_card_done(_tid):
-    from spine.storage import events
-    from cells.copilot.planning.pm import get_goal, make_plan
-    try:
-        if not get_goal():
-            return
-        shape = _triage_shape(live_plan())   # re-measures budget/timeline/scope, no LLM
-        if shape is None:
-            return
-        with _resolving_lock:
-            st = _loopstate()
-            prev = st.get("plan_triage_shape")
-            st["plan_triage_shape"] = shape
-            _save_loopstate(st)
-        if not prev or prev == shape:
-            return                            # first observation, or no corner flipped
-        flipped = [k for k in ("budget", "timeline", "scope") if prev.get(k) != shape.get(k)]
-        _activity("planned", "Karte fertig - Dreieck bewegt sich (%s), plane neu."
-                  % ", ".join(flipped))
-        make_plan(actor="pm")                 # the flip is the ONLY re-scope spend
-    except Exception as e:
-        try:
-            events.log("pm", "on_card_done error: %s" % e)
-        except Exception:
-            pass
-
-
-RECONCILE_PROMPT = """A corner of the plan's golden triangle (Budget/Timeline/Scope) is RED.
-Your job is NOT to declare it green - it is to gather OBSERVABLE EVIDENCE about the REAL
-state behind that corner, so the plan can be re-derived from FACTS instead of a stale
-snapshot. Look at what has ACTUALLY been provisioned/built (users/accounts, features,
-deploys) - not what a card's lane claims. Report only what you can verify.
-
-Corner: %s
-Goal: %s
-
-Reply with ONLY this JSON:
-{"corner":"%s",
- "evidence":["observable fact you verified", ...],
- "already_done":["scope items that are in fact already DONE in the real world"],
- "still_open":["what genuinely remains"]}"""
-
-
-def reconcile_corner(corner, actor="owner"):
-    """OWNER-triggered when a triangle corner is RED: dispatch an agent to gather
-    EVIDENCE about the real world behind that corner (did the users actually get set
-    up? is the feature live?), fold that evidence into the plan, then RE-PLAN so the
-    planner re-scopes and _gate_triangle re-derives the corner from FACTS.
-
-    Law-abiding (NO MONKEY PATCHES): the agent never stamps a corner's colour - it
-    supplies the facts the planner was missing; the corner stays DERIVED, folded in
-    at this event, mutated at one owner (_gate_triangle)."""
-    from cells.copilot.chat import copilot
-    from cells.copilot.planning.pm import get_goal, _system_state, _ask, latest_plan, _write_artifact, brief
-    corner = (corner or "").strip().lower()
-    if corner not in ("budget", "timeline", "scope"):
-        return {"error": "corner must be budget|timeline|scope"}
-    goal = get_goal()
-    prompt = (RECONCILE_PROMPT % (corner, goal or "(kein Ziel gesetzt)", corner)
-              + "\n\nSYSTEM STATE:\n" + _system_state()
-              + "\n\nBOARD SNAPSHOT:\n" + copilot._snapshot())
-    ev = _ask(prompt)
-    ev = ev if isinstance(ev, dict) else {}
-    plan = latest_plan() or {}
-    plan.setdefault("reconcile", {})[corner] = {
-        "at": time.strftime("%Y-%m-%d %H:%M:%S"), "actor": actor,
-        "evidence": ev.get("evidence") or [],
-        "already_done": ev.get("already_done") or [],
-        "still_open": ev.get("still_open") or []}
-    _write_artifact(plan)                 # persist evidence so brief() reads it as prev
-    b = brief()                           # re-scope on the evidence; gate re-derives
-    return {"corner": corner, "evidence": plan["reconcile"][corner],
-            "triage": b.get("triage"), "triage_reasons": b.get("triage_reasons")}

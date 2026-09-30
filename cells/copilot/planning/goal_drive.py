@@ -28,32 +28,14 @@ record, a `goal` sentence on the card, that the goal process never saw - 10
 goal cards, process 0/7, the owner asked to start finished work. That tag is
 no longer written or read.
 
-The wake latches in the PM loopstate (st["goal_wake"]) are DEDUP, not truth:
-they only stop the same reason from firing twice a day.
+The WAKE that used to live here (goal-move escalations) is merged into
+process_drive since 2026-09-30 - the goal is a process, and one drive wakes
+Henry for every process. This module keeps the goal's EVIDENCE (goal_state /
+goal_line, rendered into both board snapshots) and its one link (link_card).
 """
 import time
 
-GOAL_STALL_S = 24 * 3600       # no goal movement for this long -> wake
-DEADLINE_NEAR_DAYS = 3         # T-3 and closer -> wake once a day
 SHARE_WINDOW_S = 7 * 24 * 3600
-ESC_KIND = "goal-move"
-
-# The question the broker hands Henry. The broker's DEFAULT_POLICY must not
-# grow a bullet per escalation kind (its own law), so the kind-specific ask
-# rides in the escalation detail, where the emitter owns it.
-_ASK = (
-    "Frage: Was ist JETZT der naechste Zug fuer das Ziel? Du treibst das Ziel "
-    "(Regel initiative.goal_drive). Innerhalb des Ziels handelst du selbst: "
-    "eine Karte starten (action \"direct_task\", text = der Auftrag in einem "
-    "Absatz), recherchieren, Entwuerfe vorbereiten, einen Owner-Schritt so "
-    "vorbereiten, dass ihm ein Tap bleibt, und ihn dann mit EINER konkreten "
-    "Frage melden (notify_owner). Nie ohne den Owner: veroeffentlichen/posten, "
-    "Geld ausgeben, neue Accounts, Unumkehrbares, Deploys. Wartet der naechste "
-    "Zug auf einen Zeitpunkt (Test laeuft, Zahlen kommen): action \"set_next\" "
-    "(text = was, at = YYYY-MM-DD[ HH:MM]) - dann weckt dich das Ziel genau dann. "
-    "Laeuft bereits eine "
-    "Ziel-Karte, die das abdeckt, oder gibt es gerade nichts Sinnvolles: "
-    "ignore mit einem Satz Grund.")
 
 
 def _epoch(s):
@@ -93,7 +75,20 @@ def _goal_ids(tracks, goal_pid, goal=None):
             if not t.get("example") and t.get("process") == goal_pid}
 
 
-def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_pid=None):
+def _facts(goal):
+    """The owner's clarifications recorded against THIS goal text (clarify_goal
+    -> pm.add_clarification). Until 2026-09-30 only the PM brain's plan prompt
+    read them; with Henry as the one planner they ride in the goal evidence."""
+    try:
+        from cells.copilot.planning.pm_state import _loopstate
+        return [c.get("text", "") for c in (_loopstate().get("clarifications") or [])
+                if norm(c.get("goal")) == goal and c.get("text")]
+    except Exception:                                        # noqa: BLE001
+        return []
+
+
+def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_pid=None,
+               facts=None):
     """The goal, as evidence. None when no goal is set. Every input is
     injectable for tests; the daemon passes nothing."""
     now = now or time.time()
@@ -148,6 +143,7 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
         "share": (tok_goal / float(tok_all)) if tok_all and ids else None,
         "last_move": last_move or None,
         "needs": needs,
+        "facts": _facts(goal) if facts is None else list(facts),
     }
 
 
@@ -176,75 +172,6 @@ def goal_line(gs, now=None):
     out = "GOAL: %s\n  %s" % (head, " | ".join(parts))
     if gs["needs"]:
         out += "\n  wartet auf den Owner: " + "; ".join(x["label"] for x in gs["needs"][:3])
+    for f in (gs.get("facts") or [])[-8:]:
+        out += "\n  Owner-Fakt: " + " ".join(f.split())[:200]
     return out
-
-
-def _enabled():
-    try:
-        from spine.registry import behavior
-        return behavior.value("initiative.goal_drive", "pm") is not False
-    except Exception:                                        # noqa: BLE001
-        return True
-
-
-def _open_goal_move():
-    from spine.registry import escalations
-    return any(e.get("kind") == ESC_KIND for e in escalations.list_open())
-
-
-def wake(st, now=None, gs=None, emit=None, save=None, enabled=None, open_exists=None):
-    """At most one open goal-move escalation; each reason at most once a day.
-    Reasons:
-      delivered - a goal card reached done since the last look (first look
-                  only records what is already done - history never fires)
-      stalled   - no goal movement for GOAL_STALL_S
-      deadline  - DEADLINE_NEAR_DAYS or fewer calendar days left
-    Returns the escalation id, or None. Everything injectable for tests."""
-    now = now or time.time()
-    if not (_enabled() if enabled is None else enabled):
-        return None
-    if gs is None:
-        gs = goal_state(now)
-    if not gs:
-        return None
-    lat = st.setdefault("goal_wake", {})
-    day = time.strftime("%Y%m%d", time.localtime(now))
-    fired = lat.get("fired") if lat.get("day") == day else {}
-    fired = dict(fired or {})
-    reasons = []
-    seen = lat.get("seen_done")
-    new_done = [c for c in gs["done"] if seen is not None and c not in seen]
-    if new_done:
-        reasons.append("delivered: Ziel-Karte fertig (%s)" % ", ".join(new_done[:3]))
-    lm = gs["last_move"]
-    if (not lm or now - lm >= GOAL_STALL_S) and not fired.get("stalled"):
-        reasons.append("stalled: " + ("keine Ziel-Bewegung seit %s" % _ago(lm, now)
-                                      if lm else "noch nie eine Ziel-Karte bewegt"))
-        fired["stalled"] = True
-    d = gs["days_left"]
-    if d is not None and 0 <= d <= DEADLINE_NEAR_DAYS and not fired.get("deadline"):
-        reasons.append("deadline: noch %d Tage" % d)
-        fired["deadline"] = True
-    if reasons and (_open_goal_move() if open_exists is None else open_exists):
-        # Henry is still on the last one: change nothing, so a delivery that
-        # happened meanwhile still fires once he is done
-        return None
-    changed = seen != list(gs["done"])
-    lat["seen_done"] = list(gs["done"])
-    if not reasons:
-        if changed:                        # the PM ticks every 120 s - no idle writes
-            (save or _save)(st)
-        return None
-    detail = "%s\n\nWARUM JETZT: %s\n\n%s" % (goal_line(gs, now), "; ".join(reasons), _ASK)
-    if emit is None:
-        from spine.registry import escalations
-        emit = escalations.emit
-    eid = emit(ESC_KIND, None, detail)
-    lat.update({"day": day, "fired": fired, "last": eid, "at": now})
-    (save or _save)(st)
-    return eid
-
-
-def _save(st):
-    from cells.copilot.planning.pm_state import _save_loopstate
-    _save_loopstate(st)
