@@ -42,7 +42,7 @@ def ensure_goal_process(st=None):
     if _goal_has_process(st):
         return st["goal_process"]["pid"]
     from cells.engineer.chains import processes
-    p = processes.create(goal, client="", due="", actor="pm", propose=False)
+    p = processes.create(goal, client="", due="", actor="pm", propose=False, open_ended=True)
     st["goal_process"] = {"goal": goal, "pid": p["id"]}
     _save_loopstate(st)
     return p["id"]

@@ -205,14 +205,18 @@ def _lay_dates(p):
         s["due"] = time.strftime("%Y-%m-%d", time.localtime(start + horizon * acc / total))
 
 def create(request_text, client="", due="", actor="owner", steps=None, template_id=None,
-           propose=True):
+           propose=True, open_ended=False):
     """File a process. With `steps` (a pre-built list, e.g. from the PM's vetted plan
     milestones) we ADOPT them directly and skip the generic proposer - the steps are
     already intelligent + gated. With `template_id` instead, the steps come from a
     saved template (deterministic, no LLM call). Without either, the background
     proposer runs - unless propose=False: then the process is born EMPTY and
     running, a folder the work fills (attach_card) - the goal's process
-    (pm_goal.ensure_goal_process), whose steps are the cards Henry files."""
+    (pm_goal.ensure_goal_process), whose steps are the cards Henry files.
+    open_ended=True: finishing every step so far does NOT finish the process
+    (sync never auto-completes it) - a goal is not reached because the cards
+    filed for it so far are done. Measured 2026-09-30: the goal process with
+    11 done goal cards flipped to done and told the owner "Prozess fertig"."""
     if template_id and not steps:
         tmpl = get_template(template_id)
         if not tmpl:
@@ -235,6 +239,8 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
         _lay_dates(p)
     elif not propose:
         p["status"] = "running"
+    if open_ended:
+        p["open_ended"] = True
     with _lock:
         ps = _load(); ps.insert(0, p); _save(ps)
     from spine.storage import events
@@ -514,6 +520,9 @@ def sync():
             prev_done = done
         if p.get("status") == "cancelled":
             pass   # a cancelled process stays cancelled - never reclassified by sync()
+        elif p.get("open_ended"):
+            if p.get("status") != "running" and p["steps"]:
+                p["status"] = "running"   # a folder, never done by its steps (create())
         elif p["steps"] and all(x.get("done") for x in p["steps"]):
             if p.get("status") != "done":
                 p["status"] = "done"

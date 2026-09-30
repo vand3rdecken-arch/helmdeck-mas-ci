@@ -202,6 +202,17 @@ copilot_actions._run_action({"type": "mark_goal", "card": t[0]["id"], "goal": Fa
 check(not sessions._find(sessions._load(), t[0]["id"]).get("process")
       and t[0]["id"] not in [x.get("track") for x in processes.get(gpid)["steps"]],
       "... and goal:false detaches it from card AND process")
+said = []
+real_say = copilot.say
+copilot.say = lambda text, *a, **k: said.append(text)
+for c in sessions._load():
+    if c.get("process") == gpid:
+        sessions._mutate(c["id"], lambda tt: tt.update(lane="done"))
+processes.sync()
+copilot.say = real_say
+check(processes.get(gpid)["status"] == "running" and not said,
+      "every goal card done does NOT finish the goal's process, nothing is announced (%s, %r)"
+      % (processes.get(gpid)["status"], said))
 gs_live = goal_drive.goal_state()
 check(gs_live and gs_live["goal_cards"] == 2, "the live goal_state sees exactly the two linked cards (%s)"
       % (gs_live and gs_live["goal_cards"]))
