@@ -194,7 +194,17 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
     if open_ended:
         p["open_ended"] = True
     with _lock:
-        ps = _load(); ps.insert(0, p); _save(ps)
+        ps = _load()
+        # the ms suffix still collides for two creates in the same millisecond
+        # (measured 2026-09-30: the goal process + a process right after it,
+        # IntegrityError on processes.id) - the free id is decided under the
+        # lock, against the store itself
+        taken = {q["id"] for q in ps}
+        while p["id"] in taken:
+            head, ms = p["id"].rsplit("-", 2)[0], int(p["id"].rsplit("-", 2)[1])
+            p["id"] = "%s-%03d-proc" % (head, (ms + 1) % 1000)
+        pid = p["id"]
+        ps.insert(0, p); _save(ps)
     from spine.storage import events
     events.emit("process", pid, action="filed", actor=actor)
     if steps:

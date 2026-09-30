@@ -3,15 +3,17 @@
 for every process, the goal first; one planner (Henry); steps start.
 
 Pinned, on a sandbox db (the live db is never touched - db.DBPATH first):
- 1. decide: steps nobody started wake HENRY (process-move, the process as a
-    record on the escalation), not the owner; one open escalation per
-    process; the same decision never re-fires; a finished process leaves
-    the latch
- 2. delivered / stalled / deadline for a process; history never fires; the
-    rule toggle turns the drive off
- 3. the GOAL is a process of the same drive: stalled even with no card yet,
-    its deadline from the goal text, the goal evidence (incl. Owner-Fakten)
-    in the detail; the old goal-only latch is dropped
+ 1. slots (owner: "morgens Brief, nachmittags, abends - nicht random 1
+    Uhr"): nothing slot-bound fires at 01:00; decide wakes HENRY at the
+    14:00 slot (process-move, the process as a record); one open escalation
+    per process; a slot handled once; first sight is history; a slot missed
+    beyond the grace is not caught up
+ 2. stalled + deadline at the morning slot, stalled again at 14:00, a
+    delivery at once even at night; history never fires; the rule toggle
+    turns the drive off
+ 3. the GOAL is a process of the same drive: the MORNING BRIEF, stalled
+    even with no card yet, its deadline from the goal text, the goal
+    evidence in the detail; a moving goal is silent at 14:00
  4. empty: a process without steps wakes Henry once (no proposer exists)
  5. set_next through the real chat verb wakes once when due; the Plan button
     (pm.make_plan / pm.brief) is the SAME move on the goal's process - no
@@ -80,73 +82,107 @@ def run(st, now=NOW, procs=None, tracks=None, ev=None, open_ids=(), goal_pid="",
     return process_drive.wake(st, now, processes=procs, tracks=tracks or [], ev=ev or [],
                               emit=emit, save=lambda s: None, open_ids=set(open_ids),
                               goal_pid=goal_pid, decide_items=decide or [], goal=goal,
-                              enabled=enabled)
+                              enabled=enabled, day_slots=SLOTS)
 
 
-print("1. decide wakes Henry")
+SLOTS = ("08:00", "14:00", "19:00")
+MORNING = time.mktime(time.strptime("2026-09-30 08:05:00", "%Y-%m-%d %H:%M:%S"))
+NOON = time.mktime(time.strptime("2026-09-30 14:05:00", "%Y-%m-%d %H:%M:%S"))
+NIGHT = time.mktime(time.strptime("2026-10-01 01:00:00", "%Y-%m-%d %H:%M:%S"))
+
+
+def seen(*pids):
+    """A loopstate where these processes were already looked at (first sight
+    is history: it only records the running slot)."""
+    return {"proc_wake": {pid: {"slot": "", "seen_done": []} for pid in pids}}
+
+
+print("1. decide wakes Henry - at a slot")
 PROP = {"id": "p-prop", "status": "ready", "created": ts(30), "request": "***-Test\nlang",
         "steps": [{"title": "a", "mode": "do", "state": "proposed", "track": None}] * 3}
 decide = [x for x in pm_push.derive(NOW, [PROP], [], "") if x["who"] == "henry"]
 check([x["kind"] for x in decide] == ["proposal"], "derive calls unstarted steps Henry's (%r)" % decide)
-st = {}
-r = run(st, procs=[PROP], decide=decide)
+st = seen("p-prop")
+n = len(emitted)
+run(st, now=NIGHT, procs=[PROP], decide=decide)
+check(len(emitted) == n, "01:00 - no slot, no wake (owner: not a random hour)")
+r = run(st, now=NOON, procs=[PROP], decide=decide)
 check(len(r) == 1 and emitted[-1]["kind"] == "process-move" and emitted[-1]["process"] == "p-prop"
-      and emitted[-1]["card"] is None, "one process-move naming the process as a record")
+      and emitted[-1]["card"] is None, "the 14:00 slot: one process-move naming the process as a record")
 d = emitted[-1]["detail"]
 check("decide: 3 Schritte vorgeschlagen" in d and "PROZESS p-prop: ***-Test" in d
       and "Login" in d and "machine_task" in d, "detail = evidence + reason + the one owner line")
 n = len(emitted)
-run(st, now=NOW + 60, procs=[PROP], decide=decide, open_ids=[r[0]])
+run(st, now=NOON + 60, procs=[PROP], decide=decide, open_ids=[r[0]])
 check(len(emitted) == n, "an open escalation blocks the next wake for that process")
-run(st, now=NOW + 120, procs=[PROP], decide=decide)
-check(len(emitted) == n, "the same decision never re-fires once Henry closed it")
-run(st, now=NOW + 180, procs=[dict(PROP, status="cancelled")])
+run(st, now=NOON + 120, procs=[PROP], decide=decide)
+check(len(emitted) == n, "the same slot is handled once per process")
+run(st, now=NOON + 180, procs=[dict(PROP, status="cancelled")])
 check("p-prop" not in st["proc_wake"], "a cancelled process leaves the latch")
+st = {}
+run(st, now=NOON, procs=[PROP], decide=decide)
+check(len(emitted) == n and st["proc_wake"]["p-prop"]["slot"] == "20260930 14:00",
+      "first sight: the running slot is recorded as history, nothing fires")
+late = time.mktime(time.strptime("2026-09-30 17:00:00", "%Y-%m-%d %H:%M:%S"))
+check(process_drive.current_slot(late, SLOTS) is None,
+      "a slot missed by more than the grace is not caught up at 17:00")
 
 print("2. delivered / stalled / deadline")
 RUN = {"id": "p-run", "status": "running", "created": ts(100), "request": "Studie", "due": "2026-10-02",
        "steps": [{"title": "s1", "mode": "do", "track": "c1"}, {"title": "s2", "mode": "do", "track": "c2"}]}
 T = [{"id": "c1", "lane": "working", "created": ts(90)}, {"id": "c2", "lane": "backlog", "created": ts(90)}]
 EV = [{"kind": "lane", "track": "c1", "ts": ts(30)}]
-st = {}
-run(st, procs=[RUN], tracks=T, ev=EV)
+st = seen("p-run")
+run(st, now=MORNING, procs=[RUN], tracks=T, ev=EV)
 d = emitted[-1]["detail"]
-check("stalled: seit 30 h" in d and "deadline: noch 2 Tage" in d, "stalled 30 h + T-2 in one wake")
+check("stalled: keine Bewegung seit dem letzten Slot" in d and "deadline: noch 2 Tage" in d,
+      "morning slot: stalled + T-2 in one wake (%r)" % d[-300:])
+n = len(emitted)
+run(st, now=NOON, procs=[RUN], tracks=T, ev=EV)
+check(len(emitted) == n + 1 and "deadline" not in emitted[-1]["detail"],
+      "14:00: still stalled -> a check, the deadline only in the morning")
 n = len(emitted)
 T2 = [dict(T[0], lane="done"), T[1]]
-run(st, now=NOW + 600, procs=[RUN], tracks=T2, ev=EV + [{"kind": "lane", "track": "c1", "ts": ts(0)}])
+run(st, now=NIGHT, procs=[RUN], tracks=T2, ev=EV + [{"kind": "lane", "track": "c1", "ts": ts(0)}])
 check(len(emitted) == n + 1 and "delivered: Schritt-Karte fertig (c1)" in emitted[-1]["detail"]
-      and "stalled" not in emitted[-1]["detail"], "a delivery the same day fires, timed reasons do not repeat")
+      and "stalled" not in emitted[-1]["detail"], "a delivery fires at once, even at 01:00, without slot reasons")
 st2 = {}
 n = len(emitted)
-run(st2, procs=[dict(RUN, due="")], tracks=T2, ev=[{"kind": "lane", "track": "c1", "ts": ts(1)}])
+run(st2, now=NOON, procs=[dict(RUN, due="")], tracks=T2, ev=[{"kind": "lane", "track": "c1", "ts": ts(1)}])
 check(len(emitted) == n and st2["proc_wake"]["p-run"]["seen_done"] == ["c1"],
       "first look: an already-done card is history, recorded as seen")
 n = len(emitted)
-check(run({}, procs=[RUN], tracks=T, ev=EV, enabled=False) == [] and len(emitted) == n,
+check(run(seen("p-run"), now=NOON, procs=[RUN], tracks=T, ev=EV, enabled=False) == [] and len(emitted) == n,
       "initiative.goal_drive off -> no drive")
 
-print("3. the goal is a process of the same drive")
+print("3. the goal: morning brief, same drive")
 GOAL = "Nebeneinkommen finden bis 2026-10-02."
 GP = {"id": "p-goal", "status": "running", "created": ts(50), "request": GOAL, "steps": [],
       "open_ended": True}
-st = {"goal_wake": {"day": "x"}}
+st = seen("p-goal", "p-run")
+st["goal_wake"] = {"day": "x"}
 n = len(emitted)
-run(st, procs=[GP, RUN], tracks=T, ev=EV, goal_pid="p-goal", goal=GOAL)
+run(st, now=MORNING, procs=[GP, RUN], tracks=T, ev=EV, goal_pid="p-goal", goal=GOAL)
 check(len(emitted) == n + 2 and emitted[n]["process"] == "p-goal", "the goal wakes first")
 d = emitted[n]["detail"]
-check("stalled: noch keine Karte fuer das Ziel" in d and "deadline: noch 2 Tage" in d,
-      "goal: stalled without any card, deadline from the goal text (%r)" % d[-500:])
+check("brief: Morgen-Brief" in d and "stalled: noch keine Karte fuer das Ziel" in d
+      and "deadline: noch 2 Tage" in d, "morning: brief + stalled + deadline from the goal text (%r)" % d[-600:])
 check(d.startswith("GOAL: Nebeneinkommen finden"), "the goal evidence leads the detail")
 check("goal_wake" not in st, "the old goal-only latch is dropped")
+n = len(emitted)
+GC = dict(GP, steps=[{"title": "x", "mode": "do", "track": "g1"}])
+GT = [{"id": "g1", "lane": "working", "created": ts(1)}]
+run(seen("p-goal"), now=NOON, procs=[GC], tracks=GT, ev=[{"kind": "lane", "track": "g1", "ts": ts(0)}],
+    goal_pid="p-goal", goal=GOAL)
+check(len(emitted) == n, "14:00 with the goal moving: no brief, no wake - checks only speak with a reason")
 
 print("4. an empty process")
 EMP = {"id": "p-emp", "status": "running", "created": ts(1), "request": "Thema X", "steps": []}
-st = {}
-run(st, procs=[EMP])
+st = seen("p-emp")
+run(st, now=NOON, procs=[EMP])
 check("empty: noch keine Schritte" in emitted[-1]["detail"], "an empty process asks Henry for its first cards")
 n = len(emitted)
-run(st, now=NOW + 60, procs=[EMP])
+run(st, now=NOON + 5 * 3600, procs=[EMP])
 check(len(emitted) == n, "... once")
 
 print("5. set_next + the Plan button")

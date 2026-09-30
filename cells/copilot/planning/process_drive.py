@@ -11,26 +11,37 @@ them. It hands Henry evidence and an open question, never a checklist - the
 earlier briefs were mostly restrictions, and restrictions are what stopped
 the work.
 
+WHEN (owner 2026-09-30: "morgens Brief, nachmittags und abends - nicht
+einfach random 1 Uhr"): the day has fixed SLOTS (settings pm.drive_slots,
+default 08:00 / 14:00 / 19:00). The first slot is the MORNING BRIEF - the
+goal always wakes Henry then, and he tells the owner where things stand.
+The other slots are CHECKS - a process wakes only when there is a reason.
+Only what carries its own moment fires between slots: a card that just
+landed, a recorded next move whose time has come, the Plan button.
+
 Reasons, per open process:
-  delivered - a step card reached done since the last look
-  stalled   - no step card moved for STALL_S (the goal: also when none
-              was ever filed)
-  deadline  - DEADLINE_NEAR_DAYS or closer (the goal: its date in the goal
-              text, pm_push.goal_deadline; a process: its `due`)
-  next      - the process' recorded next move is due (processes.set_next -
-              also what the Plan button writes, request_plan)
-  decide    - pm_push.derive's who="henry" items for this process: steps
-              nobody started, a dead chain, a step card parked on its question
-  empty     - a new process without steps (there is no proposer any more:
-              Henry files the first cards)
+  delivered - a step card reached done since the last look      (any time)
+  next      - the recorded next move is due (processes.set_next;
+              the Plan button writes one, request_plan)         (any time)
+  brief     - the morning slot, goal only                       (slot 1)
+  stalled   - no step card moved since the previous slot (the
+              goal: also when none was ever filed)              (slot)
+  deadline  - DEADLINE_NEAR_DAYS or closer (the goal: the date
+              in the goal text; a process: its `due`)           (slot 1)
+  decide    - pm_push.derive's who="henry" items: steps nobody
+              started, a dead chain, a step card parked on its
+              question                                          (slot)
+  empty     - a process without steps (no proposer exists:
+              Henry files the first cards)                      (slot)
 
 DERIVED, NOT STORED: every reason is computed from the process store, the
 card store and the event log at tick time. The latches in the PM loopstate
-(st["proc_wake"][pid]) are dedup only - one open escalation per process, each
-timed reason once a day, a `next` once per recorded move."""
+(st["proc_wake"][pid]) are dedup only - one open escalation per process, a
+slot handled once per process, a `next` once per recorded move."""
 import time
 
-STALL_S = 24 * 3600
+DEFAULT_SLOTS = ("08:00", "14:00", "19:00")
+SLOT_GRACE_S = 2 * 3600          # a slot missed (daemon down) is caught up this long, no later
 DEADLINE_NEAR_DAYS = 3
 MAX_WAKES_PER_TICK = 2           # a board full of old processes must not flood Henry
 ESC_KIND = "process-move"
@@ -53,6 +64,41 @@ def _epoch(s):
         except ValueError:
             continue
     return 0.0
+
+
+def slots():
+    """The day's drive slots, HH:MM ascending (settings pm.drive_slots)."""
+    try:
+        from spine.storage import events
+        raw = (events.settings().get("pm") or {}).get("drive_slots")
+    except Exception:                                        # noqa: BLE001
+        raw = None
+    out = []
+    for x in (raw if isinstance(raw, (list, tuple)) and raw else DEFAULT_SLOTS):
+        try:
+            time.strptime(str(x), "%H:%M")
+            out.append(str(x))
+        except ValueError:
+            continue
+    return sorted(out) or list(DEFAULT_SLOTS)
+
+
+def current_slot(now, day_slots):
+    """(key, index, previous-slot epoch) of the latest slot at or before
+    `now` today, or None before the day's first slot. key = 'YYYYMMDD HH:MM'."""
+    lt = time.localtime(now)
+    day = time.strftime("%Y-%m-%d", lt)
+    past = [(i, h) for i, h in enumerate(day_slots) if time.strftime("%H:%M", lt) >= h]
+    if not past:
+        return None
+    i, h = past[-1]
+    if now - _epoch("%s %s" % (day, h)) > SLOT_GRACE_S:
+        return None                      # too late for this slot - wait for the next
+    if i > 0:
+        prev = _epoch("%s %s" % (day, day_slots[i - 1]))
+    else:                                # the morning: since yesterday's last slot
+        prev = _epoch("%s %s" % (day, day_slots[-1])) - 86400
+    return ("%s %s" % (time.strftime("%Y%m%d", lt), h), i, prev)
 
 
 def _title(p):
@@ -108,42 +154,47 @@ def summary(p, ps, now):
     return "\n".join(lines)
 
 
-def reasons_for(p, ps, lat, day, now, decide, is_goal=False):
-    """(reasons, new latch) for one process - pure, for tests."""
-    fired = dict(lat.get("fired") or {}) if lat.get("day") == day else {}
+def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None):
+    """(reasons, new latch) for one process - pure, for tests. `slot` is
+    current_slot()'s tuple when a slot is open for this process, else None."""
     out = []
+    # any time: things that carry their own moment
     seen = lat.get("seen_done")
     new_done = [c for c in ps["done"] if seen is not None and c not in seen]
     if new_done:
         out.append("delivered: Schritt-Karte fertig (%s)" % ", ".join(new_done[:3]))
-    open_work = (ps["steps"] and len(ps["done"]) < ps["steps"]) or is_goal
-    if (p.get("status") in ("running", "ready") and (ps["cards"] or is_goal) and open_work
-            and now - ps["last_move"] >= STALL_S and not fired.get("stalled")):
-        out.append("stalled: seit %d h keine Bewegung" % ((now - ps["last_move"]) // 3600)
-                   if ps["cards"] else "stalled: noch keine Karte fuer das Ziel")
-        fired["stalled"] = True
-    d = ps["days_left"]
-    if d is not None and 0 <= d <= DEADLINE_NEAR_DAYS and not fired.get("deadline"):
-        out.append("deadline: noch %d Tage" % d)
-        fired["deadline"] = True
-    if not ps["steps"] and not is_goal and not lat.get("empty_seen"):
-        out.append("empty: noch keine Schritte - leg die ersten Karten an (direct_task / "
-                   "machine_task mit diesem Prozess)")
     nx = ps["next"]
     if nx and nx.get("at") and _epoch(nx["at"]) <= now and lat.get("next_fired") != nx.get("set"):
         out.append("next: faellig seit %s - %s" % (nx["at"], nx.get("what", "")))
     dk = sorted(x["key"] for x in decide)
-    if dk and set(dk) - set(lat.get("decide_seen") or []):
-        out.append("decide: " + "; ".join(x["label"] for x in decide[:3]))
     new = dict(lat)
     new["seen_done"] = list(ps["done"])
-    new["decide_seen"] = dk
-    if not ps["steps"] and not is_goal:
-        new["empty_seen"] = True
-    if out:
-        new.update({"day": day, "fired": fired})
-        if nx and any(r.startswith("next:") for r in out):
-            new["next_fired"] = nx.get("set")
+    # slot-bound: the day's rhythm, never a random hour
+    if slot:
+        _key, idx, prev = slot
+        if idx == 0 and is_goal:
+            out.append("brief: Morgen-Brief - schick dem Owner in wenigen Saetzen, wo das "
+                       "Ziel steht, was heute laeuft und was nur er entscheiden kann "
+                       "(notify_owner); dann der naechste Zug")
+        open_work = (ps["steps"] and len(ps["done"]) < ps["steps"]) or is_goal
+        if (p.get("status") in ("running", "ready") and (ps["cards"] or is_goal) and open_work
+                and ps["last_move"] < prev):
+            out.append("stalled: keine Bewegung seit dem letzten Slot (%d h)"
+                       % ((now - ps["last_move"]) // 3600)
+                       if ps["cards"] else "stalled: noch keine Karte fuer das Ziel")
+        d = ps["days_left"]
+        if idx == 0 and d is not None and 0 <= d <= DEADLINE_NEAR_DAYS:
+            out.append("deadline: noch %d Tage" % d)
+        if not ps["steps"] and not is_goal and not lat.get("empty_seen"):
+            out.append("empty: noch keine Schritte - leg die ersten Karten an (direct_task / "
+                       "machine_task mit diesem Prozess)")
+            new["empty_seen"] = True
+        if dk and set(dk) - set(lat.get("decide_seen") or []):
+            out.append("decide: " + "; ".join(x["label"] for x in decide[:3]))
+        new["decide_seen"] = dk
+        new["slot"] = _key
+    if out and nx and any(r.startswith("next:") for r in out):
+        new["next_fired"] = nx.get("set")
     return out, new
 
 
@@ -163,7 +214,8 @@ def request_plan(actor="owner", note=""):
 
 
 def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=None,
-         open_ids=None, goal_pid=None, decide_items=None, goal=None, enabled=None):
+         open_ids=None, goal_pid=None, decide_items=None, goal=None, enabled=None,
+         day_slots=None):
     """One pass over every open process. Returns the escalation ids emitted.
     Everything injectable for tests; the daemon passes only `st`."""
     now = now or time.time()
@@ -205,7 +257,7 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
     for e in ev:
         if e.get("kind") == "lane" and e.get("track"):
             last_lane[e["track"]] = max(last_lane.get(e["track"], 0.0), _epoch(e.get("ts")))
-    day = time.strftime("%Y%m%d", time.localtime(now))
+    cur = current_slot(now, day_slots or slots())
     out, changed = [], bool(gone)
     # the goal first, then oldest
     for p in sorted(live, key=lambda q: (q["id"] != goal_pid, q.get("created") or "")):
@@ -219,7 +271,10 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
         decide = [x for x in decide_items
                   if x.get("process") == pid
                   or (x.get("card") and (tmap.get(x["card"]) or {}).get("process") == pid)]
-        reasons, new = reasons_for(p, ps, lat, day, now, decide, is_goal)
+        if "slot" not in lat:            # first sight: the running slot is history
+            lat = dict(lat, slot=cur[0] if cur else "")
+        slot = cur if cur and lat.get("slot") != cur[0] else None
+        reasons, new = reasons_for(p, ps, lat, now, decide, is_goal, slot)
         if reasons and len(out) >= MAX_WAKES_PER_TICK:
             continue                     # next tick; latch untouched so nothing is lost
         if not reasons:
