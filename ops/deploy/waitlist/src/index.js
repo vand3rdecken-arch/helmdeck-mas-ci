@@ -82,6 +82,13 @@ const POSTHOG_HOST = "https://eu.i.posthog.com";
 // ASC app 6801637667) - measured via a real HTTP 200 on the storefront URL,
 // not reasoned. This is now the primary iOS CTA.
 const APP_STORE_URL = "https://apps.apple.com/app/id6801637667";
+// Windows is PUBLIC in the Microsoft Store since 2026-09-30 (Store ID
+// 9N0JB50MZN2P). Measured in a real browser that day, not guessed: the listing
+// page shows the name HelmDeck, is free, and has a working "Herunterladen"
+// button; Partner Center reports "In the Microsoft Store" for 240 markets. This
+// is the preferred Windows CTA (signed, auto-updating); the direct .exe stays
+// as the second path.
+const MS_STORE_URL = "https://apps.microsoft.com/detail/9n0jb50mzn2p";
 // TESTFLIGHT_REQUEST_URL below predates the public TestFlight join link and is
 // unused by the current page; kept only as the historical fallback contact.
 //
@@ -742,6 +749,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
         <p class="dl-meta">${dlMeta(win)}</p>
         <p class="dl-note" data-i="dlWinNote">Not code-signed yet, so Windows will warn you. Click “More info” → “Run anyway”.</p>
         <div class="dl-actions">
+          <a class="btn btn-primary btn-sm btn-block" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlWinStoreBtn" data-cta="windows-store">Get it from the Microsoft Store</a>
           <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn" data-cta="windows">Download</a>
         </div>
       </div>
@@ -1024,6 +1032,7 @@ ${wl("wearables")}
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
       dlIosMeta:"Live im App Store",
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
+      dlWinStoreBtn:"Im Microsoft Store laden",
       dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch",
       dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
@@ -1096,6 +1105,7 @@ ${wl("wearables")}
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
       dlIosMeta:"Live on the App Store",
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
+      dlWinStoreBtn:"Get it from the Microsoft Store",
       dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch",
       dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
@@ -1135,7 +1145,7 @@ ${wl("wearables")}
     if (/Android/i.test(ua)) { key = "heroCtaAndroid"; href = "${PLAY_URL}"; }
     else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${APP_STORE_URL}"; }
     else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${dlHref(macArm)}"; }
-    else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${dlHref(win)}"; }
+    else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${MS_STORE_URL}"; }
     if (key && href && href !== "#downloads") {
       a.setAttribute("data-i", key); a.textContent = I18N[lang][key]; a.href = href;
       if (/^https?:/.test(href)) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
