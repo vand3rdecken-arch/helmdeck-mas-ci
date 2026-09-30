@@ -278,7 +278,7 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
         if reasons and len(out) >= MAX_WAKES_PER_TICK:
             continue                     # next tick; latch untouched so nothing is lost
         if not reasons:
-            if new != lat:
+            if new != (wl.get(pid) or {}):   # vs the STORED latch - first sight changed `lat`
                 wl[pid] = new
                 changed = True
             continue

@@ -123,6 +123,15 @@ st = {}
 run(st, now=NOON, procs=[PROP], decide=decide)
 check(len(emitted) == n and st["proc_wake"]["p-prop"]["slot"] == "20260930 14:00",
       "first sight: the running slot is recorded as history, nothing fires")
+st = {"proc_wake": {"p-prop": {"seen_done": [], "decide_seen": []}}}   # a pre-slot latch
+saved = []
+process_drive.wake(st, NIGHT, processes=[PROP], tracks=[], ev=[], emit=emit, save=saved.append,
+                   open_ids=set(), goal_pid="", decide_items=decide, goal="", enabled=True,
+                   day_slots=SLOTS)
+check(saved and st["proc_wake"]["p-prop"].get("slot") == "",
+      "first sight outside a slot is PERSISTED - else every slot stays 'first sight' forever")
+r = run(st, now=MORNING, procs=[PROP], decide=decide)
+check(len(r) == 1, "... so the next slot really fires")
 late = time.mktime(time.strptime("2026-09-30 17:00:00", "%Y-%m-%d %H:%M:%S"))
 check(process_drive.current_slot(late, SLOTS) is None,
       "a slot missed by more than the grace is not caught up at 17:00")
