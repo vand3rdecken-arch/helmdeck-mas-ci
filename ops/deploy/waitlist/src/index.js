@@ -708,8 +708,8 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <div class="badges">
       <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
       <a class="badge" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-cta="android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8 13.8 12 3.6 22.2c-.4-.2-.6-.6-.6-1.1V2.9c0-.5.2-.9.6-1.1zM15.2 13.4l2.5 2.5-11.6 6.6zM15.2 10.6 6.1 1.5l11.6 6.6 2.5 1.4c.7.4.7 1.2 0 1.6l-2.5 1.4z"/></svg><span><small data-i="badgePlaySmall">Get it on</small><b>Google Play</b></span></a>
-      <a class="badge" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="windows-store"><span><small data-i="badgeDlSmall">Download for</small><b>Windows</b></span></a>
-      <a class="badge" href="${dlHref(macArm)}" data-cta="mac"><span><small data-i="badgeDlSmall">Download for</small><b>macOS</b></span></a>
+      <a class="badge" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="windows-store"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 11 4.4v7.1H3zM12 4.3 21 3v8.5h-9zM3 12.5h8v7.1L3 18.5zM12 12.5h9V21l-9-1.3z"/></svg><span><small data-i="badgeStoreSmall">Get it from</small><b>Microsoft Store</b></span></a>
+      <a class="badge" href="${dlHref(macArm)}" data-cta="mac"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeDlSmall">Download for</small><b>macOS</b></span></a>
     </div>
   </div>
   <div class="hero-stage">
@@ -996,7 +996,7 @@ ${wl("wearables")}
       heroCtaDemo:"Demo ansehen, 30 Sekunden",
       demoTitle:"HelmDeck in 30 Sekunden",
       demoSub:"Vom Board über die Frage des Agenten bis zur Antwort vom Handy. Auf Englisch vertont.",
-      badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei", badgeDlSmall:"Herunterladen für",
+      badgeIosSmall:"Laden im", badgePlaySmall:"Jetzt bei", badgeStoreSmall:"Laden aus dem", badgeDlSmall:"Herunterladen für",
       heroDeskAlt:"HelmDeck Desktop-Board: Backlog, Bei uns, Review, zwei Ziele brauchen eine Entscheidung",
       thesesTitle:"Drei Thesen",
       thesesSub:"Diese drei Thesen stammen aus unserer eigenen Erfahrung. Wir haben sie beim Bau von HelmDeck selbst beobachtet.",
@@ -1070,7 +1070,7 @@ ${wl("wearables")}
       heroCtaDemo:"Watch the 30 second demo",
       demoTitle:"HelmDeck in 30 seconds",
       demoSub:"From the board to the agent's question to the answer from your phone. Narrated in English.",
-      badgeIosSmall:"Download on the", badgePlaySmall:"Get it on", badgeDlSmall:"Download for",
+      badgeIosSmall:"Download on the", badgePlaySmall:"Get it on", badgeStoreSmall:"Get it from", badgeDlSmall:"Download for",
       heroDeskAlt:"HelmDeck desktop board: backlog, in progress, review, two goals need a decision",
       thesesTitle:"Three theses",
       thesesSub:"They come from our own experience and what we observed while building HelmDeck. Each one says what we saw.",
