@@ -708,7 +708,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     <div class="badges">
       <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
       <a class="badge" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-cta="android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8 13.8 12 3.6 22.2c-.4-.2-.6-.6-.6-1.1V2.9c0-.5.2-.9.6-1.1zM15.2 13.4l2.5 2.5-11.6 6.6zM15.2 10.6 6.1 1.5l11.6 6.6 2.5 1.4c.7.4.7 1.2 0 1.6l-2.5 1.4z"/></svg><span><small data-i="badgePlaySmall">Get it on</small><b>Google Play</b></span></a>
-      <a class="badge" href="${dlHref(win)}" data-cta="windows"><span><small data-i="badgeDlSmall">Download for</small><b>Windows</b></span></a>
+      <a class="badge" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="windows-store"><span><small data-i="badgeDlSmall">Download for</small><b>Windows</b></span></a>
       <a class="badge" href="${dlHref(macArm)}" data-cta="mac"><span><small data-i="badgeDlSmall">Download for</small><b>macOS</b></span></a>
     </div>
   </div>
@@ -747,11 +747,11 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <div class="dl-card">
         <h3>Windows</h3>
         <p class="dl-meta">${dlMeta(win)}</p>
-        <p class="dl-note" data-i="dlWinNote">Not code-signed yet, so Windows will warn you. Click “More info” → “Run anyway”.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlWinStoreBtn" data-cta="windows-store">Get it from the Microsoft Store</a>
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(win)}" data-i="dlBtn" data-cta="windows">Download</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(win)}" data-i="dlWinExeBtn" data-cta="windows">Direct download (.exe)</a>
         </div>
+        <p class="dl-note" data-i="dlWinNote">Direct download without the Store: not signed, Windows will warn you. Click “More info” → “Run anyway”.</p>
       </div>
       <div class="dl-card">
         <h3>macOS</h3>
@@ -1027,7 +1027,8 @@ ${wl("wearables")}
       faq3Q:"Welche Agenten laufen darin?", faq3A:'Claude Code, live geprüft. Codex und OpenCode sind noch nicht mit echten Konten getestet. Wenn du eins hast, <a href="mailto:${OWNER_EMAIL}">melde dich</a>, wir prüfen es mit dir. Jede Karte bekommt einen eigenen Worktree und Branch, damit euer Team mehrere Agenten gleichzeitig laufen lassen kann, ohne dass sie sich in die Quere kommen; vor dem Merge prüft ein Gate Build, Typen und Tests.',
       dlTitle:"Jetzt verfügbar", dlSub:"Die App für Android und iPhone, die Uhr-App ist im selben Paket. Dazu der Operator für den Windows- oder Mac-Rechner, auf dem eure Agenten laufen. Kein Account bei uns nötig.",
       dlBtn:"Herunterladen",
-      dlWinNote:"Nicht code-signiert, Windows warnt beim ersten Start. „Weitere Informationen“ → „Trotzdem ausführen“.",
+      dlWinNote:"Direkter Download ohne Store: nicht signiert, Windows warnt. „Weitere Informationen“ → „Trotzdem ausführen“.",
+      dlWinExeBtn:"Direkter Download (.exe)",
       dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
       dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
       dlIosMeta:"Live im App Store",
@@ -1100,7 +1101,8 @@ ${wl("wearables")}
       faq3Q:"Which agents run inside?", faq3A:'Claude Code, verified live. Codex and OpenCode are untested with real accounts. If you have one, <a href="mailto:${OWNER_EMAIL}">get in touch</a> and we verify it with you. Every card gets its own worktree and branch, so your team can run several agents at once without them stepping on each other; before the merge a gate checks build, types and tests.',
       dlTitle:"Available now", dlSub:"App for Android and iPhone, the watch app ships in the same package. Operator for the Windows or Mac PC where your agents run. No account with us.",
       dlBtn:"Download",
-      dlWinNote:"Not code-signed yet, so Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
+      dlWinNote:"Direct download without the Store: not signed, Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
+      dlWinExeBtn:"Direct download (.exe)",
       dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
       dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
       dlIosMeta:"Live on the App Store",
