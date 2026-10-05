@@ -10,6 +10,7 @@ import { api, neverDelivered, type ChatMsg, type ReplyRef, type SteerOpts } from
 import { CHAT_FOCUS, usePresence } from "@/data/presence";
 import { chatFallbackInterval, ensureChatFresh, useChatCatchup, useStreamCaps } from "@/data/stream";
 import type { PendingQuestion, Track } from "@/data/types";
+import { isRestricted } from "@/kernel";
 import type { VoiceClip } from "@/data/voice";
 import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
@@ -505,7 +506,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   const { data } = useQuery({
     queryKey: ["chatHistory"],
     queryFn: api.chatHistory,
-    enabled: me?.role !== "client",
+    enabled: !isRestricted(me),
     refetchInterval: chatFallbackInterval(chatEvents),
   });
   // The onboarding sample card is still on the board and nobody has ever said
@@ -514,7 +515,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // so the greeting shown and the reason the panel opened stay one story.
   const { data: tracksForWelcome } = useQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
   const showWelcome = (tracksForWelcome ?? []).some((k) => k.example) && !(data?.messages?.length);
-  const { data: models } = useModels(me?.role !== "client");
+  const { data: models } = useModels(!isRestricted(me));
   // PM-session economics (card parity): context fill + spend, folded by the
   // daemon per finished turn (copilot._fold_stats) and served with the history.
   const stats = data?.stats;
@@ -522,7 +523,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
     { id: "acceptEdits", label: tr("card.perm.edit") }, { id: "plan", label: tr("card.perm.plan") }]
     .filter((m) => m.id !== "bypassPermissions" || me?.role === "owner");
   const cur = data?.hands_mode;
-  const henryModes = me?.role === "client" ? undefined
+  const henryModes = isRestricted(me) ? undefined
     : [...modeBase.filter((m) => m.id === cur), ...modeBase.filter((m) => m.id !== cur)];
 
   // A pending turn dies only when the server history has caught up with it:
@@ -988,7 +989,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
 
   // role gate — the copilot is a team tool; clients get a notice, not the chat
   // (mirrors archive/web/components/chat.tsx returning null for clients).
-  if (me?.role === "client") {
+  if (isRestricted(me)) {
     return (
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top }}>
         {header}

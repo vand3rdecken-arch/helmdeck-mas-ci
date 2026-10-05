@@ -35,6 +35,10 @@ export const rooms: Dict = {
   "rooms.henryWorking": { de: "Henry antwortet …", en: "Henry is answering …" },
   "rooms.everyone": { de: "Alle im Raum lesen alles, was hier steht.", en: "Everyone in the room reads everything posted here." },
 
+  "card.access.title": { de: "Zugriff", en: "Access" },
+  "card.access.assigned": { de: "Arbeitet daran (Operator)", en: "Works on it (operator)" },
+  "card.access.shared": { de: "Sieht Titel, Status und Ergebnis", en: "Sees title, status and result" },
+
   "shared.hint": { de: "Diese Karte wurde mit dir geteilt. Du siehst Titel, Status und Ergebnis.", en: "This card was shared with you. You see its title, status and result." },
   "shared.result": { de: "Ergebnis", en: "Result" },
   "shared.noResult": { de: "Noch kein Ergebnis.", en: "No result yet." },

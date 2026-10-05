@@ -55,7 +55,7 @@ U = {n: {"name": n, "role": r} for n, r in
 
 
 def card(cid, client="", **kw):
-    t = {"id": cid, "task": "Aufgabe " + cid, "lane": "working", "status": "idle",
+    t = {"id": cid, "dispatched_by": kw.pop("dispatched_by", "tien"), "task": "Aufgabe " + cid, "lane": "working", "status": "idle",
          "client": client, "repo": "C:/Users/Tien/secret-repo", "worktree": "C:/wt/" + cid,
          "run_dir": "C:/rec/" + cid, "session_id": "sess-" + cid, "ai_cost": 12.5,
          "last_reply": "Ergebnis " + cid, "created": "2026-10-04 10:00:00",
@@ -106,12 +106,14 @@ check(ids(lst("***")) == ["mine"], "before any share she sees only her own card"
 # -- 4. who may share -------------------------------------------------------------
 st, _b = share("***", {"id": "shared", "add": ["***"]})
 check(st == 403, "a guest cannot share a card with herself")
-st, _b = share("ops", {"id": "shared", "add": ["nobody"]})
+st, _b = share("tien", {"id": "shared", "add": ["nobody"]})
 check(st == 400, "an unknown account cannot be added")
 st, _b = share("ops", {"id": "gibtsnicht", "add": ["***"]})
 check(st == 404, "an unknown card answers 404")
-st, out = share("ops", {"id": "shared", "add": ["***"]})
-check(st == 200 and out["geteilt_mit"] == ["***"], "the operator shares the card")
+st, _b = share("ops", {"id": "shared", "add": ["***"]})
+check(st == 404, "an OPERATOR cannot share a card that is neither theirs nor assigned to them")
+st, out = share("tien", {"id": "shared", "add": ["***"]})
+check(st == 200 and out["geteilt_mit"] == ["***"], "the owner shares the card")
 
 # -- 1. visibility ------------------------------------------------------------------
 check(ids(lst("***")) == ["mine", "shared"],
@@ -121,7 +123,8 @@ check(len(lst("tien")) == 4, "the owner still sees every card")
 
 # -- 2. summary only ------------------------------------------------------------------
 row = next(r for r in lst("***") if r["id"] == "shared")
-check(set(row) <= set(auth.SHARED_FIELDS), "the list row of a shared card carries only whitelisted fields")
+check(set(row) <= set(auth.SHARED_FIELDS) | {"summary"} and row.get("summary") is True,
+      "the list row of a shared card carries only whitelisted fields, flagged summary by the daemon")
 for leak in ("repo", "worktree", "run_dir", "session_id", "ai_cost", "branch"):
     check(leak not in row, "shared list row has no %s" % leak)
 st, one = get("***", "shared")
@@ -149,6 +152,46 @@ st, out = share("tien", {"id": "shared", "remove": ["***"]})
 check(st == 200 and out["geteilt_mit"] == [], "the owner withdraws the share")
 check(ids(lst("***")) == ["mine"] and get("***", "shared")[0] == 404,
       "it takes effect on the very next request")
+
+# -- 7. ASSIGNMENT (owner decree 2026-10-05: the operator, too, works only on what is
+#       theirs or assigned) --------------------------------------------------------
+card("ops-own", client="ops", dispatched_by="ops")
+ops_ids = lambda: sorted(r["id"] for r in lst("ops"))
+check(ops_ids() == ["ops-own"], "an operator sees only the cards they filed - not the owner's, not a guest's")
+st, _b = get("ops", "owners")
+check(st == 404, "and cannot open another card by id")
+st, out = share("tien", {"id": "owners", "add": ["ops"]})
+check(st == 200 and "owners" in ops_ids() and "task" in get("ops", "owners")[1]
+      and "repo" not in get("ops", "owners")[1],
+      "a card SHARED with an operator is a summary only (no repo path)")
+
+def assign(user, body):
+    q = Req()
+    routes_tracks.tracks_assign_post(q, U[user], body)
+    return q.sent
+
+check(assign("ops", {"id": "owners", "add": ["ops"]})[0] == 403, "an operator cannot assign cards (not even to themselves)")
+check(assign("tien", {"id": "owners", "add": ["***"]})[0] == 400, "only operator accounts can be assigned (a guest gets the summary via share)")
+st, out = assign("tien", {"id": "owners", "add": ["ops"]})
+check(st == 200 and out["zugewiesen_an"] == ["ops"], "the owner assigns the card to the operator")
+st, full = get("ops", "owners")
+check(full.get("repo") and full.get("run_dir"), "an ASSIGNED card is full access for the operator")
+check(auth.owns_card(U["ops"], sessions.get_track("owners")) is True, "owns_card is True for the assignee")
+check(auth.owns_card(U["ops"], sessions.get_track("theirs")) is False, "and False for a card nobody gave them")
+
+# every id-addressed verb is gated by owns_card for the operator
+def hit(fn, user, tid, body=None):
+    q = Req()
+    fn(q, U[user], body or {}, tid)
+    return q.sent[0]
+from cells.engineer.routes import routes_track_actions as rta
+check(hit(routes_tracks.tracks_delete_post, "ops", "theirs") == 403, "operator: delete a foreign card -> 403")
+check(hit(routes_tracks.tracks_archive_post, "ops", "theirs") == 403, "operator: archive a foreign card -> 403")
+check(hit(routes_tracks.tracks_update_post, "ops", "theirs", {"priority": "high"}) == 403, "operator: update a foreign card -> 403")
+check(hit(rta.tracks_lane_post, "ops", "theirs", {"lane": "done"}) == 403, "operator: move a foreign card -> 403")
+check(hit(rta.tracks_steer_post, "ops", "theirs", {"text": "x"}) == 403, "operator: steer a foreign card -> 403")
+q = Req(); routes_tracks.tracks_reorder_post(q, U["ops"], {"ids": ["theirs"]})
+check(q.sent[0] == 403, "operator: reorder the board -> 403 (a whole-board act)")
 
 print()
 if _fails:

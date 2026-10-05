@@ -17,6 +17,7 @@ import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { SharedCardView } from "@/ui/shared_card";
+import { CardAccessPanel } from "@/ui/card_access";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer, type Recipient } from "@/ui/card_composer";
@@ -292,6 +293,8 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
           </View>
         </View>
       </Panel>
+
+      {owner ? <CardAccessPanel k={k} /> : null}
 
       {owner && e ? (
         <Panel>
@@ -648,10 +651,10 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
 // changes a component's hook order.
 export default function CardScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const { data: one } = useQuery({ queryKey: ["tracks", id], queryFn: () => api.track(id!), enabled: !!id });
   const card = one && !(one as { error?: string }).error ? (one as Track) : undefined;
-  if (me?.role === "client" && card && card.client !== me.name) return <SharedCardView k={card} />;
+  // the daemon marks a shared (not owned/assigned) card itself - auth.shared_view
+  if (card?.summary) return <SharedCardView k={card} />;
   return <FullCardScreen />;
 }
 

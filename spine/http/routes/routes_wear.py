@@ -41,6 +41,7 @@ exactly when a watch has voice switched ON and exactly once per answer.
 """
 import hashlib
 import json
+from spine.auth.auth import is_restricted
 
 # Wear OS quality bar (README.md §7.2): fits a 192dp circle, no keyboard,
 # tap-to-answer or dictation only - the same CLASS of constraint GLASS_BRIEF
@@ -164,8 +165,8 @@ def _wear_pipeline(tracks, taken_ids):
 def wear_board_get(self, user):
     # Same bar as chat_post's own role check (routes_copilot.py) - a `client`
     # role has no board-wide view to be shown here, on any surface.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.engineer.cards import sessions
     from spine.storage import events
     from spine.ops.glances import glance_payload
@@ -342,8 +343,8 @@ def wear_chat_get(self, user):
     unknown internal classes are dropped rather than shown as if Henry had
     said them.
     """
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import copilot
     from spine.ops import ask
     from spine.ops.glances import _glance_question
@@ -456,8 +457,8 @@ def wear_chat_get(self, user):
 
 
 def wear_talk_post(self, user, body):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     msg = (body.get("message") or "").strip()[:400]
     if not msg:
         return self._send(400, json.dumps({"error": "message required"}))
@@ -631,8 +632,8 @@ def wear_voice_get(self, user):
     Voice stays SERVER-rendered (ops/docs/glasses-reference.md §4) - this route
     is the whole of it; nothing on the watch synthesises anything.
     """
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from urllib.parse import parse_qs, urlparse
     want = (parse_qs(urlparse(self.path).query).get("key") or [""])[0].strip()
     if not want:

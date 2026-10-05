@@ -139,6 +139,9 @@ def tracks_lane_post(self, user, body, tid):
         return self._send(403, json.dumps(
             {"error": "role '%s' may not move cards (policy.chat_admin_roles)"
              % user["role"]}))
+    # an operator moves only cards that are theirs or assigned to them
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     lane = body.get("lane")
     actor = user["name"]
     from spine.http import server

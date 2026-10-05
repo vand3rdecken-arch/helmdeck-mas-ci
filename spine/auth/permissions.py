@@ -91,9 +91,12 @@ _DEFAULT_MATRIX = {
         "templates.view", "templates.manage", "rooms.manage",
     ),
     "operator": (
-        "recordings.view", "devices.manage", "devices.use", "chat.use",
-        "cards.admin", "projects.view", "pm.view", "templates.view",
-        "rooms.manage",
+        # assignment-based (owner decree 2026-10-05): structural actions on cards
+        # that are THEIRS or assigned (owns_card gates every id), and team rooms.
+        # No board-wide reads (recordings, projects, PM, templates, devices) and
+        # no private Henry chat (chat.use) - Henry's board context names every
+        # card. See ROLE_CEILING.
+        "cards.admin", "rooms.manage",
     ),
     "client": (),
     # card 3 (ops/docs/backlog/rbac-gxp): quality is the SoD approver - its
@@ -106,6 +109,16 @@ _DEFAULT_MATRIX = {
     # here is a *.read/view one, and NONE of the write caps (settings.write,
     # users.manage, devices.manage, gxp.activate) are listed for it.
     "auditor": ("settings.read", "recordings.view", "audit.read"),
+}
+
+
+# The most a role can EVER hold, whatever policy_live.json says. An invariant of
+# the assignment model, so it is code, not data: `matrix()` intersects with it.
+# Without it a stored matrix from before the model (operator with recordings.view,
+# pm.view, ...) would keep serving board-wide data to a role that must only see
+# its own cards - the stored list is authoritative for every cap it knew.
+ROLE_CEILING = {
+    "operator": frozenset({"cards.admin", "rooms.manage"}),
 }
 
 
@@ -162,6 +175,9 @@ def matrix():
     for role, caps in live.items():
         if role not in out and role != "_known_caps":
             out[role] = set(caps)
+    for role, ceiling in ROLE_CEILING.items():
+        if role in out:
+            out[role] &= ceiling
     return out
 
 

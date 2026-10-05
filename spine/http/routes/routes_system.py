@@ -9,6 +9,7 @@ routes_checkpoints.py precedent). Bodies are byte-identical to the inline
 blocks they replace.
 """
 import json
+from spine.auth.auth import is_restricted
 
 
 def presence_get(self, user):
@@ -21,8 +22,8 @@ def presence_get(self, user):
 
 
 def sessions_claude_get(self, user):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.agent import claude_sessions
     return self._send(200, json.dumps(claude_sessions.list_sessions()))
 
@@ -102,8 +103,8 @@ def history_get(self, user):
 def dashboard_data_get(self, user):
     from spine.storage import events
     from cells.engineer.cards import sessions
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     m = events.metrics(sessions.list_tracks())
     if user["role"] != "owner":
         m.pop("settings", None)
@@ -112,8 +113,8 @@ def dashboard_data_get(self, user):
 
 def admin_daemon_get(self, user):
     """Settings > System > Daemon: derived status (spine/ops/daemonctl)."""
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.ops import daemonctl
     return self._send(200, json.dumps(daemonctl.status()))
 
@@ -193,8 +194,8 @@ def nightshift_plan_post(self, user, body):
     # which allows operator too; narrowing to owner-only here would have been
     # a silent permission regression for that button.
     from cells.copilot.planning import pm
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.http.server import _bg
     _bg("pm:plan", lambda: pm.make_plan(actor=user["name"]))
     return self._send(200, json.dumps({"planning": True,
@@ -248,8 +249,8 @@ def harness_post(self, user, body):
 
 
 def debt_fix_post(self, user, body, did):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.registry import debt
     from cells.engineer.cards import sessions
     from spine.storage import events
@@ -263,8 +264,8 @@ def debt_fix_post(self, user, body, did):
 
 
 def import_post(self, user, body, p):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.ops import importers
     try:
         if p.endswith("jira"):

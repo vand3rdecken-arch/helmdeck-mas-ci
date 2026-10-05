@@ -12,6 +12,7 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 from spine.http.apimeta import _lane_flow, _loop_machine, _config_schema
+from spine.auth.auth import is_restricted
 
 
 def _harness_state():
@@ -144,8 +145,8 @@ def escalations_get(self, user):
     # Henry's escalation log (spine bus, judged by the copilot cell) - the
     # owner reads WHAT was escalated and HOW Henry decided. Not for clients:
     # entries name repos, processes and failure detail from this machine.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "not for clients"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.registry import escalations
     return self._send(200, json.dumps(escalations.list_all(), ensure_ascii=False))
 

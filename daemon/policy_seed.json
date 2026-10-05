@@ -18,8 +18,7 @@
                 "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
                 "cards.admin", "system.introspect", "projects.view", "projects.manage",
                 "pm.view", "pm.manage", "templates.view", "templates.manage", "rooms.manage"],
-      "operator": ["recordings.view", "devices.manage", "devices.use", "chat.use", "cards.admin",
-                   "projects.view", "pm.view", "templates.view", "rooms.manage"],
+      "operator": ["cards.admin", "rooms.manage"],
       "client": [],
       "quality": [],
       "auditor": ["settings.read", "recordings.view", "audit.read"]

@@ -956,6 +956,10 @@ export const api = {
   roomCard: (room: string, task: string) =>
     req<{ id: string; geteilt_mit: string[] }>("POST", "/rooms/card", { room, task }),
   roomAccounts: () => req<import("./types").RoomAccount[]>("GET", "/rooms/accounts"),
+  trackAssign: (id: string, add: string[], remove: string[]) =>
+    req<{ id: string; zugewiesen_an: string[] }>("POST", "/tracks/assign", { id, add, remove }),
+  trackShare: (id: string, add: string[], remove: string[]) =>
+    req<{ id: string; geteilt_mit: string[] }>("POST", "/tracks/share", { id, add, remove }),
   chatGrants: () => req<import("./types").ChatGrants>("GET", "/chat/grants"),
   chatGrantCreate: (grantee: string, hours: number) =>
     req<import("./types").ChatGrant>("POST", "/chat/grants", { grantee, hours }),

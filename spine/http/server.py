@@ -563,11 +563,9 @@ class H(BaseHTTPRequestHandler):
             # answering a question is a steer in typed form (it runs the same
             # turn), so a client may answer on their OWN card exactly as they
             # may steer it - the per-card ownership check still runs below.
-            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new", "/presence",
-                                                      "/rooms/post", "/rooms/read", "/rooms/card") \
-               and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel")
-                                                      or p.endswith("/answer"))):
-                return self._send(403, json.dumps({"error": "clients can file and comment only"}))
+            if auth.is_restricted(user) and not auth.restricted_post_allowed(user, p):
+                return self._send(403, json.dumps(
+                    {"error": "this role works on its own cards and rooms only"}))
             if p in routes_copilot.POST_ROUTES:
                 return routes_copilot.POST_ROUTES[p](self, user, body)
             if p in routes_rooms.POST_ROUTES:
@@ -581,8 +579,8 @@ class H(BaseHTTPRequestHandler):
             if p in routes_relay.POST_ROUTES:
                 return routes_relay.POST_ROUTES[p](self, user, body)
             if p == "/sessions/claude/adopt":
-                if user["role"] == "client":
-                    return self._send(403, json.dumps({"error": "owner/operator only"}))
+                if auth.is_restricted(user):
+                    return self._send(403, json.dumps({"error": "owner only"}))
                 from cells.engineer.cards import sessions
                 try:
                     return self._send(200, json.dumps(sessions.adopt_session(

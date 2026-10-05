@@ -58,6 +58,11 @@ export interface GxpState {
 }
 
 export interface Track {
+  /** true when this is the shared SUMMARY (auth.shared_view), not the full record */
+  summary?: boolean;
+  /** accounts that WORK on this card (operators) / that SEE its summary - owner view only */
+  zugewiesen_an?: string[];
+  geteilt_mit?: string[];
   id: string; repo: string; branch: string; worktree: string; task: string;
   description?: string; attachments?: string[];
   billing?: "fixed" | "tm" | "none"; rate?: number | null; project_id?: string | null;

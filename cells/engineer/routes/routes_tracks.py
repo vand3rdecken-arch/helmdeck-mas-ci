@@ -248,15 +248,32 @@ def tracks_attachment_get(self, user, tid, name):
         return self._send(200, f.read(), ctype)
 
 
+def _structural_denial(user, tid):
+    """The floor for a STRUCTURAL verb addressed by card id (archive, fork,
+    rewind, ...): a guest never, an operator only on a card that is theirs or
+    assigned to them, the owner always. These routes used to test only
+    `role == "client"`, so an operator reached any card by id."""
+    from cells.engineer.cards import sessions
+    from spine.auth import auth
+    if user["role"] == "client":
+        return (403, json.dumps({"error": "owner/operator only"}))
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return (403, json.dumps({"error": "not your card"}))
+    return None
+
+
 def tracks_share_post(self, user, body):
     """Share a card with other accounts (summary view) or withdraw the share.
     `cards.admin` holders only (owner, operator): a guest can neither widen nor
     narrow who sees a card. The write is sessions.share - the one owner."""
-    from spine.auth import permissions
+    from spine.auth import auth, permissions
     from cells.engineer.cards import sessions
     denial = permissions.require(user, "cards.admin")
     if denial:
         return self._send(*denial)
+    # an operator widens access only to a card that is theirs or assigned to them
+    if not auth.owns_card(user, sessions.get_track(body.get("id", ""))):
+        return self._send(404, json.dumps({"error": "no such card"}))
     try:
         t = sessions.share(body.get("id", ""), add=body.get("add") or [],
                            remove=body.get("remove") or [], actor=user["name"])
@@ -267,9 +284,27 @@ def tracks_share_post(self, user, body):
     return self._send(200, json.dumps({"id": t["id"], "geteilt_mit": t.get("geteilt_mit") or []}))
 
 
+def tracks_assign_post(self, user, body):
+    """Assign a card to operators (full access) or take the assignment back.
+    OWNER ONLY: who works on what is the owner's call; an operator can neither
+    widen their own reach nor hand a card to a colleague."""
+    from cells.engineer.cards import sessions
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
+    try:
+        t = sessions.assign(body.get("id", ""), add=body.get("add") or [],
+                            remove=body.get("remove") or [], actor=user["name"])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    if t is None:
+        return self._send(404, json.dumps({"error": "no such card"}))
+    return self._send(200, json.dumps({"id": t["id"], "zugewiesen_an": t.get("zugewiesen_an") or []}))
+
+
 def tracks_reorder_post(self, user, body):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    from spine.auth import auth
+    if auth.is_restricted(user):     # manual order is a whole-board act
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.engineer.cards import sessions
     ids = body.get("ids") or []
     return self._send(200, json.dumps(sessions.reorder(ids, actor=user["name"])))
@@ -286,7 +321,22 @@ def tracks_new_post(self, user, body):
     if user["role"] in ("quality", "auditor"):
         return self._send(403, json.dumps(
             {"error": "role '%s' may not dispatch cards" % user["role"]}))
-    repo = body.get("repo") or events.settings().get("default_repo")
+    # RESTRICTED roles (client, operator) file a card INTO the workspace's default
+    # repo with default settings - the SERVER decides the environment, not the
+    # sender (Copilot's coding agent works the same way: the task is asked inside
+    # a repo, the asker cannot aim it at another one). Before this a guest could
+    # name any git repo on this machine in `repo`, pick the agent's permission
+    # mode in `perm`, and set billing fields; the worktree guard confines the
+    # agent to ITS repo, but which repo was the sender's choice.
+    from spine.auth import auth
+    restricted = auth.is_restricted(user)
+    repo = events.settings().get("default_repo") if restricted else (
+        body.get("repo") or events.settings().get("default_repo"))
+    perm = sessions.DEFAULT_PERM if restricted else body.get("perm", sessions.DEFAULT_PERM)
+    value = None if restricted else body.get("value")
+    project_id = None if restricted else body.get("project_id")
+    billing = "fixed" if restricted else body.get("billing", "fixed")
+    rate = None if restricted else body.get("rate")
     branch = body.get("branch"); task = body.get("task")
     if task and not branch:   # preset flow: task alone is enough
         # Only the human STEM. new_track owns the actual branch name
@@ -300,11 +350,12 @@ def tracks_new_post(self, user, body):
     if not sessions.is_git_repo(repo):
         return self._send(400, json.dumps(
             {"error": "repo is not a git repository: " + repo}))
-    lane = body.get("lane", "working")
-    client = user["name"] if user["role"] == "client" else body.get("client", "")
-    driver = body.get("driver", "claude")
-    if user["role"] == "client":
-        driver = "claude"   # clients don't pick desktop-driving agents
+    # a GUEST's card waits in the backlog until an admin moves it (nothing starts
+    # an agent on the owner's machine on a guest's say-so alone); an operator
+    # works their own cards, so theirs may start at once
+    lane = "backlog" if user["role"] == "client" else body.get("lane", "working")
+    client = user["name"] if restricted else body.get("client", "")
+    driver = "claude" if restricted else body.get("driver", "claude")   # no desktop-driving agents
     # A card on an engine the daemon cannot run would only dispatch into a
     # spawn failure - refuse at filing (spine/agent/engines.check_selectable).
     from spine.agent import engines
@@ -315,25 +366,25 @@ def tracks_new_post(self, user, body):
     attachments = body.get("attachments")
     if lane == "backlog":   # filing a request is instant, no session
         return self._send(200, json.dumps(sessions.new_track(
-            repo, branch, task, body.get("perm", sessions.DEFAULT_PERM),
-            lane="backlog", client=client, value=body.get("value"),
+            repo, branch, task, perm,
+            lane="backlog", client=client, value=value,
             driver=driver, actor=user["name"],
             priority=body.get("priority", "medium"),
             due=body.get("due", ""), model=model, attachments=attachments,
-            project_id=body.get("project_id"),
+            project_id=project_id,
             description=body.get("description", ""),
-            billing=body.get("billing", "fixed"), rate=body.get("rate"))))
+            billing=billing, rate=rate)))
     def go():
         sessions.new_track(repo, branch, task,
-                           body.get("perm", sessions.DEFAULT_PERM),
+                           perm,
                            lane="working", client=client,
-                           value=body.get("value"),
+                           value=value,
                            driver=driver, actor=user["name"],
                            priority=body.get("priority", "medium"),
                            due=body.get("due", ""), model=model, attachments=attachments,
-                           project_id=body.get("project_id"),
+                           project_id=project_id,
                            description=body.get("description", ""),
-                           billing=body.get("billing", "fixed"), rate=body.get("rate"))
+                           billing=billing, rate=rate)
     from spine.http import server
     # `branch` is only the human STEM here (new_track derives the real name and
     # the card id on the background thread, so neither is knowable yet). Echo a
@@ -347,8 +398,9 @@ def tracks_new_post(self, user, body):
 
 def tracks_archive_post(self, user, body, tid):
     from cells.engineer.cards import sessions
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    denial = _structural_denial(user, tid)
+    if denial:
+        return self._send(*denial)
     try:
         return self._send(200, json.dumps(sessions.archive_track(
             tid, on=bool(body.get("on", True)), actor=user["name"])))
@@ -358,8 +410,9 @@ def tracks_archive_post(self, user, body, tid):
 
 def tracks_fork_post(self, user, body, tid):
     from cells.engineer.cards import sessions
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    denial = _structural_denial(user, tid)
+    if denial:
+        return self._send(*denial)
     try:
         return self._send(200, json.dumps(sessions.fork_track(
             tid, from_ref=body.get("ref", ""), actor=user["name"])))
@@ -372,8 +425,9 @@ def tracks_forkchat_post(self, user, body, tid):
     # context, unlike /fork which forks code at a ref with a fresh
     # session - see sessions.fork_conversation).
     from cells.engineer.cards import sessions
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    denial = _structural_denial(user, tid)
+    if denial:
+        return self._send(*denial)
     try:
         return self._send(200, json.dumps(sessions.fork_conversation(
             tid, first=body.get("first", ""), actor=user["name"])))
@@ -392,6 +446,8 @@ def tracks_delete_post(self, user, body, tid):
         return self._send(403, json.dumps(
             {"error": "role '%s' may not delete cards (policy.chat_admin_roles)"
              % user["role"]}))
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     try:
         return self._send(200, json.dumps(sessions.delete_track(
             tid, actor=user["name"])))
@@ -402,9 +458,9 @@ def tracks_delete_post(self, user, body, tid):
 def tracks_update_post(self, user, body, tid):
     from cells.engineer.cards import sessions
     from spine.auth import auth
+    if not auth.owns_card(user, sessions.get_track(tid)):
+        return self._send(403, json.dumps({"error": "not your card"}))
     if user["role"] == "client":
-        if not auth.owns_card(user, sessions.get_track(tid)):
-            return self._send(403, json.dumps({"error": "not your card"}))
         body.pop("autopilot", None)   # autopilot opt-in is owner/operator only
         body.pop("driver", None)      # capability grant (GUI/desktop control) - admin only
     elif "driver" in body:
@@ -420,8 +476,9 @@ def tracks_update_post(self, user, body, tid):
 
 def tracks_rewind_post(self, user, body, tid):
     from cells.engineer.cards import sessions
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    denial = _structural_denial(user, tid)
+    if denial:
+        return self._send(*denial)
     try:
         return self._send(200, json.dumps(
             sessions.rewind_files(tid, body.get("commit", ""), actor=user["name"])))
@@ -459,5 +516,6 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/tracks/reorder": tracks_reorder_post,
     "/tracks/share": tracks_share_post,
+    "/tracks/assign": tracks_assign_post,
     "/tracks/new": tracks_new_post,
 }

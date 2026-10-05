@@ -10,6 +10,7 @@ blocks they replace.
 import json
 
 from spine.http.apimeta import _profile_schema
+from spine.auth.auth import is_restricted
 
 
 def processes_get(self, user):
@@ -19,7 +20,7 @@ def processes_get(self, user):
     except Exception:
         pass
     return self._send(200, json.dumps(processes.list_processes(
-        client=user["name"] if user["role"] == "client" else None)))
+        client=user["name"] if is_restricted(user) else None)))
 
 
 def process_templates_get(self, user):
@@ -209,7 +210,7 @@ def processes_new_post(self, user, body):
     req = body.get("request")
     if not req:
         return self._send(400, json.dumps({"error": "request required"}))
-    client = user["name"] if user["role"] == "client" else body.get("client", "")
+    client = user["name"] if is_restricted(user) else body.get("client", "")
     try:
         p = processes.create(req, client=client, due=body.get("due", ""),
                              actor=user["name"], template_id=body.get("template_id"))

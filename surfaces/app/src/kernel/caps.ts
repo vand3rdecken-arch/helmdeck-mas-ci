@@ -16,9 +16,18 @@ import type { Me } from "../data/types";
  * daemon-side CAPS entry named this); `can()` special-cases it below. */
 export const TEAM_MEMBER_CAP = "team.member";
 
+/** Roles that work only on what is THEIRS or ASSIGNED to them (owner decree
+ *  2026-10-05, mirrors spine/auth/auth.py is_restricted): client and operator.
+ *  They have no private Henry chat, no dashboard, no board-wide lists. */
+export function isRestricted(me: Me | null | undefined): boolean {
+  return me?.role === "client" || me?.role === "operator";
+}
+
 export function can(me: Me | null | undefined, cap: string | undefined): boolean {
   if (!cap) return true; // no cap declared -> every authenticated role sees it
   if (!me) return false;
-  if (cap === TEAM_MEMBER_CAP) return me.role !== "client";
+  // "not a restricted role": since the assignment model that is the owner (and
+  // the read-only roles) - the operator no longer reads the board as a whole
+  if (cap === TEAM_MEMBER_CAP) return !isRestricted(me);
   return !!me.caps?.includes(cap);
 }

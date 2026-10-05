@@ -11,11 +11,12 @@ import json
 import threading
 import time
 from urllib.parse import parse_qs, urlparse
+from spine.auth.auth import is_restricted
 
 
 def chat_history_get(self, user):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import copilot
     # Opening the board chat fetches the transcript through THIS route - the
     # same "a question is coming" signal voice mode gives via /notify/speak.
@@ -30,8 +31,8 @@ def chat_history_get(self, user):
 def chat_threads_get(self, user):
     """Conversations = card threads + the inbox, grouped by process
     (cells/copilot/chat/threads.py). Same audience as the history."""
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import threads
     return self._send(200, json.dumps(threads.threads(user["name"])))
 
@@ -40,8 +41,8 @@ def chat_live_get(self, user):
     # the board agent's STREAMING prose reply while a turn runs, so
     # the board chat streams like a card (one shared surface). Polled
     # by the chat only while busy.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import copilot
     out = copilot.live(user["name"])
     # VOICE CHUNKS ride this same poll (voice_stream.py): `?voice_from=<seq>` is
@@ -77,8 +78,8 @@ def chat_live_get(self, user):
 
 
 def chat_cancel_post(self, user, body):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import copilot
     return self._send(200, json.dumps({"cancelled": copilot.cancel(user["name"])}))
 
@@ -192,8 +193,8 @@ def _answer_text(user, request_id, answers):
 
 
 def chat_post(self, user, body):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.copilot.chat import copilot
     text = body.get("text", "").strip()
     # TAPPED ANSWER to one of HENRY's questions. `answer_to` is the question id,
@@ -389,8 +390,8 @@ def notify_speak_post(self, user, body):
     # Owner/operator only, same gate as /chat - a client role has no
     # board-wide notification stream to speak from. Bounded to a short
     # phrase: this speaks an announcement, never a document.
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     text = (body.get("text") or "").strip()[:300]
     if not text:
         return self._send(400, json.dumps({"error": "text required"}))

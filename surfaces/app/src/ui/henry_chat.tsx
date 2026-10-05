@@ -8,6 +8,7 @@ import { CopilotOverlay, useCopilotPanel, type ChatContext } from "@/app/chat";
 import { api } from "@/data/client";
 import { useCellEnabled } from "@/data/cells";
 import { useT } from "@/i18n";
+import { isRestricted } from "@/kernel";
 import { useTheme } from "@/theme";
 import { useResponsive } from "@/ui/responsive";
 
@@ -88,7 +89,7 @@ export function HenryFab({ context, style, testID }:
   // no private Henry chat for a guest (client): the board has its own launcher
   // (board.tsx renders this directly), so the guard lives HERE, not only in HenryChat
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  if (!enabled || me?.role === "client") return null;
+  if (!enabled || isRestricted(me)) return null;
   return (
     <Pressable testID={testID} onPress={() => open(context)}
       accessibilityLabel={tr("chat.askHenry")}
@@ -113,7 +114,7 @@ export function HenryChat({ context, bottom, testID }:
   // so the button would only open a dead end. Their Henry lives in the team
   // rooms (@henry). Same cached /me every screen already reads.
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  if (me?.role === "client") return null;
+  if (isRestricted(me)) return null;
   return (
     <>
       <View style={{ position: "absolute", right: 18, bottom: bottom ?? (wide ? 24 : 84) }}>

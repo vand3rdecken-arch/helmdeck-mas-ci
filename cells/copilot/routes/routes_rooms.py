@@ -32,9 +32,11 @@ def _int(v, default=0):
 
 def rooms_get(self, user):
     q = _q(self)
-    from spine.auth import permissions
-    if (q.get("all") or [""])[0] and permissions.can(user, "rooms.manage"):
-        # manager overview: names + members only, never messages
+    from spine.auth import auth
+    if (q.get("all") or [""])[0] and not auth.is_restricted(user):
+        # OWNER overview: names + members only, never messages. An operator sees
+        # only the rooms they are in (assignment model) - a list of every room's
+        # name and members would be the board-wide view they must not have.
         from spine.storage import db
         return self._send(200, json.dumps([
             {"id": r["id"], "name": r["name"], "members": r["members"]}
@@ -72,6 +74,10 @@ def rooms_new_post(self, user, body):
 
 
 def rooms_members_post(self, user, body):
+    from spine.auth import auth
+    # the owner manages any room; an operator only a room they are IN
+    if auth.is_restricted(user) and not rooms.is_member(body.get("room", ""), user["name"]):
+        return self._send(404, json.dumps({"error": "unknown room"}))
     try:
         room = rooms.set_members(body.get("room", ""), user["name"],
                                  add=body.get("add") or [], remove=body.get("remove") or [])
@@ -114,16 +120,24 @@ def rooms_card_post(self, user, body):
     repo = events.settings().get("default_repo")
     if not repo or not sessions.is_git_repo(repo):
         return self._send(400, json.dumps({"error": "no default repo configured for new cards"}))
-    client = user["name"] if user["role"] == "client" else ""
+    from spine.auth import auth
+    client = user["name"] if auth.is_restricted(user) else ""
     t = sessions.new_track(repo, "req-" + task, task, lane="backlog", client=client,
                            actor=user["name"], description=body.get("description", ""),
                            card_kind="new_track")
     others = [m for m in rooms.members_of(rid) if m != user["name"]]
-    if others:
-        sessions.share(t["id"], add=others, actor=user["name"])
+    # operators in the room WORK on the card (assigned = full access); everyone
+    # else gets the summary view (shared)
+    roles = {u["name"]: u["role"] for u in auth.list_users()}
+    workers = [m for m in others if roles.get(m) == "operator"]
+    if workers:
+        sessions.assign(t["id"], add=workers, actor=user["name"])
+    viewers = [m for m in others if roles.get(m) not in ("operator", "owner")]   # the owner sees all anyway
+    if viewers:
+        sessions.share(t["id"], add=viewers, actor=user["name"])
     rooms.post(rid, user["name"], "legte die Karte an: " + task, by_kind="system",
                extra={"card": t["id"]})
-    return self._send(200, json.dumps({"id": t["id"], "geteilt_mit": others}))
+    return self._send(200, json.dumps({"id": t["id"], "geteilt_mit": viewers, "zugewiesen_an": workers}))
 
 
 def rooms_read_post(self, user, body):

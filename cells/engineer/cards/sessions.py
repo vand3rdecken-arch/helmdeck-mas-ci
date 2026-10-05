@@ -1631,6 +1631,37 @@ def share(tid, add=(), remove=(), actor="owner"):
     return t
 
 
+def assign(tid, add=(), remove=(), actor="owner"):
+    """Assign a card to OPERATORS (full access: steer, move, see the transcript).
+    The ONE writer of `zugewiesen_an` (assignment model, owner decree
+    2026-10-05: an operator works only on what is theirs or assigned). Only an
+    operator account can be assigned - a guest gets the summary view through
+    share(), never the keys to a card of the owner's agent. Returns the card, or
+    None for an unknown card."""
+    from spine.auth import auth
+    from spine.storage import events
+    roles = {u["name"]: u["role"] for u in auth.list_users()}
+    bad = [n for n in add if roles.get(n) != "operator"]
+    if bad:
+        raise ValueError("only operator accounts can be assigned: %s" % ", ".join(bad))
+
+    def _apply(t):
+        cur = list(t.get("zugewiesen_an") or [])
+        for n in add:
+            if n not in cur:
+                cur.append(n)
+        for n in remove:
+            if n in cur:
+                cur.remove(n)
+        if cur == (t.get("zugewiesen_an") or []):
+            return False
+        t["zugewiesen_an"] = cur
+    t = _mutate(tid, _apply)
+    if t is not None:
+        events.emit("assigned", tid, actor=actor, add=list(add), remove=list(remove))
+    return t
+
+
 def cancel_turn(tid, actor="owner"):
     """Stop a running turn (the composer's Stop button). Kills the driver
     subprocess; the turn returns as '(cancelled)'. Audit records it.

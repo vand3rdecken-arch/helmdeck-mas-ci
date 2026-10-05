@@ -8,11 +8,12 @@ append-only events sink as daemon swaps). Bodies are byte-identical to the
 inline blocks they replace.
 """
 import json
+from spine.auth.auth import is_restricted
 
 
 def policy_get(self, user):
-    if not user or user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if not user or is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.auth import policy
     return self._send(200, json.dumps(policy.load()))
 
@@ -36,15 +37,15 @@ def cells_get(self, user):
     # The agentic-system registry + each cell's live enable-state, so the app
     # renders exactly the cells that are on. Read-only; toggling a cell is a
     # POST /policy/swap of its enabledKey (the existing tracked path).
-    if not user or user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if not user or is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.registry import cells
     return self._send(200, json.dumps({"cells": cells.manifest()}))
 
 
 def reconfig_track(self, user, body):
-    if not user or user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if not user or is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from spine.storage import events
     events.emit("reconfig", "-", source="app",
                 op=body.get("op"), pluginId=body.get("pluginId"),

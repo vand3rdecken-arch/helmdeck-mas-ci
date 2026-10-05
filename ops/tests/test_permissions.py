@@ -77,8 +77,11 @@ def main():
     ok(m["client"] == set(), "client is seeded with zero capabilities")
     ok("gxp.activate" in m["owner"] and "gxp.activate" not in m["operator"],
        "gxp.activate is owner-only, as designed")
-    ok("recordings.view" in m["owner"] and "recordings.view" in m["operator"],
-       "recordings.view is owner+operator, matching today's /runs behaviour")
+    ok("recordings.view" in m["owner"] and "recordings.view" not in m["operator"],
+       "recordings.view is OWNER-only now: the operator works only on cards that are "
+       "theirs/assigned (assignment model, 2026-10-05), so no board-wide recording list")
+    ok(m["operator"] == {"cards.admin", "rooms.manage"},
+       "the operator holds exactly cards.admin + rooms.manage (ROLE_CEILING)")
 
     # ------------------------------------------------------------------ 2 ---
     print("\ncan()/require()")

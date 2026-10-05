@@ -202,14 +202,14 @@ st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "  "})
 check(st == 400, "an empty task is refused")
 _wakes_before = len(room_henry_calls)
 st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "Angebot Kunde X"})
-check(st == 200 and set(out["geteilt_mit"]) == {"ops", "tien"},
-      "a guest member files a card; the OTHER members get it shared")
+check(st == 200 and out["zugewiesen_an"] == ["ops"] and out["geteilt_mit"] == [],
+      "a guest files a card: the operator in the room is ASSIGNED (works on it), the owner needs no share")
 card = sessions.get_track(out["id"])
 check(card["lane"] == "backlog" and card["client"] == "***" and card["dispatched_by"] == "***",
       "it lands in the backlog, billed/owned by her, nothing started")
 check(card["branch"] != "(direct)" and not card.get("direct") and not card.get("machine"),
       "and as a worktree card - never a live-tree/machine card, whatever the repo template says")
-check(set(card["geteilt_mit"]) == {"ops", "tien"}, "geteilt_mit is recorded on the card")
+check(card["zugewiesen_an"] == ["ops"], "zugewiesen_an is recorded on the card")
 hist = rooms.history(R2, "***")
 check(hist[-1]["byKind"] == "system" and hist[-1]["card"] == out["id"]
       and "Angebot Kunde X" in hist[-1]["text"],

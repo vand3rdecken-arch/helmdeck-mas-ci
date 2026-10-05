@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import type { Me } from "@/data/types";
 import { useT } from "@/i18n";
+import { isRestricted } from "@/kernel";
 import { useTheme } from "@/theme";
 import { HenryChat } from "@/ui/henry_chat";
 import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, StatusPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
@@ -25,10 +26,10 @@ export default function DashboardTab() {
   // A guest (client) has no dashboard: /dashboard/data answers 403 and the tab
   // sat on a spinner for ever. Their home is the team rooms.
   const { data, isLoading, error } = useQuery({
-    queryKey: ["metrics"], queryFn: api.metrics, enabled: me?.role !== "client",
+    queryKey: ["metrics"], queryFn: api.metrics, enabled: !isRestricted(me),
   });
   const isOwner = me?.role === "owner";
-  if (me?.role === "client") return <Redirect href={"/rooms" as never} />;
+  if (isRestricted(me)) return <Redirect href={"/rooms" as never} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>

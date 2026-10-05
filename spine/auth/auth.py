@@ -69,9 +69,60 @@ def is_admin(user):
     return bool(user) and user.get("role") in chat_admin_roles()
 
 
+RESTRICTED_ROLES = ("client", "operator")
+
+
+def is_restricted(user):
+    """Roles that work only on what is THEIRS or ASSIGNED to them, never on the
+    board as a whole (owner decree 2026-10-05: "operator auch nur per
+    Zuweisung"). client and operator; owner sees everything, and the read-only
+    quality/auditor roles keep their old whole-board view."""
+    return bool(user) and user.get("role") in RESTRICTED_ROLES
+
+
+# What a RESTRICTED role may POST at all (default-deny; the owner is not
+# restricted). A new route is closed to them until it is listed here - the
+# opposite of the old "every route is open to an operator unless someone adds a
+# role check" (/control/teach/start, which records the owner's desktop, had none).
+# Per-card routes still call owns_card on the id; this is the outer fence.
+_RESTRICTED_POST = {
+    "client": ("/tracks/new", "/processes/new", "/presence", "/push/register",
+               "/rooms/post", "/rooms/read", "/rooms/card"),
+    "operator": ("/tracks/new", "/tracks/share", "/presence", "/push/register",
+                 "/rooms/post", "/rooms/read", "/rooms/card", "/rooms/new", "/rooms/members",
+                 "/sign", "/sign/batch"),
+}
+_RESTRICTED_CARD_VERBS = {
+    "client": ("steer", "cancel", "answer"),
+    "operator": ("steer", "cancel", "answer", "lane", "archive", "fork", "fork-chat",
+                 "delete", "update", "rewind", "attach"),
+}
+
+
+def restricted_post_allowed(user, path):
+    role = (user or {}).get("role")
+    if path in _RESTRICTED_POST.get(role, ()):
+        return True
+    parts = path.strip("/").split("/")
+    return (len(parts) >= 3 and parts[0] == "tracks"
+            and parts[2] in _RESTRICTED_CARD_VERBS.get(role, ()))
+
+
 def owns_card(user, track):
-    """May `user` see/act on THIS card? True unconditionally for owner and
-    operator - a client is the only role a card can be private FROM.
+    """May `user` see/act on THIS card with FULL access?
+
+    owner (and the read-only quality/auditor roles): always. client and
+    operator are RESTRICTED (is_restricted): a card is theirs when they filed it
+    (`client` or `dispatched_by` is their name), or - operator only - when the
+    owner assigned it to them (`zugewiesen_an`, written by sessions.assign).
+    Sharing (`geteilt_mit`) is NOT ownership: it grants the summary view only
+    (sees_card / shared_view).
+
+    This used to say "True unconditionally for owner and operator - a client is
+    the only role a card can be private FROM". An operator therefore opened,
+    steered, moved and deleted ANY card by id; the card routes that guarded only
+    `if role == "client"` still did so, which is why each id-addressed route now
+    calls this unconditionally.
 
     This is the check three GET routes shipped without
     (spine/http/routes/routes_runs.py's screen recording + action log,
@@ -94,8 +145,16 @@ def owns_card(user, track):
     it from every client-role account, exactly the "empty screen" the PRD's
     4.2 setup flow exists to prevent. It is everyone's guide, so it is
     visible unconditionally, the same way owner/operator already are."""
-    return (user.get("role") != "client" or bool(track) and
-            (track.get("example") or track.get("client") == user.get("name")))
+    if not is_restricted(user):
+        return True
+    if not track:
+        return False
+    if track.get("example"):
+        return True
+    name = user.get("name")
+    if name and name in (track.get("client"), track.get("dispatched_by")):
+        return True
+    return user.get("role") == "operator" and name in (track.get("zugewiesen_an") or [])
 
 
 def sees_card(user, track):
@@ -119,7 +178,10 @@ SHARED_FIELDS = ("id", "task", "lane", "status", "last_reply", "client",
 
 
 def shared_view(track):
-    return {k: track[k] for k in SHARED_FIELDS if k in track}
+    # `summary` is the daemon's own statement "this is the whitelisted view, not
+    # the record" - the app switches screens on it instead of re-deriving
+    # ownership from the role (which the assignment model made ambiguous)
+    return dict({k: track[k] for k in SHARED_FIELDS if k in track}, summary=True)
 
 # -- brute-force lockout ---------------------------------------------------
 # There was no limit of ANY kind on password attempts: the relay exposes the

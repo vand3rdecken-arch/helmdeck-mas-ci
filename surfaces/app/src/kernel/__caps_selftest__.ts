@@ -45,8 +45,8 @@ const ROLE_CAPS: Record<string, string[]> = {
     "audit.read", "devices.manage", "devices.use", "chat.use", "gxp.activate",
     "cards.admin", "system.introspect", "projects.view", "projects.manage",
     "pm.view", "pm.manage"],
-  operator: ["recordings.view", "devices.manage", "devices.use", "chat.use",
-    "cards.admin", "projects.view", "pm.view"],
+  // assignment model (2026-10-05): ROLE_CEILING in permissions.py
+  operator: ["cards.admin", "rooms.manage"],
   client: [],
   quality: [],
   auditor: ["settings.read", "recordings.view", "audit.read"],
@@ -111,7 +111,7 @@ for (const role of ROLES) {
     for (const item of items) {
       const viaCanFn = can(me, item.cap);
       const byHand = item.cap === undefined ? true
-        : item.cap === TEAM_MEMBER_CAP ? role !== "client"
+        : item.cap === TEAM_MEMBER_CAP ? (role !== "client" && role !== "operator")
         : ROLE_CAPS[role].includes(item.cap);
       ok(viaCanFn === byHand,
         `${srcName}/${item.key} for role ${role}: can()=${viaCanFn} matches hand-derived=${byHand}`);
@@ -129,7 +129,7 @@ ok(!can(operator, "settings.read"), "operator cannot see settings.read-gated scr
 ok(can(auditor, "settings.read") && can(auditor, "audit.read") && can(auditor, "recordings.view"),
   "auditor sees settings/audit/recordings (read-only role, but genuinely read-everything by the current seed)");
 ok(!can(auditor, "devices.manage"), "auditor cannot see devices.manage-gated screens");
-ok(can(quality, TEAM_MEMBER_CAP), "quality is NOT excluded by TEAM_MEMBER_CAP (only literal 'client' is)");
+ok(can(quality, TEAM_MEMBER_CAP), "quality is NOT excluded by TEAM_MEMBER_CAP (only the restricted roles client and operator are)");
 ok(!can(quality, "recordings.view"), "quality has no recordings.view - never granted one implicitly");
 
 // The audit screen specifically (card 5+6's own reason for existing):

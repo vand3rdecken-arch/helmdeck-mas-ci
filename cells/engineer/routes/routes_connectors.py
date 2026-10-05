@@ -12,6 +12,7 @@ in routes_misc.py) - only the route BODY moves here, verbatim. Bodies are
 byte-identical to the inline blocks they replace.
 """
 import json
+from spine.auth.auth import is_restricted
 
 
 def connectors_list_get(self, user):
@@ -20,8 +21,8 @@ def connectors_list_get(self, user):
 
 
 def connectors_rollback_post(self, user, name):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.engineer.connectors import connectors
     from spine.storage import events
     try:
@@ -33,8 +34,8 @@ def connectors_rollback_post(self, user, name):
 
 
 def connectors_run_post(self, user, name):
-    if user["role"] == "client":
-        return self._send(403, json.dumps({"error": "owner/operator only"}))
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
     from cells.engineer.connectors import connectors
     try:
         made = connectors.run_connector(name, actor=user["name"])
