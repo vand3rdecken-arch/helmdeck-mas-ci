@@ -155,3 +155,36 @@ Offen / bekannt:
   Konto jetzt relevant -> eigene Karte.
 - Schulden in debt.py: room-henry-ambient-claude-md,
   room-chat-consent-is-policy-not-crypto, plan-spend-not-split-per-account.
+
+## Nachtrag 2026-10-05: Zuweisungsmodell (Commit 3c3f1988)
+
+Owner-Entscheid: auch der **Operator** arbeitet nur an dem, was ihm gehört oder
+zugewiesen ist. Rollen: owner = alles; operator und client = eingeschränkt
+(`auth.is_restricted`).
+
+| | owner | operator | client (Gast) |
+|---|---|---|---|
+| eigene Karten (angelegt) | ja | ja, voll | ja, voll |
+| zugewiesene Karten (`zugewiesen_an`, nur Owner setzt) | alle | ja, voll | nie (nur Kurzansicht) |
+| geteilte Karten (`geteilt_mit`) | alle | Kurzansicht | Kurzansicht |
+| Räume | alle verwalten | nur Räume, in denen er ist | nur lesen/schreiben |
+| privater Henry-Chat, Dashboard, Verlauf, PM, Aufnahmen, Geräte | ja | nein | nein |
+| Karte anlegen | alles frei wählbar | `default_repo`, Standard-Modus, startet sofort | wie Operator, aber landet im Backlog |
+
+Technik: `owns_card` zentral; alle per-ID-Routen (archive, fork, delete, update,
+rewind, lane, share) prüfen es jetzt immer (vorher nur `role == "client"`);
+`ROLE_CEILING` kappt den Operator auf `cards.admin` + `rooms.manage`, egal was
+eine gespeicherte Matrix sagt; Default-Deny-POST-Zaun für eingeschränkte Rollen
+(`auth.restricted_post_allowed`) - `/control/teach/start` (Desktop-Aufnahme) hatte
+keine Rollenprüfung. Test: `ops/tests/test_operator_assignment.py`.
+
+Offen:
+- GET-Seite hat keinen Default-Deny-Zaun: `/control/state` (Titel laufender
+  Karten im `busy`-Feld) und `/usage` sind für jedes Konto lesbar (vorbestehend).
+- `/history` liefert für eingeschränkte Rollen weiterhin das Commit-Log des
+  Standard-Repos (`main`), vorbestehend für Gäste.
+- Prozesse: nur der Owner bedient sie; ein Operator sieht höchstens, was er selbst
+  angelegt hat (`client` = sein Name), kann es aber nicht bearbeiten.
+- Bestehende Operator-Konten verlieren beim nächsten Daemon-Start diese Rechte.
+- Im Browser nicht erneut geprüft: Operator-Ansicht der App (Landung in Räumen,
+  Zugriff-Panel an der Karte). Typecheck, Caps-Selftest und Python-Tests sind grün.
