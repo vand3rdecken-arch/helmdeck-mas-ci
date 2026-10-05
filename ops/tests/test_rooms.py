@@ -40,7 +40,8 @@ from spine.auth import auth, permissions
 from cells.copilot.chat import rooms
 from cells.copilot.routes import routes_rooms
 from cells.copilot.chat import room_henry
-room_henry.maybe_answer = lambda msg, **k: False   # this file tests MEMBERSHIP; Henry's turn has its own test (and a real CLI call costs plan quota)
+room_henry_calls = []
+room_henry.maybe_answer = lambda msg, **k: room_henry_calls.append(msg) and False   # this file tests MEMBERSHIP; Henry's turn has its own test (and a real CLI call costs plan quota)
 
 _fails = []
 
@@ -184,6 +185,36 @@ try:
     check(False, "a non-member cannot set a read cursor")
 except PermissionError:
     check(True, "a non-member cannot set a read cursor")
+
+# -- 8. a card FROM a room (stage 6) -----------------------------------------------------
+import subprocess
+from cells.engineer.cards import dispatch, sessions
+dispatch.REC = os.path.join(SANDBOX, "recordings")          # never the live recordings dir
+REPO = os.path.join(SANDBOX, "repo")
+os.makedirs(REPO)
+subprocess.run(["git", "init", "-q", REPO], check=True)
+st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "Angebot Kunde X"})
+check(st == 400, "without a default repo the card is refused with a clear error")
+events.save_settings({"default_repo": REPO})
+st, out = call(routes_rooms.rooms_card_post, "fremd", {"room": R2, "task": "x"})
+check(st == 404, "a non-member cannot file a card into a room")
+st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "  "})
+check(st == 400, "an empty task is refused")
+_wakes_before = len(room_henry_calls)
+st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "Angebot Kunde X"})
+check(st == 200 and set(out["geteilt_mit"]) == {"ops", "tien"},
+      "a guest member files a card; the OTHER members get it shared")
+card = sessions.get_track(out["id"])
+check(card["lane"] == "backlog" and card["client"] == "***" and card["dispatched_by"] == "***",
+      "it lands in the backlog, billed/owned by her, nothing started")
+check(card["branch"] != "(direct)" and not card.get("direct") and not card.get("machine"),
+      "and as a worktree card - never a live-tree/machine card, whatever the repo template says")
+check(set(card["geteilt_mit"]) == {"ops", "tien"}, "geteilt_mit is recorded on the card")
+hist = rooms.history(R2, "***")
+check(hist[-1]["byKind"] == "system" and hist[-1]["card"] == out["id"]
+      and "Angebot Kunde X" in hist[-1]["text"],
+      "the room gets a system line carrying the card id (the app links it)")
+check(len(room_henry_calls) == _wakes_before, "a card line never wakes Henry")
 
 # -- 6. not in the account chat -------------------------------------------------------
 check(all(not a.startswith("room") and a not in (RID,) for a in db.chat_accounts()),

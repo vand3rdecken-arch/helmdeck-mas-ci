@@ -86,6 +86,37 @@ def rooms_post_post(self, user, body):
     return self._send(200, json.dumps(msg))
 
 
+def rooms_card_post(self, user, body):
+    """File a card FROM a room (stage 6). Any member may - a guest can file cards
+    anyway (/tracks/new) - and it is filed exactly as a guest's card always is:
+    backlog (nothing starts), in its own worktree (card_kind pinned to
+    new_track: a repo template that asks for the live tree is NOT honoured for
+    a card born in a shared room), `client` = the author when a guest. The other
+    room members get it shared (summary view, sessions.share); the room gets a
+    system line carrying the card id so the app can link it."""
+    rid = body.get("room", "")
+    if not rooms.is_member(rid, user["name"]):
+        return self._send(404, json.dumps({"error": "unknown room"}))
+    task = (body.get("task") or "").strip()
+    if not task or len(task) > 200:
+        return self._send(400, json.dumps({"error": "task required (max 200 characters)"}))
+    from cells.engineer.cards import sessions
+    from spine.storage import events
+    repo = events.settings().get("default_repo")
+    if not repo or not sessions.is_git_repo(repo):
+        return self._send(400, json.dumps({"error": "no default repo configured for new cards"}))
+    client = user["name"] if user["role"] == "client" else ""
+    t = sessions.new_track(repo, "req-" + task, task, lane="backlog", client=client,
+                           actor=user["name"], description=body.get("description", ""),
+                           card_kind="new_track")
+    others = [m for m in rooms.members_of(rid) if m != user["name"]]
+    if others:
+        sessions.share(t["id"], add=others, actor=user["name"])
+    rooms.post(rid, user["name"], "legte die Karte an: " + task, by_kind="system",
+               extra={"card": t["id"]})
+    return self._send(200, json.dumps({"id": t["id"], "geteilt_mit": others}))
+
+
 def rooms_read_post(self, user, body):
     try:
         rooms.mark_read(body.get("room", ""), user["name"], int(body.get("seq") or 0))
@@ -103,6 +134,7 @@ POST_ROUTES = {
     "/rooms/members": rooms_members_post,
     "/rooms/post": rooms_post_post,
     "/rooms/read": rooms_read_post,
+    "/rooms/card": rooms_card_post,
 }
 POST_CAPS = {
     "/rooms/new": "rooms.manage",
