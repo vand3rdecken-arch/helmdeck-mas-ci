@@ -2720,8 +2720,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # if every note rode along), just what THIS message is about, plus a count
     # of what exists. Both wrapped as harness text (A10), both cheap.
     _mem_block = ""
+    # WHO READS: owner/operator keep the whole store; anyone else sees only
+    # their own, their rooms' and their cards' notes (stage 2, team-rooms-
+    # member). Rooms/cards stay empty until the caller can name them.
+    _mem_viewer = copilot_memory.viewer_for(user, role)
     try:
-        _mem_block = copilot_memory.overview() + copilot_memory.recall_block(body)
+        _mem_rows = copilot_memory.all_notes(_mem_viewer)
+        _mem_block = (copilot_memory.overview(rows=_mem_rows, viewer=_mem_viewer)
+                      + copilot_memory.recall_block(body, rows=_mem_rows))
         if _mem_block.strip():
             _mem_block = "\n\n<harness-memory>" + _mem_block + "\n</harness-memory>"
     except Exception as e:                                       # noqa: BLE001
@@ -3183,7 +3189,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     txt, _mem_muts = copilot_memory.parse(txt)
     _mem_rejects = copilot_memory.last_rejects()
     _mem_done = (copilot_memory.apply(_mem_muts, actor="henry",
-                                      source="chat:%s" % (skey or "owner"))
+                                      source="chat:%s" % (skey or "owner"),
+                                      scope=copilot_memory.scope_for(_mem_viewer),
+                                      viewer=_mem_viewer)
                  if _mem_muts else [])
     # A SILENT DROP IS THE BUG (owner 2026-09-20): a rejected save looked
     # exactly like a successful one, so Henry kept believing he had recorded

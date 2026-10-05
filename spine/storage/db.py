@@ -874,14 +874,24 @@ def memory_rank(kind):
         return MEMORY_KINDS.index("project")
 
 
+MEMORY_SCOPES = ("person", "room", "card")
+
+
 def memory_all():
     """{name: {content, updated_at, actor, kind, source, claim}} for every
-    note. The only store - the brief digest, /harness/export, and
-    ops/tools/henry_memory_get.py all read this directly; there is no
-    filesystem cache in front of it."""
+    note of the OWNER's person scope. The only store - the brief digest,
+    /harness/export, and ops/tools/henry_memory_get.py all read this directly;
+    there is no filesystem cache in front of it.
+
+    Since migration 16 this is deliberately NOT "every row": a second
+    account's, a room's and a card's notes live in the same table but are
+    reached only through memory_visible(), so the owner-side tools (and every
+    legacy caller that treats a name as global) keep seeing exactly the owner's
+    notes and can never read - or overwrite - someone else's."""
     try:
         rows = conn().execute(
-            "SELECT name,content,updated_at,actor,kind,source,claim FROM memory").fetchall()
+            "SELECT name,content,updated_at,actor,kind,source,claim FROM memory "
+            "WHERE scope='person' AND account='owner'").fetchall()
     except sqlite3.OperationalError:
         try:                      # pre-migration-14 db (a test fixture, say)
             rows = [(r[0], r[1], r[2], r[3], "project", "", "")
@@ -895,11 +905,13 @@ def memory_all():
 
 
 def memory_put(name, content, actor="henry", account="owner",
-               kind="project", source="", claim=""):
-    """`account` (ledger step 4): whose board the note belongs to. Every
-    caller today is the owner's Henry; the column exists so a second account's
-    notes never land in the same namespace, not because any caller passes it
-    yet.
+               kind="project", source="", claim="", scope="person", scope_id=""):
+    """`account` (ledger step 4): whose board the note belongs to - for the
+    default scope="person". scope="room"/"card" (migration 16) store a note
+    that belongs to that room / card and is read by everyone who may see it;
+    those rows carry account='' (nobody's private note) and are keyed by
+    (scope, scope_id, name), so the same name in two scopes is two notes and
+    one scope can never overwrite another.
 
     `kind`/`source`/`claim` (migration 14) are PROVENANCE and belong to the
     caller in the harness, not to the model's prose - copilot_memory.apply()
@@ -910,21 +922,69 @@ def memory_put(name, content, actor="henry", account="owner",
     now = datetime.datetime.now().isoformat(timespec="seconds")
     if kind not in MEMORY_KINDS:
         kind = "project"
+    if scope not in MEMORY_SCOPES:
+        raise ValueError("memory scope must be one of %s" % (MEMORY_SCOPES,))
+    if scope == "person":
+        scope_id = ""
+    elif not scope_id:
+        raise ValueError("a %s note needs its scope_id" % scope)
+    else:
+        account = ""
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO memory"
-                  "(name,content,updated_at,actor,account,kind,source,claim) "
-                  "VALUES(?,?,?,?,?,?,?,?)",
-                  (name, content, now, actor, account, kind, source, claim))
+                  "(name,content,updated_at,actor,account,kind,source,claim,scope,scope_id) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  (name, content, now, actor, account, kind, source, claim,
+                   scope, scope_id))
     bump_chat()   # the memory rides Henry's stream, not the board's
 
 
-def memory_delete(name):
+def memory_delete(name, account="owner", scope="person", scope_id=""):
+    """Delete ONE note in ONE scope (default: the owner's person scope, what
+    every legacy caller meant). It used to be `WHERE name=?` over a global
+    namespace; with scoped notes that would delete someone else's note that
+    happens to share a name."""
+    if scope != "person":
+        account = ""
+    else:
+        scope_id = ""
     with conn() as c:
-        cur = c.execute("DELETE FROM memory WHERE name=?", (name,))
+        cur = c.execute("DELETE FROM memory WHERE name=? AND scope=? AND scope_id=? "
+                        "AND account=?", (name, scope, scope_id, account))
         n = cur.rowcount
     if n:
         bump_chat()
     return n
+
+
+def memory_visible(account, rooms=(), cards=()):
+    """The notes ONE restricted viewer may read: their own person notes, plus
+    the notes of the rooms and cards they are a member of. Returns
+    {key: row} where the key is the bare name for a person note and
+    "room:<id>/<name>" / "card:<id>/<name>" otherwise, so equal names in
+    different scopes never merge. Each row carries `scope`/`scope_id`.
+
+    This is the ONE read path for anyone who is not the owner-side Henry:
+    memory_all() stays the owner's. The viewer's rooms/cards are resolved by
+    the CALLER from the record of membership (rooms.members_of / owns_card) at
+    turn time - never cached here."""
+    q = ["(scope='person' AND account=?)"]
+    args = [account]
+    for scope, ids in (("room", rooms), ("card", cards)):
+        ids = [i for i in ids if i]
+        if ids:
+            q.append("(scope='%s' AND scope_id IN (%s))" % (scope, ",".join("?" * len(ids))))
+            args.extend(ids)
+    rows = conn().execute(
+        "SELECT name,content,updated_at,actor,kind,source,claim,scope,scope_id "
+        "FROM memory WHERE " + " OR ".join(q), args).fetchall()
+    out = {}
+    for n, content, upd, actor, kind, source, claim, scope, sid in rows:
+        key = n if scope == "person" else "%s:%s/%s" % (scope, sid, n)
+        out[key] = {"content": content, "updated_at": upd, "actor": actor,
+                    "kind": kind or "project", "source": source or "",
+                    "claim": claim or "", "scope": scope, "scope_id": sid}
+    return out
 
 
 # -- process templates (config, not a run) ----------------------------------
@@ -2144,6 +2204,43 @@ def _m14(c):
             c.execute("ALTER TABLE memory ADD COLUMN %s TEXT NOT NULL DEFAULT '%s'"
                       % (col, default))
     c.execute("CREATE INDEX IF NOT EXISTS memory_kind ON memory(kind)")
+
+
+@_migration(16, "memory-scope")
+def _m16(c):
+    """team-rooms-member stage 2. `memory` was keyed by NAME alone and every
+    read path returned every row, so a second account's Henry would have read
+    the owner's whole store (measured in the code review 2026-10-04) - and
+    worse, INSERT OR REPLACE on a shared name would have OVERWRITTEN the
+    owner's note. The key becomes (scope, scope_id, account, name): a note is a
+    person's own (scope='person', account=who), or belongs to a room / a card
+    (scope='room'|'card', scope_id=its id, account=''). Every existing row is
+    the owner's person note (account already held 'owner').
+
+    SQLite cannot alter a primary key, so the table is rebuilt: copy, VERIFY
+    the row count, only then drop the old one - all inside this step's one
+    transaction, so a failure leaves the old table untouched."""
+    if _has_column(c, "memory", "scope"):
+        return
+    c.execute("ALTER TABLE memory RENAME TO memory_old")
+    c.execute("""CREATE TABLE memory(
+        name TEXT NOT NULL, content TEXT NOT NULL, updated_at TEXT NOT NULL,
+        actor TEXT NOT NULL, account TEXT NOT NULL DEFAULT 'owner',
+        kind TEXT NOT NULL DEFAULT 'project', source TEXT NOT NULL DEFAULT '',
+        claim TEXT NOT NULL DEFAULT '',
+        scope TEXT NOT NULL DEFAULT 'person', scope_id TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY(scope, scope_id, account, name))""")
+    c.execute("INSERT INTO memory(name,content,updated_at,actor,account,kind,source,claim) "
+              "SELECT name,content,updated_at,actor,account,kind,source,claim "
+              "FROM memory_old")
+    before = c.execute("SELECT COUNT(*) FROM memory_old").fetchone()[0]
+    after = c.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
+    if before != after:
+        raise RuntimeError("memory-scope: copied %d of %d rows" % (after, before))
+    c.execute("DROP TABLE memory_old")
+    c.execute("CREATE INDEX IF NOT EXISTS memory_account ON memory(account)")
+    c.execute("CREATE INDEX IF NOT EXISTS memory_kind ON memory(kind)")
+    c.execute("CREATE INDEX IF NOT EXISTS memory_scope ON memory(scope, scope_id)")
 
 
 @_migration(15, "chat-runs")

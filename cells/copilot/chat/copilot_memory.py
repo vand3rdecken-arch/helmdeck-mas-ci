@@ -116,14 +116,20 @@ def parse(text):
     return cleaned, muts
 
 
-def apply(mutations, actor="henry", source=""):
+def apply(mutations, actor="henry", source="", scope=None, viewer=None):
     """Execute parsed mutations against the db - ONE event per mutation
     (README phase 1: an audit trail for config that changes Henry's own
     behaviour, the same discipline settings.save_settings already has).
     Best-effort per mutation: one bad row must not lose the rest of the
-    batch. Returns the mutations that actually landed."""
+    batch. Returns the mutations that actually landed.
+
+    `scope` ({"scope","scope_id","account"}, from scope_for) says WHERE the
+    notes land; None = the owner's person scope, byte-identical to before.
+    `viewer` is the same restricted viewer the turn READ with, so the conflict
+    check compares against the store this writer can actually see."""
     from spine.storage import db, events
     done = []
+    sc = scope or {"scope": "person", "scope_id": "", "account": "owner"}
     for m in mutations[:MAX_BLOCKS]:
         try:
             if m["op"] == "save":
@@ -132,19 +138,24 @@ def apply(mutations, actor="henry", source=""):
                 # A3: BEFORE writing, who already says something else and
                 # outranks this? Computed against the store as it is now, so
                 # the note being replaced is not compared against itself.
-                clash = conflicts(m["name"], m["content"], kind)
+                clash = conflicts(m["name"], m["content"], kind,
+                                  rows=all_notes(viewer) if viewer is not None else None)
                 m["kind"] = kind
                 m["clash"] = [c[0] for c in clash]
                 db.memory_put(m["name"], m["content"], actor=actor, kind=kind,
                               source=source or "",
-                              claim="reach-fail" if kind == "reach-fail" else "")
+                              claim="reach-fail" if kind == "reach-fail" else "",
+                              account=sc["account"], scope=sc["scope"],
+                              scope_id=sc["scope_id"])
                 # NB field name: events.emit(kind, track, **fields) owns the
                 # word 'kind' as its first positional - passing it as a field
                 # is a TypeError that apply() would swallow per-mutation.
                 events.emit("memory", "-", op="save", actor=actor, name=m["name"],
-                            note_kind=kind, clash=m["clash"])
+                            note_kind=kind, clash=m["clash"], scope=sc["scope"],
+                            scope_id=sc["scope_id"] or sc["account"])
             else:
-                db.memory_delete(m["name"])
+                db.memory_delete(m["name"], account=sc["account"], scope=sc["scope"],
+                                 scope_id=sc["scope_id"])
                 events.emit("memory", "-", op="delete", actor=actor, name=m["name"])
             done.append(m)
         except Exception as e:                                    # noqa: BLE001
@@ -329,7 +340,54 @@ def _mtime(path):
         return ""
 
 
-def all_notes():
+def viewer_for(user, role, rooms=(), cards=()):
+    """WHO is reading, for the memory read paths. None = the owner-side Henry
+    (owner and operator): the legacy view, all three stores. Anyone else gets a
+    restricted viewer that sees only their own person notes plus the notes of
+    the rooms and cards they belong to - never the owner's store, the CLI
+    auto-memory or the repos' shared knowledge (team-rooms-member stage 2: a
+    guest's Henry must not be handed the owner's notes in every turn).
+
+    `rooms`/`cards` come from the CALLER's record of membership at turn time;
+    nothing here remembers them."""
+    if role in ("owner", "operator"):
+        return None
+    return {"account": user, "rooms": tuple(rooms or ()), "cards": tuple(cards or ())}
+
+
+def scope_for(viewer, room="", card=""):
+    """Where a restricted viewer's SAVE lands: the room, else the card, else
+    their own person scope. None (owner side) = the legacy owner person scope.
+    A restricted viewer can only write into a scope they can also read."""
+    if viewer is None:
+        return None
+    if room and room in viewer["rooms"]:
+        return {"scope": "room", "scope_id": room, "account": ""}
+    if card and card in viewer["cards"]:
+        return {"scope": "card", "scope_id": card, "account": ""}
+    return {"scope": "person", "scope_id": "", "account": viewer["account"]}
+
+
+def _scoped_notes(viewer):
+    """The restricted counterpart of db_notes(): same row shape, but sourced
+    from db.memory_visible, so what a guest's Henry can recall is exactly what
+    the guest may read."""
+    from spine.storage import db
+    out = {}
+    for key, row in db.memory_visible(viewer["account"], viewer["rooms"],
+                                      viewer["cards"]).items():
+        content = row.get("content") or ""
+        _n, desc = _auto_meta(content, key)
+        out[key] = {"content": content, "description": desc, "source": "db",
+                    "updated_at": row.get("updated_at") or "",
+                    "kind": row.get("kind") or "project",
+                    "origin": row.get("source") or "",
+                    "claim": row.get("claim") or "",
+                    "scope": row.get("scope"), "scope_id": row.get("scope_id")}
+    return out
+
+
+def all_notes(viewer=None):
     """THREE stores in one dict, in PRECEDENCE order: shared (the team's, from
     the project repo) first, then the CLI auto-memory, then the db LAST.
 
@@ -340,7 +398,12 @@ def all_notes():
     same topic must never need a merge - they need an order.
 
     A loser is never dropped silently: the surviving row says which other
-    store also holds that name."""
+    store also holds that name.
+
+    `viewer` (see viewer_for): a restricted viewer gets ONLY their scoped db
+    notes - the other two stores are the owner's machine, not theirs."""
+    if viewer is not None:
+        return _scoped_notes(viewer)
     merged = {}
     shared, _problems = shared_notes()
     merged.update(shared)
@@ -501,7 +564,7 @@ def recall_block(text, rows=None):
             + "\n\n".join(out))
 
 
-def overview(rows=None):
+def overview(rows=None, viewer=None):
     """A9, taken from Letta's <memory_metadata>: what EXISTS, never content.
 
     letta/prompts/prompt_generator.py injects note counts and the available
@@ -522,8 +585,10 @@ def overview(rows=None):
     nshared = sum(1 for r in rows.values() if r.get("source") == "shared")
     newest = max((r.get("updated_at") or "" for r in rows.values()), default="")
     try:
+        # the repos' shared-knowledge problems are the OWNER's machine: a
+        # restricted viewer's overview never names them
         from cells.copilot.chat import knowledge
-        _skipped = knowledge.all_shared()[1]
+        _skipped = [] if viewer is not None else knowledge.all_shared()[1]
     except Exception:                                            # noqa: BLE001
         _skipped = []
     warn = ("" if not _skipped else
