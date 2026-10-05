@@ -39,6 +39,8 @@ db.init()
 from spine.auth import auth, permissions
 from cells.copilot.chat import rooms
 from cells.copilot.routes import routes_rooms
+from cells.copilot.chat import room_henry
+room_henry.maybe_answer = lambda msg, **k: False   # this file tests MEMBERSHIP; Henry's turn has its own test (and a real CLI call costs plan quota)
 
 _fails = []
 

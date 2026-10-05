@@ -5573,6 +5573,66 @@ DEBT = [
                "asks for the rest.",
         "order": 81,
     },
+    {
+        "id": "room-henry-ambient-claude-md",
+        "title": "Room Henry still loads the daemon account's user-level CLAUDE.md; brief is not a registered surface",
+        "status": "open",
+        "what": "cells/copilot/chat/room_henry.py spawns the CLI with no tools, "
+                "plan mode, no MCP, --setting-sources '' and an EMPTY cwd, so the "
+                "repo's CLAUDE.md and the project auto-memory never load. The "
+                "user-level ~/.claude/CLAUDE.md (the owner's global instructions) "
+                "still does: --bare would drop it but also drops subscription "
+                "auth, and CLAUDE_CONFIG_DIR would drop the credentials. And "
+                "harness/agents/room-henry.md is read by the module itself, not "
+                "registered in spine/registry/harness.py, so /harness neither "
+                "lists nor validates it.",
+        "why_it_bites": "A room member could coax the owner's global instructions "
+                        "out of Henry (they hold conventions, not secrets, by house "
+                        "rule - but nothing enforces that). The brief is invisible "
+                        "to the harness UI and its schema checks.",
+        "trigger": "any secret ever lands in ~/.claude/CLAUDE.md; or a second "
+                   "brief is added the same way",
+        "fix": "Run room turns under a config dir that holds only the credential "
+               "file (CLAUDE_CONFIG_DIR + a copied/linked .credentials.json) or "
+               "an API-key spawn; register room-henry in harness.py AGENT_CELL/"
+               "_DEFAULTS and read it via harness.brief().",
+        "since": "2026-10-05",
+        "order": 82,
+    },
+    {
+        "id": "room-chat-consent-is-policy-not-crypto",
+        "title": "Admin cannot read private chats without the user's consent - but only by product rule",
+        "status": "open",
+        "what": "Planned in backlog/team-rooms-member stage 7: a private Henry chat "
+                "is readable by an admin only while the account holds an active, "
+                "audited grant. The daemon operator still owns helmdeck.db and "
+                "can read every row directly.",
+        "why_it_bites": "The guarantee holds against the app and the API, not "
+                        "against the machine's owner; it is a trust rule, not a "
+                        "cryptographic one.",
+        "trigger": "a context where 'the admin cannot read it' must hold legally",
+        "fix": "Per-account encryption of chat/room rows with a key the account "
+               "derives from its own credential.",
+        "since": "2026-10-05",
+        "order": 83,
+    },
+    {
+        "id": "plan-spend-not-split-per-account",
+        "title": "All accounts spend the owner's plan; no per-account cost view",
+        "status": "open",
+        "what": "Room Henry turns call econ.record_spend('room', ...) into the one "
+                "workspace-wide plan calibration; a client's cards and room asks "
+                "all draw on the owner's subscription (billing_scope only exists "
+                "for remote devices).",
+        "why_it_bites": "The owner cannot see or cap what a second account "
+                        "costs; a busy room can burn plan share unnoticed (a queue "
+                        "bound of 3 per room is the only brake).",
+        "trigger": "a second regular user",
+        "fix": "Record the account on every spend row and show/cap it per "
+               "account in the plan meter.",
+        "since": "2026-10-05",
+        "order": 84,
+    },
 ]
 
 def list_debt():

@@ -968,13 +968,17 @@ def memory_visible(account, rooms=(), cards=()):
     memory_all() stays the owner's. The viewer's rooms/cards are resolved by
     the CALLER from the record of membership (rooms.members_of / owns_card) at
     turn time - never cached here."""
-    q = ["(scope='person' AND account=?)"]
-    args = [account]
+    q, args = [], []
+    if account:        # a falsy account = no person scope (a room's shared view)
+        q.append("(scope='person' AND account=?)")
+        args.append(account)
     for scope, ids in (("room", rooms), ("card", cards)):
         ids = [i for i in ids if i]
         if ids:
             q.append("(scope='%s' AND scope_id IN (%s))" % (scope, ",".join("?" * len(ids))))
             args.extend(ids)
+    if not q:
+        return {}
     rows = conn().execute(
         "SELECT name,content,updated_at,actor,kind,source,claim,scope,scope_id "
         "FROM memory WHERE " + " OR ".join(q), args).fetchall()

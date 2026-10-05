@@ -168,7 +168,7 @@ def post(rid, author, text, by_kind="human", extra=None):
     date, hhmm = _now_parts()
     entry = {"role": "user" if by_kind == "human" else "assistant", "kind": "text",
              "text": text, "by": author, "byKind": by_kind, "date": date, "ts": hhmm,
-             "mentions": mentioned, "henry": bool(henry)}
+             "mentions": mentioned, "henry": bool(henry), "room_id": rid}
     if extra:
         entry.update(extra)
     return db.room_message_add(rid, entry)

@@ -77,6 +77,10 @@ def rooms_post_post(self, user, body):
         msg = rooms.post(rid, user["name"], body.get("text", ""))
     except ValueError as e:
         return self._send(400, json.dumps({"error": str(e)}))
+    # @henry: answer in the background (the reply arrives as the next message,
+    # the chat cursor wakes every member's app); the post itself returns at once
+    from cells.copilot.chat import room_henry
+    room_henry.maybe_answer(msg)
     return self._send(200, json.dumps(msg))
 
 

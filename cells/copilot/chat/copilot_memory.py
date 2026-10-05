@@ -355,6 +355,14 @@ def viewer_for(user, role, rooms=(), cards=()):
     return {"account": user, "rooms": tuple(rooms or ()), "cards": tuple(cards or ())}
 
 
+def room_viewer(rid):
+    """The viewer for a turn inside ONE room: that room's notes and nothing
+    else - no person scope at all. Everyone in the room reads Henry's answer, so
+    it may only be built from what everyone in the room may read; the asker's
+    own private notes (owner included) never ride into a room turn."""
+    return {"account": "", "rooms": (rid,), "cards": ()}
+
+
 def scope_for(viewer, room="", card=""):
     """Where a restricted viewer's SAVE lands: the room, else the card, else
     their own person scope. None (owner side) = the legacy owner person scope.
