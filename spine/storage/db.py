@@ -2261,6 +2261,53 @@ def _m17(c):
     c.execute("CREATE INDEX IF NOT EXISTS room_messages_room ON room_messages(room_id, seq)")
 
 
+@_migration(19, "chat-grants")
+def _m19(c):
+    """team-rooms-member stage 7: an account lets a NAMED admin read its private
+    Henry chat for a limited time. A grant is a recorded fact (who, to whom,
+    until when, revoked-at); whether it is ACTIVE is derived at every read
+    (chat_grants.active) - there is no `open` flag to forget to flip. Every
+    read an admin makes under a grant is its own row, so the account can see
+    exactly who read what and when."""
+    c.execute("""CREATE TABLE IF NOT EXISTS chat_grants(
+        id TEXT PRIMARY KEY, account TEXT NOT NULL, grantee TEXT NOT NULL,
+        created REAL NOT NULL, expires REAL NOT NULL, revoked REAL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS chat_grants_account ON chat_grants(account)")
+    c.execute("""CREATE TABLE IF NOT EXISTS chat_grant_reads(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, grant_id TEXT NOT NULL,
+        account TEXT NOT NULL, reader TEXT NOT NULL, ts REAL NOT NULL, n INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS chat_grant_reads_account ON chat_grant_reads(account)")
+
+
+def chat_grant_put(g):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO chat_grants(id,account,grantee,created,expires,revoked) "
+                  "VALUES(?,?,?,?,?,?)",
+                  (g["id"], g["account"], g["grantee"], g["created"], g["expires"], g.get("revoked")))
+
+
+def chat_grants_of(account=None, grantee=None):
+    q, a = "SELECT id,account,grantee,created,expires,revoked FROM chat_grants WHERE 1=1", []
+    if account is not None:
+        q += " AND account=?"; a.append(account)
+    if grantee is not None:
+        q += " AND grantee=?"; a.append(grantee)
+    return [dict(zip(("id", "account", "grantee", "created", "expires", "revoked"), r))
+            for r in conn().execute(q + " ORDER BY created DESC", a).fetchall()]
+
+
+def chat_grant_read_add(grant_id, account, reader, n):
+    with conn() as c:
+        c.execute("INSERT INTO chat_grant_reads(grant_id,account,reader,ts,n) VALUES(?,?,?,?,?)",
+                  (grant_id, account, reader, time.time(), int(n)))
+
+
+def chat_grant_reads_of(account, limit=50):
+    return [dict(zip(("grant_id", "reader", "ts", "n"), r)) for r in conn().execute(
+        "SELECT grant_id,reader,ts,n FROM chat_grant_reads WHERE account=? "
+        "ORDER BY id DESC LIMIT ?", (account, limit)).fetchall()]
+
+
 @_migration(18, "room-reads")
 def _m18(c):
     """Per-account read cursor of a room (the highest seq that account has

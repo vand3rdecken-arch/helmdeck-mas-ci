@@ -82,6 +82,7 @@ from spine.http.routes import routes_sign
 from spine.http.routes import routes_projects
 from cells.copilot.routes import routes_copilot
 from cells.copilot.routes import routes_rooms
+from cells.copilot.routes import routes_grants
 from cells.engineer.routes import routes_tracks
 from cells.engineer.routes import routes_track_actions
 from spine.http.routes import routes_runs
@@ -273,6 +274,9 @@ class H(BaseHTTPRequestHandler):
             # team rooms: membership-gated inside rooms.py (clients/guests too)
             if p in routes_rooms.GET_ROUTES:
                 return routes_rooms.GET_ROUTES[p](self, user)
+            # chat consent: the grant is the authorization (chat_grants.py)
+            if p in routes_grants.GET_ROUTES:
+                return routes_grants.GET_ROUTES[p](self, user)
             # --- Wear OS watch: board summary (README.md §4.7) ---
             if p in routes_wear.GET_ROUTES:
                 return routes_wear.GET_ROUTES[p](self, user)
@@ -568,6 +572,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_copilot.POST_ROUTES[p](self, user, body)
             if p in routes_rooms.POST_ROUTES:
                 return routes_rooms.POST_ROUTES[p](self, user, body)
+            if p in routes_grants.POST_ROUTES:
+                return routes_grants.POST_ROUTES[p](self, user, body)
             if p in routes_wear.POST_ROUTES:
                 return routes_wear.POST_ROUTES[p](self, user, body)
             if p in routes_tracks.POST_ROUTES:
