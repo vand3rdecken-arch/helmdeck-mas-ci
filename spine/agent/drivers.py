@@ -1000,7 +1000,14 @@ class _ClaudeSession:
                 continue
             if p.get("type") == "tool_use":
                 inp = p.get("input") if isinstance(p.get("input"), dict) else {}
-                if inp.get("run_in_background") or p.get("name") in ("Task", "Agent"):
+                # `Monitor` is a background task with NO run_in_background flag
+                # (measured 2026-10-05, card 20261005-054744-direct: the worker
+                # armed a Monitor and said "ich warte auf den Monitor"; the
+                # registry stayed empty, the settle read "nothing outstanding",
+                # and the card went needs_you + pushed "braucht dich" with
+                # nothing for the owner to do - then idle eviction killed the
+                # process and the Monitor with it).
+                if inp.get("run_in_background") or p.get("name") in ("Task", "Agent", "Monitor"):
                     title = str(inp.get("description") or p.get("name") or "task")[:80]
                     detail = str(inp.get("command") or inp.get("prompt")
                                  or inp.get("description") or "")[:600]
@@ -1011,7 +1018,8 @@ class _ClaudeSession:
                     txt = _text_of(p.get("content"))
                     title, detail = self._bg_candidates.pop(uid)
                     if "Async agent launched" in txt or "run_in_background" in txt \
-                       or "background" in txt[:200].lower():
+                       or "background" in txt[:200].lower() \
+                       or txt.startswith("Monitor started"):
                         self._bg_open[uid] = title
                         try:
                             sessions.bg_upsert(self.tid, uid, title=title,

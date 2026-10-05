@@ -88,6 +88,14 @@ check(events[-1][:2] == ("tu1", "completed"), "tu1 upserted to completed, not si
 cls._scan_bg(s, ev_notif("tu3"))
 check(events[-1][:2] == ("tu3", "completed") and not s._bg_open, "tu3 completed, nothing left open")
 
+# 6) Monitor: no run_in_background flag, no "background" in its result - the
+#    card waits on it all the same (20261005-054744-direct went needs_you)
+cls._scan_bg(s, ev_use("tu4", name="Monitor", desc="refresh finished"))
+cls._scan_bg(s, ev_result("tu4", "Monitor started (task bm372m8iw, expires in 30m unless the source ends first)"))
+check("tu4" in s._bg_open and events[-1][:2] == ("tu4", "running"), "Monitor counted as background")
+cls._scan_bg(s, ev_notif("tu4"))
+check("tu4" not in s._bg_open and events[-1][:2] == ("tu4", "completed"), "Monitor closed by its notification")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails)); sys.exit(1)
