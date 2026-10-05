@@ -137,8 +137,12 @@ WORKSPACE_LEVEL = {"workspace_config", "policy_doc", "process_template", "connec
                    "harness_versions", "audit_ops",
                    # entity ROOT, same reasoning as `projects` above: users.name
                    # IS the account, not a row scoped BY one (ledger step 13)
-                   "users"}
-SCOPE_COLS = {"account", "user", "owner", "project", "project_id", "track", "run_id"}
+                   "users",
+                   # entity ROOT again: rooms.id IS the room (team-rooms-member);
+                   # its messages are scoped BY room_id below
+                   "rooms"}
+SCOPE_COLS = {"account", "user", "owner", "project", "project_id", "track", "run_id",
+              "room_id"}
 for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
     if t in WORKSPACE_LEVEL:
         continue
