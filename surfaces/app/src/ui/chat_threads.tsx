@@ -183,8 +183,12 @@ export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, bo
       ) : <View style={{ height: 8 }} />}
       <ScrollView contentContainerStyle={{ paddingBottom: 24 + (bottomPad ?? 0) }}>
         <HeaderRow icon="add" label={tr("chat.threads.new")} onPress={() => router.push("/new")} />
-        <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
-          sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
+        {/* On the Henry home the stream IS the screen and "Back to Henry" is the way
+            to it, so a row that re-opens it only duplicated that (owner 2026-10-05) */}
+        {timeBuckets ? null : (
+          <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
+            sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
+        )}
 
         {/* ZIEL -> PROZESS -> KARTE, top down (Meta Muse / Claude Projects: the
             goal stays in sight, the plan shows its progress, what needs the

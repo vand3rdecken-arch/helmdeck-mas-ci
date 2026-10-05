@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
 import { CopilotOverlay } from "@/app/chat";
-import { HenryFab, useAutoOpenHenryWelcome } from "@/ui/henry_chat";
+import { useAutoOpenHenryWelcome } from "@/ui/henry_chat";
 import { BoardList } from "@/ui/board";
 import { BoardSwitcher } from "@/ui/board_switcher";
 import { GlowBackdrop } from "@/ui/glow";
@@ -66,12 +66,9 @@ export default function BoardTab() {
         {wide ? <CapacityMeter /> : null}
       </View>
       <BoardList />
-      {/* floating board chat + new-request, bottom-right (works on desktop too).
-          The chat launcher is the SHARED one (ui/henry_chat.tsx) - this screen
-          set the pattern, it no longer owns a private copy of it. It self-gates
-          on the copilot cell; "+ new card" is the Engineer cell and does not. */}
+      {/* floating "+ new card" (Engineer cell). The Henry launcher is gone from here:
+          Henry is the first tab now (owner 2026-10-05). */}
       <View style={{ position: "absolute", right: 18, bottom: wide ? 24 : 84, alignItems: "center", gap: 12 }}>
-        <HenryFab />
         <Pressable onPress={() => router.push("/new")}
           style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: t.accent, alignItems: "center", justifyContent: "center",
             ...(Platform.OS === "web" ? { boxShadow: "0 6px 18px rgba(0,0,0,0.35)" } as any : { elevation: 6 }) }}>
