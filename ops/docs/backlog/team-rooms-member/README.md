@@ -188,3 +188,17 @@ Offen:
 - Bestehende Operator-Konten verlieren beim nächsten Daemon-Start diese Rechte.
 - Im Browser nicht erneut geprüft: Operator-Ansicht der App (Landung in Räumen,
   Zugriff-Panel an der Karte). Typecheck, Caps-Selftest und Python-Tests sind grün.
+
+## Nachtrag 2026-10-05: privater Henry für den Operator (Commit c3e67b60)
+
+Der Operator verliert den Board-Chat (er nennt jede Karte) und bekommt dafür einen
+**eigenen, eingeschränkten Henry** (`cells/copilot/chat/private_henry.py`): ein
+Aufruf pro Nachricht, ohne Werkzeuge, Plan-Modus, leeres Arbeitsverzeichnis wie der
+Raum-Henry. Er kennt nur den eigenen Verlauf, die Karten des Operators (eigene,
+zugewiesene, geteilte; nur Titel/Status/Ergebnis) und dessen Notizen (Personen-
+Bereich). Der Verlauf liegt in der `chat`-Tabelle pro Konto, damit die Chat-Freigabe
+ihn unverändert lesen kann. Routen `/henry/history`, `/henry/post`; App-Screen
+`/henry`, erreichbar über den Henry-Button. Gäste haben keinen (nur Räume).
+Test: `ops/tests/test_private_henry.py`; ein echter Haiku-Aufruf im Browser geprüft.
+Dabei gefunden und behoben: `copilot_memory.viewer_for` gab dem Operator noch das
+Gesamtgedächtnis.
