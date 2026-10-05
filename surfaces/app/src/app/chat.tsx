@@ -984,14 +984,18 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
         )
       ) : null}
       {!wide ? (
-        <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
-                   style={{ marginLeft: 6 }}>
-          <Ionicons name="menu" size={24} color={t.txtSecondary} />
-          {/* what waits for the owner, visible without opening the list */}
+        // A LABELLED pill, not a bare 24px glyph (owner 2026-10-05: "der Button ist
+        // klein und nicht klar"): what it opens is written on it, and the count of
+        // threads waiting on the owner rides inside it.
+        <Pressable onPress={() => setThreadsOpen(true)} hitSlop={8} accessibilityLabel={tr("chat.threads")}
+          style={{ marginLeft: 8, minHeight: 36, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12,
+            borderRadius: 18, backgroundColor: t.surface2, borderWidth: 1, borderColor: t.borderSubtle }}>
+          <Ionicons name="list" size={17} color={t.txtPrimary} />
+          <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600" }}>{tr("chat.threadsBtn")}</Text>
           {waiting > 0 ? (
-            <View style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
-              alignItems: "center", justifyContent: "center", backgroundColor: t.warn }}>
-              <Text style={{ color: "#fff", fontSize: 10.5, fontWeight: "700" }}>{waiting}</Text>
+            <View style={{ minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: "center",
+              justifyContent: "center", backgroundColor: t.warn }}>
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{waiting}</Text>
             </View>
           ) : null}
         </Pressable>

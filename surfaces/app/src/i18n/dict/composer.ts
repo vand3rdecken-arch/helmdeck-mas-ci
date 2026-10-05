@@ -235,6 +235,8 @@ export const composer: Dict = {
   "palette.hint.new": { de: "Karte anlegen", en: "Create card" },
   // conversations = card threads (ui/chat_threads.tsx)
   "chat.threads": { de: "Unterhaltungen", en: "Conversations" },
+  "chat.threadsBtn": { de: "Threads", en: "Threads" },
+  "chat.backToHenry": { de: "Zurück zu Henry", en: "Back to Henry" },
   "chat.threads.new": { de: "Neuer Thread", en: "New thread" },
   "chat.threads.inbox": { de: "Henry · Inbox", en: "Henry · Inbox" },
   // Paseo's sidebar status groups (hooks/sidebar-status-view-model.ts) + backlog

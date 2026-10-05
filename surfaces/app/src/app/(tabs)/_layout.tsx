@@ -85,7 +85,7 @@ function GlassTabBar() {
   return (
     <View style={StyleSheet.absoluteFill}>
       <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: t.canvas + "66", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.glassBorder }]} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: t.canvas + "F2", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.glassBorder }]} />
     </View>
   );
 }

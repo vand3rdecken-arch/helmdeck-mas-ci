@@ -110,8 +110,18 @@ def threads(user, limit=200):
         steps = timeline_store.read(run_dir) if run_dir else []
         lm = _last_line(steps)
         at = float(lm.get("ta") or 0.0) if lm else 0.0
+        bucket = _bucket(t)
         if not at:
-            at = _epoch(t.get("updated") or t.get("created") or "")
+            # No conversation line to date it by. For a FINISHED card `updated`
+            # is not "when it last did something": it is the row's write stamp,
+            # and a bulk write (the 2026-10-05 09:41 backfill touched 342 of 420
+            # cards) put every old card in "Today / 2h". The turn's own end, then
+            # its creation, are the card's real events. Live cards keep `updated`:
+            # they are being written for real, and they sort by it.
+            if bucket == "done":
+                at = _epoch(t.get("turn_ended") or t.get("created") or "")
+            else:
+                at = _epoch(t.get("updated") or t.get("created") or "")
         lane = t.get("lane")
         status = t.get("status")
         rows.append({
@@ -120,7 +130,7 @@ def threads(user, limit=200):
             "lane": lane, "status": status,
             # what the owner must know at a glance - the card's own signals
             "active": lane in ACTIVE_LANES or status == "needs_you",
-            "bucket": _bucket(t),
+            "bucket": bucket,
             "process": t.get("process") or None,
             "process_title": t.get("process_title") or None,
             # the PROJECT (repo folder name) and where the card came from

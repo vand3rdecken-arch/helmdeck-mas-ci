@@ -171,10 +171,15 @@ export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, bo
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       {onClose ? (
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 }}>
-          <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", flex: 1 }}>{tr("chat.threads")}</Text>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={tr("chat.close")}><Ionicons name="close" size={22} color={t.txtSecondary} /></Pressable>
-        </View>
+        // The way back is the FIRST thing on the sheet: a full-width, labelled row
+        // with a chevron (owner 2026-10-05: "nicht klar wie man zurück kommt") -
+        // not a 22px X in the far corner.
+        <Pressable onPress={onClose} accessibilityLabel={tr("chat.backToHenry")} testID="threads-back"
+          style={({ pressed }) => ({ minHeight: 48, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10,
+            backgroundColor: pressed ? t.surface1 : "transparent" })}>
+          <Ionicons name="chevron-back" size={26} color={t.accent} />
+          <Text style={{ color: t.txtPrimary, fontSize: 17, fontWeight: "600" }}>{tr("chat.backToHenry")}</Text>
+        </Pressable>
       ) : <View style={{ height: 8 }} />}
       <ScrollView contentContainerStyle={{ paddingBottom: 24 + (bottomPad ?? 0) }}>
         <HeaderRow icon="add" label={tr("chat.threads.new")} onPress={() => router.push("/new")} />
