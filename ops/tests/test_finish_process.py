@@ -7,6 +7,7 @@ Pinned on a sandbox db (db.DBPATH first - the live db is never touched):
  1. an open-ended process stays "running" by its steps (sync never finishes it)
  2. finish_process closes it as done + closed; sync() does not re-open it;
     a cancelled one is refused
+ 4. the goal's morning wake lists leftovers as evidence (process_drive.stale_items)
  3. _save repairs mojibake in request/step title/desc, idempotent, and leaves
     clean umlauts and unrelated text alone
 Run: py -3.12 ops/tests/test_finish_process.py
@@ -61,6 +62,28 @@ check(st["steps"][0]["title"] == "Vollst\u00e4ndigkeit" and st["steps"][0]["desc
 check(demojibake("Vollst\u00e4ndigkeit") == "Vollst\u00e4ndigkeit" and demojibake("plain") == "plain"
       and demojibake(None) is None, "clean text, plain text and None come back unchanged")
 check(demojibake(demojibake("f\u00c3\u00bcr")) == "f\u00fcr", "idempotent")
+
+# 4) the morning wake carries the leftovers as EVIDENCE (tidy), goal only, slot 0 only
+from cells.copilot.planning import process_drive as pd
+now = 1_800_000_000.0
+done_proc = {"id": "P1", "status": "running", "request": "Ziel",
+             "steps": [{"title": "a", "state": "done"}, {"title": "b", "done": True}]}
+parked = {"id": "C1", "status": "needs_you", "lane": "working", "task": "alt",
+          "turn_ended": "2027-01-14 00:00:00", "waiting_on": "you"}
+fresh = dict(parked, id="C2", turn_ended=pd.time.strftime("%Y-%m-%d %H:%M:%S", pd.time.localtime(now - 600)))
+asking = dict(parked, id="C3", question={"q": 1})
+bg = dict(parked, id="C4", waiting_on="background")
+items = pd.stale_items([done_proc], [parked, fresh, asking, bg], now)
+check(any("P1" in x and "finish_process" in x for x in items), "all-steps-done running process listed")
+check(any("C1" in x for x in items) and not any(k in " ".join(items) for k in ("C2", "C3", "C4")),
+      "only the card idle for hours with no question and no bg task is listed")
+ps = pd.process_state(done_proc, {}, {}, now)
+r, _ = pd.reasons_for(done_proc, ps, {"slot": "x"}, now, [], is_goal=True,
+                      slot=("20270115 08:00", 0, now - 86400), stale=items)
+check(any(x.startswith("tidy:") for x in r), "goal's morning slot carries the tidy list")
+r2, _ = pd.reasons_for(done_proc, ps, {"slot": "x"}, now, [], is_goal=True,
+                       slot=("20270115 14:00", 1, now - 3600), stale=items)
+check(not any(x.startswith("tidy:") for x in r2), "not repeated at the afternoon slot")
 
 print()
 if _fails:

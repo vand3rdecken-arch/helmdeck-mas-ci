@@ -154,7 +154,42 @@ def summary(p, ps, now):
     return "\n".join(lines)
 
 
-def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None):
+IDLE_CARD_S = 3 * 3600      # a worker-less card parked this long is housekeeping, not news
+MAX_TIDY = 8
+
+
+def stale_items(processes, tracks, now):
+    """EVIDENCE of what is left lying around, one line each - never a verdict
+    (owner: "Henry aufraeumen lassen", and "neue Regeln machen ihn dumm": he
+    gets the view and decides). Derived from the records' own fields:
+      * a running process whose every step is done (a goal never finishes by
+        its steps - finish_process is the verb)
+      * a card parked needs_you for hours with NO question pending and no
+        background task: the worker finished or died, nobody is being asked.
+        `turn_ended`, not `updated`: non-turn writes bump `updated`."""
+    out = []
+    for p in processes:
+        steps = p.get("steps") or []
+        if p.get("status") == "running" and steps and all(
+                s.get("state") == "done" or s.get("done") for s in steps):
+            out.append("Prozess %s: alle %d Schritte fertig, steht noch auf running (%s) "
+                       "- erreicht? dann finish_process" % (p["id"], len(steps), _title(p)[:60]))
+    for t in tracks:
+        if (t.get("archived") or t.get("example") or t.get("lane") == "done"
+                or t.get("status") != "needs_you" or t.get("question")
+                or t.get("waiting_on") == "background"):
+            continue
+        ended = _epoch(t.get("turn_ended") or t.get("updated") or t.get("created"))
+        if ended and now - ended >= IDLE_CARD_S:
+            out.append("Karte %s (%s): seit %d h ohne Frage geparkt, letzter Turn %s, "
+                       "waiting_on=%s - abnehmen, anstossen oder beenden"
+                       % (t["id"], " ".join((t.get("task") or "").split())[:50],
+                          (now - ended) // 3600, t.get("turn_ended") or "?",
+                          t.get("waiting_on") or "-"))
+    return out[:MAX_TIDY]
+
+
+def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
     """(reasons, new latch) for one process - pure, for tests. `slot` is
     current_slot()'s tuple when a slot is open for this process, else None."""
     out = []
@@ -182,6 +217,8 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None):
             out.append("stalled: keine Bewegung seit dem letzten Slot (%d h)"
                        % ((now - ps["last_move"]) // 3600)
                        if ps["cards"] else "stalled: noch keine Karte fuer das Ziel")
+        if idx == 0 and is_goal and stale:
+            out.append("tidy: " + " | ".join(stale))
         d = ps["days_left"]
         if idx == 0 and d is not None and 0 <= d <= DEADLINE_NEAR_DAYS:
             out.append("deadline: noch %d Tage" % d)
@@ -274,7 +311,8 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
         if "slot" not in lat:            # first sight: the running slot is history
             lat = dict(lat, slot=cur[0] if cur else "")
         slot = cur if cur and lat.get("slot") != cur[0] else None
-        reasons, new = reasons_for(p, ps, lat, now, decide, is_goal, slot)
+        reasons, new = reasons_for(p, ps, lat, now, decide, is_goal, slot,
+                                   stale=stale_items(processes, tracks, now) if is_goal else None)
         if reasons and len(out) >= MAX_WAKES_PER_TICK:
             continue                     # next tick; latch untouched so nothing is lost
         if not reasons:
