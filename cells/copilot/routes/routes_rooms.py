@@ -42,6 +42,15 @@ def rooms_get(self, user):
     return self._send(200, json.dumps(rooms.list_for(user["name"])))
 
 
+def rooms_accounts_get(self, user):
+    """Who can be put in a room: name + role only, for the member picker.
+    `rooms.manage` holders (owner, operator) - the same people who may add
+    members; /users itself stays owner-only (it carries tokens)."""
+    from spine.auth import auth
+    return self._send(200, json.dumps([{"name": u["name"], "role": u["role"]}
+                                        for u in auth.list_users()]))
+
+
 def rooms_messages_get(self, user):
     q = _q(self)
     rid = (q.get("room") or [""])[0]
@@ -128,6 +137,10 @@ def rooms_read_post(self, user, body):
 GET_ROUTES = {
     "/rooms": rooms_get,
     "/rooms/messages": rooms_messages_get,
+    "/rooms/accounts": rooms_accounts_get,
+}
+GET_CAPS = {
+    "/rooms/accounts": "rooms.manage",
 }
 POST_ROUTES = {
     "/rooms/new": rooms_new_post,

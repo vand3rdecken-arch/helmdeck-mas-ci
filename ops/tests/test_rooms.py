@@ -216,6 +216,16 @@ check(hist[-1]["byKind"] == "system" and hist[-1]["card"] == out["id"]
       "the room gets a system line carrying the card id (the app links it)")
 check(len(room_henry_calls) == _wakes_before, "a card line never wakes Henry")
 
+# -- 9. the member picker ----------------------------------------------------------------
+cap = permissions.cap_for("GET", "/rooms/accounts", ["rooms", "accounts"])
+check(cap == "rooms.manage" and permissions.require(U["***"], cap) is not None
+      and permissions.require(U["ops"], cap) is None,
+      "the account list is for rooms.manage holders only")
+st, accts = call(routes_rooms.rooms_accounts_get, "ops", path="/rooms/accounts")
+check(st == 200 and {a["name"] for a in accts} == {"tien", "ops", "***", "fremd"}
+      and all(set(a) == {"name", "role"} for a in accts),
+      "it lists names and roles only - no tokens, no hashes")
+
 # -- 6. not in the account chat -------------------------------------------------------
 check(all(not a.startswith("room") and a not in (RID,) for a in db.chat_accounts()),
       "room messages never land in the per-account chat table")
