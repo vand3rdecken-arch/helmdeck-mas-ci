@@ -253,7 +253,6 @@ export const composer: Dict = {
   "chat.threads.week": { de: "Diese Woche", en: "This week" },
   "chat.threads.month": { de: "Diesen Monat", en: "This month" },
   "chat.threads.older": { de: "Älter", en: "Older" },
-  "home.ask": { de: "Henry fragen oder etwas anstoßen…", en: "Ask Henry or start something…" },
   "chat.threads.empty": { de: "Noch keine Threads. Sobald aus einer Anfrage eine Karte wird, erscheint sie hier.", en: "No threads yet. As soon as a request becomes a card, it shows up here." },
   "chat.thread.open": { de: "Thread öffnen", en: "Open thread" },
   "chat.thread.tile": { de: "Weiter im Thread dieser Karte", en: "Continues in this card's thread" },

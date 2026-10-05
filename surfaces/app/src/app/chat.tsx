@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -262,7 +262,11 @@ function ThinkingIndicator({ preview, since }: { preview?: string; since?: numbe
 // The chat body (transcript + composer + logic). `onClose` returns to the board:
 // router.back() when mounted as a route (phone), or the panel store's hide() when
 // mounted as the desktop overlay. `wide` caps/centers the column for desktop.
-function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
+//
+// `tab` = hosted as the Henry TAB (ui/henry_home.tsx): no back chevron (there is
+// nothing to go back to), the thread sheet shows finished threads by time, and
+// `tabClear` lifts the composer clear of the floating bottom tab bar.
+export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => void; wide: boolean; tab?: boolean; tabClear?: number }) {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
@@ -279,10 +283,14 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // the route would have left the desktop reporting no focus at all.
   // The inverse is the point of the fix: leaving the chat resumes the push, so
   // an answer that lands while he is on the board or away reaches him.
-  useEffect(() => {
+  // FOCUS, not mount: as the Henry TAB this body stays mounted while the owner is
+  // on the board or in a card, and a mount-bound flag would then keep reporting
+  // "looking at the chat" and swallow every push. useFocusEffect clears it the
+  // moment the screen blurs (and a card/room that takes over sets its own).
+  useFocusEffect(useCallback(() => {
     usePresence.getState().setFocusedCard(CHAT_FOCUS);
     return () => usePresence.getState().setFocusedCard(null);
-  }, []);
+  }, []));
   const [busy, setBusy] = useState(false);
   // THE MESSAGE BEING ANSWERED (messenger-style reply, owner 2026-09-25): set
   // by a swipe / the reply arrow on a bubble, shown as the composer's quote
@@ -300,6 +308,10 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   // desktop it is a permanent sidebar (CopilotOverlay/ChatScreen), so the
   // header button only exists on the narrow layout.
   const [threadsOpen, setThreadsOpen] = useState(false);
+  // same query + key as ThreadList, so it costs no extra request: how many threads
+  // wait on the owner (needs_input + failed - what the Needs tab used to count)
+  const { data: threadData } = useQuery({ queryKey: ["chatThreads"], queryFn: api.chatThreads, staleTime: 5000 });
+  const waiting = (threadData?.threads ?? []).filter((th) => th.bucket === "needs_input" || th.bucket === "failed").length;
   const nav = useRouter();
   const busyRef = useRef(false);
   busyRef.current = busy;
@@ -960,7 +972,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   }
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
-      <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>
+      {tab ? null : <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>}
       <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600" }}>{tr("chat.title")}</Text>
       {showCatchup ? (
         catchupLong ? (
@@ -975,6 +987,13 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
         <Pressable onPress={() => setThreadsOpen(true)} hitSlop={10} accessibilityLabel={tr("chat.threads")}
                    style={{ marginLeft: 6 }}>
           <Ionicons name="menu" size={24} color={t.txtSecondary} />
+          {/* what waits for the owner, visible without opening the list */}
+          {waiting > 0 ? (
+            <View style={{ position: "absolute", top: -5, right: -8, minWidth: 16, height: 16, borderRadius: 8, paddingHorizontal: 4,
+              alignItems: "center", justifyContent: "center", backgroundColor: t.warn }}>
+              <Text style={{ color: "#fff", fontSize: 10.5, fontWeight: "700" }}>{waiting}</Text>
+            </View>
+          ) : null}
         </Pressable>
       ) : null}
       {glassAvail && me?.role === "owner" ? (
@@ -1001,7 +1020,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
   if (threadsOpen && !wide) {
     return (
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-        <ThreadList current="inbox" onClose={() => setThreadsOpen(false)}
+        <ThreadList current="inbox" onClose={() => setThreadsOpen(false)} timeBuckets={tab} bottomPad={tabClear}
           onPick={(id) => { setThreadsOpen(false); if (id !== "inbox") nav.push(`/card/${id}?tab=chat`); }} />
       </View>
     );
@@ -1113,7 +1132,7 @@ function ChatBody({ onClose, wide }: { onClose: () => void; wide: boolean }) {
             onClearContext={chatCtx ? () => useCopilotPanel.getState().clearContext() : undefined}
             bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
         </View>
-        {kb > 0 ? <View style={{ height: kb }} /> : null}
+        {kb > 0 ? <View style={{ height: kb }} /> : tabClear ? <View style={{ height: tabClear }} /> : null}
       </View>
       <VoiceMode visible={voiceOpen} onClose={() => { setVoiceOpen(false); setVoiceAsk(undefined); }}
         onAsk={ask} onCancel={stop} busy={busy} initialAsk={voiceAsk} />

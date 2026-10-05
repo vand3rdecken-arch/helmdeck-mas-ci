@@ -34,7 +34,7 @@ type Props = {
   onClose?: () => void;             // phone drawer: the X / back
   embedded?: boolean;               // desktop sidebar
   timeBuckets?: boolean;            // Henry home: finished threads by last activity
-  header?: ReactNode;               // Henry home: the ask bar, above the first row
+  bottomPad?: number;               // clearance for a floating tab bar
 };
 
 const GROUP_ORDER: ChatThread["bucket"][] = ["needs_input", "failed", "attention", "running", "backlog", "done"];
@@ -77,7 +77,7 @@ export function StatusIndicator({ bucket, t }: { bucket: ChatThread["bucket"]; t
   return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.txtTertiary, opacity: 0.3 }} />;
 }
 
-export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, header }: Props) {
+export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, bottomPad }: Props) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
@@ -176,8 +176,7 @@ export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, he
           <Pressable onPress={onClose} hitSlop={10} accessibilityLabel={tr("chat.close")}><Ionicons name="close" size={22} color={t.txtSecondary} /></Pressable>
         </View>
       ) : <View style={{ height: 8 }} />}
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        {header}
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 + (bottomPad ?? 0) }}>
         <HeaderRow icon="add" label={tr("chat.threads.new")} onPress={() => router.push("/new")} />
         <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
           sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
