@@ -247,6 +247,13 @@ export const composer: Dict = {
   "chat.threads.more": { de: "Mehr anzeigen", en: "Show more" },
   "chat.threads.less": { de: "Weniger anzeigen", en: "Show less" },
   "chat.threads.now": { de: "jetzt", en: "now" },
+  // Henry home: finished threads grouped by LAST ACTIVITY (Paseo agent-list.tsx
+  // buckets), not by status - "what happened today / this week / this month".
+  "chat.threads.today": { de: "Heute", en: "Today" },
+  "chat.threads.week": { de: "Diese Woche", en: "This week" },
+  "chat.threads.month": { de: "Diesen Monat", en: "This month" },
+  "chat.threads.older": { de: "Älter", en: "Older" },
+  "home.ask": { de: "Henry fragen oder etwas anstoßen…", en: "Ask Henry or start something…" },
   "chat.threads.empty": { de: "Noch keine Threads. Sobald aus einer Anfrage eine Karte wird, erscheint sie hier.", en: "No threads yet. As soon as a request becomes a card, it shows up here." },
   "chat.thread.open": { de: "Thread öffnen", en: "Open thread" },
   "chat.thread.tile": { de: "Weiter im Thread dieser Karte", en: "Continues in this card's thread" },

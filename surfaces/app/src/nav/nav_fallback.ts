@@ -23,7 +23,7 @@ export type NavItem = { name: string; labelKey: string; icon: string; sectionKey
 // empty (boot failed). Must mirror the registry (tabs.ts + the 3 cell
 // surfaces) 1:1, or a kernel failure silently changes the shell.
 export const NAV: NavItem[] = [
-  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
+  { name: "index", labelKey: "nav.henry", icon: "sparkles-outline" },
   { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
   { name: "rooms", labelKey: "nav.rooms", icon: "people-outline" },
@@ -51,7 +51,7 @@ export const NAV: NavItem[] = [
 // tab, owner-only ones included, to every role on the phone bottom bar.
 export type TabItem = { name: string; labelKey: string; icon: string; desktopOnly?: boolean; phoneOnly?: boolean; cap?: string; hidden?: boolean };
 export const TAB_FALLBACK: TabItem[] = [
-  { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
+  { name: "index", labelKey: "nav.henry", icon: "sparkles-outline" },
   { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
   { name: "rooms", labelKey: "nav.rooms", icon: "people-outline" },

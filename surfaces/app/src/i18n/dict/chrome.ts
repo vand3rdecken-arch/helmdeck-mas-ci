@@ -8,6 +8,7 @@ export const chrome: Dict = {
   "nav.board": { de: "Board", en: "Board" },
   "nav.needsYou": { de: "Wartet auf dich", en: "Needs you" },
   "nav.dashboard": { de: "Übersicht", en: "Dashboard" },
+  "nav.henry": { de: "Henry", en: "Henry" },
   "nav.more": { de: "Mehr", en: "More" },
   "nav.processes": { de: "Prozesse", en: "Processes" },
   "nav.recordings": { de: "Aufnahmen", en: "Recordings" },

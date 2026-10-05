@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { api, type ChatThread, type ChatThreads } from "@/data/client";
 import { useT } from "@/i18n";
@@ -33,6 +33,8 @@ type Props = {
   onPick: (id: string) => void;     // "inbox" | card id
   onClose?: () => void;             // phone drawer: the X / back
   embedded?: boolean;               // desktop sidebar
+  timeBuckets?: boolean;            // Henry home: finished threads by last activity
+  header?: ReactNode;               // Henry home: the ask bar, above the first row
 };
 
 const GROUP_ORDER: ChatThread["bucket"][] = ["needs_input", "failed", "attention", "running", "backlog", "done"];
@@ -75,7 +77,7 @@ export function StatusIndicator({ bucket, t }: { bucket: ChatThread["bucket"]; t
   return <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.txtTertiary, opacity: 0.3 }} />;
 }
 
-export function ThreadList({ current, onPick, onClose, embedded }: Props) {
+export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, header }: Props) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
@@ -87,10 +89,25 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
 
   const groups = useMemo(() => {
     const threads = data?.threads ?? [];
-    return GROUP_ORDER
-      .map((b) => ({ key: b, title: tr("chat.threads." + b), items: threads.filter((th) => th.bucket === b) }))
-      .filter((g) => g.items.length > 0);
-  }, [data, tr]);
+    if (!timeBuckets) {
+      return GROUP_ORDER
+        .map((b) => ({ key: b as string, title: tr("chat.threads." + b), items: threads.filter((th) => th.bucket === b) }))
+        .filter((g) => g.items.length > 0);
+    }
+    // Henry home: live work keeps its status groups; FINISHED threads split by
+    // last activity (`at`, derived by threads.py from the last human/Henry
+    // line) so the list answers "what happened today / this week / this month".
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    const today = d0.getTime() / 1000;
+    const spans: [string, number][] = [["today", today], ["week", today - 6 * 86400], ["month", today - 29 * 86400]];
+    const timeOf = (at: number) => spans.find(([, from]) => at >= from)?.[0] ?? "older";
+    const live = GROUP_ORDER.filter((b) => b !== "done");
+    const done = threads.filter((th) => th.bucket === "done");
+    return [
+      ...live.map((b) => ({ key: b as string, title: tr("chat.threads." + b), items: threads.filter((th) => th.bucket === b) })),
+      ...["today", "week", "month", "older"].map((k) => ({ key: k, title: tr("chat.threads." + k), items: done.filter((th) => timeOf(th.at) === k) })),
+    ].filter((g) => g.items.length > 0);
+  }, [data, tr, timeBuckets]);
 
   // Paseo sidebar-header-row: minHeight 36, radius lg, icon + label
   const HeaderRow = ({ icon, label, onPress, active, sub, trailing }: { icon: ComponentProps<typeof Ionicons>["name"]; label: string; onPress: () => void; active?: boolean; sub?: string; trailing?: string }) => (
@@ -125,6 +142,32 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
     );
   };
 
+  // Henry home: the plans sit AFTER the live groups (needs / ready / working) and
+  // before planned + finished, so "what is in work" is the first thing on screen.
+  const LIVE = new Set(["needs_input", "failed", "attention", "running"]);
+  const firstRest = groups.findIndex((g) => !LIVE.has(g.key));
+  const plansBlock = (
+  (data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").length ? (
+        <View style={{ marginTop: 12 }}>
+          <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingBottom: 4 }}>{tr("chat.threads.plans")}</Text>
+          {(data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").map((p) => (
+            <Pressable key={p.id} testID="threads-plan" accessibilityLabel={p.title} onPress={() => router.push("/processes")}
+              style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8,
+                paddingRight: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: pressed ? t.surface2 : "transparent" })}>
+              <View style={{ width: 20, alignItems: "center" }}><Ionicons name="list-outline" size={14} color={t.txtSecondary} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, opacity: 0.76 }}>{p.title}</Text>
+                <View style={{ height: 3, borderRadius: 2, backgroundColor: t.surface2, marginTop: 4, overflow: "hidden" }}>
+                  <View style={{ height: 3, width: `${p.total ? Math.round((100 * p.done) / p.total) : 0}%`, backgroundColor: t.accent }} />
+                </View>
+              </View>
+              <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{p.done}/{p.total}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>
       {onClose ? (
@@ -134,6 +177,7 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
         </View>
       ) : <View style={{ height: 8 }} />}
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+        {header}
         <HeaderRow icon="add" label={tr("chat.threads.new")} onPress={() => router.push("/new")} />
         <HeaderRow icon="sparkles" label={tr("chat.threads.inbox")} active={current === "inbox"} onPress={() => onPick("inbox")}
           sub={data?.inbox?.preview} trailing={timeAgo(data?.inbox?.at ?? 0, nowS, tr("chat.threads.now"))} />
@@ -169,35 +213,19 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
             ))}
           </View>
         ) : null}
-        {(data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").length ? (
-          <View style={{ marginTop: 12 }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingBottom: 4 }}>{tr("chat.threads.plans")}</Text>
-            {(data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").map((p) => (
-              <Pressable key={p.id} testID="threads-plan" accessibilityLabel={p.title} onPress={() => router.push("/processes")}
-                style={({ pressed }) => ({ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 8, paddingLeft: 8,
-                  paddingRight: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: pressed ? t.surface2 : "transparent" })}>
-                <View style={{ width: 20, alignItems: "center" }}><Ionicons name="list-outline" size={14} color={t.txtSecondary} /></View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, lineHeight: 20, opacity: 0.76 }}>{p.title}</Text>
-                  <View style={{ height: 3, borderRadius: 2, backgroundColor: t.surface2, marginTop: 4, overflow: "hidden" }}>
-                    <View style={{ height: 3, width: `${p.total ? Math.round((100 * p.done) / p.total) : 0}%`, backgroundColor: t.accent }} />
-                  </View>
-                </View>
-                <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{p.done}/{p.total}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+        {timeBuckets ? null : plansBlock}
 
         {isLoading && !data ? <Text style={{ color: t.txtTertiary, fontSize: 12, padding: 16 }}>…</Text> : null}
         {data && groups.length === 0 ? <Text style={{ color: t.txtTertiary, fontSize: 13, padding: 16, lineHeight: 18 }}>{tr("chat.threads.empty")}</Text> : null}
 
-        {groups.map((g) => {
+        {groups.map((g, i) => {
           const open = expanded.has(g.key);
           const shown = open ? g.items : g.items.slice(0, INITIAL_VISIBLE_ITEMS);
           const hidden = g.items.length - shown.length;
           return (
-            <View key={g.key} style={{ marginTop: 12 }}>
+            <Fragment key={g.key}>
+            {timeBuckets && i === firstRest ? plansBlock : null}
+            <View style={{ marginTop: 12 }}>
               <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "500", paddingHorizontal: 16, paddingBottom: 4 }}>{g.title}</Text>
               {shown.map((th) => <Row key={th.id} th={th} />)}
               {hidden > 0 || open ? (
@@ -209,8 +237,11 @@ export function ThreadList({ current, onPick, onClose, embedded }: Props) {
                 </Pressable>
               ) : null}
             </View>
+            </Fragment>
           );
         })}
+        {/* no finished/planned group to sit in front of: the plans close the list */}
+        {timeBuckets && firstRest === -1 ? plansBlock : null}
       </ScrollView>
     </View>
   );

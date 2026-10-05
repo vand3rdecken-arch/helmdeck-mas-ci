@@ -25,7 +25,7 @@ type NavSurface = Surface & { route: string };
 // self-tests (src/kernel/__caps_selftest__.ts, card 4) can check its `cap`
 // declarations directly against a role's capability set.
 export const TABS: NavSurface[] = [
-  { id: "tab.index", title: "", path: "index", route: "index", nav: { group: "primary", order: 0, icon: "stats-chart-outline", labelKey: "nav.dashboard" } },
+  { id: "tab.index", title: "", path: "index", route: "index", nav: { group: "primary", order: 0, icon: "sparkles-outline", labelKey: "nav.henry" } },
   { id: "tab.needs", title: "", path: "needs", route: "needs", nav: { group: "primary", order: 2, icon: "notifications-outline", labelKey: "nav.needsYou" } },
   // Team rooms (backlog/team-rooms-member): every role, no `cap`. Access is the
   // room's MEMBER LIST, enforced per room by the daemon - a client/guest sees

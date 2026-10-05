@@ -1,88 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "expo-router";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator, View } from "react-native";
 
 import { api } from "@/data/client";
 import type { Me } from "@/data/types";
-import { useT } from "@/i18n";
 import { isRestricted } from "@/kernel";
 import { useTheme } from "@/theme";
-import { HenryChat } from "@/ui/henry_chat";
-import { ALL_PANELS, ALL_TILES, CapacityPanel, GatesPanel, ModelsPanel, SowPanel, StatusPanel, Tiles, WorkPanel } from "@/ui/dash_panels";
-import { useResponsive } from "@/ui/responsive";
+import { HenryHome } from "@/ui/henry_home";
 
-export default function DashboardTab() {
+// The default tab (Expo Router: index.tsx opens first) is HENRY, not a dashboard
+// (owner decree 2026-10-05): one ask bar + one thread list, see ui/henry_home.tsx.
+// The old owner StatusPanel / operator metric panels (ui/dash_panels.tsx) are no
+// longer mounted here; the operator panels were already unreachable, since an
+// operator is `isRestricted` and was redirected before they rendered.
+export default function HenryTab() {
   const t = useTheme();
-  const tr = useT();
-  const insets = useSafeAreaInsets();
-  const { wide } = useResponsive();
-  // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
-  // and a moved `v` reaches the phone as a pushed event (or the long-poll)
-  // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
-  // here only re-asked what the daemon would have said anyway, and every
-  // ask was a Cloudflare request (the 2026-09-23 rate limit).
+  // No timer: every writer moves the daemon's `v`, which reaches the phone as a
+  // pushed event that invalidates every query (app/_layout.tsx useGlobalStream).
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  // A guest (client) has no dashboard: /dashboard/data answers 403 and the tab
-  // sat on a spinner for ever. Their home is the team rooms.
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["metrics"], queryFn: api.metrics, enabled: !isRestricted(me),
-  });
-  const isOwner = me?.role === "owner";
+  // A guest (client) or operator has no Henry home: /chat/threads answers 403.
+  // Their home is the team rooms.
   if (isRestricted(me)) return <Redirect href={"/rooms" as never} />;
-
-  return (
-    <View style={{ flex: 1, backgroundColor: t.canvas }}>
-      <Text style={{ color: t.txtPrimary, fontSize: 22, fontWeight: "700", paddingTop: insets.top + 10, paddingHorizontal: 16, paddingBottom: 6 }}>
-        {tr("nav.dashboard")}
-      </Text>
-      {/* phone: the chat FAB floats at bottom 84-132px, so the last element (the
-          customize gear) needs more clearance than desktop to stay tappable */}
-      <ScrollView contentContainerStyle={{ padding: wide ? 20 : 12, paddingBottom: wide ? 120 : 170, gap: 12, width: "100%", maxWidth: wide ? 1500 : undefined, alignSelf: "center" }}>
-        {isLoading ? <ActivityIndicator color={t.accent} style={{ marginTop: 20 }} /> : null}
-        {error ? <Text style={{ color: t.danger }}>{tr("ui.offline")}</Text> : null}
-        {data ? (
-          (() => {
-            // OWNER: a very clean overview - only the single planning loop's
-            // three-corner triangle (the measured Budget/Timeline/Scope
-            // assessment), its follow-ups, and the loop's status + deltas.
-            // Every metric panel + the PM controls moved off here (controls ->
-            // Settings). OPERATOR keeps the classic all-on metrics view (no
-            // triage/settings surface on their payload).
-            const defaultRepo = (data as { settings?: { default_repo?: string } })?.settings?.default_repo;
-            if (isOwner) {
-              return <StatusPanel m={data} wide={wide} defaultRepo={defaultRepo} />;
-            }
-            const panels = [...ALL_PANELS];
-            const tiles = [...ALL_TILES];
-            const showCap = panels.includes("capacity");
-            const showGates = panels.includes("gates");
-            return (
-              <>
-                <Tiles m={data} wide={wide} tiles={tiles} />
-                {wide && showCap && showGates ? (
-                  <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-                    <View style={{ flex: 1 }}><CapacityPanel m={data} /></View>
-                    <View style={{ flex: 1 }}><GatesPanel m={data} /></View>
-                  </View>
-                ) : (
-                  <>
-                    {showCap ? <CapacityPanel m={data} /> : null}
-                    {showGates ? <GatesPanel m={data} /> : null}
-                  </>
-                )}
-                {panels.includes("sows") ? <SowPanel m={data} /> : null}
-                {panels.includes("models") ? <ModelsPanel m={data} /> : null}
-                {panels.includes("work") ? <WorkPanel m={data} /> : null}
-              </>
-            );
-          })()
-        ) : null}
-      </ScrollView>
-      {/* same agent chat as the board - the SHARED launcher (ui/henry_chat.tsx),
-          which self-gates on the copilot cell and picks the desktop panel vs. the
-          /chat route itself. */}
-      <HenryChat />
-    </View>
-  );
+  if (!me) return <View style={{ flex: 1, backgroundColor: t.canvas, justifyContent: "center" }}><ActivityIndicator color={t.accent} /></View>;
+  return <HenryHome />;
 }

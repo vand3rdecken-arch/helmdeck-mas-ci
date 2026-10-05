@@ -148,7 +148,7 @@ function Sidebar({ state, navigation }: any) {
         <Text style={{ color: t.txtPrimary, fontWeight: "700", fontSize: 14.5 }}>HelmDeck</Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-        {navItems.filter((item) => can(me, item.cap)).map((item) => {
+        {navItems.filter((item) => can(me, item.cap) && !foldedIntoHenry(me, item.name)).map((item) => {
           const active = activeName === item.name;
           const color = active ? t.txtPrimary : t.txtSecondary;
           return (
@@ -199,6 +199,16 @@ function Sidebar({ state, navigation }: any) {
 // gating fields at all, so a kernel failure (or, before the registry path was
 // fixed below, even the normal registry path) showed every tab, owner-only
 // ones included, to every role on the phone bottom bar.
+
+// The OWNER's Henry tab absorbs "Needs you" (the top groups of its thread list:
+// needs_input + failed, which is what BoardList filter="needs_you" showed), so
+// that tab is drawn for nobody who owns the board. Still registered -
+// useOnlyUserDefinedScreens=true would make /needs (push links) unreachable if
+// it were dropped. Rooms stays a tab until it is folded into the same list as a
+// chip (operator/client keep it for good: it is their home).
+function foldedIntoHenry(me: { role?: string } | null | undefined, name: string): boolean {
+  return me?.role === "owner" && name === "needs";
+}
 
 export default function TabsLayout() {
   const tr = useT();
@@ -256,7 +266,7 @@ export default function TabsLayout() {
         // whole reason the flag exists rather than an omitted entry - see
         // kernel/keys.ts's Surface.nav.hidden.
         const hide =
-          item.hidden || (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly)
+          item.hidden || foldedIntoHenry(me, item.name) || (!sidebar && item.desktopOnly) || (sidebar && item.phoneOnly)
             ? { tabBarItemStyle: { display: "none" as const }, tabBarButton: () => null }
             : {};
         return (
