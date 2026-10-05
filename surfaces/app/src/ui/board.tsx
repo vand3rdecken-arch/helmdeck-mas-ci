@@ -50,6 +50,11 @@ const STATUS_KEY: Record<string, string> = {
   needs_you: "status.needsYou", bounced: "status.bounced",
   submitted: "status.submitted", accepted: "status.accepted",
 };
+/** The card is parked ON a task of its own (waiting_on === "background", set by
+ *  the daemon from the worker's registered background tasks): needs_you is the
+ *  stored status, but there is nothing for the owner to do - the card detail
+ *  already says "nicht auf dich". The board must read the same. */
+const waitsOnTask = (k: Track) => k.status === "needs_you" && k.waiting_on === "background";
 const PRIO_KEY: Record<string, string> = {
   urgent: "prio.urgent", high: "prio.high", medium: "prio.medium", low: "prio.low",
 };
@@ -169,7 +174,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const tr = useT();
   const flat = useAiFlat();
   const router = useRouter();
-  const tint = k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
+  const tint = waitsOnTask(k) ? null : k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
   // tap-to-expand for the last-reply/report preview (see below)
   const [subOpen, setSubOpen] = useState(false);
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
@@ -262,7 +267,8 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepNo ? tr("board.step", { n: String(stepNo) }) : (k.process_title ?? tr("board.process"))}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
-        {k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
+        {waitsOnTask(k) ? <Chip text={tr("board.card.waitsOnTask")} dot={t.ai} />
+          : k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
         {/* GxP: only rendered for a card in the regulated scope - t.human is the
             "a person did this" token, so the badge reads as a human obligation
             rather than another machine status. */}
@@ -758,7 +764,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const showDemoInvite = !filter && !demoActive && rows.length === 0 && !isLoading
     && (offline || !!error || !!dataErr);
   const shown = rows.filter((k) => {
-    if (eff === "needs_you") return (k.status === "needs_you" || k.status === "bounced") && !k.archived;
+    if (eff === "needs_you") return ((k.status === "needs_you" && !waitsOnTask(k)) || k.status === "bounced") && !k.archived;
     if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
     // repo scope: the card's own workplace path (machine cards carry a plain
@@ -815,7 +821,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // board, the very crash the `rows` guard above was added for. This list
   // deliberately ignores the repo/client scope chips (see above).
   const nextUp = rows
-    .filter((k) => k.lane !== "done" && !k.archived && (k.status === "needs_you" || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
+    .filter((k) => k.lane !== "done" && !k.archived && ((k.status === "needs_you" && !waitsOnTask(k)) || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   // Cards a batch sign-off could cover: in the regulated scope, resting on
