@@ -342,7 +342,7 @@ def _mtime(path):
 
 def viewer_for(user, role, rooms=(), cards=()):
     """WHO is reading, for the memory read paths. None = the owner-side Henry
-    (owner and operator): the legacy view, all three stores. Anyone else gets a
+    (the owner): the legacy view, all three stores. Anyone else, the operator included, gets a
     restricted viewer that sees only their own person notes plus the notes of
     the rooms and cards they belong to - never the owner's store, the CLI
     auto-memory or the repos' shared knowledge (team-rooms-member stage 2: a
@@ -350,7 +350,10 @@ def viewer_for(user, role, rooms=(), cards=()):
 
     `rooms`/`cards` come from the CALLER's record of membership at turn time;
     nothing here remembers them."""
-    if role in ("owner", "operator"):
+    # restricted = client AND (since the assignment model, 2026-10-05) operator
+    # - spine.auth.auth.RESTRICTED_ROLES; owner and the read-only roles keep the
+    # whole store. Kept as literals: this module imports nothing from auth.
+    if role not in ("client", "operator"):
         return None
     return {"account": user, "rooms": tuple(rooms or ()), "cards": tuple(cards or ())}
 

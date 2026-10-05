@@ -39,6 +39,13 @@ export const rooms: Dict = {
   "card.access.assigned": { de: "Arbeitet daran (Operator)", en: "Works on it (operator)" },
   "card.access.shared": { de: "Sieht Titel, Status und Ergebnis", en: "Sees title, status and result" },
 
+  "henry.title": { de: "Henry", en: "Henry" },
+  "henry.placeholder": { de: "Frag Henry zu deiner Arbeit …", en: "Ask Henry about your work …" },
+  "henry.empty": {
+    de: "Henry kennt deine Karten und das, was du ihm erzählst. Er berät nur und führt nichts aus. Dieses Gespräch ist privat.",
+    en: "Henry knows your cards and what you tell him. He only advises and does not act. This conversation is private.",
+  },
+
   "shared.hint": { de: "Diese Karte wurde mit dir geteilt. Du siehst Titel, Status und Ergebnis.", en: "This card was shared with you. You see its title, status and result." },
   "shared.result": { de: "Ergebnis", en: "Result" },
   "shared.noResult": { de: "Noch kein Ergebnis.", en: "No result yet." },

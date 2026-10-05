@@ -409,6 +409,12 @@ export interface RoomDetail {
 }
 export interface RoomAccount { name: string; role: string }
 
+// A line of a restricted role's PRIVATE Henry conversation (the `chat` table).
+export interface PrivateHenryEntry {
+  seq?: number; role: "user" | "assistant"; text: string; by?: string;
+  date?: string; ts?: string; error?: boolean;
+}
+
 // Chat consent (cells/copilot/chat/chat_grants.py): who may read MY private
 // Henry chat, and the reads made so far. `active` is derived by the daemon.
 export interface ChatGrantRead { grant_id: string; reader: string; ts: number; n: number }

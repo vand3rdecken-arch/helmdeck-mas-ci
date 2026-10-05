@@ -53,8 +53,10 @@ db.memory_put("depot", "Das Depot enthaelt Aktien *** und ***, Summe ***", actor
 db.memory_put("preferences", "OWNERPREF Antworten kurz und auf Deutsch", actor="henry")
 
 # -- 4. legacy view unchanged -------------------------------------------------
-check(cm.viewer_for("owner", "owner") is None and cm.viewer_for("op", "operator") is None,
-      "owner and operator keep the legacy (unrestricted) view")
+check(cm.viewer_for("owner", "owner") is None,
+      "the owner keeps the legacy (unrestricted) view")
+check(cm.viewer_for("op", "operator") is not None and cm.viewer_for("***", "client") is not None,
+      "the operator is restricted like a guest since the assignment model (2026-10-05)")
 check(set(db.memory_all()) == {"depot", "preferences"},
       "memory_all() is the owner's person scope")
 

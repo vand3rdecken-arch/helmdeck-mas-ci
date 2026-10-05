@@ -89,9 +89,13 @@ export function HenryFab({ context, style, testID }:
   // no private Henry chat for a guest (client): the board has its own launcher
   // (board.tsx renders this directly), so the guard lives HERE, not only in HenryChat
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  if (!enabled || isRestricted(me)) return null;
+  const router = useRouter();
+  if (!enabled || me?.role === "client") return null;
+  // an operator has no board chat (it names every card); theirs is the private
+  // Henry screen, which knows only their own cards
+  const onPress = me?.role === "operator" ? () => router.push("/henry" as never) : () => open(context);
   return (
-    <Pressable testID={testID} onPress={() => open(context)}
+    <Pressable testID={testID} onPress={onPress}
       accessibilityLabel={tr("chat.askHenry")}
       style={[{ width: 48, height: 48, borderRadius: 15, backgroundColor: t.surface1,
         borderWidth: 1, borderColor: t.borderSubtle, alignItems: "center", justifyContent: "center",
@@ -114,15 +118,16 @@ export function HenryChat({ context, bottom, testID }:
   // so the button would only open a dead end. Their Henry lives in the team
   // rooms (@henry). Same cached /me every screen already reads.
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
-  if (isRestricted(me)) return null;
+  if (me?.role === "client") return null;
   return (
     <>
       <View style={{ position: "absolute", right: 18, bottom: bottom ?? (wide ? 24 : 84) }}>
         <HenryFab context={context} testID={testID} />
       </View>
       {/* self-guards on !wide || !open (chat.tsx), so mounting it costs nothing
-          on the phone and nothing while the panel is closed. */}
-      <CopilotOverlay />
+          on the phone and nothing while the panel is closed. The board-chat
+          overlay is the OWNER's: an operator's private Henry is a screen. */}
+      {isRestricted(me) ? null : <CopilotOverlay />}
     </>
   );
 }

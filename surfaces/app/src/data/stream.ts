@@ -117,6 +117,7 @@ export async function ensureChatFresh(qc: QueryClient): Promise<void> {
       // room refetch from the same wake-up instead of a timer of their own
       void qc.invalidateQueries({ queryKey: ["rooms"] });
       void qc.invalidateQueries({ queryKey: ["room"] });
+      void qc.invalidateQueries({ queryKey: ["henry"] });         // a restricted role's private Henry
       const st = qc.getQueryState(["chatHistory"]);
       // no observer/never fetched (chat not open) counts as fresh: the screen
       // fetches on mount, and refetchQueries above is a no-op for it anyway.

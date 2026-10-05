@@ -90,7 +90,7 @@ _RESTRICTED_POST = {
                "/rooms/post", "/rooms/read", "/rooms/card"),
     "operator": ("/tracks/new", "/tracks/share", "/presence", "/push/register",
                  "/rooms/post", "/rooms/read", "/rooms/card", "/rooms/new", "/rooms/members",
-                 "/sign", "/sign/batch"),
+                 "/henry/post", "/sign", "/sign/batch"),
 }
 _RESTRICTED_CARD_VERBS = {
     "client": ("steer", "cancel", "answer"),

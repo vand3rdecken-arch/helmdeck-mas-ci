@@ -955,6 +955,8 @@ export const api = {
     req<{ id: string; members: string[] }>("POST", "/rooms/members", { room, add, remove }),
   roomCard: (room: string, task: string) =>
     req<{ id: string; geteilt_mit: string[] }>("POST", "/rooms/card", { room, task }),
+  henryHistory: () => req<{ entries: import("./types").PrivateHenryEntry[] }>("GET", "/henry/history"),
+  henryPost: (text: string) => req<import("./types").PrivateHenryEntry>("POST", "/henry/post", { text }),
   roomAccounts: () => req<import("./types").RoomAccount[]>("GET", "/rooms/accounts"),
   trackAssign: (id: string, add: string[], remove: string[]) =>
     req<{ id: string; zugewiesen_an: string[] }>("POST", "/tracks/assign", { id, add, remove }),
