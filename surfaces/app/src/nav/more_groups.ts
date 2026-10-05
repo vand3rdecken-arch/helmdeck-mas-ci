@@ -36,6 +36,8 @@ export const GROUPS: readonly [string, readonly (readonly [string, string, strin
   ["more.grp.logs", [
     ["history", "nav.history", "time-outline", "more.sub.history", TEAM_MEMBER_CAP],                // routes_system.py history_get: client blocked, not yet migrated
     ["escalations", "nav.escalations", "alert-circle-outline", "more.sub.escalations", TEAM_MEMBER_CAP], // routes_info.py escalations_get: "not for clients", not yet migrated
+    // who may read MY private Henry chat (chat_grants.py): only roles that HAVE a private chat
+    ["chat_grants", "nav.chatGrants", "lock-closed-outline", "more.sub.chatGrants", TEAM_MEMBER_CAP],
     ["sessions", "nav.sessions", "chatbubbles-outline", "more.sub.sessions", TEAM_MEMBER_CAP],       // routes_system.py sessions_claude_get: client blocked, not yet migrated
     ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings", "recordings.view"],    // routes_runs.py runs_get: capability-gated (card 2)
     ["audit", "nav.audit", "file-tray-full-outline", "more.sub.audit", "audit.read"],   // routes_audit.py audit_get: capability-gated (card 2), screen built card 5

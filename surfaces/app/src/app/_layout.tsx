@@ -240,7 +240,7 @@ function usePushWiring() {
       const m = decryptPush(data);
       const { wake, present } = decideChatPush(
         m?.kind, usePresence.getState().focusedCard, CHAT_FOCUS,
-        AppState.currentState === "active");
+        AppState.currentState === "active", m?.room);
       if (wake) void ensureChatFresh(queryClient);
       if (present) { presentDecrypted(data); announceDecrypted(data); }
     });
@@ -254,6 +254,7 @@ function usePushWiring() {
       let track: string | undefined = data?.track;
       let kind: string | undefined = data?.kind;
       let body: string | undefined = data?.body;
+      let room: string | undefined = data?.room;
       // Tri-state, not boolean: a local notif with plain fields is "resolved"
       // immediately; a system-tray notif needs the cipher decrypted, and THAT
       // can genuinely fail (stale keys) or simply have nothing to decrypt at
@@ -274,13 +275,13 @@ function usePushWiring() {
       if (!track && !kind && data?.cipher) {
         await hydration;
         const m = decryptPush(data);
-        if (m) { track = m.track; kind = m.kind; body = m.body; }
+        if (m) { track = m.track; kind = m.kind; body = m.body; room = m.room; }
       }
       // WHERE it lands is pushRoute's decision, not this listener's: it is pure
       // and tested (test_push_route.js), and it returns null for exactly the
       // unreadable tap above. This hook keeps only what needs the runtime -
       // decrypting and navigating.
-      const dest = pushRoute({ track, kind, body });
+      const dest = pushRoute({ track, kind, body, room });
       if (dest) router.push(dest as never);
     });
     return () => { recv.remove(); resp.remove(); };

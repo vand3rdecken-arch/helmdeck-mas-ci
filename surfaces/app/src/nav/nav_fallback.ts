@@ -26,6 +26,7 @@ export const NAV: NavItem[] = [
   { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
   { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
+  { name: "rooms", labelKey: "nav.rooms", icon: "people-outline" },
   { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", sectionKey: "nav.sectionWorkflow" },
   // recordings (/runs) is capability-gated server-side (routes_runs.py,
   // recordings.view - card 2).
@@ -53,6 +54,7 @@ export const TAB_FALLBACK: TabItem[] = [
   { name: "index", labelKey: "nav.dashboard", icon: "stats-chart-outline" },
   { name: "board", labelKey: "nav.board", icon: "grid-outline" },
   { name: "needs", labelKey: "nav.needsYou", icon: "notifications-outline" },
+  { name: "rooms", labelKey: "nav.rooms", icon: "people-outline" },
   { name: "processes", labelKey: "nav.processes", icon: "git-network-outline", desktopOnly: true },
   { name: "recordings", labelKey: "nav.recordings", icon: "videocam-outline", desktopOnly: true, cap: "recordings.view" },
   { name: "sessions", labelKey: "nav.sessions", icon: "chatbubbles-outline", desktopOnly: true, cap: TEAM_MEMBER_CAP },

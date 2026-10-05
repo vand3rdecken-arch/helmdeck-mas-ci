@@ -382,3 +382,38 @@ export interface Usage {
   status: "ok" | "unavailable" | "error"; plan: string | null;
   windows: UsageWindow[]; fetchedAt?: string; error?: string;
 }
+
+// Team rooms (cells/copilot/chat/rooms.py, backlog/team-rooms-member): a thread
+// with a member list. `unread` is derived by the daemon from THIS account's read
+// cursor on every call - never a counter the client keeps.
+export interface RoomSummary {
+  id: string; name: string; members: string[];
+  unread: number; unread_mentions: number;
+  henry_on_mention?: boolean; created_by?: string;
+  last_seq: number; preview: string; last_by: string; last_at: string;
+}
+export interface RoomMessage {
+  seq: number; text: string; by: string;
+  byKind: "human" | "henry" | "system";
+  date?: string; ts?: string;
+  mentions?: string[]; to?: string; card?: string; error?: boolean;
+}
+export interface RoomDetail {
+  room: { id: string; name: string; members: string[]; created_by?: string; henry_on_mention?: boolean } | null;
+  messages: RoomMessage[];
+}
+export interface RoomAccount { name: string; role: string }
+
+// Chat consent (cells/copilot/chat/chat_grants.py): who may read MY private
+// Henry chat, and the reads made so far. `active` is derived by the daemon.
+export interface ChatGrantRead { grant_id: string; reader: string; ts: number; n: number }
+export interface ChatGrant {
+  id: string; account: string; grantee: string;
+  created: number; expires: number; revoked: number | null;
+  active: boolean; reads?: ChatGrantRead[];
+}
+export interface ChatGrants { given: ChatGrant[]; received: ChatGrant[] }
+export interface GrantedChat {
+  account: string; grant: string; expires: number;
+  entries: { role?: string; kind?: string; text?: string; ts?: string; date?: string }[];
+}

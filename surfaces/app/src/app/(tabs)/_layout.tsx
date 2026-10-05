@@ -208,6 +208,11 @@ export default function TabsLayout() {
   const surfaces = useSurfaces();
   const disabledCells = useDisabledCellSurfaces();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  // unread team-room messages for the Rooms tab badge. Derived by the daemon from
+  // THIS account's read cursor; refreshed from the chat cursor (stream.ts), not a
+  // timer. retry:false - an older daemon without /rooms just shows no badge.
+  const { data: roomList } = useQuery({ queryKey: ["rooms"], queryFn: api.rooms, staleTime: 5000, retry: false });
+  const roomUnread = Array.isArray(roomList) ? roomList.reduce((n, r) => n + (r.unread || 0), 0) : 0;
   const fromRegistry = surfaces
     .filter((s) => s.route && s.nav && !isSurfaceCellDisabled(s, disabledCells))
     .map((s) => ({ name: s.route as string, labelKey: s.nav!.labelKey ?? "", icon: (s.nav!.icon ?? "ellipse-outline") as IconName, desktopOnly: s.nav!.desktopOnly, phoneOnly: s.nav!.phoneOnly, cap: s.nav!.cap, hidden: s.nav!.hidden }));
@@ -258,7 +263,10 @@ export default function TabsLayout() {
           <Tabs.Screen
             key={item.name}
             name={item.name}
-            options={{ title: tr(item.labelKey), tabBarIcon: icon(item.icon), ...hide }}
+            options={{
+              title: tr(item.labelKey), tabBarIcon: icon(item.icon), ...hide,
+              ...(item.name === "rooms" && roomUnread > 0 ? { tabBarBadge: roomUnread } : {}),
+            }}
           />
         );
       })}

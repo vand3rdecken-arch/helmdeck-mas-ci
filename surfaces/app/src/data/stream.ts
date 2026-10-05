@@ -112,6 +112,11 @@ export async function ensureChatFresh(qc: QueryClient): Promise<void> {
       _again = false;
       await qc.refetchQueries({ queryKey: ["chatHistory"] });
       void qc.invalidateQueries({ queryKey: ["chatThreads"] });   // previews/order follow the chat
+      // team rooms ride the SAME cursor (db.room_message_add -> bump_chat): a
+      // moved `c` is also a new room message, so the room list and any open
+      // room refetch from the same wake-up instead of a timer of their own
+      void qc.invalidateQueries({ queryKey: ["rooms"] });
+      void qc.invalidateQueries({ queryKey: ["room"] });
       const st = qc.getQueryState(["chatHistory"]);
       // no observer/never fetched (chat not open) counts as fresh: the screen
       // fetches on mount, and refetchQueries above is a no-op for it anyway.

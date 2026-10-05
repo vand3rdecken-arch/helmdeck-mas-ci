@@ -92,6 +92,21 @@ ok(backgroundTaskPresents("background") === true,
 ok(backgroundTaskPresents(null) === true && backgroundTaskPresents(undefined) === true,
    "headless start (killed app, no AppState yet): the task presents");
 
+// 7) TEAM-ROOM pushes ---------------------------------------------------------
+const roomElsewhere = decideChatPush("room", null, "chat", true, "r1");
+ok(roomElsewhere.wake === true && roomElsewhere.present === true,
+   "a room push while you are elsewhere wakes the queries and shows the banner");
+const roomReading = decideChatPush("room", "room:r1", "chat", true, "r1");
+ok(roomReading.wake === true && roomReading.present === false,
+   "reading THAT room: it still wakes, but no banner over the room you are in");
+const otherRoom = decideChatPush("room", "room:r2", "chat", true, "r1");
+ok(otherRoom.present === true, "reading ANOTHER room does not suppress it");
+const roomBg = decideChatPush("room", "room:r1", "chat", false, "r1");
+ok(roomBg.present === true, "app backgrounded: shown even if the room was the last focus");
+const chatStillSame = decideChatPush("chat", "chat", "chat", true);
+ok(chatStillSame.wake === true && chatStillSame.present === false,
+   "the Henry chat rule is unchanged by the optional room argument");
+
 console.log();
 if (fails.length) {
   console.log(`FAILED (${fails.length}):`);

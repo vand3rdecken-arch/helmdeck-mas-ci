@@ -33,10 +33,17 @@ export function decideChatPush(
   focusedCard: string | null | undefined,
   chatFocusValue: string,
   appActive: boolean,
+  room?: string,
 ): ChatPushDecision {
   const isChatReply = kind === "chat";
   const readingItNow = appActive && focusedCard === chatFocusValue;
-  return { wake: isChatReply, present: !(isChatReply && readingItNow) };
+  // A TEAM-ROOM push (@mention / Henry's answer to you): same WhatsApp/Slack
+  // rule - the room screen announces itself as focus "room:<id>", so a push for
+  // the room you are reading does not buzz over it. Either way the push is proof
+  // that a room message landed, so it wakes the queries.
+  const isRoom = kind === "room";
+  const readingRoom = isRoom && !!room && appActive && focusedCard === "room:" + room;
+  return { wake: isChatReply || isRoom, present: !((isChatReply && readingItNow) || readingRoom) };
 }
 
 /** Whether the BACKGROUND notification task should present a data push.

@@ -16,6 +16,7 @@ import { demo } from "./dict/demo";
 import { diag } from "./dict/diag";
 import { net } from "./dict/net";
 import { onboard } from "./dict/onboard";
+import { rooms } from "./dict/rooms";
 import { screens } from "./dict/screens";
 import { settings } from "./dict/settings";
 import { sign } from "./dict/sign";
@@ -32,7 +33,7 @@ export type Dict = Record<string, Entry>;
 
 export const DICT: Dict = {
   ...chrome, ...board, ...card, ...composer, ...demo, ...diag, ...net, ...onboard, ...screens, ...settings,
-  ...sign, ...audit, ...gxp, ...harnessRules,
+  ...sign, ...audit, ...gxp, ...harnessRules, ...rooms,
 };
 
 /** The device's language, used ONLY as the fallback when the workspace hasn't

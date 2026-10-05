@@ -27,6 +27,10 @@ type NavSurface = Surface & { route: string };
 export const TABS: NavSurface[] = [
   { id: "tab.index", title: "", path: "index", route: "index", nav: { group: "primary", order: 0, icon: "stats-chart-outline", labelKey: "nav.dashboard" } },
   { id: "tab.needs", title: "", path: "needs", route: "needs", nav: { group: "primary", order: 2, icon: "notifications-outline", labelKey: "nav.needsYou" } },
+  // Team rooms (backlog/team-rooms-member): every role, no `cap`. Access is the
+  // room's MEMBER LIST, enforced per room by the daemon - a client/guest sees
+  // exactly the rooms they were put in, an empty list otherwise.
+  { id: "tab.rooms", title: "", path: "rooms", route: "rooms", nav: { group: "primary", order: 3, icon: "people-outline", labelKey: "nav.rooms" } },
   { id: "tab.recordings", title: "", path: "recordings", route: "recordings", nav: { group: "more", order: 4, icon: "videocam-outline", labelKey: "nav.recordings", desktopOnly: true } },
   // /sessions/claude (routes_system.py) is NOT yet migrated onto permissions.py.
   { id: "tab.sessions", title: "", path: "sessions", route: "sessions", nav: { group: "more", order: 5, icon: "chatbubbles-outline", labelKey: "nav.sessions", cap: TEAM_MEMBER_CAP, desktopOnly: true } },

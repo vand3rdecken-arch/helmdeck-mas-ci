@@ -27,6 +27,8 @@ export interface PushTarget {
   track?: string;
   kind?: string;
   body?: string;
+  /** A team-room push (notify.room_event) names the room it belongs to. */
+  room?: string;
 }
 
 export function pushRoute(m: PushTarget): PushRoute | null {
@@ -45,6 +47,11 @@ export function pushRoute(m: PushTarget): PushRoute | null {
   if (kind === "done" && track) return { pathname: "/chat" };
   // HENRY ANSWERED (notify.chat_reply): the news IS the chat, so land in it.
   if (kind === "chat") return { pathname: "/chat" };
+  // SOMEONE ADDRESSED YOU IN A ROOM (notify.room_event: an @mention, or Henry's
+  // answer to your question): land in that room. A room push without its room id
+  // (an older daemon) falls through to the trackless dashboard, same floor as
+  // any unknown kind.
+  if (kind === "room" && m.room) return { pathname: "/room/[id]", params: { id: m.room } };
   // A question/needs_you/bounced push is news in THAT CARD's chat, so land
   // there directly instead of the overview tab he would have to switch past.
   if (track) return { pathname: "/card/[id]", params: { id: track, tab: "chat" } };

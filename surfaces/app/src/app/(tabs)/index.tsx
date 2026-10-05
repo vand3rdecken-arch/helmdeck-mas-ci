@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Redirect } from "expo-router";
 import { ActivityIndicator, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -20,9 +21,14 @@ export default function DashboardTab() {
   // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
   // here only re-asked what the daemon would have said anyway, and every
   // ask was a Cloudflare request (the 2026-09-23 rate limit).
-  const { data, isLoading, error } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics });
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  // A guest (client) has no dashboard: /dashboard/data answers 403 and the tab
+  // sat on a spinner for ever. Their home is the team rooms.
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["metrics"], queryFn: api.metrics, enabled: me?.role !== "client",
+  });
   const isOwner = me?.role === "owner";
+  if (me?.role === "client") return <Redirect href={"/rooms" as never} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas }}>

@@ -16,6 +16,7 @@ import type { Track, Me, EconCard } from "@/data/types";
 import { useT } from "@/i18n";
 import { executorLabel, laneColor, statusColor, useTheme } from "@/theme";
 import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
+import { SharedCardView } from "@/ui/shared_card";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
 import { cur } from "@/ui/dash_panels";
 import { Composer, type Recipient } from "@/ui/card_composer";
@@ -639,7 +640,22 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
 
 // ---- screen ---------------------------------------------------------------
 
+// THE SWITCH. A guest (client) opening a card that is NOT theirs - one somebody
+// shared with them - gets the read-only summary (ui/shared_card.tsx), because the
+// daemon sends only title/status/result for it. Everyone else (owner, operator, a
+// guest on their own card) gets the full screen below, unchanged. This wrapper
+// has fixed hooks of its own, so choosing between the two components never
+// changes a component's hook order.
 export default function CardScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
+  const { data: one } = useQuery({ queryKey: ["tracks", id], queryFn: () => api.track(id!), enabled: !!id });
+  const card = one && !(one as { error?: string }).error ? (one as Track) : undefined;
+  if (me?.role === "client" && card && card.client !== me.name) return <SharedCardView k={card} />;
+  return <FullCardScreen />;
+}
+
+function FullCardScreen() {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();

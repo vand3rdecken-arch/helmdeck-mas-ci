@@ -91,6 +91,13 @@ ok(pushRoute({ kind: "chat" }).pathname === "/chat",
 ok(pushRoute({ track: "c-1", kind: "done" }).pathname === "/chat",
    "a DONE push with no body still lands in the chat and does not throw");
 
+// 4) a TEAM-ROOM push (notify.room_event: an @mention or Henry's answer) -------
+const room = pushRoute({ track: "", kind: "room", room: "r1a2b3c4", body: "***: @tien schau mal" });
+ok(room && room.pathname === "/room/[id]" && room.params && room.params.id === "r1a2b3c4",
+   "kind='room' opens THAT room");
+ok(pushRoute({ kind: "room" }).pathname === "/(tabs)",
+   "a room push without its room id (older daemon) degrades to the dashboard, never a broken route");
+
 console.log();
 if (fails.length) {
   console.log(`FAILED (${fails.length}):`);

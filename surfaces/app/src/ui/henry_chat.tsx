@@ -85,7 +85,10 @@ export function HenryFab({ context, style, testID }:
   const tr = useT();
   const open = useOpenHenry();
   const enabled = useCellEnabled("copilot");
-  if (!enabled) return null;
+  // no private Henry chat for a guest (client): the board has its own launcher
+  // (board.tsx renders this directly), so the guard lives HERE, not only in HenryChat
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  if (!enabled || me?.role === "client") return null;
   return (
     <Pressable testID={testID} onPress={() => open(context)}
       accessibilityLabel={tr("chat.askHenry")}
@@ -106,6 +109,11 @@ export function HenryFab({ context, style, testID }:
 export function HenryChat({ context, bottom, testID }:
   { context?: ChatContext; bottom?: number; testID?: string }) {
   const { wide } = useResponsive();
+  // A guest (client) has no private Henry chat - every /chat route answers 403 -
+  // so the button would only open a dead end. Their Henry lives in the team
+  // rooms (@henry). Same cached /me every screen already reads.
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  if (me?.role === "client") return null;
   return (
     <>
       <View style={{ position: "absolute", right: 18, bottom: bottom ?? (wide ? 24 : 84) }}>

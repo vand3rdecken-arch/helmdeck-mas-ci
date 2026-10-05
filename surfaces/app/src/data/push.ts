@@ -114,7 +114,7 @@ export async function registerForPush() {
 /** Decrypt a sealed data-only push {cipher} -> {title, body, track}. The daemon
  *  (notify.push_fcm) seals with its sk + the pinned phone pub; we open with our
  *  sk + the daemon pub. */
-export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string; kind?: string; ask?: Ask } | null {
+export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string; kind?: string; room?: string; ask?: Ask } | null {
   const { mySec, daemonPub } = useConfig.getState();
   if (!data?.cipher || !mySec || !daemonPub) return null;
   try { return JSON.parse(open(data.cipher, mySec, daemonPub)); } catch { return null; }
@@ -130,10 +130,12 @@ export function decryptPush(data?: Record<string, string>): { title: string; bod
  *  resolves a tap from the notification the owner actually pressed and never
  *  has to re-decrypt or trust a category that may since have been re-registered
  *  with a newer question's options. */
-async function notificationContent(m: { title: string; body: string; track?: string; kind?: string; ask?: Ask }) {
+async function notificationContent(m: { title: string; body: string; track?: string; kind?: string; room?: string; ask?: Ask }) {
   const data: Record<string, string> = {
     track: m.track ?? "", kind: m.kind ?? "", body: m.body ?? "",
   };
+  // a team-room push names its room so the tap can open it (push_route.ts)
+  if (m.room) data.room = m.room;
   // Every one of the 3 card actions POSTs to a CARD (steer / cancel / answer)
   // and its handler returns early without a `track` - so on a trackless push
   // they render as three buttons that silently do nothing. A Henry chat reply

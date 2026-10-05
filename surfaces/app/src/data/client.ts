@@ -942,6 +942,26 @@ export const api = {
   engines: (refresh = false) => req<{ engines: EngineEntry[] }>("GET", "/engines" + (refresh ? "?refresh=1" : "")),
   usage: () => req<Usage>("GET", "/usage"),
   me: () => req<Me>("GET", "/me"),
+  // Team rooms + chat consent. Every path is membership/grant-gated by the
+  // daemon; a room the caller is not in answers 404 like an unknown id.
+  rooms: () => req<import("./types").RoomSummary[]>("GET", "/rooms"),
+  roomMessages: (room: string, after = 0) =>
+    req<import("./types").RoomDetail>("GET", `/rooms/messages?room=${encodeURIComponent(room)}${after ? `&after=${after}` : ""}`),
+  roomPost: (room: string, text: string) =>
+    req<import("./types").RoomMessage>("POST", "/rooms/post", { room, text }),
+  roomNew: (name: string, members: string[]) =>
+    req<{ id: string; name: string; members: string[] }>("POST", "/rooms/new", { name, members }),
+  roomMembers: (room: string, add: string[], remove: string[]) =>
+    req<{ id: string; members: string[] }>("POST", "/rooms/members", { room, add, remove }),
+  roomCard: (room: string, task: string) =>
+    req<{ id: string; geteilt_mit: string[] }>("POST", "/rooms/card", { room, task }),
+  roomAccounts: () => req<import("./types").RoomAccount[]>("GET", "/rooms/accounts"),
+  chatGrants: () => req<import("./types").ChatGrants>("GET", "/chat/grants"),
+  chatGrantCreate: (grantee: string, hours: number) =>
+    req<import("./types").ChatGrant>("POST", "/chat/grants", { grantee, hours }),
+  chatGrantRevoke: (id: string) => req<import("./types").ChatGrant>("POST", "/chat/grants/revoke", { id }),
+  chatAdminRead: (account: string) =>
+    req<import("./types").GrantedChat>("GET", `/chat/admin?account=${encodeURIComponent(account)}`),
   // MY OWN profile rows (accounts-boards-prd phase 1). PUT, not POST: the
   // daemon answers this verb on exactly one path, deliberately kept off
   // do_POST because that chain carries the "clients can file and comment only"
