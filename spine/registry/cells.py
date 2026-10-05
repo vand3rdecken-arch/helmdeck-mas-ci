@@ -232,9 +232,10 @@ CELLS = [
         # deliberate narrowing, not an oversight, decided by the owner
         # explicitly rather than left as a side effect of the merge).
         id="copilot", enabled_key="copilotEnabled",
-        prefixes=("/chat", "/pm/"),
+        prefixes=("/chat", "/pm/", "/rooms"),
         role="board-copilot.md", surface="surfaces.chat",
         logic_files=("chat/copilot.py", "chat/copilot_stats.py", "chat/copilot_actions.py",
+                     "chat/rooms.py",
                      "broker/henry_broker.py",
                      "planning/pm.py", "planning/pm_state.py", "planning/pm_budget.py",
                      "planning/pm_triangle.py", "planning/pm_resolve.py",
@@ -243,7 +244,7 @@ CELLS = [
                 "pm_loop], pm_plans, pm_activity, escalations (shared bus); "
                 "state/copilot_log.json (moves in state-into-db phase E)",
         harness_file="cells/copilot/harness/agents/board-copilot.md",   # repo-root-relative (not under daemon/)
-        route_modules=("routes.routes_copilot", "routes.routes_pm"),
+        route_modules=("routes.routes_copilot", "routes.routes_pm", "routes.routes_rooms"),
         # Henry's judgement half of the escalation channel (spine/registry/
         # escalations.py is the bus; engineer emits; THIS cell decides), AND
         # the backlog planning loop that used to be pm's own - copilotEnabled

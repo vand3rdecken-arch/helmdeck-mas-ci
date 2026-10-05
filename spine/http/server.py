@@ -81,6 +81,7 @@ from spine.http.routes import routes_checkpoints
 from spine.http.routes import routes_sign
 from spine.http.routes import routes_projects
 from cells.copilot.routes import routes_copilot
+from cells.copilot.routes import routes_rooms
 from cells.engineer.routes import routes_tracks
 from cells.engineer.routes import routes_track_actions
 from spine.http.routes import routes_runs
@@ -269,6 +270,9 @@ class H(BaseHTTPRequestHandler):
             # --- company instrumentation: settings + CEO dashboard ---
             if p in routes_copilot.GET_ROUTES:
                 return routes_copilot.GET_ROUTES[p](self, user)
+            # team rooms: membership-gated inside rooms.py (clients/guests too)
+            if p in routes_rooms.GET_ROUTES:
+                return routes_rooms.GET_ROUTES[p](self, user)
             # --- Wear OS watch: board summary (README.md §4.7) ---
             if p in routes_wear.GET_ROUTES:
                 return routes_wear.GET_ROUTES[p](self, user)
@@ -555,12 +559,15 @@ class H(BaseHTTPRequestHandler):
             # answering a question is a steer in typed form (it runs the same
             # turn), so a client may answer on their OWN card exactly as they
             # may steer it - the per-card ownership check still runs below.
-            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new", "/presence") \
+            if user["role"] == "client" and p not in ("/tracks/new", "/processes/new", "/presence",
+                                                      "/rooms/post") \
                and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel")
                                                       or p.endswith("/answer"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
             if p in routes_copilot.POST_ROUTES:
                 return routes_copilot.POST_ROUTES[p](self, user, body)
+            if p in routes_rooms.POST_ROUTES:
+                return routes_rooms.POST_ROUTES[p](self, user, body)
             if p in routes_wear.POST_ROUTES:
                 return routes_wear.POST_ROUTES[p](self, user, body)
             if p in routes_tracks.POST_ROUTES:

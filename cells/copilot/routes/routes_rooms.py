@@ -1,0 +1,95 @@
+# -*- coding: utf-8 -*-
+"""Team-room routes (backlog/team-rooms-member, stage 3). Logic lives in
+cells/copilot/chat/rooms.py; this layer only maps the wire to it.
+
+Authorization, in two different shapes on purpose:
+  - create / change members: a CAPABILITY (`rooms.manage`, owner + operator),
+    declared in GET_CAPS/POST_CAPS below so server.py's one permission gate
+    enforces it.
+  - list / read / post: MEMBERSHIP, enforced per room inside rooms.py. A room
+    the caller is not in answers 404 - the same as an unknown id - so a guest
+    cannot even learn that a room exists.
+
+Every id comes from the query/body; the AUTHOR of a post is always the
+authenticated account, never a field the client sends.
+"""
+import json
+from urllib.parse import parse_qs, urlparse
+
+from cells.copilot.chat import rooms
+
+
+def _q(self):
+    return parse_qs(urlparse(self.path).query)
+
+
+def _int(v, default=0):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def rooms_get(self, user):
+    q = _q(self)
+    from spine.auth import permissions
+    if (q.get("all") or [""])[0] and permissions.can(user, "rooms.manage"):
+        # manager overview: names + members only, never messages
+        from spine.storage import db
+        return self._send(200, json.dumps([
+            {"id": r["id"], "name": r["name"], "members": r["members"]}
+            for r in db.room_all()]))
+    return self._send(200, json.dumps(rooms.list_for(user["name"])))
+
+
+def rooms_messages_get(self, user):
+    q = _q(self)
+    rid = (q.get("room") or [""])[0]
+    try:
+        msgs = rooms.history(rid, user["name"], after=_int((q.get("after") or ["0"])[0]))
+    except PermissionError:
+        return self._send(404, json.dumps({"error": "unknown room"}))
+    return self._send(200, json.dumps({"room": rooms.get(rid), "messages": msgs}))
+
+
+def rooms_new_post(self, user, body):
+    try:
+        room = rooms.create(body.get("name", ""), user["name"], body.get("members") or [])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(room))
+
+
+def rooms_members_post(self, user, body):
+    try:
+        room = rooms.set_members(body.get("room", ""), user["name"],
+                                 add=body.get("add") or [], remove=body.get("remove") or [])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(room))
+
+
+def rooms_post_post(self, user, body):
+    rid = body.get("room", "")
+    if not rooms.is_member(rid, user["name"]):
+        return self._send(404, json.dumps({"error": "unknown room"}))
+    try:
+        msg = rooms.post(rid, user["name"], body.get("text", ""))
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(msg))
+
+
+GET_ROUTES = {
+    "/rooms": rooms_get,
+    "/rooms/messages": rooms_messages_get,
+}
+POST_ROUTES = {
+    "/rooms/new": rooms_new_post,
+    "/rooms/members": rooms_members_post,
+    "/rooms/post": rooms_post_post,
+}
+POST_CAPS = {
+    "/rooms/new": "rooms.manage",
+    "/rooms/members": "rooms.manage",
+}

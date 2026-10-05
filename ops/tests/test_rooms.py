@@ -1,0 +1,155 @@
+# -*- coding: utf-8 -*-
+"""Headless test for TEAM ROOMS (team-rooms-member stage 3a).
+
+Membership is the whole authorization story of a room, so every case is a way
+it could leak or be bypassed, run through the REAL route handlers + the real
+permission gate + the real db layer (sandboxed):
+
+ 1. A guest (client) reads and posts ONLY in rooms she is a member of; a room
+    she is not in answers 404, exactly like an unknown id (no existence leak).
+ 2. The AUTHOR of a message is the authenticated account - a `by` smuggled in
+    the body is ignored.
+ 3. Creating a room / changing members needs `rooms.manage` (owner, operator);
+    a client is refused by the permission gate, not by luck.
+ 4. @mentions resolve only to MEMBERS (and `henry`); a non-member's name is not
+    a mention, so nobody outside a room is ever addressed through it.
+ 5. Removing a member cuts access immediately (derived from the record).
+ 6. Room messages never appear in the account chat table.
+
+Self-sandboxing: temp DB, no network. Run: py -3.12 ops/tests/test_rooms.py
+"""
+import json
+import os
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, ROOT)
+
+SANDBOX = tempfile.mkdtemp(prefix="hd-rooms-")
+
+from spine.storage import db
+db.ROOT = SANDBOX   # BOTH, not just DBPATH - see test_hook_idle.py's preamble
+db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
+from spine.storage import events
+events.SET = os.path.join(SANDBOX, "settings.json")
+db.init()
+
+from spine.auth import auth, permissions
+from cells.copilot.chat import rooms
+from cells.copilot.routes import routes_rooms
+
+_fails = []
+
+
+def check(cond, msg):
+    print(("  ok  " if cond else "  FAIL ") + msg)
+    if not cond:
+        _fails.append(msg)
+
+
+PW = "Correct-Horse-Battery-9"
+for n, r in (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client")):
+    auth.create_user(n, PW, r, actor="test")
+U = {n: {"name": n, "role": r} for n, r in
+     (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client"))}
+
+
+class Req(object):
+    def __init__(self, path=""):
+        self.path = path
+        self.sent = None
+
+    def _send(self, status, body):
+        self.sent = (status, json.loads(body) if body else None)
+
+
+def call(handler, user, body=None, path="/x"):
+    q = Req(path)
+    handler(q, U[user], body) if body is not None else handler(q, U[user])
+    return q.sent
+
+
+def gated(path, user):
+    """What server.py's permission gate says for POST `path` (None = allowed)."""
+    cap = permissions.cap_for("POST", path, path.strip("/").split("/"))
+    return permissions.require(U[user], cap) if cap else None
+
+
+# -- 3. who may create / change members ----------------------------------------
+check(gated("/rooms/new", "***") is not None and gated("/rooms/members", "***") is not None,
+      "a client is refused room creation and member changes by the permission gate")
+check(gated("/rooms/new", "tien") is None and gated("/rooms/new", "ops") is None,
+      "owner and operator hold rooms.manage")
+check(gated("/rooms/post", "***") is None, "posting needs no capability - membership decides")
+
+st, room = call(routes_rooms.rooms_new_post, "ops", {"name": "Team Alpha", "members": ["***"]})
+check(st == 200 and set(room["members"]) == {"ops", "***"},
+      "the operator creates a room; the creator is a member automatically")
+RID = room["id"]
+st, _b = call(routes_rooms.rooms_new_post, "ops", {"name": "x", "members": ["nobody"]})
+check(st == 400, "an unknown account cannot be added")
+
+# -- 1. membership gates read and post -----------------------------------------
+st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+check(st == 200 and [r["id"] for r in lst] == [RID], "she sees the room she is in")
+st, lst = call(routes_rooms.rooms_get, "fremd", path="/rooms")
+check(st == 200 and lst == [], "an account outside the room sees no rooms")
+st, lst = call(routes_rooms.rooms_get, "tien", path="/rooms")
+check(lst == [], "even the OWNER does not see rooms he is not a member of in the plain list")
+st, lst = call(routes_rooms.rooms_get, "tien", path="/rooms?all=1")
+check(len(lst) == 1 and "messages" not in lst[0] and "preview" not in lst[0],
+      "the manager overview (?all=1) lists names and members, never content")
+st, lst = call(routes_rooms.rooms_get, "fremd", path="/rooms?all=1")
+check(lst == [], "?all=1 is ignored for an account without rooms.manage")
+
+st, _b = call(routes_rooms.rooms_post_post, "fremd", {"room": RID, "text": "hallo"})
+check(st == 404, "a non-member cannot post (404, same as an unknown room)")
+st, _b = call(routes_rooms.rooms_messages_get, "fremd", path="/rooms/messages?room=" + RID)
+check(st == 404, "a non-member cannot read the history")
+st, _b = call(routes_rooms.rooms_messages_get, "fremd", path="/rooms/messages?room=nope")
+check(st == 404, "an unknown id answers the same 404 - no existence leak")
+
+# -- 2. author = authenticated account -------------------------------------------
+st, msg = call(routes_rooms.rooms_post_post, "***",
+               {"room": RID, "text": "Status?", "by": "ops", "byKind": "henry"})
+check(st == 200 and msg["by"] == "***" and msg["byKind"] == "human",
+      "the author is the logged-in account; a forged `by`/`byKind` is ignored")
+
+# -- 4. mentions -------------------------------------------------------------------
+st, msg = call(routes_rooms.rooms_post_post, "ops",
+               {"room": RID, "text": "@*** schau mal, @henry fasse zusammen. cc @fremd"})
+check(msg["mentions"] == ["***"] and msg["henry"] is True,
+      "@*** (case-insensitive) and @henry resolve; @fremd (not a member) is NOT a mention")
+st, msg = call(routes_rooms.rooms_post_post, "***", {"room": RID, "text": "mail an a@***.de"})
+check(msg["mentions"] == [], "an e-mail address is not a mention")
+
+st, hist = call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + RID)
+check(st == 200 and [m["by"] for m in hist["messages"]] == ["***", "ops", "***"],
+      "members read the whole history with authors, oldest first")
+st, hist2 = call(routes_rooms.rooms_messages_get, "***",
+                 path="/rooms/messages?room=%s&after=%d" % (RID, hist["messages"][0]["seq"]))
+check(len(hist2["messages"]) == 2, "?after= returns only newer messages")
+
+# -- 5. removal cuts access at once --------------------------------------------------
+st, room = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["***"]})
+check(st == 200 and room["members"] == ["ops"], "the operator removes her")
+st, _b = call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + RID)
+check(st == 404, "she can no longer read - access is derived from the record, not cached")
+st, _b = call(routes_rooms.rooms_post_post, "***", {"room": RID, "text": "noch da?"})
+check(st == 404, "nor post")
+st, _b = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["ops"]})
+check(st == 400, "the last member cannot be removed (a room is never orphaned)")
+
+# -- 6. not in the account chat -------------------------------------------------------
+check(all(not a.startswith("room") and a not in (RID,) for a in db.chat_accounts()),
+      "room messages never land in the per-account chat table")
+
+print()
+if _fails:
+    print("FAILED (%d):" % len(_fails))
+    for f in _fails:
+        print("  -", f)
+    sys.exit(1)
+print("TEAM ROOMS: all pinned - PASS")

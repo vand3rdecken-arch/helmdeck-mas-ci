@@ -70,6 +70,10 @@ CAPS = (
     # process RUN stays open to every role (processes_get/processes_new_post
     # carry no cap), same as before this split.
     "templates.view", "templates.manage",
+    # team rooms (backlog/team-rooms-member): create a room and change who is
+    # in it. Reading and posting is NOT a capability - it is membership, checked
+    # per room in cells/copilot/chat/rooms.py, exactly like owns_card for cards.
+    "rooms.manage",
 )
 
 # role -> tuple(cap) as shipped. This is the CURRENT effective behaviour,
@@ -84,11 +88,12 @@ _DEFAULT_MATRIX = {
         "audit.read", "devices.manage", "devices.use", "chat.use",
         "gxp.activate", "cards.admin", "system.introspect",
         "projects.view", "projects.manage", "pm.view", "pm.manage",
-        "templates.view", "templates.manage",
+        "templates.view", "templates.manage", "rooms.manage",
     ),
     "operator": (
         "recordings.view", "devices.manage", "devices.use", "chat.use",
         "cards.admin", "projects.view", "pm.view", "templates.view",
+        "rooms.manage",
     ),
     "client": (),
     # card 3 (ops/docs/backlog/rbac-gxp): quality is the SoD approver - its
@@ -209,6 +214,7 @@ _CAP_MODULES = (
     "routes_projects",
     "routes_pm",
     "routes_invites",
+    "routes_rooms",
 )
 
 

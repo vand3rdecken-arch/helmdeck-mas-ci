@@ -2243,6 +2243,67 @@ def _m16(c):
     c.execute("CREATE INDEX IF NOT EXISTS memory_scope ON memory(scope, scope_id)")
 
 
+@_migration(17, "rooms")
+def _m17(c):
+    """team-rooms-member stage 3. A ROOM is a team conversation with a member
+    list (Slack channel shape): one row per room, and its messages in their
+    OWN table. They are deliberately not rows of `chat`: that table is keyed by
+    ACCOUNT and half the codebase iterates chat_accounts() expecting people."""
+    c.execute("""CREATE TABLE IF NOT EXISTS rooms(
+        id TEXT PRIMARY KEY, data TEXT NOT NULL)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS room_messages(
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, room_id TEXT NOT NULL,
+        ts REAL NOT NULL, data TEXT NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS room_messages_room ON room_messages(room_id, seq)")
+
+
+def room_get(rid):
+    r = conn().execute("SELECT data FROM rooms WHERE id=?", (rid,)).fetchone()
+    return json.loads(r[0]) if r else None
+
+
+def room_put(room):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO rooms(id,data) VALUES(?,?)",
+                  (room["id"], json.dumps(room, ensure_ascii=False)))
+    bump_chat()
+
+
+def room_all():
+    return [json.loads(d) for (d,) in conn().execute("SELECT data FROM rooms")]
+
+
+def room_message_add(rid, entry):
+    """Append ONE message; returns it with its `seq`. Bumps the chat cursor so
+    the sealed-relay long-poll (/stream/wait ?c=) wakes every member's app."""
+    with conn() as c:
+        cur = c.execute("INSERT INTO room_messages(room_id,ts,data) VALUES(?,?,?)",
+                        (rid, time.time(), json.dumps(entry, ensure_ascii=False)))
+        seq = cur.lastrowid
+    bump_chat()
+    return dict(entry, seq=seq)
+
+
+def room_messages(rid, after=0, limit=200):
+    """Messages with seq > after, OLDEST first, at most `limit` (the NEWEST
+    `limit` when after=0, so opening a long room shows its tail)."""
+    if after:
+        rows = conn().execute(
+            "SELECT seq,data FROM room_messages WHERE room_id=? AND seq>? ORDER BY seq LIMIT ?",
+            (rid, after, limit)).fetchall()
+    else:
+        rows = list(reversed(conn().execute(
+            "SELECT seq,data FROM room_messages WHERE room_id=? ORDER BY seq DESC LIMIT ?",
+            (rid, limit)).fetchall()))
+    out = []
+    for seq, d in rows:
+        try:
+            out.append(dict(json.loads(d), seq=seq))
+        except ValueError:
+            continue
+    return out
+
+
 @_migration(15, "chat-runs")
 def _m15(c):
     """Henry's delegated runs (hands, his CLI background agents) lived only in
