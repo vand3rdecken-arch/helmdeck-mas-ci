@@ -1599,6 +1599,38 @@ def reorder(ids, actor="owner"):
     return {"reordered": changed}
 
 
+def share(tid, add=(), remove=(), actor="owner"):
+    """Share a card with other accounts, or take the share back. The ONE writer
+    of `geteilt_mit` (team-rooms-member stage 3b): a recorded list of account
+    names, read by auth.sees_card at every request - never a flag derived
+    elsewhere. Sharing grants the SUMMARY view only (title, status, result);
+    transcript, recordings, steering and Henry's card chat stay with the card's
+    owner (auth.owns_card). Unknown accounts are refused; returns the card, or
+    None for an unknown card."""
+    from spine.auth import auth
+    from spine.storage import events
+    known = {u["name"] for u in auth.list_users()}
+    bad = [n for n in add if n not in known]
+    if bad:
+        raise ValueError("unknown account: %s" % ", ".join(bad))
+
+    def _apply(t):
+        cur = list(t.get("geteilt_mit") or [])
+        for n in add:
+            if n not in cur:
+                cur.append(n)
+        for n in remove:
+            if n in cur:
+                cur.remove(n)
+        if cur == (t.get("geteilt_mit") or []):
+            return False
+        t["geteilt_mit"] = cur
+    t = _mutate(tid, _apply)
+    if t is not None:
+        events.emit("shared", tid, actor=actor, add=list(add), remove=list(remove))
+    return t
+
+
 def cancel_turn(tid, actor="owner"):
     """Stop a running turn (the composer's Stop button). Kills the driver
     subprocess; the turn returns as '(cancelled)'. Audit records it.

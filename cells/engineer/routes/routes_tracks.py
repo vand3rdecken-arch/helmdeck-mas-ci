@@ -50,7 +50,17 @@ def _summary(t):
 
 def _visible(t, user):
     from spine.auth import auth
-    return t and not t.get("board_hidden") and auth.owns_card(user, t)   # clients: own cards only
+    # clients: own cards, plus cards another person SHARED with them (summary
+    # only - see _view)
+    return t and not t.get("board_hidden") and auth.sees_card(user, t)
+
+
+def _view(t, user):
+    """What `user` gets of card `t`: the whole record for a card they own (or
+    any owner/operator), the whitelisted summary for a card merely shared with
+    them (auth.shared_view). Applied to every list row and the card GET."""
+    from spine.auth import auth
+    return _summary(t) if auth.owns_card(user, t) else auth.shared_view(t)
 
 
 def tracks_list_get(self, user):
@@ -66,7 +76,7 @@ def tracks_list_get(self, user):
         arch = q.get("archived", [""])[0] == "1"   # the Archive filter's own list
         ts = [sessions.present(t) for t in sessions.list_tracks()
               if _visible(t, user) and (not arch or t.get("archived"))]
-        return self._send(200, json.dumps([_summary(t) for t in ts]))
+        return self._send(200, json.dumps([_view(t, user) for t in ts]))
     # PULL, Replicache-style (rocicorp/mono packages/replicache/src/puller.ts
     # PullResponseOKV1 + patch-operation.ts): the client sends the opaque
     # `cookie` it got last time; the reply is {cookie, patch:[put|del|clear]}.
@@ -85,7 +95,7 @@ def tracks_list_get(self, user):
         if t is None:
             patch.append({"op": "del", "key": i})
         elif _visible(t, user) and not t.get("archived"):
-            patch.append({"op": "put", "key": t["id"], "value": _summary(sessions.present(t))})
+            patch.append({"op": "put", "key": t["id"], "value": _view(sessions.present(t), user)})
         else:
             patch.append({"op": "del", "key": t["id"]})
     return self._send(200, json.dumps({"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch}))
@@ -95,8 +105,10 @@ def tracks_get(self, user, tid):
     from cells.engineer.cards import sessions
     from spine.auth import auth
     t = sessions.get_track(tid)
-    if not t or not auth.owns_card(user, t):
+    if not t or not auth.sees_card(user, t):
         return self._send(404, json.dumps({"error": "no such card"}))
+    if not auth.owns_card(user, t):          # shared with them: summary only
+        return self._send(200, json.dumps(auth.shared_view(sessions.present(t))))
     return self._send(200, json.dumps(sessions.present(t)))
 
 
@@ -234,6 +246,25 @@ def tracks_attachment_get(self, user, tid, name):
     ctype = mimetypes.guess_type(match)[0] or "application/octet-stream"
     with open(match, "rb") as f:
         return self._send(200, f.read(), ctype)
+
+
+def tracks_share_post(self, user, body):
+    """Share a card with other accounts (summary view) or withdraw the share.
+    `cards.admin` holders only (owner, operator): a guest can neither widen nor
+    narrow who sees a card. The write is sessions.share - the one owner."""
+    from spine.auth import permissions
+    from cells.engineer.cards import sessions
+    denial = permissions.require(user, "cards.admin")
+    if denial:
+        return self._send(*denial)
+    try:
+        t = sessions.share(body.get("id", ""), add=body.get("add") or [],
+                           remove=body.get("remove") or [], actor=user["name"])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    if t is None:
+        return self._send(404, json.dumps({"error": "no such card"}))
+    return self._send(200, json.dumps({"id": t["id"], "geteilt_mit": t.get("geteilt_mit") or []}))
 
 
 def tracks_reorder_post(self, user, body):
@@ -427,5 +458,6 @@ GET_ROUTES = {
 }
 POST_ROUTES = {
     "/tracks/reorder": tracks_reorder_post,
+    "/tracks/share": tracks_share_post,
     "/tracks/new": tracks_new_post,
 }

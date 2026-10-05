@@ -97,6 +97,30 @@ def owns_card(user, track):
     return (user.get("role") != "client" or bool(track) and
             (track.get("example") or track.get("client") == user.get("name")))
 
+
+def sees_card(user, track):
+    """May `user` SEE this card in lists and its summary? Everything owns_card
+    allows, plus a card another person SHARED with this account
+    (`geteilt_mit`, written only by sessions.share). Seeing is deliberately
+    narrower than owning: a shared card shows title, status and result and
+    nothing else - transcript, recordings, steering and Henry's card chat
+    stay behind owns_card (see shared_view)."""
+    return bool(owns_card(user, track) or (
+        track and user.get("name") in (track.get("geteilt_mit") or [])))
+
+
+# What a card SHARED with someone (not theirs) shows them. A whitelist, not a
+# blacklist: a field added to the card tomorrow stays private until someone
+# decides it is part of the summary. `repo`/`worktree`/`run_dir` are paths on
+# the owner's machine and never belong here.
+SHARED_FIELDS = ("id", "task", "lane", "status", "last_reply", "client",
+                 "priority", "due", "created", "updated", "archived",
+                 "geteilt_mit")
+
+
+def shared_view(track):
+    return {k: track[k] for k in SHARED_FIELDS if k in track}
+
 # -- brute-force lockout ---------------------------------------------------
 # There was no limit of ANY kind on password attempts: the relay exposes the
 # login to the internet and a guesser could run flat out forever. The audit
