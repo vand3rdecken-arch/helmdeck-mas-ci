@@ -125,8 +125,31 @@ def ask_payload(track):
             "options": opts, "more": len(labels) > len(opts)}
 
 
-def recipients(s):
+ALL_ACCOUNTS = object()      # recipients(): every paired device, whoever owns it
+
+
+def owner_name():
+    """The account a device belongs to when it carries no `account` of its own:
+    the workspace owner. The legacy phone slot and every device registered
+    before accounts could pair predate the field, and they were all the
+    owner's - so absence is read as "owner", never as "anyone"."""
+    try:
+        from spine.auth import auth
+        return next((u["name"] for u in auth.list_users()
+                     if u.get("role") == "owner"), None)
+    except Exception:
+        return None
+
+
+def recipients(s, account=ALL_ACCOUNTS):
     """Every device this push must reach, as a list of (label, token, pub).
+
+    `account` scopes the push to ONE person's devices (stage 1 of
+    backlog/team-rooms-member: a second account on the daemon must not receive
+    the owner's Henry replies, and the owner must not receive hers). A device's
+    account is written at /push/register from the authenticated user; a device
+    without one is the owner's. The default ALL_ACCOUNTS keeps the old "every
+    paired device" meaning for readiness checks (fcm_ready) and the tests.
 
     DERIVED AND VERIFIED AT SEND TIME, never trusted from the stored blob (the
     Paseo principle, CLAUDE.md): a registered device only stays a recipient
@@ -144,6 +167,10 @@ def recipients(s):
     pinned = set(relay_client._pubs_of(rel))
     push = s.get("push") or {}
     out = []
+    owner = owner_name()
+
+    def _mine(acct):
+        return account is ALL_ACCOUNTS or (acct or owner) == account
     # The phone keeps its legacy slot: settings.push.fcm_token + relay.phone_pub
     # (= phone_pubs[0]). Untouched so an existing install keeps working with no
     # migration step and no re-registration.
@@ -166,21 +193,31 @@ def recipients(s):
     if phone_tok and _re.fullmatch(r"[0-9a-fA-F]{64}", phone_tok):
         print("notify: legacy push token is an APNs device token (64 hex) - FCM would 400 it, skipped")
         phone_tok = ""
-    if phone_tok and phone_pub and phone_pub in pinned and phone_tok not in explicit_tokens:
+    # (the legacy slot is the owner's by definition - see owner_name())
+    if (phone_tok and phone_pub and phone_pub in pinned
+            and phone_tok not in explicit_tokens and _mine(None)):
         out.append(("phone", phone_tok, phone_pub))
     # Additional devices (the watch, W2d) register under their OWN pubkey and
     # are sealed to it - NOT to the phone's. A second device must never be able
     # to open the first device's notifications.
     for pub, d in (push.get("devices") or {}).items():
         tok = ((d or {}).get("token") or "").strip()
-        if tok and pub in pinned and (pub != phone_pub or tok in explicit_tokens):
+        if (tok and pub in pinned and (pub != phone_pub or tok in explicit_tokens)
+                and _mine((d or {}).get("account"))):
             out.append(((d or {}).get("label") or "device", tok, pub))
     return out
 
 
-def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
-    """Sealed data message to EVERY paired device.
+def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None,
+             account=None):
+    """Sealed data message to the paired devices of ONE account.
     Best-effort like push().
+
+    `account` defaults to None = the OWNER's devices: every caller that
+    existed before accounts could pair (Henry replies, card events, PM,
+    autopilot) is owner-directed, and delivering them to a second person's
+    phone would leak the owner's work. Pass an explicit account name to reach
+    someone else (mentions, shared cards).
 
     Was phone-only until W2d; the watch is a second, independently sealed
     recipient. Returns True if at least one device took the message - a dead
@@ -198,7 +235,7 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None):
         print("notify: fcm held (quiet hours) -", title)
         return False
     rel = s.get("relay") or {}
-    targets = recipients(s)
+    targets = recipients(s, account=account or owner_name())
     if not (targets and os.path.exists(_SA) and rel.get("sk")):
         # Say WHICH leg is missing. This used to be a bare False - release.sh's
         # "notify" step then looked identical whether the push was sent, skipped

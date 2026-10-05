@@ -156,6 +156,13 @@ def push_register_post(self, user, body):
     if not pub:
         # Legacy/phone path, byte-identical to before: the single slot that
         # notify.py has always sealed to relay.phone_pub. No migration.
+        # That slot is the OWNER's by definition (notify.owner_name), and there
+        # is exactly one - a second account registering here would overwrite
+        # it and the owner's pushes would land on the other person's phone
+        # (team-rooms-member stage 1). Everyone else must name their own key.
+        if user["role"] != "owner":
+            return self._send(400, json.dumps(
+                {"error": "pub required: only the owner uses the legacy push slot"}))
         events.save_settings({"push": {"fcm_token": tok}}, actor=user["name"])
         return self._send(200, json.dumps({"registered": True}))
     # A device that names its OWN key (the watch, W2d) is accepted only if that
@@ -170,7 +177,11 @@ def push_register_post(self, user, body):
     # devices map must be rewritten - patching {"devices": {pub: ...}} on its
     # own would silently drop every other registered device.
     devices = dict((events.settings().get("push") or {}).get("devices") or {})
-    devices[pub] = {"token": tok, "label": (body.get("label") or "device")[:40]}
+    # `account` = whoever is logged in on this device NOW. A re-registration
+    # (same key, another login) moves the device to that account, so a phone
+    # handed over never keeps delivering the previous person's pushes.
+    devices[pub] = {"token": tok, "label": (body.get("label") or "device")[:40],
+                    "account": user["name"]}
     events.save_settings({"push": {"devices": devices}}, actor=user["name"])
     return self._send(200, json.dumps({"registered": True}))
 
