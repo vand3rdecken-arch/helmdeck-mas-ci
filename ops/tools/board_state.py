@@ -110,6 +110,27 @@ def _worker_tail(t, n=10):
     return "\n".join(rows[-n:])
 
 
+def _idle_line(t):
+    """Evidence, not a verdict: when the worker's last turn ended and what the
+    card is waiting on. `updated` alone misleads - non-turn writes bump it (card
+    20261005-054744-direct showed 16:38 while its last turn ended 12:06, so
+    "ich warte auf den Monitor" read as fresh and Henry decided `ignore`)."""
+    import time
+    ended = t.get("turn_ended") or ""
+    ago = ""
+    try:
+        s = time.time() - time.mktime(time.strptime(ended[:19], "%Y-%m-%d %H:%M:%S"))
+        ago = " (%dh%02dm ago)" % (s // 3600, s % 3600 // 60)
+    except ValueError:
+        pass
+    reg = t.get("bg_tasks") if isinstance(t.get("bg_tasks"), dict) else {}
+    running = [v.get("title") or "task" for v in reg.values()
+               if v.get("status", "running") == "running"]
+    return "last turn ended=%s%s waiting_on=%s open background tasks=%d%s" % (
+        ended or "?", ago, t.get("waiting_on") or "-", len(running),
+        " (" + ", ".join(running[:3]) + ")" if running else "")
+
+
 def format_card(t):
     """The whole card, nothing clipped except the description at 2k."""
     lines = ["id=%s" % t.get("id"), "task=%s" % (t.get("task") or "").strip(),
@@ -117,6 +138,7 @@ def format_card(t):
                  t.get("repo"), t.get("lane"), t.get("status"), bool(t.get("archived")),
                  t.get("created"), t.get("updated")),
              "turns=%s ai_cost=%s" % (t.get("turns"), t.get("ai_cost"))]
+    lines.append(_idle_line(t))
     if t.get("description"):
         lines.append("DESCRIPTION:\n" + str(t["description"])[:2000])
     if t.get("outcome"):

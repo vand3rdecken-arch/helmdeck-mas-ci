@@ -1059,16 +1059,7 @@ def _ship_relevant(message):
                for t in sessions.list_tracks())
 
 
-def _demojibake(s):
-    """'Ã¤' -> 'ä': UTF-8 bytes once decoded as cp1252/latin-1 in stored titles."""
-    if "Ã" not in s and "Â" not in s:
-        return s
-    for enc in ("cp1252", "latin-1"):
-        try:
-            return s.encode(enc).decode("utf-8")
-        except (UnicodeEncodeError, UnicodeDecodeError):
-            continue
-    return s
+from spine.storage.textfix import demojibake as _demojibake   # one owner, see textfix.py
 
 
 def _snapshot(full=False):

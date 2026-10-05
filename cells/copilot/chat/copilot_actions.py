@@ -44,7 +44,7 @@ ACTION_KINDS = frozenset((
     "move", "steer", "delete", "archive", "hands", "agent", "stop", "answer_card", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
-    "edit_process", "cancel_process", "delete_process", "process_status",
+    "edit_process", "cancel_process", "delete_process", "finish_process", "process_status",
     "share_note", "delete_project", "attach_process", "set_goal", "mark_goal", "set_next",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
@@ -966,7 +966,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
                 _tag(a, ct)          # the tile opens the first card of the chain
         return "accepted all steps of %s into cards (%s)" % (
             p["id"], ", ".join(x for x in made if x))
-    if kind in ("edit_process", "cancel_process", "delete_process", "process_status"):
+    if kind in ("edit_process", "cancel_process", "delete_process", "finish_process", "process_status"):
         # Added 2026-09-03 (owner report: the Prozesse screen let you add
         # steps and nothing else - no rename/re-schedule, no way to stop a
         # process, no visibility into what's happening). Same process-ref-
@@ -1001,6 +1001,12 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             except RuntimeError as e:
                 return "cancel_process refused: %s" % e
             return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
+        if kind == "finish_process":
+            try:
+                processes.finish_process(pid, actor=actor)
+            except RuntimeError as e:
+                return "finish_process refused: %s" % e
+            return "%s abgeschlossen (done) - Karten bleiben unberuehrt" % pid
         # delete_process - removes the row entirely (owner: "cancel bleibt
         # nur stehen, ich will es weg"); cards a step already spawned are
         # untouched, same rule as cancel.

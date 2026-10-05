@@ -496,7 +496,7 @@ def _decide(esc):
           "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
           "im Turn ist - NIE taskkill/schtasks selbst tippen). "
           "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|set_next|ignore",\n'
+          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
           ' "card": "karten-id oder leer",\n'
           ' "lane": "bei move: review|done",\n'
           ' "kind": "bei ship: none|ota|native",\n'
@@ -543,7 +543,7 @@ def _decide(esc):
     at = (d.get("at") or "").strip()
     goal = d.get("goal") is True
     if action in ("did", "direct_task", "machine_task", "accept_steps", "cancel_process",
-                  "set_next") \
+                  "finish_process", "set_next") \
             and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
         # escalation does not get closed via "did" - stays open for a
@@ -639,7 +639,7 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
     t = _find(_load(), card) if card else None
     if action == "ignore":
         return True
-    if action in ("accept_steps", "cancel_process", "set_next"):
+    if action in ("accept_steps", "cancel_process", "finish_process", "set_next"):
         # PROCESS DECISIONS are Henry's (owner 2026-09-30: the process asked
         # the owner things no human is needed for). Only on an escalation
         # that names its process - never a guessed one.
@@ -661,6 +661,9 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
             elif action == "cancel_process":
                 processes.cancel_process(pid, actor="henry")
                 escalations.record_note(esc["id"], "cancel_process: %s" % pid)
+            elif action == "finish_process":
+                processes.finish_process(pid, actor="henry")
+                escalations.record_note(esc["id"], "finish_process: %s" % pid)
             else:
                 processes.set_next(pid, text, at, actor="henry")
                 escalations.record_note(esc["id"], "set_next: %s - %s" % (at, text[:200]))

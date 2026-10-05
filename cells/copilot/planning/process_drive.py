@@ -53,7 +53,7 @@ _ASK = (
     "Auftrag; die Karte wird Schritt dieses Prozesses). Den Owner holst du nur fuer "
     "einen Login oder das letzte Go vor etwas, das nach aussen geht (posten, "
     "senden, bezahlen) - dann bereitest du alles so vor, dass ihm ein Tap bleibt "
-    "(notify_owner, eine Frage). Weitere Verben: accept_steps, cancel_process, "
+    "(notify_owner, eine Frage). Weitere Verben: accept_steps, cancel_process, finish_process (Ziel erledigt), "
     "set_next (text = was, at = wann), steer/move, ignore (ein Satz warum).")
 
 

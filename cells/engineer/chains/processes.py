@@ -129,6 +129,14 @@ def _load():
 
 def _save(ps):
     from spine.storage import db
+    from spine.storage.textfix import demojibake
+    # the ONE persistence edge: mangled umlauts never reach (or stay in) the db
+    for p in ps:
+        p["request"] = demojibake(p.get("request"))
+        for st in p.get("steps") or []:
+            for k in ("title", "desc"):
+                if k in st:
+                    st[k] = demojibake(st[k])
     db.processes_replace(ps)
 
 def list_processes(client=None):
@@ -257,6 +265,27 @@ def cancel_process(pid, actor="owner"):
                 _save(ps)
                 from spine.storage import events
                 events.emit("process", pid, action="cancelled", actor=actor)
+                return p
+    raise RuntimeError("no such process")
+
+def finish_process(pid, actor="owner"):
+    """CLOSE an open-ended (goal) process as DONE. sync() never finishes one by
+    its steps - it is a folder - so without this verb a finished goal sat on
+    "running" for good (20260929-121246-611-proc: 11/11 steps done, running 6
+    days) and the only terminal verbs were cancel (says "abandoned") and delete
+    (erases the record). `closed` is the decision; sync() reads it, never
+    infers it from the steps. Cards a step spawned are untouched."""
+    with _lock:
+        ps = _load()
+        for p in ps:
+            if p["id"] == pid:
+                if p.get("status") == "cancelled":
+                    raise RuntimeError("is cancelled - nothing to finish")
+                p["status"] = "done"
+                p["closed"] = True
+                _save(ps)
+                from spine.storage import events
+                events.emit("process", pid, action="finished", actor=actor)
                 return p
     raise RuntimeError("no such process")
 
@@ -481,6 +510,8 @@ def sync():
             prev_done = done
         if p.get("status") == "cancelled":
             pass   # a cancelled process stays cancelled - never reclassified by sync()
+        elif p.get("closed"):
+            pass   # finish_process decided it - stays done, never re-opened by sync()
         elif p.get("open_ended"):
             if p.get("status") != "running" and p["steps"]:
                 p["status"] = "running"   # a folder, never done by its steps (create())
