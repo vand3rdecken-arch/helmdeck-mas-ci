@@ -2261,6 +2261,43 @@ def _m17(c):
     c.execute("CREATE INDEX IF NOT EXISTS room_messages_room ON room_messages(room_id, seq)")
 
 
+@_migration(18, "room-reads")
+def _m18(c):
+    """Per-account read cursor of a room (the highest seq that account has
+    SEEN). Its own table, not a field of the room blob: marking a room read is
+    a write every member does constantly, and a read-modify-write of the blob
+    would race (and could lose) a concurrent member change."""
+    c.execute("""CREATE TABLE IF NOT EXISTS room_reads(
+        room_id TEXT NOT NULL, account TEXT NOT NULL, seq INTEGER NOT NULL,
+        PRIMARY KEY(room_id, account))""")
+
+
+def room_read_set(rid, account, seq):
+    """Advance the cursor; it never moves backwards."""
+    with conn() as c:
+        c.execute("INSERT INTO room_reads(room_id,account,seq) VALUES(?,?,?) "
+                  "ON CONFLICT(room_id,account) DO UPDATE SET seq=MAX(seq,excluded.seq)",
+                  (rid, account, int(seq)))
+
+
+def room_unread(rid, account):
+    """(unread messages by OTHERS, of which mentioning this account) past the
+    account's read cursor - derived from the messages and the cursor at every
+    call, never a stored counter."""
+    r = conn().execute("SELECT seq FROM room_reads WHERE room_id=? AND account=?",
+                       (rid, account)).fetchone()
+    since = r[0] if r else 0
+    n = conn().execute(
+        "SELECT COUNT(*) FROM room_messages WHERE room_id=? AND seq>? "
+        "AND COALESCE(json_extract(data,'$.by'),'')!=?", (rid, since, account)).fetchone()[0]
+    m = conn().execute(
+        "SELECT COUNT(*) FROM room_messages WHERE room_id=? AND seq>? "
+        "AND COALESCE(json_extract(data,'$.by'),'')!=? AND EXISTS ("
+        "SELECT 1 FROM json_each(room_messages.data,'$.mentions') WHERE value=?)",
+        (rid, since, account, account)).fetchone()[0]
+    return n, m
+
+
 def room_get(rid):
     r = conn().execute("SELECT data FROM rooms WHERE id=?", (rid,)).fetchone()
     return json.loads(r[0]) if r else None

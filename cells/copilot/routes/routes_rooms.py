@@ -49,6 +49,8 @@ def rooms_messages_get(self, user):
         msgs = rooms.history(rid, user["name"], after=_int((q.get("after") or ["0"])[0]))
     except PermissionError:
         return self._send(404, json.dumps({"error": "unknown room"}))
+    if msgs:       # the member is looking at these: advance THEIR read cursor
+        rooms.mark_read(rid, user["name"], msgs[-1]["seq"])
     return self._send(200, json.dumps({"room": rooms.get(rid), "messages": msgs}))
 
 
@@ -84,6 +86,14 @@ def rooms_post_post(self, user, body):
     return self._send(200, json.dumps(msg))
 
 
+def rooms_read_post(self, user, body):
+    try:
+        rooms.mark_read(body.get("room", ""), user["name"], int(body.get("seq") or 0))
+    except (PermissionError, ValueError):
+        return self._send(404, json.dumps({"error": "unknown room"}))
+    return self._send(200, json.dumps({"ok": True}))
+
+
 GET_ROUTES = {
     "/rooms": rooms_get,
     "/rooms/messages": rooms_messages_get,
@@ -92,6 +102,7 @@ POST_ROUTES = {
     "/rooms/new": rooms_new_post,
     "/rooms/members": rooms_members_post,
     "/rooms/post": rooms_post_post,
+    "/rooms/read": rooms_read_post,
 }
 POST_CAPS = {
     "/rooms/new": "rooms.manage",

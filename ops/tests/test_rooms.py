@@ -144,6 +144,47 @@ check(st == 404, "nor post")
 st, _b = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["ops"]})
 check(st == 400, "the last member cannot be removed (a room is never orphaned)")
 
+# -- 7. mentions push THAT account only; unread is derived ----------------------------
+from spine.comms import notify
+pushed = []
+notify.push_fcm = lambda *a, **k: pushed.append(k) or True
+st, room2 = call(routes_rooms.rooms_new_post, "ops", {"name": "Team B", "members": ["***", "tien"]})
+R2 = room2["id"]
+call(routes_rooms.rooms_post_post, "ops", {"room": R2, "text": "hallo zusammen"})
+check(pushed == [], "a plain message buzzes nobody")
+call(routes_rooms.rooms_post_post, "ops", {"room": R2, "text": "@*** kannst du das pruefen"})
+check(len(pushed) == 1 and pushed[0]["account"] == "***" and pushed[0]["extra"] == {"room": R2}
+      and pushed[0]["kind"] == "room",
+      "an @mention pushes ONLY the mentioned account, carrying the room id in the sealed payload")
+n = len(pushed)
+call(routes_rooms.rooms_post_post, "***", {"room": R2, "text": "@*** ich selbst"})
+check(len(pushed) == n, "mentioning yourself buzzes nobody")
+rooms.post(R2, "Henry", "Antwort fuer dich", by_kind="henry", extra={"to": "***"})
+check(len(pushed) == n + 1 and pushed[-1]["account"] == "***",
+      "Henry's reply buzzes the person he answered")
+
+st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+mine = next(r for r in lst if r["id"] == R2)
+check(mine["unread"] == 3 and mine["unread_mentions"] == 1,
+      "unread = messages by OTHERS past her cursor (3), of which 1 mentions her")
+st, lst = call(routes_rooms.rooms_get, "tien", path="/rooms")
+check(next(r for r in lst if r["id"] == R2)["unread"] == 4,
+      "another member's unread is counted from HIS own cursor (4 - nothing of his own)")
+call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + R2)
+st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+check(next(r for r in lst if r["id"] == R2)["unread"] == 0,
+      "opening the room (fetching its messages) advances HER cursor only")
+check(next(r for r in call(routes_rooms.rooms_get, "tien", path="/rooms")[1] if r["id"] == R2)["unread"] == 4,
+      "and leaves his untouched")
+db.room_read_set(R2, "***", 1)
+check(next(r for r in call(routes_rooms.rooms_get, "***", path="/rooms")[1] if r["id"] == R2)["unread"] == 0,
+      "a cursor never moves backwards")
+try:
+    rooms.mark_read(R2, "fremd", 99)
+    check(False, "a non-member cannot set a read cursor")
+except PermissionError:
+    check(True, "a non-member cannot set a read cursor")
+
 # -- 6. not in the account chat -------------------------------------------------------
 check(all(not a.startswith("room") and a not in (RID,) for a in db.chat_accounts()),
       "room messages never land in the per-account chat table")

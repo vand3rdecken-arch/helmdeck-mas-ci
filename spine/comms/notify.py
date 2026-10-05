@@ -209,7 +209,7 @@ def recipients(s, account=ALL_ACCOUNTS):
 
 
 def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None,
-             account=None):
+             account=None, extra=None):
     """Sealed data message to the paired devices of ONE account.
     Best-effort like push().
 
@@ -248,6 +248,8 @@ def push_fcm(title, body, track_id="", urgent=False, kind="", ask=None,
     try:
         sa = _json.load(open(_SA, encoding="utf-8"))
         payload = {"title": title, "body": body, "track": track_id, "kind": kind}
+        if extra:                      # e.g. {"room": id} - rides INSIDE the sealed box
+            payload.update(extra)
         if ask:
             payload["ask"] = ask
         raw = _json.dumps(payload).encode("utf-8")
@@ -474,6 +476,23 @@ def chat_reply(text):
     # PushService renders title/body from the same sealed payload and opens the
     # app; it never looked at `kind`.
     return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat")
+
+
+def room_event(account, room, text, by):
+    """A room message that addresses ONE account (an @mention, or Henry's reply
+    to the person who asked). Sent to THAT account's devices only (push_fcm
+    account=); the phone decides whether to show it (it drops the banner while
+    that room is on screen, same model as chat_reply). urgent=True = solicited:
+    someone addressed this person, so quiet hours do not hold it back.
+
+    kind="room" + {"room": id} lets the app open the room; a trackless push of
+    an unknown kind falls back to the dashboard on an older app, which is the
+    same floor as before."""
+    body = " ".join(("%s: %s" % (by, text or "")).split())
+    if len(body) > CHAT_BODY_MAX:
+        body = body[:CHAT_BODY_MAX].rstrip() + " ..."
+    return push_fcm(room.get("name") or "Raum", body, "", urgent=True, kind="room",
+                    account=account, extra={"room": room["id"]})
 
 
 def card_event(track, status):

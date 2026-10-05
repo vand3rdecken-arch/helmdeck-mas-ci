@@ -77,7 +77,9 @@ def list_for(user):
             continue
         tail = db.room_messages(r["id"], limit=1)
         last = tail[-1] if tail else {}
+        unread, mentions = db.room_unread(r["id"], user)
         out.append({"id": r["id"], "name": r["name"], "members": r["members"],
+                    "unread": unread, "unread_mentions": mentions,
                     "henry_on_mention": r.get("henry_on_mention", True),
                     "created_by": r.get("created_by"),
                     "last_seq": last.get("seq", 0),
@@ -171,7 +173,36 @@ def post(rid, author, text, by_kind="human", extra=None):
              "mentions": mentioned, "henry": bool(henry), "room_id": rid}
     if extra:
         entry.update(extra)
-    return db.room_message_add(rid, entry)
+    msg = db.room_message_add(rid, entry)
+    _notify(r, msg)
+    return msg
+
+
+def _notify(room, msg):
+    """Tell the people this message is FOR: the members it @mentions, and the
+    person Henry answered. Nobody else is buzzed (a plain message in a busy room
+    is not an interruption) and nobody is told about their own message. Best
+    effort - a push failure must never fail the post."""
+    targets = [m for m in (msg.get("mentions") or []) if m != msg.get("by")]
+    to = msg.get("to")
+    if (msg.get("byKind") == "henry" and to and to in (room.get("members") or [])
+            and to not in targets):
+        targets.append(to)
+    if not targets:
+        return
+    try:
+        from spine.comms import notify
+        for acct in targets:
+            notify.room_event(acct, room, msg.get("text"), msg.get("by"))
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+def mark_read(rid, user, seq):
+    """The member has SEEN the room up to `seq`. Membership is checked here."""
+    if not is_member(rid, user):
+        raise PermissionError("not a member of this room")
+    db.room_read_set(rid, user, seq)
 
 
 def history(rid, user, after=0):

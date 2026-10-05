@@ -560,7 +560,7 @@ class H(BaseHTTPRequestHandler):
             # turn), so a client may answer on their OWN card exactly as they
             # may steer it - the per-card ownership check still runs below.
             if user["role"] == "client" and p not in ("/tracks/new", "/processes/new", "/presence",
-                                                      "/rooms/post") \
+                                                      "/rooms/post", "/rooms/read") \
                and not (p.startswith("/tracks/") and (p.endswith("/steer") or p.endswith("/cancel")
                                                       or p.endswith("/answer"))):
                 return self._send(403, json.dumps({"error": "clients can file and comment only"}))
