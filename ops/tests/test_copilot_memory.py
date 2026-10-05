@@ -302,6 +302,15 @@ check("jev" in _ov or "relay" in _ov or "filler" in _ov,
       "the overview names the topics present")
 check("NICHT" in _ov,
       "the overview says absence from it is not evidence of absence")
+check("ALLE NOTIZ-NAMEN" in _ov and all(n in _ov for n in list(m.all_notes())[:5] if n != "MEMORY"),
+      "the overview lists every note NAME (the model picks, like `view /memories`)")
+_names = m._name_index({"n%03d-%s" % (i, "x" * 60): {"updated_at": "2026-09-%02d" % (i % 28 + 1)}
+                        for i in range(400)})
+check("HIER NICHT STEHEN" in _names and len(_names) < m.NAME_INDEX_MAX + 200,
+      "a cut name list is capped AND names its blind spot")
+check("MOEGLICHE TREFFER" in m.recall_block("Was ist Jev")
+      and "vom Harness gesucht, nicht" not in m.recall_block("Was ist Jev"),
+      "the keyword block calls itself possible hits, not the answer")
 
 print("\n-- A1: provenance is decided by the harness --")
 check(m.resolve_kind("owner-fact", "card:20260920", "Jev hat keine Text-API")
@@ -353,6 +362,27 @@ _present = ["Was ist Jev", "warum ist das relay nicht erreichbar"]
 _tp = [q for q in _present if m.recall_block(q).strip()]
 check(len(_tp) == len(_present),
       "and the questions it CAN answer still retrieve - got %r" % _tp)
+
+print("\n-- T-Vokabellücke: 'Immobilien' findet den 'immo-deal-scanner' (2026-10-05) --")
+# Henry told the owner "ich kannte den Scanner nicht" with
+# immo-deal-scanner-owner in his db: the owner's word was 'Immobilien', the
+# note says 'Immo-Deal-Scanner' - one hyphenated token, no shared word. And the
+# common word 'neue' (tf 2 in unrelated notes) pushed three wrong notes.
+_fill = {"filler-%02d" % i: {"content": "Notiz %d ueber Karten, Relay und Build Nummer%d. Neue "
+                                        "Karte, neue Version." % (i, i), "updated_at": "2026-09-%02d" % (i % 28 + 1)}
+         for i in range(40)}
+_fill["immo-deal-scanner-owner"] = {"content": "Kaufobjekt-Scanner Frankfurt. Repo Downloads/"
+                                    "immo-deal-scanner, Dashboard und ImmoScout-Daten.",
+                                    "updated_at": "2026-09-28"}
+for _q in ("Und irgendwelche neue Immobilien?", "Immobilien Scanner"):
+    _h = [n for n, _r, _s in m.recall(_q, rows=_fill)]
+    check(_h[:1] == ["immo-deal-scanner-owner"], "recall(%r) puts the scanner note first - got %r" % (_q, _h))
+_h = [n for n, _r, _s in m.recall("Und irgendwelche neue Immobilien?", rows=_fill)]
+check(not any(n.startswith("filler-") for n in _h),
+      "a common word like 'neue' no longer drags unrelated notes in - got %r" % _h)
+check(m.recall("wer gewann die Tour 1998", rows=_fill) == [], "an unanswerable question still retrieves nothing")
+check(m.recall("wer", rows={"a": {"content": "werkzeug werkzeug kasten", "updated_at": "2026-09-01"}, **_fill}) == [],
+      "a 3-letter word never prefix-matches a longer one ('wer' vs 'werkzeug')")
 
 print("")
 if _fails:

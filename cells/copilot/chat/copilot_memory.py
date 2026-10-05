@@ -465,7 +465,34 @@ _idf_cache = {"fp": None, "df": None, "tf": None, "n": 0}
 
 
 def _tokens(text):
-    return _TOKEN_RE.findall((text or "").casefold())
+    """Word tokens. A hyphenated compound ('immo-deal-scanner') is ONE token
+    AND its parts: the owner says "Immobilien" and the note's name is
+    'immo-deal-scanner-owner' - without the parts the word `immo` was not in
+    the vocabulary at all (2026-10-05: Henry said "ich kannte den Scanner
+    nicht" with the note in his db)."""
+    out = []
+    for w in _TOKEN_RE.findall((text or "").casefold()):
+        out.append(w)
+        if "-" in w:
+            out.extend(p for p in w.split("-") if len(p) >= 3)
+    return out
+
+
+PREFIX_MIN = 4      # shortest token that may match as a prefix of another
+
+
+def _family(w, vocab):
+    """The vocabulary tokens a query word stands for: itself plus any token
+    that is a prefix of it or that it is a prefix of (German compounds and
+    inflections: 'immobilien' ~ 'immo', 'scanner' ~ 'scanners'). Both sides
+    >= PREFIX_MIN, so 'wer' never reaches 'werkzeug' - the substring defect
+    of 2026-09-21 stays dead."""
+    fam = {w} if w in vocab else set()
+    if len(w) >= PREFIX_MIN:
+        for d in vocab:
+            if len(d) >= PREFIX_MIN and d != w and (w.startswith(d) or d.startswith(w)):
+                fam.add(d)
+    return fam
 
 
 def _corpus_fp(rows):
@@ -512,17 +539,21 @@ def recall(text, rows=None, k=RECALL_K):
     if not rows or not (text or "").strip():
         return []
     df, n = _df(rows)
-    terms = set()
+    # one query word -> its family of vocabulary tokens; a family counts as ONE
+    # term for the coverage gate, so a family never fakes "two distinct terms"
+    groups = []
     for w in set(_tokens(text)):
-        if df.get(w) and math.log(n / df[w]) >= RECALL_MIN_IDF:
-            terms.add(w)
-    if not terms:
+        fam = {d for d in _family(w, df) if math.log(n / df[d]) >= RECALL_MIN_IDF}
+        if fam:
+            groups.append(fam)
+    if not groups:
         return []
     hits = []
     for name, r in rows.items():
         counts = _tf(rows, name)
         score, matched, best_tf = 0.0, 0, 0
-        for w in terms:
+        for fam in groups:
+            w = max(fam, key=lambda d: counts.get(d, 0) * math.log(n / df[d]))
             tf = counts.get(w, 0)
             if tf:
                 # sublinear term frequency: a note ABOUT Jev beats one that
@@ -569,10 +600,32 @@ def recall_block(text, rows=None):
                    % (name, r.get("kind") or "project",
                       r.get("origin") or r.get("source") or "db",
                       (r.get("updated_at") or "")[:10], body))
-    return ("\n\nDEIN GEDAECHTNIS ZU DIESER NACHRICHT (vom Harness gesucht, "
-            "nicht von dir - lies es, BEVOR du sagst, du wuesstest etwas "
-            "nicht; widersprich ihm begruendet, wenn du es besser weisst):\n"
+    return ("\n\nMOEGLICHE TREFFER (Stichwortsuche des Harness - sie kann "
+            "danebenliegen oder die richtige Notiz verfehlen; entscheide "
+            "selbst anhand der Namensliste oben, was du liest, und lies es, "
+            "BEVOR du sagst, du wuesstest etwas nicht):\n"
             + "\n\n".join(out))
+
+
+NAME_INDEX_MAX = 10000      # chars; ~250 kebab names are ~8.6k (measured 2026-10-05)
+
+
+def _name_index(rows):
+    """The directory listing: every note NAME, newest first. Anthropic's memory
+    tool has no search at all - the model `view`s the directory and picks what to
+    read - and Claude Code's MEMORY.md is the same idea. The harness's keyword
+    recall cannot bridge the owner's word to the note's ('Immobilien' vs
+    'immo-deal-scanner-owner', 2026-10-05); the MODEL can. A cut list names its
+    own blind spot, like digest()."""
+    names = [n for n, _r in sorted(rows.items(),
+                                   key=lambda nr: nr[1].get("updated_at") or "",
+                                   reverse=True) if n != "MEMORY"]
+    body = ", ".join(names)
+    if len(body) > NAME_INDEX_MAX:
+        kept = body[:NAME_INDEX_MAX].rsplit(", ", 1)[0]
+        body = kept + (" ... und %d aeltere, die HIER NICHT STEHEN (`find <begriff>` "
+                       "sucht ueber alle)" % (len(names) - kept.count(", ") - 1))
+    return body
 
 
 def overview(rows=None, viewer=None):
@@ -592,6 +645,7 @@ def overview(rows=None, viewer=None):
         if len(head) > 2:
             topics[head] = topics.get(head, 0) + 1
     top = sorted(topics.items(), key=lambda kv: -kv[1])[:12]
+    names = _name_index(rows)
     ndb = sum(1 for r in rows.values() if r.get("source") == "db")
     nshared = sum(1 for r in rows.values() if r.get("source") == "shared")
     newest = max((r.get("updated_at") or "" for r in rows.values()), default="")
@@ -609,9 +663,11 @@ def overview(rows=None, viewer=None):
             "Projekt-Repo, %d aus dem Auto-Memory), neueste vom %s. Themen: "
             "%s. Du siehst hier nur die ZAHLEN - Inhalt holst du mit `find "
             "<begriff>`. Dass eine Sache hier nicht steht, heisst NICHT, dass "
-            "es dazu nichts gibt.%s"
+            "es dazu nichts gibt.%s\n\nALLE NOTIZ-NAMEN (neueste zuerst; der Name "
+            "sagt, worum es geht - dein Verzeichnis, wie `view /memories`; "
+            "Inhalt: `henry_memory_get.py get <name>`):\n%s"
             % (len(rows), ndb, nshared, len(rows) - ndb - nshared, newest[:10],
-               ", ".join("%s (%d)" % (k, v) for k, v in top), warn))
+               ", ".join("%s (%d)" % (k, v) for k, v in top), warn, names))
 
 
 # ---------------------------------------------------------------------------
