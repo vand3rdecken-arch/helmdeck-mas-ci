@@ -124,3 +124,34 @@ Quelle Ist: `spine/auth/permissions.py:81-104`. Drei Rollen:
 Titel der Karte sagt noch "member": gemeint ist die Gast-Funktion der Rolle
 `client`. Optionales Umbenennen (`client` -> `member`/`guest`) ist Kosmetik und
 nicht Teil dieser Karte.
+
+## Stand (2026-10-05): alle sieben Stufen gebaut, in place auf main
+
+| Stufe | Commit | Test |
+|---|---|---|
+| 1 Push pro Konto | 79a82441 | test_push_devices (1 Altfall rot, siehe unten) |
+| 2 Gedächtnis person/room/card | 2859703f | test_memory_scope, test_copilot_memory |
+| 3a Räume, 3b Karten teilen | f5a0de21, 1b7ae4a6 | test_rooms, test_card_sharing |
+| 4 Henry im Raum | 891b803d | test_room_henry + 1 echter Haiku-Aufruf |
+| 5 @Nutzer, Push, Ungelesen | 9dbc4729 | test_rooms |
+| 6 Raum -> Karte | 273cdcd3 | test_rooms |
+| 7 Chat-Freigabe | 497dd79c | test_chat_grants |
+| App (Räume, Freigabe, Kurzansicht) | 1aefd87e | tsc, capstest, push-Tests, Browser-Sichtprüfung |
+
+Entscheidungen unterwegs: Rollen bleiben owner/operator/client (client = Gast);
+Henry im Raum nur bei @henry, ohne Werkzeuge; Raum -> Karte macht ein MENSCH
+(Mitglied), nicht Henry.
+
+Offen / bekannt:
+- Der Daemon läuft noch auf altem Code: Migrationen 16-19 laufen beim nächsten
+  Neustart (Memory-Tabelle wird umgebaut, Zeilenzahl geprüft). OTA fuer die App.
+- `fcm_ready()`-Fall in test_push_devices war schon vorher rot (events db-first).
+- Vorher rote Tests (nicht von dieser Arbeit): test_behavior_rules,
+  test_steer_folds_clarification, test_machine_task, test_zombie_sweep,
+  test_loop_state_policy, test_card_outcome, test_pm_resilience,
+  test_fast_track_direct, test_burn_guard.
+- Ein Gast darf über /tracks/new ein beliebiges `repo` angeben (muss ein
+  Git-Repo sein): vorbestehend, nicht Teil dieser Karte, aber mit einem zweiten
+  Konto jetzt relevant -> eigene Karte.
+- Schulden in debt.py: room-henry-ambient-claude-md,
+  room-chat-consent-is-policy-not-crypto, plan-spend-not-split-per-account.
