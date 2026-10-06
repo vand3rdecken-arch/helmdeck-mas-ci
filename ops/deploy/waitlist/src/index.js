@@ -106,19 +106,6 @@ const TESTFLIGHT_REQUEST_URL =
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
   );
-// Wear OS has NO Play Store listing (measured 2026-09-10: the live app.helmdeck
-// listing only mentions "Wear OS" inside a changelog bullet describing a phone
-// feature, not an actual bundled/compatible form factor; :wear has never had a
-// release keystore or a real Gradle run outside a sandboxed card worktree, see
-// ops/deploy/build_wear_apk.sh). Same on-request pattern as iOS until that
-// changes - do not claim a Play Store listing for it again.
-const WEAR_REQUEST_URL =
-  "mailto:" + OWNER_EMAIL +
-  "?subject=" + encodeURIComponent("HelmDeck Wear OS: APK-Anfrage") +
-  "&body=" + encodeURIComponent(
-    "Hi, ich möchte HelmDeck auf meiner Wear-OS-Uhr testen.\n\n" +
-    "Uhren-Modell: \n"
-  );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 // Demo video (demo-en.mp4, 30s, English voiceover, exported from the Arcade
@@ -178,17 +165,13 @@ async function fetchLatestRelease() {
   const win = pick((a) => a.content_type === "application/x-msdownload" && /\.exe$/i.test(a.name));
   const macArm = pick((a) => a.content_type === "application/x-apple-diskimage" && /arm64/i.test(a.name));
   const macX64 = pick((a) => a.content_type === "application/x-apple-diskimage" && /x64/i.test(a.name));
-  const isApk = (a) => a.content_type === "application/vnd.android.package-archive";
-  const apk = pick((a) => isApk(a) && !/wear/i.test(a.name));
-  // Wear OS sideload APK: any release asset named like HelmDeck-Wear-1.0.apk. Absent = the button falls back to the request mail.
-  const wear = pick((a) => isApk(a) && /wear/i.test(a.name));
+  const apk = pick((a) => a.content_type === "application/vnd.android.package-archive");
   return {
     ok: true,
     windows: entryFrom(win, /HelmDeck-Setup-(.+)-x64\.exe$/),
     macArm: entryFrom(macArm, /HelmDeck-(.+)-arm64\.dmg$/),
     macX64: entryFrom(macX64, /HelmDeck-(.+)-x64\.dmg$/),
     android: entryFrom(apk, /HelmDeck-(.+)\.apk$/),
-    wear: entryFrom(wear, /Wear-(.+)\.apk$/i),
   };
 }
 
@@ -322,7 +305,6 @@ function page({ rel, joined, already, err, email, product }) {
   const macArm = rel.ok ? rel.macArm : null;
   const macX64 = rel.ok ? rel.macX64 : null;
   const android = rel.ok ? rel.android : null;
-  const wear = rel.ok ? rel.wear : null;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -446,8 +428,6 @@ section{padding:2.6rem 0; border-top:1px solid var(--border)}
 .watch-shot{margin:0; width:min(15rem,70vw)}
 .watch-shot img{display:block; width:100%; height:auto; border-radius:50%; box-shadow:0 0 0 1px rgba(255,255,255,.14), 0 24px 50px -16px rgba(0,0,0,.7)}
 .watch-cards{display:grid; grid-template-columns:1fr; gap:1rem; width:100%}
-.watch-steps{margin:0; padding-left:1.15rem; font-size:.84rem; line-height:1.55; color:var(--ink-2)}
-.watch-steps code{font-size:.8rem; color:var(--ink)}
 @media (min-width:46rem){.watch{grid-template-columns:15rem 1fr; gap:2.4rem}.watch-cards{grid-template-columns:repeat(2,1fr)}}
 .dl-all{margin:1.6rem 0 0; text-align:center; font-size:.88rem}
 .dl-all a{color:var(--accent-hi); text-decoration:none}
@@ -756,13 +736,9 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
         </div>
         <div class="dl-card">
           <h3>Wear OS</h3>
-          <p class="dl-meta">${wear ? dlMeta(wear) : ""}</p>
-          <ol class="watch-steps" data-i-html="watchSteps"><li>Download the APK to your PC.</li><li>Turn on ADB debugging on the watch (Developer options, Wi-Fi debugging) and pair it with <code>adb pair</code>.</li><li>Run <code>adb install</code> with the downloaded file. HelmDeck shows up in the watch's app list.</li></ol>
-          <p class="dl-note" data-i="watchWearHonest">A Play Store listing for the watch is coming. Until then the APK is the way.</p>
+          <p class="dl-note" data-i="watchWearNote">Install HelmDeck on your phone. The watch app comes from the same Play Store listing, or open the Play Store on your watch.</p>
           <div class="dl-actions">
-            ${wear
-              ? `<a class="btn btn-primary btn-sm btn-block" href="${dlHref(wear)}" data-i="watchWearBtn" data-cta="wear">Download Wear OS APK</a>`
-              : `<a class="btn btn-primary btn-sm btn-block" href="${WEAR_REQUEST_URL}" data-i="watchWearReq" data-cta="wear-request">Request the Wear OS APK</a>`}
+            <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="watchWearBtn" data-cta="wear">Get it on Google Play</a>
           </div>
         </div>
       </div>
@@ -813,7 +789,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i-html="dlAndroidNote">Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has its own download in the <a href="#watch">Watch section</a>.</p>
+        <p class="dl-note" data-i-html="dlAndroidNote">Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app comes from the same listing, see <a href="#watch">Watch</a>.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn" data-cta="android">Get it on Google Play</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn" data-cta="android">Download APK</a>
@@ -1051,9 +1027,8 @@ ${wl("wearables")}
       watchAlt:"HelmDeck auf einer runden Uhr: zwei Ziele warten auf dich",
       watchAppleNote:"Die Watch-App ist im iPhone-Paket enthalten. Installiere HelmDeck auf dem iPhone, dann erscheint sie auf deiner gekoppelten Uhr.",
       watchAppleBtn:"Im App Store laden",
-      watchSteps:"<li>Lade die APK auf deinen PC.</li><li>Schalte auf der Uhr das ADB-Debugging ein (Entwickleroptionen, WLAN-Debugging) und koppel sie mit <code>adb pair</code>.</li><li>Führe <code>adb install</code> mit der geladenen Datei aus. HelmDeck erscheint in der App-Liste der Uhr.</li>",
-      watchWearHonest:"Ein Play-Store-Eintrag für die Uhr folgt. Bis dahin ist die APK der Weg.",
-      watchWearBtn:"Wear-OS-APK herunterladen", watchWearReq:"Wear-OS-APK anfragen",
+      watchWearNote:"Installiere HelmDeck auf dem Handy. Die Uhr-App kommt aus demselben Play-Store-Eintrag, oder öffne den Play Store auf der Uhr.",
+      watchWearBtn:"Bei Google Play laden",
       screensTitle:"So sieht es auf dem Handy aus",
       screensSub:"Echte Screenshots aus der App, mit Beispielzielen. Keine Mockups.",
       sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, ein Ziel braucht deine Entscheidung",
@@ -1083,7 +1058,7 @@ ${wl("wearables")}
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
       dlWinStoreBtn:"Im Microsoft Store laden",
       dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch",
-      dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat ihren eigenen Download im <a href="#watch">Uhr-Abschnitt</a>.',
+      dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr-App kommt aus demselben Eintrag, siehe <a href="#watch">Uhr</a>.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       cloudTitle:"HelmDeck Cloud",
@@ -1133,9 +1108,8 @@ ${wl("wearables")}
       watchAlt:"HelmDeck on a round watch: two goals are waiting for you",
       watchAppleNote:"The watch app is included in the iPhone package. Install HelmDeck on your iPhone and it appears on your paired watch.",
       watchAppleBtn:"Get it on the App Store",
-      watchSteps:"<li>Download the APK to your PC.</li><li>Turn on ADB debugging on the watch (Developer options, Wi-Fi debugging) and pair it with <code>adb pair</code>.</li><li>Run <code>adb install</code> with the downloaded file. HelmDeck shows up in the watch's app list.</li>",
-      watchWearHonest:"A Play Store listing for the watch is coming. Until then the APK is the way.",
-      watchWearBtn:"Download Wear OS APK", watchWearReq:"Request the Wear OS APK",
+      watchWearNote:"Install HelmDeck on your phone. The watch app comes from the same Play Store listing, or open the Play Store on your watch.",
+      watchWearBtn:"Get it on Google Play",
       screensTitle:"The phone, as it looks today",
       screensSub:"Real screenshots from the app, with example goals. Not mockups.",
       sh1Alt:"HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision",
@@ -1165,7 +1139,7 @@ ${wl("wearables")}
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
       dlWinStoreBtn:"Get it from the Microsoft Store",
       dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch",
-      dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has its own download in the <a href="#watch">Watch section</a>.',
+      dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app comes from the same listing, see <a href="#watch">Watch</a>.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       cloudTitle:"HelmDeck Cloud",
