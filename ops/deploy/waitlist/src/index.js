@@ -106,19 +106,6 @@ const TESTFLIGHT_REQUEST_URL =
     "Hi, ich möchte die HelmDeck-Beta auf dem iPhone testen.\n\n" +
     "Apple-ID (E-Mail) für die TestFlight-Einladung: \n"
   );
-// Wear OS has NO Play Store listing (measured 2026-09-10: the live app.helmdeck
-// listing only mentions "Wear OS" inside a changelog bullet describing a phone
-// feature, not an actual bundled/compatible form factor; :wear has never had a
-// release keystore or a real Gradle run outside a sandboxed card worktree, see
-// ops/deploy/build_wear_apk.sh). Same on-request pattern as iOS until that
-// changes - do not claim a Play Store listing for it again.
-const WEAR_REQUEST_URL =
-  "mailto:" + OWNER_EMAIL +
-  "?subject=" + encodeURIComponent("HelmDeck Wear OS: APK-Anfrage") +
-  "&body=" + encodeURIComponent(
-    "Hi, ich möchte HelmDeck auf meiner Wear-OS-Uhr testen.\n\n" +
-    "Uhren-Modell: \n"
-  );
 const RELEASE_CACHE_KEY = "_cache:latest-release";
 const RELEASE_CACHE_TTL = 3600;
 // Demo video (demo-en.mp4, 30s, English voiceover, exported from the Arcade
@@ -437,6 +424,11 @@ section{padding:2.6rem 0; border-top:1px solid var(--border)}
 .dl-note a{color:var(--ink-2); text-decoration:underline; text-underline-offset:2px}
 .dl-note a:hover{color:var(--accent)}
 .dl-actions{display:flex; flex-direction:column; gap:.5rem; margin-top:auto}
+.watch{display:grid; grid-template-columns:1fr; gap:1.4rem; align-items:center; margin-top:1.4rem; justify-items:center}
+.watch-shot{margin:0; width:min(15rem,70vw)}
+.watch-shot img{display:block; width:100%; height:auto; border-radius:50%; box-shadow:0 0 0 1px rgba(255,255,255,.14), 0 24px 50px -16px rgba(0,0,0,.7)}
+.watch-cards{display:grid; grid-template-columns:1fr; gap:1rem; width:100%}
+@media (min-width:46rem){.watch{grid-template-columns:15rem 1fr; gap:2.4rem}.watch-cards{grid-template-columns:repeat(2,1fr)}}
 .dl-all{margin:1.6rem 0 0; text-align:center; font-size:.88rem}
 .dl-all a{color:var(--accent-hi); text-decoration:none}
 .dl-all a:hover{text-decoration:underline}
@@ -729,6 +721,30 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
     </div>
   </section>
 
+  <section id="watch">
+    <h2 data-i="watchTitle">On your wrist, too</h2>
+    <p class="section-sub" data-i="watchSub">Approve, decline or ask Henry from your watch. Real screen from the Wear OS app, with example goals.</p>
+    <div class="watch">
+      <figure class="watch-shot"><img src="/shots/watch-board.webp" width="454" height="454" alt="HelmDeck on a round watch: two goals are waiting for you" data-i-alt="watchAlt" loading="lazy"></figure>
+      <div class="watch-cards">
+        <div class="dl-card">
+          <h3>Apple Watch</h3>
+          <p class="dl-note" data-i="watchAppleNote">The watch app is included in the iPhone package. Install HelmDeck on your iPhone and it appears on your paired watch.</p>
+          <div class="dl-actions">
+            <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="watchAppleBtn" data-cta="watch-ios">Get it on the App Store</a>
+          </div>
+        </div>
+        <div class="dl-card">
+          <h3>Wear OS</h3>
+          <p class="dl-note" data-i="watchWearNote">Install HelmDeck on your phone. The watch app comes from the same Play Store listing, or open the Play Store on your watch.</p>
+          <div class="dl-actions">
+            <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="watchWearBtn" data-cta="wear">Get it on Google Play</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="screens">
     <h2 data-i="screensTitle">The phone, as it looks today</h2>
     <p class="section-sub" data-i="screensSub">Real screenshots from the app, with example goals. Not mockups.</p>
@@ -773,7 +789,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <div class="dl-card">
         <h3>Android</h3>
         <p class="dl-meta">${dlMeta(android)}</p>
-        <p class="dl-note" data-i-html="dlAndroidNote">Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.</p>
+        <p class="dl-note" data-i-html="dlAndroidNote">Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app comes from the same listing, see <a href="#watch">Watch</a>.</p>
         <div class="dl-actions">
           <a class="btn btn-primary btn-sm btn-block" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-i="dlAndroidPlayBtn" data-cta="android">Get it on Google Play</a>
           <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(android)}" data-i="dlAndroidApkBtn" data-cta="android">Download APK</a>
@@ -1006,6 +1022,13 @@ ${wl("wearables")}
       th2P:"Du gibst Ziel, Budget und Termin vor. Henry, der Planer in HelmDeck, plant Zeitplan und Umfang anhand der gemessenen Geschwindigkeit des Gründers. Als die Android-Prüfung vierzehn Tage dauerte, hat er den Plan infrage gestellt.",
       th3H:"Teams statt Einzelkämpfer.",
       th3P:"Jede Entscheidung landet bei der Person, die sie treffen soll. Der Gründer arbeitet mit einem Partner in einer anderen Zeitzone: Abends übergibt er das Board, und beide sehen sofort, was sich bewegt hat und was auf sie wartet.",
+      watchTitle:"Auch am Handgelenk",
+      watchSub:"Freigeben, ablehnen oder Henry fragen, direkt von der Uhr. Echter Screen der Wear-OS-App, mit Beispielzielen.",
+      watchAlt:"HelmDeck auf einer runden Uhr: zwei Ziele warten auf dich",
+      watchAppleNote:"Die Watch-App ist im iPhone-Paket enthalten. Installiere HelmDeck auf dem iPhone, dann erscheint sie auf deiner gekoppelten Uhr.",
+      watchAppleBtn:"Im App Store laden",
+      watchWearNote:"Installiere HelmDeck auf dem Handy. Die Uhr-App kommt aus demselben Play-Store-Eintrag, oder öffne den Play Store auf der Uhr.",
+      watchWearBtn:"Bei Google Play laden",
       screensTitle:"So sieht es auf dem Handy aus",
       screensSub:"Echte Screenshots aus der App, mit Beispielzielen. Keine Mockups.",
       sh1Alt:"HelmDeck-Board auf dem Handy: Backlog, In Arbeit, Review, ein Ziel braucht deine Entscheidung",
@@ -1035,7 +1058,7 @@ ${wl("wearables")}
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
       dlWinStoreBtn:"Im Microsoft Store laden",
       dlIosAppStoreBtn:"Im App Store laden · inkl. Apple Watch",
-      dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr hat noch keinen eigenen Play-Store-Eintrag: <a href="${WEAR_REQUEST_URL}">schreib uns</a>, du bekommst die APK zum Sideload.',
+      dlAndroidNote:'Direkt aus dem Google Play Store, öffentlich verfügbar. Die APK hier ist zum Sideload, falls du lieber direkt installierst. Die Wear-OS-Uhr-App kommt aus demselben Eintrag, siehe <a href="#watch">Uhr</a>.',
       dlAndroidPlayBtn:"Bei Google Play laden", dlAndroidApkBtn:"APK herunterladen",
       dlAll:"Alle Downloads & Prüfsummen auf GitHub",
       cloudTitle:"HelmDeck Cloud",
@@ -1080,6 +1103,13 @@ ${wl("wearables")}
       th2P:"You set goal, budget and deadline. Henry, the planner inside HelmDeck, lays out timeline and scope against the founder's measured velocity, and pushed back when the Android review turned out to take fourteen days.",
       th3H:"Teams, not individuals.",
       th3P:"Every decision lands with the one person who should make it. The founder and a partner in another time zone hand the board over at night, and each sees what moved and what is waiting on them.",
+      watchTitle:"On your wrist, too",
+      watchSub:"Approve, decline or ask Henry from your watch. Real screen from the Wear OS app, with example goals.",
+      watchAlt:"HelmDeck on a round watch: two goals are waiting for you",
+      watchAppleNote:"The watch app is included in the iPhone package. Install HelmDeck on your iPhone and it appears on your paired watch.",
+      watchAppleBtn:"Get it on the App Store",
+      watchWearNote:"Install HelmDeck on your phone. The watch app comes from the same Play Store listing, or open the Play Store on your watch.",
+      watchWearBtn:"Get it on Google Play",
       screensTitle:"The phone, as it looks today",
       screensSub:"Real screenshots from the app, with example goals. Not mockups.",
       sh1Alt:"HelmDeck board on a phone: backlog, in progress, review, one goal needs your decision",
@@ -1109,7 +1139,7 @@ ${wl("wearables")}
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
       dlWinStoreBtn:"Get it from the Microsoft Store",
       dlIosAppStoreBtn:"Load on the App Store · incl. Apple Watch",
-      dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app has no Play Store listing yet: <a href="${WEAR_REQUEST_URL}">email us</a> and you’ll get the APK to sideload.',
+      dlAndroidNote:'Straight from the Google Play Store, publicly available. The APK here is for sideloading if you’d rather install directly. The Wear OS watch app comes from the same listing, see <a href="#watch">Watch</a>.',
       dlAndroidPlayBtn:"Get it on Google Play", dlAndroidApkBtn:"Download APK",
       dlAll:"All downloads & checksums on GitHub",
       cloudTitle:"HelmDeck Cloud",
