@@ -27,6 +27,12 @@ def _append(rec):
     return rec
 
 
+# 1500 cut the goal wake's WARUM JETZT / tidy list / ask: the process summary
+# comes first and is long, so the reasons - the point of the wake - never
+# reached Henry (2026-10-06 08:01: stored detail ended inside the step list).
+DETAIL_MAX = 4000
+
+
 def emit(kind, card=None, detail="", process=None):
     """Reporting seam for ANY cell: record the exception, note it on the card,
     never decide anything here. `process` names the process an escalation is
@@ -34,7 +40,7 @@ def emit(kind, card=None, detail="", process=None):
     of the detail prose."""
     eid = "%s-%d" % (kind, int(time.time() * 1000))
     rec = {"event": "open", "id": eid, "kind": kind, "card": card,
-           "detail": str(detail)[:1500]}
+           "detail": str(detail)[:DETAIL_MAX]}
     if process:
         rec["process"] = process
     _append(rec)

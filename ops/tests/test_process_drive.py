@@ -176,7 +176,8 @@ check(len(emitted) == n + 2 and emitted[n]["process"] == "p-goal", "the goal wak
 d = emitted[n]["detail"]
 check("brief: Morgen-Brief" in d and "stalled: noch keine Karte fuer das Ziel" in d
       and "deadline: noch 2 Tage" in d, "morning: brief + stalled + deadline from the goal text (%r)" % d[-600:])
-check(d.startswith("GOAL: Nebeneinkommen finden"), "the goal evidence leads the detail")
+check(d.startswith("WARUM JETZT") and 0 < d.find("GOAL: Nebeneinkommen finden") and d.find("deadline") < d.find("GOAL: "),
+      "the REASONS lead the detail (a cut must hit the process summary, never the reason); goal evidence follows")
 check("goal_wake" not in st, "the old goal-only latch is dropped")
 n = len(emitted)
 GC = dict(GP, steps=[{"title": "x", "mode": "do", "track": "g1"}])

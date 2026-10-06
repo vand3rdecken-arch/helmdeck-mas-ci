@@ -85,6 +85,24 @@ r2, _ = pd.reasons_for(done_proc, ps, {"slot": "x"}, now, [], is_goal=True,
                        slot=("20270115 14:00", 1, now - 3600), stale=items)
 check(not any(x.startswith("tidy:") for x in r2), "not repeated at the afternoon slot")
 
+# 5) alignment evidence: where the card work of the week went
+import time as _t
+_now = 1_800_000_000.0
+_mk = lambda repo, days: {"repo": repo, "created": _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(_now - days * 86400))}
+_wp = pd.work_by_project([_mk("C:" + chr(92) + "x" + chr(92) + "alphaloop", 1)] * 3 + [_mk("C:/x/helmdeck", 2), _mk("C:/x/old", 30)], _now)
+check(_wp == "alphaloop 3, helmdeck 1", "work_by_project counts the last 7 days per repo - got %r" % _wp)
+
+# 6) the broker refuses a set_next without text instead of clearing the schedule
+from cells.copilot.broker import henry_broker as hb
+from spine.registry import escalations as _esc
+_pp = processes.create("Plan mit Next", actor="pm", open_ended=True)
+processes.set_next(_pp["id"], "alter Zug", "2027-02-01")
+_eid = _esc.emit("process-move", None, "x", process=_pp["id"])
+_ok = hb._execute("set_next", "", "", "", {"id": _eid, "kind": "process-move", "process": _pp["id"]},
+                  kind="", why="warum", at="2027-02-02")
+check(_ok is False and (processes.get(_pp["id"]).get("next") or {}).get("what") == "alter Zug",
+      "set_next without text is refused and the recorded next move survives")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

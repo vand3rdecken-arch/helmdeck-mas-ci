@@ -665,6 +665,13 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
                 processes.finish_process(pid, actor="henry")
                 escalations.record_note(esc["id"], "finish_process: %s" % pid)
             else:
+                if not (text or "").strip():
+                    # an empty `what` CLEARS the next move (set_next's own rule):
+                    # a decision that merely forgot "text" must not silently
+                    # delete the schedule it believes it just set (2026-10-06)
+                    escalations.record_note(esc["id"], "set_next ohne text - nichts gesetzt, "
+                                            "bleibt offen (text = was, at = wann)")
+                    return False
                 processes.set_next(pid, text, at, actor="henry")
                 escalations.record_note(esc["id"], "set_next: %s - %s" % (at, text[:200]))
         except (RuntimeError, ValueError) as e:

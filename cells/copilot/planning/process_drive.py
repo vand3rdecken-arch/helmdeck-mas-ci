@@ -189,6 +189,23 @@ def stale_items(processes, tracks, now):
     return out[:MAX_TIDY]
 
 
+def work_by_project(tracks, now, days=7):
+    """Where the card work of the last `days` actually went: "alphaloop 38,
+    helmdeck 5". Evidence for ALIGNMENT - the goal says one thing, the board may
+    say another (2026-10-06: the goal was side income, 88% of the work was the
+    alphaloop investing radar). Derived from the cards' own repo + created."""
+    import os
+    cut = now - days * 86400
+    n = {}
+    for t in tracks:
+        if t.get("example") or t.get("board_hidden") or _epoch(t.get("created")) < cut:
+            continue
+        name = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "ohne Repo"
+        n[name] = n.get(name, 0) + 1
+    top = sorted(n.items(), key=lambda kv: -kv[1])[:5]
+    return ", ".join("%s %d" % kv for kv in top)
+
+
 def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
     """(reasons, new latch) for one process - pure, for tests. `slot` is
     current_slot()'s tuple when a slot is open for this process, else None."""
@@ -210,7 +227,9 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
         if idx == 0 and is_goal:
             out.append("brief: Morgen-Brief - schick dem Owner in wenigen Saetzen, wo das "
                        "Ziel steht, was heute laeuft und was nur er entscheiden kann "
-                       "(notify_owner); dann der naechste Zug")
+                       "(notify_owner); passt das Ziel noch zu der Arbeit "
+                       "(ARBEIT 7T), und sind Plaene fertig oder tot (tidy)? "
+                       "dann der naechste Zug")
         open_work = (ps["steps"] and len(ps["done"]) < ps["steps"]) or is_goal
         if (p.get("status") in ("running", "ready") and (ps["cards"] or is_goal) and open_work
                 and ps["last_move"] < prev):
@@ -330,8 +349,12 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
                     goal_pid=goal_pid), now)
             except Exception:                                # noqa: BLE001
                 pass
-            head = "%s\n%s" % (gl or "ZIEL: " + " ".join((goal or "").split())[:300], head)
-        detail = "%s\n\nWARUM JETZT: %s\n\n%s" % (head, "; ".join(reasons), _ASK)
+            wp = work_by_project(tracks, now)
+            head = "%s%s\n%s" % (gl or "ZIEL: " + " ".join((goal or "").split())[:300],
+                               ("\n  ARBEIT 7T nach Projekt: " + wp) if wp else "", head)
+        # reasons FIRST: whatever has to be cut for the record is the tail of
+        # the process summary, never the reason for the wake
+        detail = "WARUM JETZT: %s\n\n%s\n\n%s" % ("; ".join(reasons), _ASK, head)
         if emit is None:
             from spine.registry import escalations
             emit = escalations.emit
