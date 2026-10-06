@@ -384,6 +384,72 @@ check(m.recall("wer gewann die Tour 1998", rows=_fill) == [], "an unanswerable q
 check(m.recall("wer", rows={"a": {"content": "werkzeug werkzeug kasten", "updated_at": "2026-09-01"}, **_fill}) == [],
       "a 3-letter word never prefix-matches a longer one ('wer' vs 'werkzeug')")
 
+# --- closed-world / silent-truncation disclosure (agent-facing text) ---
+_many = "".join('<memory-save name="n-%02d">inhalt %d</memory-save>' % (i, i)
+                for i in range(m.MAX_BLOCKS + 3))
+_c, _mu = m.parse("x " + _many)
+check(len(_mu) == m.MAX_BLOCKS, "parse still applies at most MAX_BLOCKS")
+_fb = m.feedback(_mu, m.last_rejects())
+check("3 Notiz-Bloecke ueber dem Limit von %d verworfen" % m.MAX_BLOCKS in _fb and "n-30" in _fb,
+      "blocks over the limit are named in the next-turn feedback, not dropped silently")
+check("(+" in _fb and "weitere)" in _fb, "the capped 'gespeichert' list carries (+N weitere)")
+m.parse("<memory-save name=\"one\">a</memory-save>")
+check("ueber dem Limit" not in m.feedback([{"op": "save", "name": "one"}], []),
+      "a clean parse leaves no stale overflow notice")
+
+_rows = {"n%d" % i: {"content": ("wort%d " % i) * 3 + "kolibri " * 40, "updated_at": "2026-09-%02d" % (i + 1),
+                     "kind": "project", "source": "db"} for i in range(4)}
+for _i in range(30):
+    _rows["fl%d" % _i] = {"content": "belanglos text %d" % _i, "updated_at": "2026-08-01",
+                          "kind": "project", "source": "db"}
+_old = m.RECALL_BUDGET
+m.RECALL_BUDGET = 700
+try:
+    _rb = m.recall_block("kolibri kolibri wort0 wort1 wort2 wort3", rows=_rows)
+finally:
+    m.RECALL_BUDGET = _old
+check("weitere Treffer nicht ausgegeben" in _rb and "henry_memory_get.py get" in _rb,
+      "hits dropped by the recall budget are named with the get command")
+
+_old_skip = m.auto_skipped
+m.auto_skipped = lambda: 7
+try:
+    _ov = m.overview({"a-b": {"content": "x", "updated_at": "2026-09-01", "source": "db"}})
+finally:
+    m.auto_skipped = _old_skip
+check("7 Dateien ueber dem Limit von %d nicht geladen" % m.AUTO_MAX_FILES in _ov,
+      "the overview names auto-memory files beyond AUTO_MAX_FILES")
+
+import io as _io, contextlib as _cl
+_fx = {"n%d" % i: {"content": "alpha " + "z" * 3000, "updated_at": "2026-09-%02d" % (i + 1), "source": "db"}
+       for i in range(10)}
+_buf = _io.StringIO()
+_hits = _hmg.find_notes(_fx, ["alpha"])
+check(len(_hits) == 10, "find_notes logic unchanged (all 10 match)")
+_old_all = m.all_notes
+m.all_notes = lambda *a, **k: _fx
+try:
+    with _cl.redirect_stdout(_buf):
+        _hmg.main(["x", "find", "alpha"])
+finally:
+    m.all_notes = _old_all
+_out = _buf.getvalue()
+check("2 weitere Treffer nicht gezeigt" in _out and "Zeichen gekuerzt, ganze Notiz: get" in _out
+      and "Teilstring-Suche" in _out, "find says what it cut and by which criteria")
+
+from cells.copilot.chat import private_henry as _ph, room_henry as _rh   # noqa: E402
+_cards = _ph._Cards([{"id": "c1", "task": "t", "lane": "l", "status": "s", "result": "", "mine": True}])
+_cards.total = 20
+_pp = _ph.build_prompt({"name": "Ann"}, _cards, [], "hi", {})
+check("1 von 20 Karten gezeigt" in _pp and "letzten %d Eintraege" % _ph.HISTORY_ENTRIES in _pp,
+      "private prompt says N of M cards shown and names the history window")
+_big = {"r/n%d" % i: {"content": "x" * 3000, "updated_at": "2026-09-%02d" % (i + 1)} for i in range(4)}
+_mb = _rh.memory_block(_big)
+check("Notizen nicht gezeigt" in _mb, "room memory_block names the notes the budget cut")
+_rp = _rh.build_prompt({"name": "R", "members": ["a"]}, [{"text": "m"}] * 40, "a", "q", {})
+check("nur die letzten %d von 40 Nachrichten" % _rh.HISTORY_LINES in _rp,
+      "room prompt names its history window")
+
 print("")
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

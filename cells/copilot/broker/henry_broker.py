@@ -251,6 +251,7 @@ def _snapshot():
     """One screenful of system truth - derived live at read time, never a
     stored flag (the no-monkey-patch law)."""
     lines = []
+    cap = 40                           # total budget; the CARD list absorbs any cut
     try:                               # the goal first - see goal_drive
         from cells.copilot.planning import goal_drive
         gl = goal_drive.goal_line(goal_drive.goal_state())
@@ -258,6 +259,7 @@ def _snapshot():
             lines += gl.split("\n")
     except Exception as e:                                   # noqa: BLE001
         lines.append("GOAL: (unreadable: %s)" % str(e)[:120])
+    cards = []
     try:
         from spine.storage.trackstore import _load
         from spine.agent import drivers
@@ -266,17 +268,26 @@ def _snapshot():
             # inert, never dispatched, and Henry must never plan/reason about it.
             if t.get("archived") or t.get("lane") == "done" or t.get("example"):
                 continue
-            lines.append("card %s | %s/%s | ft=%s direct=%s turn_active=%s | %s" % (
+            cards.append("card %s | %s/%s | ft=%s direct=%s turn_active=%s | %s" % (
                 t["id"], t.get("lane"), t.get("status"), bool(t.get("fast_track")),
                 bool(t.get("direct")), drivers.turn_active(t["id"]),
                 (t.get("task") or "")[:60]))
     except Exception as e:
         lines.append("(board unreadable: %s)" % e)
+    # lock / load lines BEFORE the card list: the cap used to cut them first
+    # (they were appended last), and a missing "ship.lock: frei" reads as unknown
     lines.append(_ship_lock_line())
     lines.append(_android_lock_line())
     lines.append(_box_load_line())
     lines.append(_heavy_procs_line())
-    return "\n".join(lines[:40])
+    room = max(cap - len(lines) - 1, 0)
+    head = ("Karten (nur live: nicht archiviert, nicht in done, keine Beispiel-Karte; "
+            "%d gelistet)" % len(cards))
+    shown = cards[:room]
+    out = lines + [head] + shown
+    if len(cards) > len(shown):
+        out.append("(+%d weitere Karten nicht gezeigt)" % (len(cards) - len(shown)))
+    return "\n".join(out)
 
 
 def _ship_lock_line():
@@ -411,9 +422,16 @@ def _card_log_tail(card, n=35):
         if not t:
             return ""
         from spine.ops.actionlog import read_timeline
-        recs = read_timeline(t.get("run_dir") or "")[-n:]
-        return "\n".join("%s %s: %s" % (r.get("ts", "?"), r.get("kind", "?"),
-                                        str(r.get("detail", ""))[:220]) for r in recs)
+        allrecs = read_timeline(t.get("run_dir") or "")
+        recs = allrecs[-n:]
+
+        def _d(r):
+            d = str(r.get("detail", ""))
+            return d[:220] + "\u2026" if len(d) > 220 else d
+        head = ("(letzte %d von %d Eintraegen; Details auf 220 Zeichen gekuerzt, "
+                "\u2026 = gekuerzt)\n" % (len(recs), len(allrecs)))
+        return head + "\n".join("%s %s: %s" % (r.get("ts", "?"), r.get("kind", "?"),
+                                               _d(r)) for r in recs)
     except Exception as e:
         return "(actionlog unreadable: %s)" % e
 
@@ -437,17 +455,24 @@ def _audit_context(t):
         from spine.storage import events
         disp = auth.get_user(t.get("dispatched_by") or "")
         if not disp or not permissions.can(disp, "audit.read"):
-            return ""
-        rows = events.query_audit(track=t.get("id"))[-8:]
+            return ("\n== AUDIT (juengste Ereignisse dieser Karte) ==\n" +
+                    ("Audit nicht lesbar (Berechtigung des Auftraggebers)" if disp else
+                     "Audit nicht lesbar (kein Auftraggeber an der Karte)") + "\n")
+        allrows = events.query_audit(track=t.get("id"))
+        rows = allrows[-8:]
         if not rows:
             return ""
         lines = ["%s  %s  actor=%s%s" % (
             e.get("at_utc", "?"), e.get("kind", "?"), e.get("actor", "-"),
             ("  " + e["reason"]) if e.get("reason") else "")
             for e in rows]
-        return "\n== AUDIT (juengste Ereignisse dieser Karte) ==\n" + "\n".join(lines)
+        return ("\n== AUDIT (juengste Ereignisse dieser Karte; letzte %d von %d "
+                "Audit-Eintraegen) ==\n" % (len(rows), len(allrows)) + "\n".join(lines))
     except Exception:
-        return ""  # never let a context-enrichment failure block the judgement turn
+        # never let a context-enrichment failure block the judgement turn - but
+        # say the section is missing, an empty string reads as "no events"
+        return ("\n== AUDIT (juengste Ereignisse dieser Karte) ==\n"
+                "Audit nicht lesbar (Fehler beim Lesen)\n")
 
 
 def _judgement_policy(t):
@@ -485,6 +510,7 @@ def _decide(esc):
         policy
         + "\n\n== ESKALATION ==\nkind: %s\ncard: %s\ndetail:\n%s\n" % (
             esc["kind"], esc.get("card") or "-", esc.get("detail") or "")
+        + (("Vermerk: %s\n" % esc["last_note"]) if "unterdrueckt" in (esc.get("last_note") or "") else "")
         + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
         + _audit_context(t)
         + "\n== SYSTEM ==\n" + _snapshot()

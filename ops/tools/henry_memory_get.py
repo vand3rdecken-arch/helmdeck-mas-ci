@@ -73,13 +73,24 @@ def main(argv):
             return 2
         hits = find_notes(notes, terms)
         if not hits:
-            print("no note carries ALL of: %s" % " ".join(terms))
+            print("no note carries ALL of: %s (Teilstring-Suche in Name und Inhalt, "
+                  "alle Begriffe - kein Treffer heisst nicht, dass es keine Notiz zum Thema gibt)"
+                  % " ".join(terms))
             return 0
-        print("%d note(s) match %s:" % (len(hits), " ".join(terms)))
+        print("%d note(s) match %s (Teilstring-Suche in Name und Inhalt, alle Begriffe):"
+              % (len(hits), " ".join(terms)))
         for name, row in hits[:8]:
+            body = (row.get("content") or "").strip()
+            cut = len(body) - 2500
+            body = body[:2500]
+            if cut > 0:
+                body += ("\n[... %d Zeichen gekuerzt, ganze Notiz: get %s]" % (cut, name))
             print("\n=== %s (%s | %s)\n%s"
-                  % (name, row.get("source") or "db", (row.get("updated_at") or "")[:10],
-                     (row.get("content") or "").strip()[:2500]))
+                  % (name, row.get("source") or "db", (row.get("updated_at") or "")[:10], body))
+        if len(hits) > 8:
+            print("\n%d weitere Treffer nicht gezeigt (aelter): %s - Begriff enger fassen"
+                  % (len(hits) - 8, ", ".join(n for n, _r in hits[8:16])
+                     + (" ..." if len(hits) > 16 else "")))
         return 0
     print("unknown command: %s" % cmd, file=sys.stderr)
     return 2

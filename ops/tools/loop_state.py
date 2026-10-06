@@ -71,6 +71,13 @@ SECRET_NAMES = ("settings.json", "users.json", "helmdeck.db", "helmdeck.db-wal",
 _POLICY_ROOT = DAEMON
 
 
+def _joined(items, n=2):
+    """The first `n` problems joined, plus "(+N weitere)" - the Stop-hook text
+    must not read as the full list when it is a cut."""
+    s = " | ".join(items[:n])
+    return s + (" (+%d weitere)" % (len(items) - n) if len(items) > n else "")
+
+
 def _build_loop_enabled():
     """The build loop is a HARNESS RULE, not a cell (reclassified 2026-09-03,
     owner decree: 2 cells/ folders = 2 cells, the registry mirrors the tree;
@@ -573,11 +580,11 @@ def transitions():
         # that ignores them just bounces.
         red = checks_red(touched)
         if red:
-            return [("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2])
+            return [("EXECUTE", "checks red - build/fix: " + _joined(red)
                      + _design_hint(touched))]
         hyg = hygiene_problems()
         if hyg:
-            return [("CLEAN", " | ".join(hyg[:2]))]
+            return [("CLEAN", _joined(hyg))]
         if (time.time() - newest_mtime(touched)) > WIP_MIN * 60:
             return [("COMMIT", "card work quiet (%d file(s)) - commit on THIS branch, "
                      "then hand off: 'Ready for Review'. %s"
@@ -611,7 +618,7 @@ def transitions():
     design = _design_hint(touched)
     red = checks_red(touched)
     if red:
-        t.append(("EXECUTE", "checks red - build/fix: " + " | ".join(red[:2]) + design))
+        t.append(("EXECUTE", "checks red - build/fix: " + _joined(red) + design))
         return t
 
     if not section_filled(wo, "## Verified"):
@@ -624,7 +631,7 @@ def transitions():
 
     hyg = hygiene_problems()
     if hyg:
-        t.append(("CLEAN", " | ".join(hyg[:2])))
+        t.append(("CLEAN", _joined(hyg)))
         return t
 
     quiet = (time.time() - newest_mtime(touched)) > WIP_MIN * 60

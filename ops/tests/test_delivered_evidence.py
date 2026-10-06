@@ -31,7 +31,7 @@ t = {"worktree": wt}
 
 out = turnrunner._evidence_lines(t, {"turn_web": 0})
 check("clean tree: app nein, 0 shots, 0 web",
-      "App-Dateien geaendert: nein, .shots/: 0 Dateien" in out and "WebSearch/WebFetch im Turn: 0" in out)
+      "App-Dateien geaendert: nein (Pfad-Heuristik: surfaces/app/, /ui/), .shots/: 0 Dateien" in out and "WebSearch/WebFetch im Turn: 0" in out)
 
 os.makedirs(os.path.join(wt, "surfaces", "app", "src"))
 open(os.path.join(wt, "surfaces", "app", "src", "x.tsx"), "w").write("x")
@@ -40,13 +40,13 @@ for n in ("a.png", "b.png", "a.txt"):
     open(os.path.join(wt, ".shots", n), "w").write("x")
 out = turnrunner._evidence_lines(t, {"turn_web": 3})
 check("app file + 2 shots + 3 web calls reported",
-      "App-Dateien geaendert: ja, .shots/: 2 Dateien" in out and "WebSearch/WebFetch im Turn: 3" in out)
+      "App-Dateien geaendert: ja (Pfad-Heuristik: surfaces/app/, /ui/), .shots/: 2 Dateien" in out and "WebSearch/WebFetch im Turn: 3" in out)
 
-check("no ref_code reads -> 'keiner'", "Vorbild-Code gelesen: keiner" in out)
+check("no ref_code reads -> 'keiner'", "Vorbild-Code gelesen (laut .refs.log): keiner eingetragen" in out)
 open(os.path.join(wt, ".refs.log"), "w").write(chr(10).join(["getpaseo/paseo:docs/x.md"] * 2 + ["foo/bar:a.ts"]))
 out = turnrunner._evidence_lines(t, {})
 check("ref_code reads listed once each",
-      "Vorbild-Code gelesen: foo/bar:a.ts, getpaseo/paseo:docs/x.md" in out)
+      "Vorbild-Code gelesen (laut .refs.log): foo/bar:a.ts, getpaseo/paseo:docs/x.md" in out)
 
 # the escalation itself carries both lines
 from spine.registry import escalations
@@ -59,6 +59,6 @@ turnrunner._emit_delivered_parked({"id": "c1", "lane": "working", "task": "x", "
                                   "needs_you", "done", {"turn_web": 1})
 d = sent[0][1]["detail"] if sent else ""
 check("delivered-parked detail has both fact lines",
-      "App-Dateien geaendert" in d and "WebSearch/WebFetch im Turn: 1" in d and "Vorbild-Code gelesen: foo/bar" in d)
+      "App-Dateien geaendert" in d and "WebSearch/WebFetch im Turn: 1" in d and "Vorbild-Code gelesen (laut .refs.log): foo/bar" in d)
 
 sys.exit(1 if fails else 0)

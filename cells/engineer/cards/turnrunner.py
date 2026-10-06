@@ -343,7 +343,9 @@ def _settle_reply_apply(t, question, cleaned, bg, log):
             bg["since"] = (t.get("background") or {}).get("since") or time.time()
             t["background"] = bg
             log.log("note", "wartet auf %d Hintergrund-Task(s): %s"
-                    % (bg["n"], ", ".join(bg["names"])[:200]))
+                    % (bg["n"], ", ".join(bg["names"])[:200]
+                       + (" (+%d weitere)" % (bg["n"] - len(bg["names"]))
+                          if bg["n"] > len(bg["names"]) else "")))
             return "background"
         t["waiting_on"] = "you"
         t.pop("background", None)
@@ -564,10 +566,10 @@ def _evidence_lines(t, meta):
             refs = sorted({l.strip() for l in f if l.strip()})
     except OSError:
         refs = []
-    return ("\nApp-Dateien geaendert: %s, .shots/: %d Dateien\nWebSearch/WebFetch im Turn: %d"
-            "\nVorbild-Code gelesen: %s"
+    return ("\nApp-Dateien geaendert: %s (Pfad-Heuristik: surfaces/app/, /ui/), .shots/: %d Dateien\nWebSearch/WebFetch im Turn: %d"
+            "\nVorbild-Code gelesen (laut .refs.log): %s"
             % ("ja" if app else "nein", n_shots, int((meta or {}).get("turn_web") or 0),
-               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner"))
+               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner eingetragen"))
 
 
 

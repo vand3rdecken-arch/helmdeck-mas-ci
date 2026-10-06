@@ -52,10 +52,10 @@ def main():
     from cells.copilot.broker import henry_broker
 
     # ------------------------------------------------------------------ 1 ---
-    print("\nno card / no dispatcher -> empty, never a crash")
+    print("\nno card -> empty; no dispatcher -> 'nicht lesbar' notice; never a crash")
     ok(henry_broker._audit_context(None) == "", "no track at all")
-    ok(henry_broker._audit_context({"id": "t-1"}) == "", "no dispatched_by field")
-    ok(henry_broker._audit_context({"id": "t-1", "dispatched_by": "nobody"}) == "",
+    ok("Audit nicht lesbar" in henry_broker._audit_context({"id": "t-1"}), "no dispatched_by field")
+    ok("Audit nicht lesbar" in henry_broker._audit_context({"id": "t-1", "dispatched_by": "nobody"}),
        "dispatched_by names a nonexistent account")
 
     # seed some audit events for two different cards
@@ -65,9 +65,9 @@ def main():
 
     # ------------------------------------------------------------------ 2 ---
     print("\ndispatcher WITHOUT audit.read -> empty (no leak beyond that account's own view)")
-    ok(henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "sam"}) == "",
+    ok("Audit nicht lesbar" in henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "sam"}),
        "operator dispatcher: operator has no audit.read by default -> empty")
-    ok(henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "ext"}) == "",
+    ok("Audit nicht lesbar" in henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "ext"}),
        "client dispatcher -> empty")
 
     # ------------------------------------------------------------------ 3 ---
@@ -92,7 +92,7 @@ def main():
     auth.get_user = lambda name: None
     try:
         r = henry_broker._audit_context({"id": "t-owner-card", "dispatched_by": "duy"})
-        ok(r == "", "unreadable user registry -> empty context, no exception")
+        ok("Audit nicht lesbar" in r, "unreadable user registry -> empty context, no exception")
     except Exception as e:
         ok(False, "raised instead of degrading: %s" % e)
     finally:

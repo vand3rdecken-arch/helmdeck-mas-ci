@@ -49,6 +49,12 @@ def brief():
         return _FALLBACK
 
 
+class _Cards(list):
+    """The shown cards, carrying how many the person may see in all (`total`),
+    so the prompt can say it is a window. Still a plain list to every caller."""
+    total = 0
+
+
 def cards_for(user):
     """The cards this person may see, newest first, as the SUMMARY a prompt needs.
     Own/assigned cards and shared ones alike are reduced to the same whitelisted
@@ -59,7 +65,8 @@ def cards_for(user):
     rows = [t for t in sessions.list_tracks()
             if not t.get("board_hidden") and not t.get("archived") and auth.sees_card(user, t)]
     rows.sort(key=lambda t: t.get("updated") or "", reverse=True)
-    out = []
+    out = _Cards()
+    out.total = len(rows)
     for t in rows[:CARD_LIMIT]:
         out.append({"id": t.get("id"), "task": (t.get("task") or "")[:120], "lane": t.get("lane"),
                     "status": t.get("status"), "result": (t.get("last_reply") or "")[:240],
@@ -68,13 +75,19 @@ def cards_for(user):
 
 
 def memory_block(rows, budget=4000):
-    out, used = [], 0
-    for name, r in sorted(rows.items(), key=lambda kv: kv[1].get("updated_at") or "", reverse=True):
+    out, used, cut = [], 0, False
+    ordered = sorted(rows.items(), key=lambda kv: kv[1].get("updated_at") or "", reverse=True)
+    for name, r in ordered:
         body = (r.get("content") or "").strip()
         if used + len(body) > budget:
+            cut = True
             break
         used += len(body)
         out.append("=== %s\n%s" % (name, body))
+    if cut:
+        rest = [n for n, _r in ordered[len(out):]]
+        out.append("(+%d Notizen nicht gezeigt, Budget erschoepft: %s)"
+                   % (len(rest), ", ".join(rest[:8]) + (" ..." if len(rest) > 8 else "")))
     return ("\n\nNOTIZEN UEBER DIESE PERSON:\n" + "\n\n".join(out)) if out else ""
 
 
@@ -87,10 +100,14 @@ def build_prompt(user, cards, history, text, rows):
                                     "" if c["mine"] else " [nur geteilt]",
                                     (" - Ergebnis: " + c["result"]) if c["result"] else "")
           for c in cards]
-    return ("PERSON: %s\n\nIHRE KARTEN (mehr siehst du nicht):\n%s%s\n\nVERLAUF:\n%s\n\n"
+    total = getattr(cards, "total", 0) or len(cards)
+    shown = ("(%d von %d Karten gezeigt)" % (len(cards), total)
+             if total > len(cards) else "(%d Karten, alle gezeigt)" % len(cards))
+    return ("PERSON: %s\n\nIHRE KARTEN (mehr siehst du nicht) %s:\n%s%s\n\n"
+            "VERLAUF (nur die letzten %d Eintraege, Aelteres steht hier nicht):\n%s\n\n"
             "NEUE NACHRICHT von %s:\n%s"
-            % (user["name"], "\n".join(cl) or "(keine)", memory_block(rows),
-               "\n".join(lines) or "(noch leer)", user["name"], text))
+            % (user["name"], shown, "\n".join(cl) or "(keine)", memory_block(rows),
+               HISTORY_ENTRIES, "\n".join(lines) or "(noch leer)", user["name"], text))
 
 
 def _entry(role, text, by, extra=None):

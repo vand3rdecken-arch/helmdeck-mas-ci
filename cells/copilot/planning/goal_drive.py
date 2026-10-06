@@ -139,6 +139,7 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
         "goal_pid": goal_pid or "",
         "goal_cards": len(ids),
         "live": [t["id"] for t in live],
+        "working": sum(1 for t in live if t.get("lane") == "working"),
         "done": done,
         "share": (tok_goal / float(tok_all)) if tok_all and ids else None,
         "last_move": last_move or None,
@@ -166,12 +167,23 @@ def goal_line(gs, now=None):
         parts.append("Ziel-Anteil 7T: noch keine Ziel-Karten (goal=true beim Anlegen haengt sie an den Ziel-Prozess)")
     else:
         parts.append("Ziel-Anteil 7T: %d%% der Kartenarbeit" % round(100 * gs["share"]))
-    parts.append("%d Ziel-Karte%s laufen" % (len(gs["live"]), "" if len(gs["live"]) == 1 else "n"))
+    # "live" = lanes backlog+working+review: say OPEN, not "laufen" (a card
+    # parked in backlog or review is not running)
+    nl = len(gs["live"])
+    parts.append("%d Ziel-Karte%s offen%s" % (
+        nl, "" if nl == 1 else "n",
+        (" (davon %d in Arbeit)" % gs["working"]) if gs.get("working") is not None else ""))
     parts.append(("letzte Ziel-Bewegung " + _ago(gs["last_move"], now))
                  if gs["last_move"] else "noch keine Ziel-Bewegung")
     out = "GOAL: %s\n  %s" % (head, " | ".join(parts))
     if gs["needs"]:
         out += "\n  wartet auf den Owner: " + "; ".join(x["label"] for x in gs["needs"][:3])
-    for f in (gs.get("facts") or [])[-8:]:
-        out += "\n  Owner-Fakt: " + " ".join(f.split())[:200]
+        if len(gs["needs"]) > 3:
+            out += " (+%d weitere)" % (len(gs["needs"]) - 3)
+    allf = gs.get("facts") or []
+    if len(allf) > 8:
+        out += "\n  (%d von %d Owner-Fakten gezeigt, aeltere nicht gezeigt)" % (8, len(allf))
+    for f in allf[-8:]:
+        ft = " ".join(f.split())
+        out += "\n  Owner-Fakt: " + ft[:200] + ("… (gekuerzt)" if len(ft) > 200 else "")
     return out

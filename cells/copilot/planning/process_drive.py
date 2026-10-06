@@ -53,7 +53,8 @@ _ASK = (
     "Auftrag; die Karte wird Schritt dieses Prozesses). Den Owner holst du nur fuer "
     "einen Login oder das letzte Go vor etwas, das nach aussen geht (posten, "
     "senden, bezahlen) - dann bereitest du alles so vor, dass ihm ein Tap bleibt "
-    "(notify_owner, eine Frage). Weitere Verben: accept_steps, cancel_process, finish_process (Ziel erledigt), "
+    "(notify_owner, eine Frage). Weitere Verben (Auswahl, nicht abschliessend - deine Haende und board_state.py "
+    "--plans/--find hast du auch): accept_steps, cancel_process, finish_process, "
     "set_next (text = was, at = wann), steer/move, ignore (ein Satz warum).")
 
 
@@ -142,7 +143,10 @@ def summary(p, ps, now):
     lines = ["PROZESS %s: %s" % (p["id"], _title(p)),
              "  Status %s | %d Schritte, %d mit Karte, %d fertig" % (
                  p.get("status"), ps["steps"], len(ps["cards"]), len(ps["done"]))]
-    for i, s in enumerate((p.get("steps") or [])[-12:]):
+    allsteps = p.get("steps") or []
+    if len(allsteps) > 12:
+        lines.append("  (die letzten 12 von %d Schritten; alle: board_state.py --plans)" % len(allsteps))
+    for i, s in enumerate(allsteps[-12:]):
         lines.append("  - [%s/%s] %s%s" % (
             s.get("state") or s.get("status") or "?", s.get("mode") or "do",
             (s.get("title") or "")[:90], (" -> " + s["track"]) if s.get("track") else ""))
@@ -155,7 +159,6 @@ def summary(p, ps, now):
 
 
 IDLE_CARD_S = 3 * 3600      # a worker-less card parked this long is housekeeping, not news
-MAX_TIDY = 8
 
 
 def stale_items(processes, tracks, now):
@@ -172,8 +175,8 @@ def stale_items(processes, tracks, now):
         steps = p.get("steps") or []
         if p.get("status") == "running" and steps and all(
                 s.get("state") == "done" or s.get("done") for s in steps):
-            out.append("Prozess %s: alle %d Schritte fertig, steht noch auf running (%s) "
-                       "- erreicht? dann finish_process" % (p["id"], len(steps), _title(p)[:60]))
+            out.append("Prozess %s: %d von %d Schritten fertig, Status running (%s)"
+                       % (p["id"], len(steps), len(steps), _title(p)[:60]))
     for t in tracks:
         if (t.get("archived") or t.get("example") or t.get("lane") == "done"
                 or t.get("status") != "needs_you" or t.get("question")
@@ -181,12 +184,24 @@ def stale_items(processes, tracks, now):
             continue
         ended = _epoch(t.get("turn_ended") or t.get("updated") or t.get("created"))
         if ended and now - ended >= IDLE_CARD_S:
-            out.append("Karte %s (%s): seit %d h ohne Frage geparkt, letzter Turn %s, "
-                       "waiting_on=%s - abnehmen, anstossen oder beenden"
+            out.append("Karte %s (%s): needs_you seit %d h, keine offene Frage, letzter Turn %s, "
+                       "waiting_on=%s"
                        % (t["id"], " ".join((t.get("task") or "").split())[:50],
                           (now - ended) // 3600, t.get("turn_ended") or "?",
                           t.get("waiting_on") or "-"))
-    return out[:MAX_TIDY]
+    return out
+
+
+def stale_block(processes, tracks, now):
+    """stale_items as an OPEN-WORLD block (spine/turn/listing.found): criteria,
+    what was checked, nothing silently cut, a way to look further."""
+    from spine.turn import listing
+    return listing.found(
+        stale_items(processes, tracks, now), "liegengebliebene Plaene und Karten",
+        criteria="Prozess running mit allen Schritten fertig; Karte needs_you ohne Frage "
+                 "und ohne Hintergrund-Task seit >= %d h (nach letztem Turn)" % (IDLE_CARD_S // 3600),
+        checked="%d Prozesse, %d Karten" % (len(processes), len(tracks)),
+        more="`py -3.12 ops/tools/board_state.py --plans` (alle Prozesse) / `--stale`", cap=20)
 
 
 def work_by_project(tracks, now, days=7):
@@ -202,8 +217,26 @@ def work_by_project(tracks, now, days=7):
             continue
         name = os.path.basename((t.get("repo") or "").replace("\\", "/").rstrip("/")) or "ohne Repo"
         n[name] = n.get(name, 0) + 1
-    top = sorted(n.items(), key=lambda kv: -kv[1])[:5]
-    return ", ".join("%s %d" % kv for kv in top)
+    ranked = sorted(n.items(), key=lambda kv: -kv[1])
+    top, rest = ranked[:8], ranked[8:]
+    out = ", ".join("%s %d" % kv for kv in top)
+    if rest:
+        out += ", + %d weitere Projekte (%d Karten)" % (len(rest), sum(v for _k, v in rest))
+    return ("%d Karten in %d Tagen: " % (sum(n.values()), days) + out) if out else ""
+
+
+def plans_overview(processes, tracks_by_id=None):
+    """One line per process, ALL of them (no cap): id, status, steps done/total,
+    title. The owner runs several plans; a wake about one must not read as 'this
+    is the only plan'. Shared by the wake (as 'other plans') and board_state --plans."""
+    lines = []
+    for p in processes:
+        steps = p.get("steps") or []
+        done = sum(1 for s in steps if s.get("state") == "done" or s.get("done"))
+        lines.append("%s [%s%s] %d/%d - %s" % (p["id"], p.get("status"),
+                                               ", open_ended" if p.get("open_ended") else "",
+                                               done, len(steps), _title(p)[:70]))
+    return lines
 
 
 def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
@@ -227,17 +260,15 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
         if idx == 0 and is_goal:
             out.append("brief: Morgen-Brief - schick dem Owner in wenigen Saetzen, wo das "
                        "Ziel steht, was heute laeuft und was nur er entscheiden kann "
-                       "(notify_owner); passt das Ziel noch zu der Arbeit "
-                       "(ARBEIT 7T), und sind Plaene fertig oder tot (tidy)? "
-                       "dann der naechste Zug")
+                       "(notify_owner); dann der naechste Zug")
         open_work = (ps["steps"] and len(ps["done"]) < ps["steps"]) or is_goal
         if (p.get("status") in ("running", "ready") and (ps["cards"] or is_goal) and open_work
                 and ps["last_move"] < prev):
             out.append("stalled: keine Bewegung seit dem letzten Slot (%d h)"
                        % ((now - ps["last_move"]) // 3600)
                        if ps["cards"] else "stalled: noch keine Karte fuer das Ziel")
-        if idx == 0 and is_goal and stale:
-            out.append("tidy: " + " | ".join(stale))
+        if is_goal and stale:
+            out.append("gefunden: \n" + stale)
         d = ps["days_left"]
         if idx == 0 and d is not None and 0 <= d <= DEADLINE_NEAR_DAYS:
             out.append("deadline: noch %d Tage" % d)
@@ -246,7 +277,9 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
                        "machine_task mit diesem Prozess)")
             new["empty_seen"] = True
         if dk and set(dk) - set(lat.get("decide_seen") or []):
-            out.append("decide: " + "; ".join(x["label"] for x in decide[:3]))
+            out.append("decide: " + "; ".join(x["label"] for x in decide[:3])
+                       + (" (+%d weitere)" % (len(decide) - 3) if len(decide) > 3 else "")
+                       + " [Filter: nur Henry-Faelle dieses Prozesses - tote Ketten, Karten ab 24 h auf needs_you]")
         new["decide_seen"] = dk
         new["slot"] = _key
     if out and nx and any(r.startswith("next:") for r in out):
@@ -330,8 +363,12 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
         if "slot" not in lat:            # first sight: the running slot is history
             lat = dict(lat, slot=cur[0] if cur else "")
         slot = cur if cur and lat.get("slot") != cur[0] else None
+        # a finding is a REASON to wake; an empty search is not - it only rides
+        # along (below) so that a wake that happens anyway states what was checked
+        stale_found = is_goal and bool(stale_items(processes, tracks, now))
+        stale_txt = stale_block(processes, tracks, now) if is_goal else ""
         reasons, new = reasons_for(p, ps, lat, now, decide, is_goal, slot,
-                                   stale=stale_items(processes, tracks, now) if is_goal else None)
+                                   stale=stale_txt if (is_goal and stale_found) else None)
         if reasons and len(out) >= MAX_WAKES_PER_TICK:
             continue                     # next tick; latch untouched so nothing is lost
         if not reasons:
@@ -354,7 +391,16 @@ def wake(st, now=None, processes=None, tracks=None, ev=None, emit=None, save=Non
                                ("\n  ARBEIT 7T nach Projekt: " + wp) if wp else "", head)
         # reasons FIRST: whatever has to be cut for the record is the tail of
         # the process summary, never the reason for the wake
-        detail = "WARUM JETZT: %s\n\n%s\n\n%s" % ("; ".join(reasons), _ASK, head)
+        from spine.turn import listing
+        others = listing.found(
+            [x for x in plans_overview(
+                [q for q in processes if q["id"] != pid
+                 and q.get("status") not in ("done", "cancelled", "failed")])],
+            "weitere offene Plaene", criteria="Prozess weder done noch cancelled",
+            checked="%d Prozesse" % len(processes), more="`py -3.12 ops/tools/board_state.py --plans`")
+        if is_goal and not stale_found:
+            others = stale_txt + "\n\n" + others
+        detail = "WARUM JETZT: %s\n\n%s\n\n%s\n\n%s" % ("; ".join(reasons), _ASK, others, head)
         if emit is None:
             from spine.registry import escalations
             emit = escalations.emit

@@ -393,7 +393,9 @@ def _land(hid, status, result, steps):
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so
     # he never saw the passcode/permission lines and invented a still-open
     # browser window); the owner's chat row and push get only the summary.
-    full = result.strip()[:8000]
+    full = result.strip()
+    if len(full) > 8000:
+        full = full[:8000] + "\n[... %d Zeichen gekuerzt]" % (len(full) - 8000)
     short = _summary(result)[:1500]
     events.emit("hands", card or "-", action=status, id=hid, actor=user, steps=steps,
                 result=short[:300])

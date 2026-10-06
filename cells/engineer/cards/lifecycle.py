@@ -174,6 +174,23 @@ def _present_device(t, out):
     return out
 
 
+
+def _bg_names(all_names, budget=120):
+    """Names of the aborted background tasks for the note / escalation detail:
+    whole names up to ~`budget` chars, then "(+N weitere)" - never a cut in the
+    middle of a name, and the total count is always stated."""
+    shown, used = [], 0
+    for nm in all_names:
+        nm = str(nm)
+        if shown and used + len(nm) + 2 > budget:
+            break
+        shown.append(nm)
+        used += len(nm) + 2
+    text = ", ".join(shown)
+    if len(all_names) > len(shown):
+        text += " (+%d weitere)" % (len(all_names) - len(shown))
+    return "%d Task(s): %s" % (len(all_names), text)
+
 def sweep_zombies(min_idle_s=0):
     from cells.engineer.cards import sessions  # lazy: reconcile_bg still lives there
     """Reconcile status vs the live session: a card flagged status=running with no
@@ -206,8 +223,8 @@ def sweep_zombies(min_idle_s=0):
         # the card doesn't wait on a task that can never report.
         if not min_idle_s and isinstance(t.get("bg_tasks"), dict) \
                 and not drivers.has_session(t["id"]):
-            names = ", ".join((v.get("title") or v.get("desc") or "task")
-                              for v in t["bg_tasks"].values() if v.get("status", "running") == "running")[:120]
+            names = _bg_names([(v.get("title") or v.get("desc") or "task")
+                               for v in t["bg_tasks"].values() if v.get("status", "running") == "running"])
             # reconcile (finishAll), don't DELETE: the descriptors survive as
             # 'canceled' so the owner can still see what the worker was running
             # and that the restart ended it (Paseo clickable history). Only the

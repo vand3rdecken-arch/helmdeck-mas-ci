@@ -152,9 +152,30 @@ def _card_hint(kind, frag, hits):
         opts = "; ".join("%s (%s, %s)" % (t["branch"], t["id"], t.get("lane"))
                          for t in hits[:6])
         return ("%s: '%s' passt auf %d Karten - welche? %s" % (kind, frag, len(hits), opts))
-    near = [t for t in sessions.list_tracks() if t.get("lane") != "done"][:6]
-    opts = "; ".join("%s (%s)" % (t["branch"], t.get("lane")) for t in near) or "keine offenen Karten"
-    return ("%s: keine Karte passt auf '%s'. Offen sind gerade: %s" % (kind, frag, opts))
+    allopen = [t for t in sessions.list_tracks() if t.get("lane") != "done"]
+    near = allopen[:6]
+    opts = "; ".join("%s (%s)" % (t["branch"], t.get("lane")) for t in near)
+    if not opts:
+        return ("%s: keine Karte passt auf '%s'; es gibt keine Karte ausserhalb von done." % (kind, frag))
+    return ("%s: keine Karte passt auf '%s'. Beispiele aus %d Karten ausserhalb von done "
+            "(nicht gefiltert: Archiv und Beispiel-Karten sind dabei)%s: %s" % (
+                kind, frag, len(allopen),
+                (", %d weitere nicht gezeigt" % (len(allopen) - len(near))) if len(allopen) > len(near) else "",
+                opts))
+
+
+def _process_ref_miss(kind, frag, ps):
+    """A process reference that did not resolve to exactly ONE process: say
+    whether it matched none or several, and name up to 5 candidates (same
+    shape as _card_hint) so the next message resolves it."""
+    if not ps:
+        return ("%s failed: process ref '%s' matches 0 processes (searched in id and request)"
+                % (kind, frag))
+    opts = "; ".join("%s (%s)" % (p["id"], " ".join(str(p.get("request") or "").split())[:60])
+                     for p in ps[:5])
+    more = (", %d weitere nicht gezeigt" % (len(ps) - 5)) if len(ps) > 5 else ""
+    return ("%s failed: process ref '%s' matches %d processes - welcher? %s%s"
+            % (kind, frag, len(ps), opts, more))
 
 
 def _denied(kind, role, roles, key, extra=""):
@@ -957,7 +978,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         ps = [p for p in processes.list_processes()
               if frag in p["id"].lower() or frag in p["request"].lower()]
         if len(ps) != 1:
-            return "accept_steps failed: process ref ambiguous or not found"
+            return _process_ref_miss("accept_steps", frag, ps)
         repo = a.get("repo") or events.settings().get("default_repo")
         p, made = processes.accept_all(ps[0]["id"], repo, actor=actor)
         if made:
@@ -976,7 +997,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         ps = [p for p in processes.list_processes()
               if frag in p["id"].lower() or frag in p["request"].lower()]
         if len(ps) != 1:
-            return "%s failed: process ref ambiguous or not found" % kind
+            return _process_ref_miss(kind, frag, ps)
         pid = ps[0]["id"]
         if kind == "process_status":
             # read-only - anyone who can see /processes can ask about one.
@@ -1028,7 +1049,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         ps = [p for p in processes.list_processes()
               if frag in p["id"].lower() or frag in p["request"].lower()]
         if len(ps) != 1:
-            return "%s failed: process ref ambiguous or not found" % kind
+            return _process_ref_miss(kind, frag, ps)
         p = ps[0]
         from spine.auth import auth
         admin_roles = auth.chat_admin_roles()

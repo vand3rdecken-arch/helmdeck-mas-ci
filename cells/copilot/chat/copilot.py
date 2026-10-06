@@ -109,6 +109,14 @@ _pending_actions = {}    # skey -> [result strings], folded into the next turn
 # he answered from a 1.9. memory instead). Same size as the hands hand-over,
 # so ONE number bounds the report end to end.
 PENDING_ITEM_MAX = 4000
+
+
+def _cap_item(r):
+    """One pending report item, cut at PENDING_ITEM_MAX - and SAYING so."""
+    r = str(r)
+    if len(r) <= PENDING_ITEM_MAX:
+        return r
+    return r[:PENDING_ITEM_MAX] + "[... %d Zeichen gekuerzt]" % (len(r) - PENDING_ITEM_MAX)
 _pending_lock = threading.Lock()
 
 # skey -> (sha1 of last FULL card-context sent, monotonic-enough ts, lines).
@@ -437,12 +445,13 @@ def _bg_continue(user, done, seen=False):
     for t in done:
         word = {"completed": "fertig", "failed": "FEHLGESCHLAGEN", "canceled": "abgebrochen"}.get(t.get("status"), t.get("status"))
         lines.append("- %s: %s%s" % (t.get("title") or t.get("uid"), word,
-                                    (" - " + t["result"][:300]) if t.get("result") else ""))
+                                    (" - " + t["result"][:300] + ("[... gekuerzt]" if len(t["result"]) > 300 else ""))
+                                     if t.get("result") else ""))
     prompt = _ask.harness_msg(
         "background-done",
         "Dein Hintergrund-Agent hat sich gemeldet - das hier ist ein automatischer "
         "Hinweis des Harness, keine Nachricht vom Owner:\n" + "\n".join(lines) + "\n\n"
-        "Das vollstaendige Ergebnis steht im harness-report dieses Turns oder in deinem "
+        "Ergebnisse oben auf 300 Zeichen gekuerzt; mehr steht, falls vorhanden, in deinem "
         "Verlauf (task-notification). "
         "Mach jetzt genau dort weiter, wo du auf ihn gewartet hast, und antworte dem "
         "Owner im Chat - er wartet seit deinem 'ich meld mich gleich'."
@@ -1027,6 +1036,9 @@ def _card_context(card_id, limit=40):
     try:
         from spine.agent import timeline_store
         steps = timeline_store.read(run_dir, limit=limit)
+        total = len(steps)
+        if limit and total >= limit:
+            total = len(timeline_store.read(run_dir, limit=0))
     except Exception:
         return head
     lines = []
@@ -1040,8 +1052,14 @@ def _card_context(card_id, limit=40):
         lines.append("- [%s] %s: %s" % (s.get("ts") or "", who, txt[:220]))
     if not lines:
         return head
-    return head + "\n\nCARD TIMELINE (most recent last - worker steps, your own " \
-                  "notes and every steer the owner sent):\n" + "\n".join(lines[-limit:])
+    shown = lines[-limit:]
+    window = ("letzte %d von %d Schritten" % (len(steps), total) if total > len(steps)
+              else "alle %d Schritte" % len(steps))
+    older = (" - %d aeltere Schritte (auch Steers des Owners) stehen HIER NICHT" % (total - len(steps))
+             if total > len(steps) else "")
+    return head + "\n\nCARD TIMELINE (%s%s; neueste zuletzt - worker steps, your own " \
+                  "notes and the owner's steers within this window):\n" % (window, older) \
+                  + "\n".join(shown)
 
 
 _SHIP_WORDS = re.compile(r"ship|deploy|build|release|ota\b|apk|aab|testflight|"
@@ -1060,6 +1078,12 @@ def _ship_relevant(message):
 
 
 from spine.storage.textfix import demojibake as _demojibake   # one owner, see textfix.py
+
+
+def _clip(text, n):
+    """text cut at n chars on one line - a cut ends in an ellipsis, never silently."""
+    text = str(text or "")
+    return text[:n].replace("\n", " ") + ("\u2026" if len(text) > n else "")
 
 
 def _snapshot(full=False):
@@ -1105,12 +1129,13 @@ def _snapshot(full=False):
     lines.append("CARDS (each belongs to ONE repo; a question about a specific "
                  "project/repo must include ONLY that repo's cards)%s:"
                  % ("" if full else " - LIVE ONLY, see the note at the end for finished work"))
-    hidden_done = hidden_arch = 0
+    hidden_done = hidden_arch = hidden_example = 0
     for t in sessions.list_tracks():
         # example: the onboarding demo card (accounts-boards-prd phase 3) is
         # never real work - excluded so the PM/board-copilot never plans
         # around it or reports it as an open card.
         if t.get("example"):
+            hidden_example += 1
             continue
         # Finished + archived cards are HISTORY: 53,871 of the 57,993 chars this
         # section used to cost, re-read on every single turn to answer questions
@@ -1139,15 +1164,15 @@ def _snapshot(full=False):
             # must bring the question to the owner, not pile work on the card.
             try:
                 from spine.ops import ask
-                qs = ask.summary(t["question"])[:150].replace("\n", " ")
+                qs = _clip(ask.summary(t["question"]), 150)
             except Exception:
                 qs = ""
             tail = " OWNER_QUESTION_OPEN(do not steer; only the owner answers)=" + qs
         elif t.get("status") == "needs_you":
-            tail = " last_reply=" + t.get("last_reply", "")[:150].replace("\n", " ")
+            tail = " last_reply=" + _clip(t.get("last_reply", ""), 150)
         elif t.get("lane") == "done":
             o = t.get("outcome") or ""
-            tail = (" outcome=" + o[:150].replace("\n", " ")) if o else ""
+            tail = (" outcome(Anfang)=" + _clip(o, 150)) if o else ""
         else:
             tail = ""
         # ARCHIVED is stated, never silently omitted. The board hides archived
@@ -1176,7 +1201,7 @@ def _snapshot(full=False):
         lines.append("- id=%s repo=%s branch=%s lane=%s status=%s%s prio=%s due=%s mode=%s ai=$%.2f task=%s%s" % (
             t["id"], repo, t["branch"], t.get("lane"), t.get("status"), arch, t.get("priority", "-"),
             t.get("due") or "-", t.get("mode") or "-", t.get("ai_cost", 0),
-            t["task"][:90].replace("\n", " "), tail))
+            _clip(t["task"], 90), tail))
     try:
         from cells.engineer.connectors import connectors as _c
         cs = _c.list_connectors()
@@ -1225,6 +1250,9 @@ def _snapshot(full=False):
                 i, s.get("state", "proposed"), s["mode"], _demojibake(s["title"][:70])))
     if n_done:
         lines.append("- %d finished process(es) not shown (board_state.py --full)" % n_done)
+    if hidden_example:
+        lines.append("(%d Beispiel-Karte(n) ausgeblendet - Onboarding-Demo, keine echte Arbeit)"
+                     % hidden_example)
     if not full and (hidden_done or hidden_arch):
         # NOT a silent cap: Henry is told exactly what is missing and how to get
         # it, so "I don't know" is never the honest answer to a history question.
@@ -2238,14 +2266,19 @@ def _inbox_since(user, limit=8):
                 if m.get("cls") in ("pm", "card", "act", "hands", "error") and (m.get("text") or "").strip()]
         if not seen:
             return ""
+        total_seen = len(seen)
 
         def _tag(m):
             if m.get("cls") == "card":
                 return "Karte %s" % (m.get("cardName") or m.get("card") or "?")[:40]
             return {"pm": "System/Broker", "act": "Aktion", "hands": "Hände", "error": "Fehler"}.get(m.get("cls"), m.get("cls"))
         # In ORDER, oldest first - the sequence the owner actually read.
-        return "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
+        body = "\n".join("%s: %s" % (_tag(m), (m.get("text") or "").strip()[:300].replace("\n", " "))
                          for m in seen[-limit:])
+        if total_seen > limit:
+            body = ("(%d von %d neuen Eintraegen gezeigt, die aeltesten nicht gezeigt; "
+                    "Fenster = die letzten 40 Chat-Zeilen)\n" % (limit, total_seen)) + body
+        return body
     except Exception:                                        # noqa: BLE001
         return ""
 
@@ -2273,10 +2306,16 @@ def _pm_plan_digest():
     feas = p.get("feasibility") or {}
     if feas.get("note"):
         L.append("FEASIBILITY: " + str(feas["note"])[:300])
-    for q in (p.get("open_questions") or [])[:4]:
+    _oq = p.get("open_questions") or []
+    for q in _oq[:4]:
         L.append("OPEN OWNER DECISION (blocks the plan): " + str(q)[:220])
-    for r in (p.get("risks") or [])[:4]:
+    if len(_oq) > 4:
+        L.append("(+%d weitere offene Owner-Entscheidungen)" % (len(_oq) - 4))
+    _rk = p.get("risks") or []
+    for r in _rk[:4]:
         L.append("RISK: " + str(r)[:180])
+    if len(_rk) > 4:
+        L.append("(+%d weitere Risiken)" % (len(_rk) - 4))
     ms = p.get("milestones") or []
     if ms:
         L.append("MILESTONES:")
@@ -2285,7 +2324,10 @@ def _pm_plan_digest():
             L.append("  - %s (~%s turns, %s%s)%s" % (
                 str(m.get("name"))[:80], m.get("est_turns") or "?", m.get("priority") or "?",
                 (", blocked_by: " + str(m.get("blocked_by"))[:70]) if m.get("blocked_by") else "",
-                (" done_when: " + "; ".join(str(x)[:55] for x in dw[:2])) if dw else ""))
+                (" done_when: " + "; ".join(str(x)[:55] for x in dw[:2])
+                 + (" (+%d weitere)" % (len(dw) - 2) if len(dw) > 2 else "")) if dw else ""))
+        if len(ms) > 6:
+            L.append("  (+%d weitere Meilensteine)" % (len(ms) - 6))
     return "\n".join(L)
 
 
@@ -2686,7 +2728,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                          "hier zum ersten Mal; ein Fehler heisst: die Aktion hat "
                          "ihr Ziel NICHT erreicht - melde keinen Erfolg. Das hier ist "
                          "MASCHINENTEXT, keine Aussage des Owners):\n- "
-                         + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _pending)
+                         + "\n- ".join(_cap_item(r) for r in _pending)
                          + "\n</harness-report>\n\n")
     # Turn-LOCAL first-word reminder, every message. The brief carries the same
     # law (board-copilot.md SPEED OF FIRST WORD), but system-prompt prose alone
@@ -2781,7 +2823,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _late = _pending_actions.pop(skey, [])
     if _late:
         turn = ("<harness-report>\nSEIT DEINEM LETZTEN TURN (MASCHINENTEXT, keine Aussage "
-                "des Owners):\n- " + "\n- ".join(str(r)[:PENDING_ITEM_MAX] for r in _late)
+                "des Owners):\n- " + "\n- ".join(_cap_item(r) for r in _late)
                 + "\n</harness-report>\n\n") + turn
     livebuf.set_field(live_key, "status", "bereitet den Turn vor")
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
@@ -3310,7 +3352,17 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # turn's spend + the last call's context fill into copilot_stats.json,
     # which /chat/history serves to the board chat's meter + usage line.
     _fold_stats(user, d, ctx_usage)
-    acts = out.get("actions", [])[:6]
+    _all_acts = out.get("actions", [])
+    acts = _all_acts[:6]
+    if len(_all_acts) > 6:
+        # The cap stays; the DROP is made visible to Henry next turn (same
+        # channel the action results use) - he never learns of it otherwise.
+        _cut = _all_acts[6:]
+        with _pending_lock:
+            _pending_actions.setdefault(skey, []).append(
+                "%d Aktionen nicht ausgefuehrt (Limit 6): %s" % (
+                    len(_cut), ", ".join(str((a.get("type") if isinstance(a, dict) else a) or "?")
+                                         for a in _cut)))
     # Persist the exchange NOW and return immediately, so the chat is responsive.
     # Actions (moves, MERGES, steers - potentially minutes) run in the BACKGROUND
     # and append their results to the transcript as they land; the chat polls, so

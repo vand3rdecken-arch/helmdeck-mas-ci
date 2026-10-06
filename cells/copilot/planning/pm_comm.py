@@ -93,8 +93,22 @@ def _to_henry(kind, detail, card=None, feed=""):
     _activity("blocked", feed or detail, card=card)
     try:
         from spine.registry import escalations
-        if any(e.get("kind") == kind and e.get("card") == card
-               for e in escalations.list_open()):
+        open_same = [e for e in escalations.list_open()
+                     if e.get("kind") == kind and e.get("card") == card]
+        if open_same:
+            # dedupe stays, but the suppression is RECORDED on the open one:
+            # Henry's view of it says that newer reports of this kind arrived
+            # (count derived from the append-only note records, not a flag)
+            try:
+                eid = open_same[0]["id"]
+                prior = sum(1 for r in escalations.records()
+                            if r.get("event") == "note" and r.get("id") == eid
+                            and "Meldung(en) unterdrueckt" in str(r.get("detail") or ""))
+                escalations.record_note(
+                    eid, "%d neuere gleichartige Meldung(en) unterdrueckt, zuletzt: %s"
+                    % (prior + 1, " ".join(str(detail).split())[:120]))
+            except Exception:                                # noqa: BLE001
+                pass
             return ""                    # Henry is already on this exact one
         return escalations.emit(kind, card=card, detail=detail)
     except Exception as e:

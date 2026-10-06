@@ -195,7 +195,8 @@ def _repair_bg_gate(t):
                 "note", "Gate korrigiert: Karte stand auf 'braucht dich', wartet aber "
                         "auf %d Hintergrund-Task(s) - %s"
                         % (len(open_reg),
-                           ", ".join(v.get("title") or "task" for v in open_reg[:4])[:160]))
+                           ", ".join(v.get("title") or "task" for v in open_reg[:4])[:160]
+                           + (" (+%d weitere)" % (len(open_reg) - 4) if len(open_reg) > 4 else "")))
         except Exception:
             pass
     return fixed

@@ -166,6 +166,24 @@ def main(argv):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+    if "--plans" in argv or "--stale" in argv:
+        # ALL processes / the leftovers, uncapped, with what was checked: the
+        # pull view that lets Henry look past whatever a wake pre-filtered.
+        import time
+        from cells.copilot.planning import process_drive as pd
+        from cells.engineer.chains import processes
+        from cells.engineer.cards import sessions
+        from spine.turn import listing
+        ps, ts = processes.list_processes(), sessions.list_tracks()
+        if "--plans" in argv:
+            sys.stdout.write(listing.found(pd.plans_overview(ps), "alle Prozesse",
+                                           criteria="keiner",
+                                           checked="%d Prozesse" % len(ps), cap=500, complete=True) + "\n")
+            wp = pd.work_by_project(ts, time.time())
+            sys.stdout.write("ARBEIT nach Projekt: %s\n" % (wp or "keine Karten"))
+        else:
+            sys.stdout.write(pd.stale_block(ps, ts, time.time()) + "\n")
+        return 0
     if "--plan" in argv:
         from cells.copilot.chat.copilot import _pm_plan_digest
         out = _pm_plan_digest()
@@ -178,7 +196,9 @@ def main(argv):
             return 2
         hits = find_cards(terms)
         if not hits:
-            sys.stdout.write("no card matches ALL of: %s\n" % " ".join(terms))
+            sys.stdout.write("no card matches ALL of: %s (gesucht in id, task, description, outcome, "
+                             "last_reply; Beispiel-Karten und Worker-Schritte nicht durchsucht)\n"
+                             % " ".join(terms))
             return 0
         sys.stdout.write("%d card(s) match %s (newest first, max 12 shown):\n" % (len(hits), " ".join(terms)))
         sys.stdout.write("\n".join(format_hit(t) for t in hits[:12]) + "\n")

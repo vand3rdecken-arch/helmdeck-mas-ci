@@ -431,7 +431,9 @@ def _pending_context(t):
         if dh:
             parts.append("%s HOOK %s (ran outside this session, daemon-side):\n%s" % (
                 hook_kind.split("_")[0].upper(), "OK" if dh.get("ok") else "FAILED",
-                str(dh.get("tail") or "")[:800]))
+                (str(dh.get("tail") or "")[:800]
+                 + ("\n[... %d Zeichen gekuerzt]" % (len(str(dh.get("tail"))) - 800)
+                    if len(str(dh.get("tail") or "")) > 800 else ""))))
     gr = t.get("gate_report")
     if t.get("gate_failed") and gr:
         parts.append("Quality gate FAILED:\n" + ("\n".join(gr) if isinstance(gr, list) else str(gr)))

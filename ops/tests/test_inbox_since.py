@@ -74,7 +74,7 @@ ok(copilot._inbox_since(OWNER) == "", "after Henry answers, the SAME entries are
 many = [{"cls": "pm", "text": "Broker Report Nr %d" % i} for i in range(12)]
 db.chat_append(OWNER, many)
 out2 = copilot._inbox_since(OWNER, limit=3)
-ok(out2.count("\n") == 2 and out2.endswith("Nr 11"), "limit=3 keeps only the LAST 3, most recent last (%r)" % out2[-40:])
+ok(out2.count("\n") == 3 and out2.endswith("Nr 11") and out2.startswith("(3 von 12 neuen Eintraegen gezeigt"), "limit=3 keeps only the LAST 3 (most recent last), headed by an honest N-von-M notice (%r)" % out2[-40:])
 
 print("\nchat() turn assembly - board vs card")
 src = inspect.getsource(copilot.chat)

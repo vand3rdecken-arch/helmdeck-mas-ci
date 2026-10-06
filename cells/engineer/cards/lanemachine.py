@@ -27,6 +27,22 @@ from spine.git.worktrees import reclaim_worktree
 _GATE_PASS_RE = re.compile(r"gate: (PASS \(\d+ checks\)|nothing to run on this branch - PASS)")
 
 
+def _gate_tail(out, n=1200):
+    """The LAST `n` chars of gate output (where the failing assertion lives),
+    with a marker when the head was cut - a tail that does not say so reads as
+    the whole output."""
+    if len(out) <= n:
+        return out
+    return "[... %d Zeichen davor nicht gezeigt]\n" % (len(out) - n) + out[-n:]
+
+
+def _cut_note(text, n):
+    """text[:n] plus a marker saying how much was cut (head kept)."""
+    if len(text) <= n:
+        return text
+    return text[:n] + "\n[... %d Zeichen gekuerzt]" % (len(text) - n)
+
+
 def _run_streamed(cmd, cwd, env, idle, hard, note_cb=None, tail_n=400):
     """Run `cmd` bounded by SILENCE, not wall-clock - the shared execution
     shape behind both _gate's own command and _repo_hook (which discovered
@@ -269,7 +285,7 @@ def _gate(t):
                 _release_heavy(token)
         if why:
             problems.append("gate killed (%s):\n%s\n\n(gate command: %s)"
-                            % (why, out[-1200:], cmd[:120]))
+                            % (why, _gate_tail(out), cmd[:120]))
         # Observed on the live board (card 20260812-164257): a `py -3.12`
         # gate run via shell=True on Windows can come back with a nonzero
         # r.returncode while its OWN stdout is a clean ops/tools/run_gate.py
@@ -290,7 +306,7 @@ def _gate(t):
             # (truncated on mobile) is the "ominous, unresolvable" message. An
             # empty output means the command couldn't even start (missing
             # interpreter/tool); say so with the exit code instead of nothing.
-            detail = out[-1200:] if out else "(no output - command could not run; exit %s)" % rc
+            detail = _gate_tail(out) if out else "(no output - command could not run; exit %s)" % rc
             problems.append("gate FAILED:\n%s\n\n(gate command: %s)" % (detail, cmd[:120]))
     else:
         # NO gate command resolved at all. Deliberately NOT a failure: repos
@@ -1212,7 +1228,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
             # a gate failure's actual output (which test, which assertion) lives
             # on the lines after the header, and the chat is where the owner
             # reads the reason. `punch` stays for the card's compact report.
-            _say_card(t, _i18n.t("say.gateRed", detail="\n".join(problems)[:800]), kind="blocker")
+            _say_card(t, _i18n.t("say.gateRed", detail=_cut_note("\n".join(problems), 800)), kind="blocker")
             t = dict(t); t["gate_failed"] = True
             return t
         t.pop("gate_report", None)

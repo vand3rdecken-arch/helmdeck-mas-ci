@@ -68,6 +68,9 @@ _BLOCK_RE = re.compile(
 # to apply() them so the next turn can SAY what was dropped (feedback()). One
 # writer, one reader, same call chain - not a cache anything else may consult.
 _last_rejects = []
+# Blocks beyond MAX_BLOCKS of the most recent parse (names): not applied, and
+# feedback() says so instead of letting them vanish.
+_last_overflow = []
 
 
 def last_rejects():
@@ -83,12 +86,16 @@ def parse(text):
     validation is dropped (not applied) and reported as one reject event;
     it is NEVER salvaged with a guessed name or truncated content."""
     if not isinstance(text, str) or "<memory-" not in text.lower():
+        _last_overflow[:] = []
         return text, []
-    muts, rejects = [], []
+    muts, rejects, overflow = [], [], []
 
     def _sub(m):
         if len(muts) + len(rejects) >= MAX_BLOCKS:
-            return ""                    # bounded - extra blocks are dropped silently
+            # bounded, but NOT silent: the names reach the next turn (feedback())
+            overflow.append((m.group(1) if m.group(1) is not None
+                             else m.group(4) or "").strip() or "?")
+            return ""
         if m.group(1) is not None:
             name, content = m.group(1).strip(), m.group(3).strip()
             declared = (m.group(2) or "").strip()
@@ -107,6 +114,7 @@ def parse(text):
 
     cleaned = _BLOCK_RE.sub(_sub, text).strip()
     _last_rejects[:] = rejects[:MAX_BLOCKS]
+    _last_overflow[:] = overflow
     if rejects:
         try:
             from spine.storage import events
@@ -139,9 +147,11 @@ def apply(mutations, actor="henry", source="", scope=None, viewer=None):
                 # outranks this? Computed against the store as it is now, so
                 # the note being replaced is not compared against itself.
                 clash = conflicts(m["name"], m["content"], kind,
-                                  rows=all_notes(viewer) if viewer is not None else None)
+                                  rows=all_notes(viewer) if viewer is not None else None,
+                                  cap=None)
                 m["kind"] = kind
-                m["clash"] = [c[0] for c in clash]
+                m["clash"] = [c[0] for c in clash[:3]]
+                m["clash_more"] = max(0, len(clash) - 3)    # feedback() names the cut
                 db.memory_put(m["name"], m["content"], actor=actor, kind=kind,
                               source=source or "",
                               claim="reach-fail" if kind == "reach-fail" else "",
@@ -250,6 +260,22 @@ def _auto_meta(text, fallback_name):
     if not desc:
         desc = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
     return name, desc
+
+
+def auto_skipped():
+    """How many *.md files of the auto-memory directory lie beyond AUTO_MAX_FILES
+    and are therefore NOT loaded by auto_notes() (0 when none / no directory).
+    Stateless, so the overview can disclose the cut without auto_notes()
+    changing its return shape."""
+    d = auto_dir()
+    if not d:
+        return 0
+    try:
+        names = sorted(os.listdir(d))
+    except OSError:
+        return 0
+    return sum(1 for fn in names[AUTO_MAX_FILES:]
+               if fn.endswith(".md") and fn != "MEMORY.md")
 
 
 def auto_notes():
@@ -584,12 +610,13 @@ def recall_block(text, rows=None):
     hits = recall(text, rows=rows)
     if not hits:
         return ""
-    out, used = [], 0
+    out, used, skipped = [], 0, []
     for name, r, _s in hits:
         body = (r.get("content") or "").strip()
         room = RECALL_BUDGET - used
         if room < 400:
-            break
+            skipped.append(name)         # budget spent: named below, not dropped
+            continue
         cut = len(body) - room
         if cut > 0:
             body = body[:room] + (
@@ -600,11 +627,16 @@ def recall_block(text, rows=None):
                    % (name, r.get("kind") or "project",
                       r.get("origin") or r.get("source") or "db",
                       (r.get("updated_at") or "")[:10], body))
+    tail = ""
+    if skipped:
+        tail = ("\n\n(weitere Treffer nicht ausgegeben, Budget erschoepft: %s - "
+                "`py -3.12 ../ops/tools/henry_memory_get.py get <name>`)"
+                % _capped(skipped, 8))
     return ("\n\nMOEGLICHE TREFFER (Stichwortsuche des Harness - sie kann "
             "danebenliegen oder die richtige Notiz verfehlen; entscheide "
             "selbst anhand der Namensliste oben, was du liest, und lies es, "
             "BEVOR du sagst, du wuesstest etwas nicht):\n"
-            + "\n\n".join(out))
+            + "\n\n".join(out) + tail)
 
 
 NAME_INDEX_MAX = 10000      # chars; ~250 kebab names are ~8.6k (measured 2026-10-05)
@@ -645,6 +677,9 @@ def overview(rows=None, viewer=None):
         if len(head) > 2:
             topics[head] = topics.get(head, 0) + 1
     top = sorted(topics.items(), key=lambda kv: -kv[1])[:12]
+    topics_txt = ", ".join("%s (%d)" % (k, v) for k, v in top)
+    if len(topics) > len(top):
+        topics_txt += " (+%d weitere Themen)" % (len(topics) - len(top))
     names = _name_index(rows)
     ndb = sum(1 for r in rows.values() if r.get("source") == "db")
     nshared = sum(1 for r in rows.values() if r.get("source") == "shared")
@@ -657,8 +692,17 @@ def overview(rows=None, viewer=None):
     except Exception:                                            # noqa: BLE001
         _skipped = []
     warn = ("" if not _skipped else
-            " ACHTUNG, geteilte Datei(en) NICHT geladen: %s."
-            % "; ".join(_skipped[:3]))
+            " ACHTUNG, geteilte Datei(en) NICHT geladen: %s%s."
+            % ("; ".join(_skipped[:3]),
+               " (+%d weitere)" % (len(_skipped) - 3) if len(_skipped) > 3 else ""))
+    try:
+        _auto_cut = 0 if viewer is not None else auto_skipped()
+    except Exception:                                            # noqa: BLE001
+        _auto_cut = 0
+    if _auto_cut:
+        warn += (" ACHTUNG, Auto-Memory: %d Dateien ueber dem Limit von %d "
+                 "nicht geladen (alphabetisch abgeschnitten)."
+                 % (_auto_cut, AUTO_MAX_FILES))
     return ("\n\nGEDAECHTNIS-STAND: %d Notizen (%d eigene, %d geteilt im "
             "Projekt-Repo, %d aus dem Auto-Memory), neueste vom %s. Themen: "
             "%s. Du siehst hier nur die ZAHLEN - Inhalt holst du mit `find "
@@ -667,7 +711,7 @@ def overview(rows=None, viewer=None):
             "sagt, worum es geht - dein Verzeichnis, wie `view /memories`; "
             "Inhalt: `henry_memory_get.py get <name>`):\n%s"
             % (len(rows), ndb, nshared, len(rows) - ndb - nshared, newest[:10],
-               ", ".join("%s (%d)" % (k, v) for k, v in top), warn, names))
+               topics_txt, warn, names))
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +762,7 @@ def resolve_kind(declared, actor, content):
     return kind or "project"
 
 
-def conflicts(name, content, kind, rows=None):
+def conflicts(name, content, kind, rows=None, cap=3):
     """[(other_name, other_row)] - notes about the SAME thing that OUTRANK this
     write. A3: the store does not merge for Henry and it does not let the
     newest silently win; it puts the disagreement in front of him next turn.
@@ -750,7 +794,7 @@ def conflicts(name, content, kind, rows=None):
                 score += math.log(n / df[w])
         if score >= RECALL_MIN_SCORE * 2:
             out.append((other, r))
-    return out[:3]
+    return out if cap is None else out[:cap]
 
 
 def digest(limit=None):
@@ -803,7 +847,17 @@ def digest(limit=None):
             % (len(rows), body))
 
 
-def feedback(muts, rejects):
+def _capped(items, n):
+    """', '.join of the first n items, plus '(+N weitere)' when cut - a capped
+    list must say it is capped."""
+    items = list(items)
+    out = ", ".join(items[:n])
+    if len(items) > n:
+        out += " (+%d weitere)" % (len(items) - n)
+    return out
+
+
+def feedback(muts, rejects, overflow=None):
     """ONE line for the NEXT turn saying what the last one actually stored.
 
     A write path whose only failure signal is an event nobody reads is not a
@@ -811,7 +865,9 @@ def feedback(muts, rejects):
     could not tell a rejected save from a successful one, so he kept believing
     he had recorded something he had not. Now every save, delete and reject
     comes back in prose."""
-    if not muts and not rejects:
+    if overflow is None:
+        overflow = list(_last_overflow)
+    if not muts and not rejects and not overflow:
         return ""
     parts = []
     saved = ["%s [%s]" % (m["name"], m.get("kind") or "project")
@@ -823,22 +879,28 @@ def feedback(muts, rejects):
     for m in (muts or []):
         for other in (m.get("clash") or []):
             clashes.append("%s vs %s" % (m["name"], other))
+        if m.get("clash_more"):
+            clashes.append("%s vs %d weitere (nicht genannt)" % (m["name"], m["clash_more"]))
     if saved:
-        parts.append("gespeichert: " + ", ".join(saved[:8]))
+        parts.append("gespeichert: " + _capped(saved, 8))
     if demoted:
         parts.append("ALS ZUGRIFFSFEHLER abgelegt (eine Karte, die nicht "
                      "herankam, beweist nichts ueber die Sache selbst - "
                      "diese Notiz schlaegt KEINE Messung): "
-                     + ", ".join(demoted[:5]))
+                     + _capped(demoted, 5))
     if clashes:
         parts.append("WIDERSPRUCH zu einer hoeher eingestuften Notiz, NICHT "
                      "stillschweigend ueberschrieben - lies sie und sag dem "
-                     "Owner, welche gilt: " + "; ".join(clashes[:5]))
+                     "Owner, welche gilt: " + "; ".join(clashes[:5])
+                     + (" (+%d weitere)" % (len(clashes) - 5) if len(clashes) > 5 else ""))
     if gone:
-        parts.append("geloescht: " + ", ".join(gone[:8]))
+        parts.append("geloescht: " + _capped(gone, 8))
     if rejects:
         parts.append("VERWORFEN (Name oder Laenge ungueltig, NICHT gespeichert - "
-                     "kuerzer neu schreiben): " + ", ".join(rejects[:8]))
+                     "kuerzer neu schreiben): " + _capped(rejects, 8))
+    if overflow:
+        parts.append("%d Notiz-Bloecke ueber dem Limit von %d verworfen, NICHT "
+                     "verarbeitet: %s" % (len(overflow), MAX_BLOCKS, _capped(overflow, 8)))
     return "\n\nLETZTER SPEICHERVORGANG - " + "; ".join(parts)
 
 

@@ -129,9 +129,15 @@ def scan(repo):
     if not os.path.isdir(d):
         return notes, problems
     try:
-        names = sorted(os.listdir(d))[:MAX_FILES]
+        names = sorted(os.listdir(d))
     except OSError as e:
         return notes, ["%s: nicht lesbar (%s)" % (d, e)]
+    # the cut stays (first MAX_FILES alphabetically) but is no longer silent
+    beyond = [fn for fn in names[MAX_FILES:] if fn.endswith(".md") and fn != INDEX_NAME]
+    names = names[:MAX_FILES]
+    if beyond:
+        problems.append("%d Dateien ueber dem Limit von %d nicht geladen (%s, alphabetisch ab %s)"
+                        % (len(beyond), MAX_FILES, d, beyond[0]))
     for fn in names:
         if not fn.endswith(".md") or fn == INDEX_NAME:
             continue

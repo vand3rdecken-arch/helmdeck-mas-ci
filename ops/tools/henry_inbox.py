@@ -47,7 +47,7 @@ def main(argv):
         print("no owner account found", file=sys.stderr)
         return 1
     out = _inbox_since(user, limit=limit)
-    sys.stdout.write((out or "nichts Neues seit deiner letzten Antwort") + "\n")
+    sys.stdout.write((out or "nichts Neues in den letzten 40 Zeilen (Klassen pm/card/act/hands/error) seit deiner letzten Antwort") + "\n")
     return 0
 
 

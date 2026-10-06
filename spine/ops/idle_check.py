@@ -217,8 +217,10 @@ def _load_line():
 
 def situation_snapshot():
     """The Lagebild an idle-check escalation carries as `detail` - facts
-    only, no verdict. escalations.emit() caps this at 1500 chars regardless;
-    every line here stays short and bounded on its own."""
+    only, no verdict. escalations.emit() caps this at DETAIL_MAX (4000) chars
+    and marks a cut with "[... N Zeichen gekuerzt]"; every line here stays
+    short and bounded on its own, and the lock/load lines come last only
+    because the whole block is far below that cap."""
     lines = [_browser_targets_line(), _dev_ports_line(), _worktrees_line(),
              _locks_line(), _load_line()]
     return "\n".join(lines)

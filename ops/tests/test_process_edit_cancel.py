@@ -175,7 +175,7 @@ def main():
           "cancel_process via chat applies (%r)" % r)
     r = ca._run_action({"type": "edit_process", "process": "no such fragment"},
                        "duy", role="owner")
-    check("ambiguous or not found" in r, "an unresolvable process reference refuses cleanly")
+    check("matches 0 processes" in r, "an unresolvable process reference refuses cleanly")
 
     # step-level chat actions (owner decree: "Henry soll den Prozess aendern
     # koennen" - chat is a full alternative to the UI, not just process-level).
@@ -243,7 +243,7 @@ def main():
     r = ca._run_action({"type": "delete_process", "process": p6["id"]}, "duy", role="owner")
     check(processes.get(p6["id"]) is None, "delete_process via chat removes the process row (%r)" % r)
     r = ca._run_action({"type": "delete_process", "process": p6["id"]}, "duy", role="owner")
-    check("ambiguous or not found" in r, "deleting an already-gone process refuses cleanly, not a crash")
+    check("matches 0 processes" in r, "deleting an already-gone process refuses cleanly, not a crash")
 
     # HTTP-layer: delete is admin-gated the same way edit/cancel are.
     p7 = processes.create("HTTP delete cap check", actor="owner",

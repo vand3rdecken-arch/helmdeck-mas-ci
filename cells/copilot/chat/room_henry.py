@@ -68,17 +68,24 @@ def memory_block(rows):
     holds a handful of notes, so they ride whole: the owner chat's recall (IDF
     over a big corpus) finds nothing in a store this small, and its overview
     points at a `find` tool a room turn does not have."""
-    out, used = [], 0
-    for name, r in sorted(rows.items(), key=lambda kv: kv[1].get("updated_at") or "",
-                          reverse=True):
+    out, used, cut = [], 0, False
+    ordered = sorted(rows.items(), key=lambda kv: kv[1].get("updated_at") or "",
+                     reverse=True)
+    for name, r in ordered:
         body = (r.get("content") or "").strip()
         if used + len(body) > MEMORY_BUDGET:
+            cut = True
             break
         used += len(body)
         out.append("=== %s [%s]\n%s" % (name.split("/", 1)[-1],
                                         (r.get("updated_at") or "")[:10], body))
-    if not out:
+    if not out and not cut:
         return ""
+    if cut:
+        rest = [n.split("/", 1)[-1] for n, _r in ordered[len(out):]]
+        out.append("(+%d Notizen nicht gezeigt, Budget von %d Zeichen erschoepft: %s)"
+                   % (len(rest), MEMORY_BUDGET,
+                      ", ".join(rest[:8]) + (" ..." if len(rest) > 8 else "")))
     return "\n\nNOTIZEN DIESES RAUMS (alle im Raum lesen sie):\n" + "\n\n".join(out)
 
 
@@ -90,10 +97,13 @@ def build_prompt(room, history, author, text, rows):
         who = "Henry" if m.get("byKind") == "henry" else (m.get("by") or "?")
         lines.append("[%s %s] %s: %s" % (m.get("date", ""), m.get("ts", ""), who,
                                          (m.get("text") or "").replace("\r", "")))
-    return ("RAUM: %s\nMITGLIEDER: %s%s\n\nVERLAUF (aelteste zuerst):\n%s\n\n"
+    win = ("nur die letzten %d von %d Nachrichten, aelteste zuerst; Aelteres steht hier nicht"
+           % (HISTORY_LINES, len(history)) if len(history) > HISTORY_LINES
+           else "aelteste zuerst; alle %d Nachrichten" % len(history))
+    return ("RAUM: %s\nMITGLIEDER: %s%s\n\nVERLAUF (%s):\n%s\n\n"
             "NEUE NACHRICHT von %s, die dich mit @henry anspricht:\n%s\n\n"
             "Antworte %s direkt."
-            % (room["name"], ", ".join(room["members"]), memory_block(rows),
+            % (room["name"], ", ".join(room["members"]), memory_block(rows), win,
                "\n".join(lines) or "(noch leer)", author, text, author))
 
 

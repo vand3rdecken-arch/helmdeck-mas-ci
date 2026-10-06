@@ -39,8 +39,13 @@ def emit(kind, card=None, detail="", process=None):
     about (process_drive) - a RECORD the broker acts on, never parsed back out
     of the detail prose."""
     eid = "%s-%d" % (kind, int(time.time() * 1000))
+    text = str(detail)
+    if len(text) > DETAIL_MAX:
+        # a cut that does not say so reads as the whole record (silent
+        # truncation): name the loss at the point of loss
+        text = text[:DETAIL_MAX - 60].rstrip() + "\n[... %d Zeichen gekuerzt]" % (len(text) - DETAIL_MAX + 60)
     rec = {"event": "open", "id": eid, "kind": kind, "card": card,
-           "detail": str(detail)[:DETAIL_MAX]}
+           "detail": text}
     if process:
         rec["process"] = process
     _append(rec)
