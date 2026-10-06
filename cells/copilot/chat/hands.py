@@ -351,7 +351,7 @@ def _pump(hid, p):
         with _lock:
             t = _tasks.get(hid)
             if t:
-                t["status"], t["result"], t["updated"] = status, result[:8000], time.time()
+                t["status"], t["result"], t["updated"] = status, _clip_tile(result), time.time()
         _land(hid, status, result, steps)
         return
     if not result:
@@ -362,7 +362,7 @@ def _pump(hid, p):
     with _lock:
         t = _tasks.get(hid)
         if t:
-            t["status"], t["result"], t["updated"] = status, result.strip()[:8000], time.time()
+            t["status"], t["result"], t["updated"] = status, _clip_tile(result.strip()), time.time()
     _land(hid, status, result, steps)
 
 
@@ -377,6 +377,17 @@ def _summary(result):
         if ln.strip() == "---":
             return "\n".join(lines[:i]).strip()
     return result.strip()
+
+
+TILE_RESULT_MAX = 8000
+
+
+def _clip_tile(text):
+    """The run tile's copy of the result: cut at TILE_RESULT_MAX, and SAY so
+    (the tile is what the owner and Henry reread later)."""
+    if len(text) <= TILE_RESULT_MAX:
+        return text
+    return text[:TILE_RESULT_MAX] + "\n[... %d Zeichen gekuerzt]" % (len(text) - TILE_RESULT_MAX)
 
 
 def _land(hid, status, result, steps):

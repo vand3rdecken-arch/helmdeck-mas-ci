@@ -93,5 +93,25 @@ e = escalations.fold()[eid]
 check("2 neuere gleichartige Meldung(en) unterdrueckt" in (e.get("last_note") or ""), "suppression noted (%s)" % e.get("last_note"))
 check("zuletzt: third" in (e.get("last_note") or ""), "latest text quoted")
 
+
+
+# --- follow-up: recall K-cut, tile copy cut, PM ring eviction counter -------
+from cells.copilot.chat import copilot_memory as _cm
+_fill2 = {"f%02d" % i: {"content": "Notiz %d ueber Karten Relay Build. Neue Karte." % i, "updated_at": "2026-09-01"} for i in range(40)}
+for _n in ("zebra-a", "zebra-b", "zebra-c", "zebra-d", "zebra-e"):
+    _fill2[_n] = {"content": "Zebrafink Zebrafink Haltung und Pflege.", "updated_at": "2026-09-10"}
+_blk = _cm.recall_block("Zebrafink Haltung", rows=_fill2)
+check("weitere Treffer unter dem Limit von %d nicht ausgegeben" % _cm.RECALL_K in _blk,
+      "recall_block names the hits cut by the K limit")
+from cells.copilot.chat import hands as _h
+_t = _h._clip_tile("x" * (_h.TILE_RESULT_MAX + 7))
+check(_t.endswith("[... 7 Zeichen gekuerzt]") and _h._clip_tile("kurz") == "kurz", "the tile copy of a result says when it is cut")
+from cells.copilot.planning import pm as _pm, goal_drive as _gd
+_pm.set_goal("Ziel A") if hasattr(_pm, "set_goal") else None
+for _i in range(_pm._CLARIFY_MAX + 3):
+    _pm.add_clarification("Fakt %d" % _i, actor="owner")
+_gs = _gd.goal_state(goal=_gd.norm(_pm.get_goal()), tracks=[], processes=[], ev=[], goal_pid="")
+check(_gs.get("facts_evicted") == 3 or _gs.get("facts_evicted", 0) >= 3, "the PM ring counts what it evicted for this goal - got %r" % _gs.get("facts_evicted"))
+
 print("FAILED: %s" % _fails if _fails else "ALL OK")
 sys.exit(1 if _fails else 0)

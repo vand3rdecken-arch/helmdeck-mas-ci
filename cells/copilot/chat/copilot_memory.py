@@ -601,15 +601,16 @@ def recall(text, rows=None, k=RECALL_K):
     # NEWEST first on a tie. Ascending here would hand a tie to the stalest
     # note - the exact shape of the bug this card exists to kill.
     hits.sort(key=lambda h: (h[2], h[1].get("updated_at") or ""), reverse=True)
-    return hits[:k]
+    return hits if k is None else hits[:k]
 
 
 def recall_block(text, rows=None):
     """The A2 push: the notes themselves, with provenance, in the turn -
     BEFORE Henry decides whether he knows something."""
-    hits = recall(text, rows=rows)
-    if not hits:
+    allhits = recall(text, rows=rows, k=None)
+    if not allhits:
         return ""
+    hits, rest = allhits[:RECALL_K], allhits[RECALL_K:]
     out, used, skipped = [], 0, []
     for name, r, _s in hits:
         body = (r.get("content") or "").strip()
@@ -628,6 +629,11 @@ def recall_block(text, rows=None):
                       r.get("origin") or r.get("source") or "db",
                       (r.get("updated_at") or "")[:10], body))
     tail = ""
+    if rest:
+        # the K-cut is a cut too: name what scored but was not pushed
+        tail += ("\n\n(+%d weitere Treffer unter dem Limit von %d nicht ausgegeben: %s - "
+                 "`py -3.12 ../ops/tools/henry_memory_get.py get <name>`)"
+                 % (len(rest), RECALL_K, _capped([n for n, _r, _s in rest], 8)))
     if skipped:
         tail = ("\n\n(weitere Treffer nicht ausgegeben, Budget erschoepft: %s - "
                 "`py -3.12 ../ops/tools/henry_memory_get.py get <name>`)"

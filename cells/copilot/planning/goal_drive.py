@@ -75,6 +75,17 @@ def _goal_ids(tracks, goal_pid, goal=None):
             if not t.get("example") and t.get("process") == goal_pid}
 
 
+def _facts_evicted(goal):
+    """How many clarifications of THIS goal the PM's fixed-size ring has dropped
+    (pm.add_clarification counts them at write time, per goal text)."""
+    try:
+        from cells.copilot.planning.pm_state import _loopstate
+        ev = _loopstate().get("clarifications_evicted") or {}
+        return int(ev.get(norm(goal)) or 0) if isinstance(ev, dict) else 0
+    except Exception:                                        # noqa: BLE001
+        return 0
+
+
 def _facts(goal):
     """The owner's clarifications recorded against THIS goal text (clarify_goal
     -> pm.add_clarification). Until 2026-09-30 only the PM brain's plan prompt
@@ -145,6 +156,7 @@ def goal_state(now=None, tracks=None, processes=None, ev=None, goal=None, goal_p
         "last_move": last_move or None,
         "needs": needs,
         "facts": _facts(goal) if facts is None else list(facts),
+        "facts_evicted": _facts_evicted(goal) if facts is None else 0,
     }
 
 
@@ -180,6 +192,9 @@ def goal_line(gs, now=None):
         out += "\n  wartet auf den Owner: " + "; ".join(x["label"] for x in gs["needs"][:3])
         if len(gs["needs"]) > 3:
             out += " (+%d weitere)" % (len(gs["needs"]) - 3)
+    if gs.get("facts_evicted"):
+        out += ("\n  (%d aeltere Owner-Fakten wurden aus dem begrenzten Speicher verdraengt "
+                "und sind nicht mehr hier - frag den Owner, falls ein Fakt fehlt)" % gs["facts_evicted"])
     allf = gs.get("facts") or []
     if len(allf) > 8:
         out += "\n  (%d von %d Owner-Fakten gezeigt, aeltere nicht gezeigt)" % (8, len(allf))

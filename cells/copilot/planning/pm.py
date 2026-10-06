@@ -147,7 +147,18 @@ def add_clarification(text, actor="owner", source="chat", card=None):
         if source == "card":
             row["source"], row["card"] = "card", card or ""
         cl.append(row)
-        st["clarifications"] = _trim_clarifications(cl)
+        kept = _trim_clarifications(cl)
+        # the ring DELETES at write time - the only honest disclosure later is a
+        # counter folded at the event itself (never re-derived)
+        ev = st.setdefault("clarifications_evicted", {})
+        if not isinstance(ev, dict):          # a bare int from the first cut of this counter
+            ev = st["clarifications_evicted"] = {}
+        keptids = set(map(id, kept))
+        for c in cl:
+            if id(c) not in keptids:           # per GOAL text: facts belong to one goal
+                g = " ".join((c.get("goal") or "").split())
+                ev[g] = int(ev.get(g) or 0) + 1
+        st["clarifications"] = kept
         _save_loopstate(st)
         return st["clarifications"]
 
