@@ -730,7 +730,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
 
   <section id="watch">
     <h2 data-i="watchTitle">On your wrist, too</h2>
-    <p class="section-sub" data-i="watchSub">Approve, decline or ask Henry from your watch. Real screen from the Wear OS app, with example goals.</p>
+    <p class="section-sub" data-i="watchSub">Approve, decline or ask Henry from your watch. Real screen from the Wear OS app.</p>
     <div class="watch">
       <figure class="watch-shot"><img src="/shots/watch-board.webp" width="454" height="454" alt="HelmDeck on a round watch: two goals are waiting for you" data-i-alt="watchAlt" loading="lazy"></figure>
       <div class="watch-cards">
@@ -1030,7 +1030,7 @@ ${wl("wearables")}
       th3H:"Teams statt Einzelkämpfer.",
       th3P:"Jede Entscheidung landet bei der Person, die sie treffen soll. Der Gründer arbeitet mit einem Partner in einer anderen Zeitzone: Abends übergibt er das Board, und beide sehen sofort, was sich bewegt hat und was auf sie wartet.",
       watchTitle:"Auch am Handgelenk",
-      watchSub:"Freigeben, ablehnen oder Henry fragen, direkt von der Uhr. Echter Screen der Wear-OS-App, mit Beispielzielen.",
+      watchSub:"Freigeben, ablehnen oder Henry fragen, direkt von der Uhr. Echter Screen der Wear-OS-App.",
       watchAlt:"HelmDeck auf einer runden Uhr: zwei Ziele warten auf dich",
       watchAppleNote:"Die Watch-App ist im iPhone-Paket enthalten. Installiere HelmDeck auf dem iPhone, dann erscheint sie auf deiner gekoppelten Uhr.",
       watchAppleBtn:"Im App Store laden",
@@ -1111,7 +1111,7 @@ ${wl("wearables")}
       th3H:"Teams, not individuals.",
       th3P:"Every decision lands with the one person who should make it. The founder and a partner in another time zone hand the board over at night, and each sees what moved and what is waiting on them.",
       watchTitle:"On your wrist, too",
-      watchSub:"Approve, decline or ask Henry from your watch. Real screen from the Wear OS app, with example goals.",
+      watchSub:"Approve, decline or ask Henry from your watch. Real screen from the Wear OS app.",
       watchAlt:"HelmDeck on a round watch: two goals are waiting for you",
       watchAppleNote:"The watch app is included in the iPhone package. Install HelmDeck on your iPhone and it appears on your paired watch.",
       watchAppleBtn:"Get it on the App Store",
