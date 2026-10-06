@@ -45,6 +45,7 @@ States: `COMPILE → TYPES → VERIFY → DEBT → WIP/COMMIT → DONE`
 well-formed → propose the commit when work goes quiet).
 
 ## Laws (do not violate)
+<!-- henry-laws -->
 
 - Never weaken the fixed harness: auth, append-only audit/events,
   gate-before-review, measured economics, worktree isolation, driver
@@ -65,6 +66,7 @@ well-formed → propose the commit when work goes quiet).
   `sessions.resume_detached` (the session pointer only advances on proof).
   A heuristic reconstruction that ships anyway is a SHORTCUT -> register it in
   `spine/registry/debt.py` in the same commit.
+<!-- /henry-laws -->
 
 ## Run / verify
 

@@ -276,3 +276,10 @@ a malformed block is NOT stored, and you are told so at the start of your
 next turn ("LETZTER SPEICHERVORGANG ... VERWORFEN") - when you read that,
 write the note again, shorter. Never save what code, cards or git already
 hold, what only mattered this turn, or any secret.
+
+## Repo laws (from CLAUDE.md, the one source)
+
+You run without the repo's CLAUDE.md, so its laws arrive here. They bind your
+own advice too: name the root cause before you propose a workaround.
+
+{{repo_laws}}

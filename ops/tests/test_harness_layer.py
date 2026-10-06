@@ -739,7 +739,22 @@ def test_settings_hub_vocabularies():
         _check_i18n(dict_src, "hub.scope.%s" % s, "scope badge")
 
 
+def test_henry_carries_repo_laws():
+    """Henry spawns with --setting-sources "" so the CLI never loads CLAUDE.md
+    for him; the laws must arrive through the brief, from CLAUDE.md itself."""
+    check(harness.cli_args("board-copilot")[:2] == ["--setting-sources", ""],
+          "premise: Henry's spawn drops the project layer (no CLAUDE.md from the CLI)")
+    laws = harness.repo_laws()
+    henry = harness.brief("board-copilot")
+    check("NO MONKEY PATCHES" in laws and laws in henry,
+          "the built Henry brief contains the CLAUDE.md laws verbatim (one source)")
+    check("{{repo_laws}}" not in henry and "henry-laws" not in henry,
+          "marker and fence are consumed, not leaked")
+    check("Run / verify" not in laws, "only the fenced laws ride along, not the whole file")
+
+
 for fn in (test_no_drift, test_ask_protocol, test_cli_args,
+           test_henry_carries_repo_laws,
            test_never_breaks_a_spawn, test_loop_state, test_one_definition,
            test_export_matches_the_app_contract, test_policy_knob_contract,
            test_settings_hub_vocabularies):

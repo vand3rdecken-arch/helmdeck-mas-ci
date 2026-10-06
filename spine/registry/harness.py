@@ -31,7 +31,7 @@ granularity on some filesystems, so a fast edit can land inside the same tick
 and be missed). Cheap enough to check on every spawn, which is what we want:
 edit a brief, next turn uses it, no daemon restart.
 """
-import json, os, threading
+import json, os, re, threading
 
 from daemon.paths import REPO_ROOT as ROOT
 HARNESS = os.path.join(ROOT, "ops", "harness")
@@ -440,8 +440,28 @@ def _agent_file(name):
     return _cached(_agent_path(name), _parse_agent)
 
 
+LAWS_MARKER = "{{repo_laws}}"
+_LAWS_RE = re.compile(r"<!-- henry-laws -->(.*?)<!-- /henry-laws -->", re.S)
+
+
+def _parse_laws(raw):
+    m = _LAWS_RE.search(raw)
+    return m.group(1).strip() if m else ""
+
+
+def repo_laws():
+    """The section of CLAUDE.md fenced by <!-- henry-laws --> markers: the ONE
+    source of the laws Henry runs under. His spawn passes --setting-sources ""
+    (no project layer), so the CLI never loads CLAUDE.md for him; a brief that
+    carries a {{repo_laws}} marker gets the section spliced in at build time.
+    Total: a missing file or fence yields "" (the marker just disappears)."""
+    return _cached(os.path.join(ROOT, "CLAUDE.md"), _parse_laws) or ""
+
+
 def _resolve(body, fm):
-    """Splice the fixed wire protocol into an editable body."""
+    """Splice the repo laws and the fixed wire protocol into an editable body."""
+    if LAWS_MARKER in body:
+        body = body.replace(LAWS_MARKER, repo_laws())
     if not fm.get("ask_protocol"):
         return body.replace(ASK_MARKER, "").strip()
     try:
