@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -1177,7 +1177,8 @@ export default function ChatScreen() {
   const router = useRouter();
   const tr = useT();
   const { wide } = useResponsive();
-  // Phone: the chat is a full-screen route. Desktop reaches the copilot via the
+  const { vq } = useLocalSearchParams<{ vq?: string }>();
+  // Desktop: the chat is an overlay panel. Desktop reaches the copilot via the
   // in-page CopilotOverlay (board FAB opens the panel store), NOT this route — but
   // if a wide window ever lands here directly (deep link / reload), still render
   // as a panel rather than a full-bleed takeover.
@@ -1194,5 +1195,11 @@ export default function ChatScreen() {
       </View>
     );
   }
-  return <ChatBody onClose={() => router.back()} wide={false} />;
+  // The phone has ONE Henry chat: the Henry TAB (ui/henry_home.tsx), which keeps
+  // the tab bar. This route used to render a second full-screen ChatBody with no
+  // tabs, so a push tap / palette / FAB landed in a different-looking Henry than
+  // the tab (owner 2026-10-06). Every caller still names "/chat"; the route is
+  // the single place that sends them to the tab. `vq` (a done-push's spoken
+  // result) rides along - the tab's ChatBody reads it the same way.
+  return <Redirect href={{ pathname: "/(tabs)", params: vq ? { vq } : {} }} />;
 }
