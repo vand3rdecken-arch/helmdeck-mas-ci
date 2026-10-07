@@ -253,12 +253,28 @@ class _FakeJudge:
 
 _sp.Popen = lambda *a, **k: _FakeJudge()
 c._last_turn_at.pop("owner", None)
+c._judge_lean = lambda: False          # the legacy path: judge ON the board session
 raw = c.judge("prompt", os.getcwd())
 _sp.Popen = _orig_popen
 check(raw.get("session_id") == "sess-a", "judge still returns the raw verdict")
 check(sched["n"] == 1, "a judge turn SCHEDULES compaction on the board session")
 check(c._last_turn_at.get("owner", 0) > 0,
       "...and stamps the turn clock, so the lull is measured off it")
+
+# 5b) THE LEAN JUDGE (default): fresh session, so it neither resumes nor advances the
+#     board session and owes it no compaction.
+sched["n"] = 0
+argvs = []
+_sp.Popen = lambda *a, **k: (argvs.append(a[0]), _FakeJudge())[1]
+c._judge_lean = lambda: True
+c._save_sessions({"owner": "sess-a"})
+raw = c.judge("prompt", os.getcwd())
+_sp.Popen = _orig_popen
+flat = " ".join(str(x) for x in argvs[0]) if argvs else ""
+check("--resume" not in flat, "lean judge does not resume the board session")
+check("--no-session-persistence" in flat, "lean judge leaves no session behind")
+check(sched["n"] == 0, "lean judge schedules no compaction (it grew nothing)")
+check(c._sessions().get("owner") == "sess-a", "lean judge leaves the session pointer alone")
 c._schedule_compact, c.owner_name = _orig_sched, _orig_owner
 sessions._compact_marks = _orig_marks
 
