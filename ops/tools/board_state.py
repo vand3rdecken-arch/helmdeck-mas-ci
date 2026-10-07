@@ -232,4 +232,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    import ctxout
+    raise SystemExit(ctxout.run(main, sys.argv[1:], "board_state", cap=16_000))

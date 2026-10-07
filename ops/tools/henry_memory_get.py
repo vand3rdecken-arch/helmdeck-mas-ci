@@ -111,4 +111,5 @@ def find_notes(notes, terms):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    import ctxout
+    sys.exit(ctxout.run(main, sys.argv, "henry_memory_get", cap=20_000))

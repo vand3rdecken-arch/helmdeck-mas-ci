@@ -52,4 +52,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    import ctxout
+    sys.exit(ctxout.run(main, sys.argv, "henry_inbox", cap=12_000))

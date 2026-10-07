@@ -793,7 +793,8 @@ def _persist_get(skey, cli_model, sid, system):
     conversation pays one spawn on open and stays warm for the rest of it."""
     from spine.agent import drivers
     from spine.registry import harness
-    key = (cli_model or "", henry_pmode(), _brief_fp())
+    tools = henry_chat_tools()
+    key = (cli_model or "", henry_pmode(), _brief_fp(), tools)
     live = None
     with _persist_lock:
         ent = _persist.get(skey)
@@ -817,6 +818,8 @@ def _persist_get(skey, cli_model, sid, system):
     argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
     argv += _lean_mcp_args()
+    if tools is not None:
+        argv += ["--tools", tools]
     from spine.agent.drivers import _cmd_line
     from spine.agent.spawnenv import tool_path
     _env = tool_path()
@@ -848,6 +851,26 @@ def _lean_mcp_args():
     full bridge. --strict-mcp-config makes the empty file the ONLY source."""
     return ["--strict-mcp-config", "--mcp-config",
             os.path.join(_REPO_ROOT, "cells", "copilot", "harness", "settings", "mcp-none.json")]
+
+
+CHAT_TOOLS = "Bash,Read,Edit,Write,Grep,Glob,Agent,WebSearch,WebFetch"
+
+
+def henry_chat_tools():
+    """The built-in tools Henry's chat process loads (`--tools`). The default
+    block costs ~30k tokens per step; the ones the brief never uses (Skill
+    2.7k with the 171-skill list, NotebookEdit 1.1k, KillShell 0.9k, ...)
+    are off. Agent stays - Henry's background research runs through it.
+    Setting `henry_chat_tools` overrides (empty string = none; "default" =
+    the CLI's whole block)."""
+    try:
+        from spine.storage import events
+        v = events.settings().get("henry_chat_tools")
+    except Exception:                                        # noqa: BLE001
+        v = None
+    if v is None:
+        return CHAT_TOOLS
+    return None if str(v).strip().lower() == "default" else str(v)
 
 
 def henry_pmode(project=""):
@@ -1450,7 +1473,21 @@ def _await_lull_and_lock(user):
 # could silently lift it to the 800k overflow the day a 1M voice model is
 # configured: the exact 2026-08-30 shape (615k session, 83M input tokens over
 # 98 turns, nothing watching).
-COMPACT_COST_LINE = 168_000
+COMPACT_COST_LINE = 100_000   # 50% of the 200k window - Gemini CLI's default (owner 2026-10-07)
+
+# What the compaction summary must keep - a SCHEMA, not prose (OpenHands:
+# goals and specs preserved explicitly, recent turns verbatim; OpenCode: a
+# structured checkpoint). Facts live in memory files and tool output files,
+# so this only has to carry the thread. Measured 2026-10-07 on a throwaway
+# session: `/compact <instructions>` is honoured (compact_boundary 6,937 ->
+# 612 tokens).
+COMPACT_INSTRUCTIONS = (
+    "Fasse NUR so zusammen, als Liste mit diesen Ueberschriften: "
+    "ZIEL (was der Owner gerade erreichen will); ENTSCHEIDUNGEN (getroffen, mit Datum); "
+    "LAUFEND (Karten/Agenten in Arbeit, ihre IDs, Stand); OFFEN (Fragen an den Owner, "
+    "unerledigte Zusagen); OWNER-WUENSCHE (Praeferenzen und Korrekturen, woertlich); "
+    "DATEIEN (Pfade zu Memory-Notizen oder Tool-Ausgaben, die gebraucht werden). "
+    "Keine Nacherzaehlung, keine Tool-Ausgaben, nichts Erledigtes.")
 
 
 def _compact_mark(st):
@@ -1565,7 +1602,10 @@ def _do_prune(user, sid):
     path = claude_sessions._find_transcript(sid)
     if not path:
         return None
-    res = copilot_prune.prune_session_file(path, hidden=(_SYSTEMCHECK,))
+    # restorable: the full result goes to state/ctx/<sid>/<tool_use_id>.txt
+    # and the placeholder names it (copilot_prune.file_store)
+    res = copilot_prune.prune_session_file(path, hidden=(_SYSTEMCHECK,),
+                                           store_dir=os.path.join(ROOT, "state", "ctx", sid))
     if not res or not res[0]:
         return None
     n, saved = res
@@ -1744,7 +1784,7 @@ def _maybe_compact(user):
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
                              stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        p.stdin.write("/compact"); p.stdin.close()
+        p.stdin.write("/compact " + COMPACT_INSTRUCTIONS); p.stdin.close()
         for line in p.stdout:
             line = line.strip()
             if not line:

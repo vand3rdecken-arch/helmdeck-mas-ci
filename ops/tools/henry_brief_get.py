@@ -47,4 +47,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    import ctxout
+    sys.exit(ctxout.run(main, sys.argv, "henry_brief_get", cap=30_000))

@@ -393,9 +393,15 @@ def _human(f):
     return "\n".join(L)
 
 
-if __name__ == "__main__":
+def main(argv):
     facts = collect()
-    if "--json" in sys.argv:
+    if "--json" in argv:
         print(json.dumps(facts, indent=2, ensure_ascii=False))
     else:
         print(_human(facts))
+    return 0
+
+
+if __name__ == "__main__":
+    import ctxout
+    sys.exit(ctxout.run(main, sys.argv, "ship_facts", cap=12_000))
