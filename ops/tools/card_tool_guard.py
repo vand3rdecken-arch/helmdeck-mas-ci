@@ -133,6 +133,60 @@ _PATH_KEYS = ("file_path", "path", "notebook_path")
 # system's call, like every other risky verb. tray.py is the supervisor.
 
 
+# NO UNREGISTERED BACKGROUND RUNS (owner 2026-10-07). A long run exists ONLY as
+# a run_in_background task: that is the one shape with a descriptor
+# (sessions.bg_upsert) and a task_notification that wakes the card. A run
+# started any other way (trailing '&', nohup, Start-Process, ...) is invisible
+# to the harness, the worker ends its turn with "the harness wakes me", and
+# nothing ever does. Measured 2026-10-07: cards 20261007-133515 (app_shot in
+# the background, open background tasks=0) and 20261007-134911 (AAB build, the
+# android-build.lock pid dead) both sat in needs_you, woken by nobody.
+# Matches the PARSED command, not prose: heredoc bodies and quoted strings are
+# blanked first (debt guard-process-rule-matches-prose-payload), except the
+# payload of a `-c` / `-Command` / `/c` argument, which IS a command.
+_HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
+_QUOTED_RE = re.compile(r"\"(?:\\.|[^\"\\])*\"|'[^']*'")
+_CMD_ARG_RE = re.compile(r"(?:^|\s)(?:-c|-lc|-command|/c)\s*$", re.I)
+_BG_BARE_WORD_RE = re.compile(
+    r"(?:^|[;|&(])\s*(nohup|setsid|disown)(?![\w.-])"
+    r"|(?<![\w./\\-])(start-job|start-threadjob)(?![\w.-])", re.I | re.M)
+_BG_AMP_RE = re.compile(r"(?<![&>|<])&(?![&>])")
+_START_PROCESS_RE = re.compile(r"(?<![\w./\\-])(?:start-process|saps)(?![\w.-])([^;\n|]*)", re.I)
+_CMD_START_RE = re.compile(r"\bcmd(?:\.exe)?\s+/c\s+start\b(?!\s+/wait)", re.I)
+_BG_WAY = ("Start it with the Bash tool's run_in_background:true (the harness registers it "
+           "and the card is woken when it finishes), or run it in the foreground with a "
+           "timeout up to 600000 ms. For a job that must outlive the turn use "
+           "`py -3.12 ops/tools/detach.py <log> --title T -- <cmd>`, which registers it too.")
+
+
+def _blank_prose(command):
+    command = _HEREDOC_RE.sub("", command or "")
+
+    def keep_or_blank(m):
+        return m.group(0)[1:-1] if _CMD_ARG_RE.search(command[:m.start()]) else '""'
+    return _QUOTED_RE.sub(keep_or_blank, command)
+
+
+def _unregistered_bg_hit(command, tool):
+    """The offending construct if `command` starts a process nobody will be
+    woken for, else None. `&` is a background operator in sh only; in
+    PowerShell it is the call operator."""
+    text = _blank_prose(command)
+    m = _BG_BARE_WORD_RE.search(text)
+    if m:
+        return m.group(1) or m.group(2)
+    if tool == "Bash" and _BG_AMP_RE.search(text):
+        return "&"
+    if re.search(r"-asjob\b", text, re.I):
+        return "-AsJob"
+    for m in _START_PROCESS_RE.finditer(text):
+        if not re.search(r"-wait\b", m.group(1), re.I):
+            return "Start-Process without -Wait"
+    if _CMD_START_RE.search(text):
+        return "cmd /c start"
+    return None
+
+
 # Package-mutating/publishing verbs - network egress and arbitrary
 # postinstall-script execution, the two things a client card must not get
 # just because its stated task happens to touch a package.json. Checked as
@@ -479,6 +533,15 @@ def main():
         except Exception as e:                                 # noqa: BLE001
             _deny("card_tool_guard: desktop lease error, refusing the desktop call (%s)" % str(e)[:160])
         return
+
+    if (tool in ("Bash", "PowerShell") and scope != "hands"
+            and os.environ.get("HELMDECK_SURFACE") != "copilot"):
+        hit = _unregistered_bg_hit(ti.get("command") or "", tool)
+        if hit:
+            _deny("card_tool_guard: '%s' starts a run the harness cannot see, so nothing "
+                  "would wake you when it ends. %s Never end a turn with 'waiting for X' "
+                  "unless X is such a registered task." % (hit, _BG_WAY))
+            return
 
     if not worktree:
         # No worktree var at all = not a normal card spawn (machine/direct-
