@@ -1190,10 +1190,11 @@ respectively (their `package` declaration decides); `withWearApp.js`'s own
 
 ## 3) Get the APK onto the phone
 
-- **Relay** (served at `https://<relay>/apk/helmdeck.apk`):
-  `bash ops/deploy/push_relay.sh` (also ships relay.py + restarts the service), or
-  minimal file-only (no restart): scp the apk to the VM and
-  `sudo install -m644 helmdeck.apk /opt/helmdeck-apk/helmdeck.apk`.
+- **Relay** (the worker 302s the relay's `/apk/helmdeck.apk` to the latest
+  `Tienduyvo/helmdeck-release` release asset `helmdeck.apk`):
+  `bash ops/deploy/push_apk.sh` uploads it there, proves the asset and stages
+  `version.json`; the next `push_update.sh` (worker deploy) publishes the
+  version marker. A failure exits non-zero and aborts a native ship.
 - **Google Drive**: copy to `G:\My Drive\HelmDeck.apk` (Drive-for-Desktop syncs).
 
 Signature: our APK is signed with `swarmdeck-release.jks`. If that differs from

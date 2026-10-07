@@ -90,7 +90,7 @@ def verify_native():
     rl_vc = rl.get("versionCode")
     if rl_vc is not None and rl_vc != aj.get("versionCode"):
         return False, ("relay serves versionCode %s but app.json/the APK say "
-                       "%s - push_relay.sh ran but the relay's channel is "
+                       "%s - push_apk.sh/push_update.sh ran but the relay's channel is "
                        "still stale" % (rl_vc, aj.get("versionCode")))
     return True, "app.json / APK / relay all agree on versionCode %s" % aj.get("versionCode")
 

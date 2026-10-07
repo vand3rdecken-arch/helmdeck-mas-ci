@@ -41,7 +41,7 @@ is served from a **local fallback on the owner's PC** instead:
 `surfaces/relay/relay.py` runs directly from this repo
 (`ops/deploy/relay_local.cmd`, HKCU `Run` autostart) and a `cloudflared` tunnel
 named `helmdeck-relay` publishes it under the same DNS name - the phone/desktop
-see no difference. `push_update.sh` and `push_relay.sh` both probe
+see no difference. `push_update.sh` probes
 `http://127.0.0.1:6790/health` first: if it answers, they publish straight into
 the local `/opt/helmdeck-updates*` / `/opt/helmdeck-apk` dirs (Windows resolves
 that to `C:\opt\...` - see the scripts' own comments) instead of SSH-ing to
@@ -52,8 +52,9 @@ this fallback does NOT cover: a `relay.py` code change needs `relay_local.cmd`
 restarted by hand (the running process doesn't hot-reload); the VM path always
 restarted the service for you.
 
-Everything below describes the **VM path**, still the setup `push_relay.sh`
-drives whenever the local relay isn't answering:
+Everything below describes the historic **VM path** (`push_relay.sh` was
+deleted 2026-10-07; the APK goes out via `push_apk.sh` to the GitHub release the
+worker redirects to):
 
     https://relay.helmdeck.de/health     -> {"ok": true, ...}
 
@@ -135,7 +136,7 @@ if you want the encrypted path, or to serve several users from one host.
 **Then run (from this repo):**
 
 ```bash
-bash ops/deploy/push_relay.sh        # ships relay.py (+ APK channel) and restarts the service
+# (historic) push_relay.sh shipped relay.py + the APK channel to the VM
 ```
 
 The script assumes the box was set up once (systemd unit + nginx/certbot or
