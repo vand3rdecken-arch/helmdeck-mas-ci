@@ -555,6 +555,11 @@ def card_event(track, status):
     # `kind` rides in the sealed payload so a tap on a DONE push can open the
     # voice mode and have Henry SPEAK the result (owner 2026-08-22) instead of
     # deep-linking into the card.
-    push_fcm(i18n.t(keys[status]), body, track.get("id", ""),
+    title_key = keys[status]
+    if status == "needs_you":
+        from cells.engineer.cards import lifecycle
+        if lifecycle.card_phase(track) == "ready":
+            title_key = "push.ready"
+    push_fcm(i18n.t(title_key), body, track.get("id", ""),
              urgent=(track.get("priority") == "urgent"), kind=status,
              ask=ask_block)

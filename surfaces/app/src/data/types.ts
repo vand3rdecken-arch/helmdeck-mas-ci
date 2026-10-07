@@ -112,6 +112,8 @@ export interface Track {
   forked_from?: string; forked_ref?: string; adopted?: boolean;
   question?: PendingQuestion;
   waiting_on?: "you" | "background";
+  /** DERIVED per read (lifecycle.card_phase), only while status === "needs_you". */
+  phase?: "asking" | "ready" | "delivered" | "background";
   background?: BackgroundWait;
   /** Paseo ProviderSubagentStore: one descriptor per background task the worker
    *  launched, with an explicit lifecycle status - so the card can show what the

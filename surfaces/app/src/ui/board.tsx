@@ -12,6 +12,7 @@ import { useBoardFilter } from "@/data/boardfilter";
 import { cardStation, columnLabel, groupByColumn, renderColumns, useBoards,
   type RenderColumn } from "@/data/boards";
 import { useDemo } from "@/data/demo";
+import { needsOwner, phaseKey } from "@/data/phase";
 import { useHealth } from "@/data/health";
 import type { Track, LaneMove } from "@/data/types";
 import { t as tt, useT } from "@/i18n";
@@ -60,6 +61,8 @@ const PRIO_KEY: Record<string, string> = {
 };
 const statusLabel = (tr: TFn, s?: string) =>
   (s ? (STATUS_KEY[s] ? tr(STATUS_KEY[s]) : s.replace(/_/g, " ")) : "");
+/** The open question's own text (what the owner is asked), for the asking badge. */
+const askText = (k: Track) => k.question?.questions?.[0]?.question ?? "";
 const prioLabel = (tr: TFn, p?: string) => (p ? (PRIO_KEY[p] ? tr(PRIO_KEY[p]) : p) : "");
 
 /** A STATION's own name - what an unlabelled column renders as (see
@@ -174,7 +177,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const tr = useT();
   const flat = useAiFlat();
   const router = useRouter();
-  const tint = waitsOnTask(k) ? null : k.status === "needs_you" ? t.ok : k.status === "bounced" ? t.danger : null;
+  const tint = k.status === "bounced" ? t.danger : k.status === "needs_you" && needsOwner(k) ? t.ok : null;
   // tap-to-expand for the last-reply/report preview (see below)
   const [subOpen, setSubOpen] = useState(false);
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
@@ -223,8 +226,13 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       </Pressable>
       {tint ? (
         <Text style={{ color: tint, fontSize: 11.5, fontWeight: "600", paddingRight: 22 }}>
-          {k.status === "needs_you" ? tr("board.card.replyReady") : tr("board.card.bounced")}
+          {k.status === "needs_you" ? "● " + tr(phaseKey(k) ?? "status.needsYou") : tr("board.card.bounced")}
         </Text>
+      ) : null}
+      {k.phase === "asking" && askText(k) ? (
+        <Text style={{ color: t.txtPrimary, fontSize: 12.5 }} numberOfLines={2}>{askText(k)}</Text>
+      ) : k.phase === "delivered" || k.phase === "background" ? (
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5, fontWeight: "600" }}>{tr(phaseKey(k)!)}</Text>
       ) : null}
       <View style={s.row}>
         {k.status === "running" ? (
@@ -309,7 +317,7 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
   const router = useRouter();
   const why = (k: Track) =>
     k.status === "bounced" ? tr("board.why.bounced") :
-    k.status === "needs_you" ? tr("board.why.needsYou") :
+    k.status === "needs_you" ? tr(phaseKey(k) ?? "board.why.needsYou") :
     k.mode === "human" ? tr("board.why.human") : k.mode === "cowork" ? tr("board.why.cowork") : tr("board.why.next");
   return (
     <View style={[s.nextup, { backgroundColor: t.warn + "12", borderColor: t.warn + "66" }]}>
@@ -764,7 +772,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const showDemoInvite = !filter && !demoActive && rows.length === 0 && !isLoading
     && (offline || !!error || !!dataErr);
   const shown = rows.filter((k) => {
-    if (eff === "needs_you") return ((k.status === "needs_you" && !waitsOnTask(k)) || k.status === "bounced") && !k.archived;
+    if (eff === "needs_you") return needsOwner(k) && !k.archived;
     if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
     // repo scope: the card's own workplace path (machine cards carry a plain
@@ -821,7 +829,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // board, the very crash the `rows` guard above was added for. This list
   // deliberately ignores the repo/client scope chips (see above).
   const nextUp = rows
-    .filter((k) => k.lane !== "done" && !k.archived && ((k.status === "needs_you" && !waitsOnTask(k)) || k.status === "bounced" || (k.up_next && k.lane === "backlog")))
+    .filter((k) => k.lane !== "done" && !k.archived && (needsOwner(k) || (k.up_next && k.lane === "backlog")))
     .sort((a, b) => prioOrd(a.priority) - prioOrd(b.priority) || (a.due ?? "9999").localeCompare(b.due ?? "9999"));
 
   // Cards a batch sign-off could cover: in the regulated scope, resting on

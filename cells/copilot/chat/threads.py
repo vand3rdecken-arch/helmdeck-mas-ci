@@ -36,8 +36,14 @@ def _bucket(t):
     # A turn that ends with a background task still running parks as
     # needs_you + waiting_on="background" (turnrunner) - the WORKER is waiting,
     # not the owner; blockers.py and pm.py already read it that way.
-    if st == "needs_you" and t.get("waiting_on") != "background":
+    # needs_input = a REAL open question; a turn that merely ended is not the
+    # owner's move (lifecycle.card_phase).
+    from cells.engineer.cards import lifecycle
+    ph = lifecycle.card_phase(t)
+    if ph == "asking":
         return "needs_input"
+    if ph in ("delivered", "ready"):
+        return "attention"
     if st in ("bounced", "failed", "canceled"):
         return "failed"
     if lane == "review":
