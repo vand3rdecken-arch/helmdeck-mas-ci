@@ -5378,7 +5378,7 @@ DEBT = [
     {
         "id": "bg-launch-ampersand-double-run",
         "title": "A trailing ampersand launch gives the worker no proof of life, so it relaunches",
-        "status": "open",
+        "status": "paid",
         "what": "2026-09-20 20:59: the scan worker launched a 45-minute EDGAR job via "
                 "the Bash tool with a trailing '&'. The tool returned without a usable "
                 "PID or log path, the worker concluded nothing was running and at 21:00 "
@@ -5387,7 +5387,7 @@ DEBT = [
                 "writing the same SQLite file; the lock contention dropped 209 and 177 "
                 "tickers respectively ('database is locked'), about ten percent each, "
                 "silently.",
-        "why_it_bites": "Every long-running data job a worker starts this way risks a "
+        "why_it_bites": "PAID 2026-10-07 - card_tool_guard denies '&', nohup, setsid, disown, Start-Process without -Wait, Start-Job, cmd start on the parsed command and names run_in_background / detach.py (test_bg_launch_guard.py). Was: Every long-running data job a worker starts this way risks a "
                         "duplicate run, double external load and silent data loss; the "
                         "worker cannot tell from the launcher output whether its process "
                         "lives.",
@@ -5434,7 +5434,7 @@ DEBT = [
     {
         "id": "delivered-parked-fires-while-background-runs",
         "title": "delivered-parked escalates a progress reply while the card is waiting on background tasks",
-        "status": "open",
+        "status": "paid",
         "what": "turnrunner._maybe_escalate_delivered checks is_delivered(t) on a "
                 "working card but not whether the card is waiting on background work. "
                 "On 2026-09-20 it fired three times on replies of the shape 'both scans "
@@ -5442,7 +5442,7 @@ DEBT = [
                 "agents' (22:23) and '17 of 20 done, waiting on 2' (22:26), each while "
                 "bg_tasks were running and waiting_on was 'background'. Each cost a "
                 "Henry broker turn that ended in ignore.",
-        "why_it_bites": "Three wasted broker turns per long card, and the real "
+        "why_it_bites": "PAID 2026-10-07 - turnrunner.is_delivered already excludes waiting_on=background; the real leak was runs the registry never saw (unregistered launches), closed at the source by the card_tool_guard rule; pinned in test_bg_launch_guard.py. Was: Three wasted broker turns per long card, and the real "
                         "delivered signal drowns in the false ones.",
         "trigger": "a turn ends in needs_you with running bg_tasks or waiting_on set.",
         "fix": "Return early when t.get('waiting_on') or any bg task is still "
@@ -5454,7 +5454,7 @@ DEBT = [
     {
         "id": "worker-timed-checkin-never-fires",
         "title": "A worker that promises 'I will check back at HH:MM' parks forever",
-        "status": "open",
+        "status": "paid",
         "what": "2026-09-20 21:12: after its background tasks completed, the scan worker "
                 "replied 'Waiting until 21:50 for both processes to finish, then the "
                 "mop-up pass' and ended the turn. Nothing in the harness schedules a "
@@ -5463,7 +5463,7 @@ DEBT = [
                 "shape as the 18.09 lesson for Henry himself (feedback-henry-never-"
                 "promise-next-turn): a promise about a future turn is a promise nobody "
                 "keeps.",
-        "why_it_bites": "Long data jobs whose completion the worker cannot observe as "
+        "why_it_bites": "PAID 2026-10-07 - a worker can no longer start a run the harness cannot see (card_tool_guard), and the card briefs forbid ending a turn on 'waiting for X' unless X is a registered background task (run_in_background or detach.py). Was: Long data jobs whose completion the worker cannot observe as "
                         "a bg task end in a silent park; the owner sees 'still not "
                         "done?' an hour later.",
         "trigger": "a worker reply containing a future clock time or 'check back' "
