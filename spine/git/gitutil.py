@@ -251,7 +251,43 @@ def _seed_worktree(repo, wt):
             copied.append(rel)
         except OSError:
             pass
+    if link_node_modules(repo, wt):
+        copied.append(NODE_MODULES_REL)
     return copied
+
+
+# Worktree-setup step (Paseo/Conductor): a fresh worktree has no node_modules and
+# the card guard forbids reaching the main repo's, so tsc/app_shot could not run
+# (2026-10-07, twice). The worktree path LOOKS inside itself; the junction
+# resolves to the main repo's install. Created here, removed by unlink_node_modules.
+NODE_MODULES_REL = os.path.join("surfaces", "app", "node_modules")
+
+
+def link_node_modules(repo, wt):
+    """Junction (Windows) / symlink wt/<node_modules> -> repo's. True if linked."""
+    src, dst = os.path.join(repo, NODE_MODULES_REL), os.path.join(wt, NODE_MODULES_REL)
+    if not os.path.isdir(src) or os.path.lexists(dst) or not os.path.isdir(os.path.dirname(dst)):
+        return False
+    try:
+        if os.name == "nt":
+            r = subprocess.run(["cmd", "/c", "mklink", "/J", dst, src], capture_output=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return r.returncode == 0
+        os.symlink(src, dst, target_is_directory=True)
+        return True
+    except OSError:
+        return False
+
+
+def unlink_node_modules(wt):
+    """Remove ONLY the link. os.rmdir on a junction deletes the junction, never
+    the target; a real (non-link) node_modules is left to the normal reclaim."""
+    dst = os.path.join(wt, NODE_MODULES_REL)
+    try:
+        if os.path.islink(dst) or (hasattr(os.path, "isjunction") and os.path.isjunction(dst)):
+            os.rmdir(dst) if os.name == "nt" else os.unlink(dst)
+    except OSError:
+        pass
 
 
 def _repo_hash(repo):

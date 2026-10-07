@@ -11,7 +11,7 @@ import os
 import shutil
 
 from spine.git.gitutil import (_git_try, _owned_worktree, _current_branch,
-                     _git_state_broken, _repo_hash, WORKTREE_DIRNAME)
+                     _git_state_broken, _repo_hash, WORKTREE_DIRNAME, unlink_node_modules)
 
 
 def _live_cohabitant(t, wt):
@@ -66,6 +66,7 @@ def reclaim_worktree(t, log=None, force=False):
             if log:
                 log.log("note", "WORKTREE behalten - uncommittete Aenderungen in %s" % wt)
             return False
+    unlink_node_modules(wt)                 # junction first: never let a remove follow it
     _git_try(repo, "worktree", "remove", "--force", wt)
     if os.path.isdir(wt) and _owned_worktree(wt):
         # git refused (admin dir already gone, repo moved, broken .git file).
@@ -148,6 +149,7 @@ def sweep_worktrees():
             rc3, dirty, _ = _git_try(path, "status", "--porcelain", "--untracked-files=no")
             if rc3 == 0 and dirty:
                 continue                    # dirty tracked - keep
+            unlink_node_modules(path)
             _git_try(repo, "worktree", "remove", "--force", path)
             if not os.path.isdir(path):
                 _git_try(repo, "branch", "-D", br)
@@ -169,6 +171,7 @@ def sweep_worktrees():
                         or not _owned_worktree(path)
                         or not _git_state_broken(path)):
                     continue
+                unlink_node_modules(path)
                 shutil.rmtree(path, ignore_errors=True)
                 if not os.path.isdir(path):
                     n += 1
