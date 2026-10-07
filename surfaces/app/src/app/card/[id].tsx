@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, HeldError, neverDelivered, type SteerOpts } from "@/data/client";
 import * as outbox from "@/data/outbox";
+import { phaseKey } from "@/data/phase";
 import { usePresence } from "@/data/presence";
 import { useModels } from "@/data/use_models";
 import type { Track, Me, EconCard } from "@/data/types";
@@ -242,7 +243,7 @@ function Overview({ k, edit }: { k: Track; edit: (p: Record<string, unknown>) =>
   return (
     <View style={{ gap: 10 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        {k.status ? <Chip text={STATUS_KEY[k.status] ? tr(STATUS_KEY[k.status]) : k.status.replace(/_/g, " ")}
+        {k.status ? <Chip text={phaseKey(k) ? tr(phaseKey(k)!) : STATUS_KEY[k.status] ? tr(STATUS_KEY[k.status]) : k.status.replace(/_/g, " ")}
           dot={statusColor(t, k.status)} /> : null}
         <Chip text={LANE_KEY[k.lane] ? tr(LANE_KEY[k.lane]) : k.lane} dot={laneColor(t, k.lane)} />
         {k.mode ? <Chip text={executorLabel(k.mode)} dot={t.ai} /> : null}

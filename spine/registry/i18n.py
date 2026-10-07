@@ -119,7 +119,8 @@ MESSAGES = {
 
     # -- push notifications (notify.card_event) -------------------------------
     "push.henry": {"de": "Henry", "en": "Henry"},
-    "push.needsYou": {"de": "Karte fertig - dein Urteil", "en": "Card finished - your call"},
+    "push.needsYou": {"de": "Karte fertig - Henry prüft", "en": "Card finished - Henry is checking"},
+    "push.ready": {"de": "Bereit zur Abnahme", "en": "Ready to accept"},
     "push.bounced": {"de": "Karte gescheitert", "en": "Card failed"},
     "push.done": {"de": "Karte akzeptiert", "en": "Card accepted"},
     "push.question": {"de": "Worker fragt dich", "en": "Worker is asking you"},

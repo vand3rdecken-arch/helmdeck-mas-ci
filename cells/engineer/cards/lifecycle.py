@@ -135,7 +135,32 @@ def present(t):
             out["status_derived"] = True   # marker: coerced at read, not stored
     out = _present_gxp(t, out)
     out = _present_device(t, out)
+    ph = card_phase(out if out is not None else t)
+    if ph:
+        out = dict(t) if out is None else out
+        out["phase"] = ph
     return out if out is not None else t
+
+
+def card_phase(t):
+    """What a parked card (status needs_you) is REALLY waiting for - derived
+    from the facts already on the track (question, waiting_on, lane), never
+    stored. status=needs_you alone is only "the turn ended"; showing it as
+    "waits on you" for every turn end made the owner hunt for a task that did
+    not exist. None for every status that is not a parked turn.
+      asking     an open question (ASK / clarification) - the owner's move
+      background the worker waits on its own background task - nobody's move
+      ready      lane review - the owner's accept
+      delivered  turn ended, no question, still in the working lane - the
+                 worker handed back and Henry (finish-what-you-start) checks"""
+    t = t or {}
+    if t.get("status") != "needs_you":
+        return None
+    if t.get("question"):
+        return "asking"
+    if t.get("waiting_on") == "background":
+        return "background"
+    return "ready" if t.get("lane") == "review" else "delivered"
 
 
 def _present_device(t, out):
