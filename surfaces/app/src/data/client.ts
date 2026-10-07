@@ -292,6 +292,9 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
 export interface Step {
   cls?: string; kind?: string; role?: string; text?: string; ts?: string;
   tool?: string; input?: unknown; result?: string; name?: string;
+  /** kind "compaction" (ui/compaction_marker.tsx) */
+  event?: "started" | "completed" | "failed" | "canceled" | "loading" | "interrupted"; cid?: string; ta?: number;
+  pre_tokens?: number; post_tokens?: number; duration_ms?: number;
 }
 /** `client_msg_id` is the `mid` the sender minted for this message, echoed back
  *  by the daemon on the persisted `you` entry. It is what lets the chat retire

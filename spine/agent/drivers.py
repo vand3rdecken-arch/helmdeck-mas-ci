@@ -1370,22 +1370,22 @@ class _ClaudeSession:
             # scanning the transcript afterwards (that remains the post-mortem
             # fallback for a process that died before its frames arrived).
             sub = ev.get("subtype")
+            # ONE feed item per compaction (Paseo CompactionTimelineItem): the
+            # `compacting` status writes it as loading, the boundary patches
+            # the SAME step_id to completed (the store folds patches by id, so
+            # the item keeps its place - Paseo's reduceTimelineCompaction).
             if cur is not None and sub == "status":
                 if ev.get("status") == "compacting":
                     cur["compacting"] = True
+                    _compaction_item(self.run_dir, {"kind": "compaction", "event": "loading"})
             elif cur is not None and sub == "compact_boundary":
                 cm = _compact_metadata(ev)
                 cur["compaction"] = cm
                 cur["compacting"] = False
-                try:
-                    timeline_store.append(self.run_dir, "s:" + uuid.uuid4().hex,
-                        {"kind": "compaction", "event": "completed",
-                         "trigger": cm.get("trigger"), "pre_tokens": cm.get("pre_tokens"),
-                         "post_tokens": cm.get("post_tokens"),
-                         "ts": _time.strftime("%H:%M:%S", _time.localtime()),
-                         "ta": _time.time()})
-                except Exception:
-                    pass                 # dual-write only - never the turn
+                _compaction_item(self.run_dir, {
+                    "kind": "compaction", "event": "completed", "trigger": cm.get("trigger"),
+                    "pre_tokens": cm.get("pre_tokens"), "post_tokens": cm.get("post_tokens"),
+                    "duration_ms": cm.get("duration_ms")})
             sid = ev.get("session_id")
             if sid:
                 # resume-attachment evidence: a successful --resume ECHOES the
@@ -1643,6 +1643,39 @@ class _ClaudeSession:
 
 def _flush_cur(cur):
     livebuf.set_partial(cur["live_key"], "".join(cur["parts"]))
+
+
+_open_compaction = {}      # run_dir -> step_id of a compaction item still `loading`
+
+
+def _compaction_item(run_dir, patch):
+    """Write/patch the card's compaction feed item. A `loading` patch opens it;
+    any other event settles the open one (or creates it, when the boundary
+    arrives without having seen the status frame). Best-effort: the feed write
+    never breaks a turn."""
+    try:
+        loading = patch.get("event") == "loading"
+        sid = _open_compaction.get(run_dir) if not loading else None
+        if loading and run_dir in _open_compaction:
+            return                                    # status frames repeat - one item
+        if not sid:
+            sid = "compact:" + uuid.uuid4().hex
+            patch = dict(patch, ts=_time.strftime("%H:%M:%S", _time.localtime()), ta=_time.time())
+        if loading:
+            _open_compaction[run_dir] = sid
+        else:
+            _open_compaction.pop(run_dir, None)
+        timeline_store.append(run_dir, sid, patch)
+    except Exception:
+        pass
+
+
+def settle_compaction(run_dir, event, **fields):
+    """End a compaction item the runtime never closed (the turn died, was cut,
+    or the process exited after writing the summary): `loading` -> `event`.
+    No-op when the boundary already settled it."""
+    if run_dir in _open_compaction:
+        _compaction_item(run_dir, dict(fields, event=event))
 
 
 def _compact_metadata(ev):

@@ -90,7 +90,11 @@ export const card: Dict = {
   "card.chat.henryThinking": { de: "Henry denkt…", en: "Henry is thinking…" },
   "card.chat.context": { de: "Kontext {k}k · {pct}%", en: "Context {k}k · {pct}%" },
   "card.chat.usageDetails": { de: "Kontingent anzeigen", en: "Show plan usage" },
-  "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf startet eine frische Session, der Verlauf bleibt sichtbar", en: "Context nearly full — on overflow a fresh session starts, the history stays visible" },
+  "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf wird der Verlauf verdichtet, er bleibt erhalten", en: "Context nearly full — on overflow the history is compacted, it stays intact" },
+  // Paseo's CompactionMarker labels (ui/compaction_marker.tsx)
+  "compaction.loading": { de: "Verdichte den Verlauf …", en: "Compacting history …" },
+  "compaction.done": { de: "Verlauf verdichtet", en: "History compacted" },
+  "compaction.interrupted": { de: "Verdichtung unterbrochen — wird nachgeholt", en: "Compaction interrupted — will retry" },
   "card.chat.awaitingBackground": { de: "Worker wartet auf {n} Hintergrund-Task — nicht auf dich.",
                                     en: "The worker is waiting on {n} background task — not on you." },
   "card.bg.line": { de: "Hintergrund-Tasks: {n}", en: "Background tasks: {n}" },

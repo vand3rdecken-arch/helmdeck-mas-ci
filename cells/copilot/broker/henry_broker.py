@@ -586,9 +586,21 @@ def _decide(esc):
     # Full text here too: _audit lands as a `note` in the card's ActionLog, and
     # the card chat RENDERS notes (card_transcript.tsx kind === "note") - so a
     # cut here is a mid-word chat message on the card surface as well.
-    _audit(card, "HENRY entschieden (%s): %s - %s" % (
-        esc["kind"], action,
-        (text + (" | " + why if why else "")) if action == "did" else (why or text)))
+    #
+    # ONE card line per decision. A report-back action ends in _notify_owner,
+    # which writes the full "Henry (kind): action - text" into the card audit
+    # itself (its t is the card) - so this audit line used to land a SECOND
+    # time for the same decision, 1s apart (owner screenshot 2026-10-07). It
+    # now only stands alone where the report-back does not reach the card:
+    # `did` (t=None there), the quiet verbs, and a machine card's DONE.
+    _machine_done = action == "move" and lane == "done" and bool(
+        (_find_track(card) or {}).get("machine"))
+    _reports = action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
+                          "machine_task") or (action == "move" and not _machine_done)
+    if not (_reports and action != "did" and _find_track(card)):
+        _audit(card, "HENRY entschieden (%s): %s - %s" % (
+            esc["kind"], action,
+            (text + (" | " + why if why else "")) if action == "did" else (why or text)))
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
@@ -607,11 +619,7 @@ def _decide(esc):
     # which stays dispatch._accept_machine's own job (it already gets the
     # note/reply there - see move_lane's `note` param) so the two don't both
     # print the same reply for the same event.
-    _machine_done = action == "move" and lane == "done" and bool(
-        (_find_track(card) or {}).get("machine"))
-    if action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
-                  "machine_task") or (
-            action == "move" and not _machine_done):
+    if _reports:
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a

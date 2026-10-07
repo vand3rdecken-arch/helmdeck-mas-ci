@@ -148,7 +148,7 @@ let version = 1;
 // question block is full of user-visible strings, and this module's rule is
 // that those resolve when answered, never at module load.
 type ChatRow = { cls: string; textKey?: string; text?: string; ts?: string;
-  mirror?: boolean; extra?: Record<string, string>;
+  mirror?: boolean; extra?: Record<string, string | number>;
   // a messenger-style reply and its client id, echoed like the daemon does
   reply_to?: unknown; client_msg_id?: string };
 const CHAT_SEED: ChatRow[] = [
@@ -157,6 +157,9 @@ const CHAT_SEED: ChatRow[] = [
   // Henry's HAND-OFFS as live run tiles (2026-09-25): a card, a background
   // agent and a hands run - their live state comes from /chat/threads and
   // the followups below, exactly like the daemon serves it.
+  // Paseo's compaction item: a finished one (954k -> 4,5k) ...
+  { cls: "compaction", text: "", ts: iso(60), extra: { cid: "demo-c1", event: "completed",
+      pre_tokens: 954000, post_tokens: 4500, duration_ms: 17000, trigger: "auto" } },
   { cls: "user", textKey: "demo.chat.q2", ts: iso(20) },
   { cls: "act", textKey: "demo.run.agentRow", ts: iso(19), extra: { run: "bg:demo-agent" } },
   { cls: "act", textKey: "demo.run.handsRow", ts: iso(19), extra: { hands: "h-demo" } },
@@ -166,6 +169,8 @@ const CHAT_SEED: ChatRow[] = [
   // QuestionPanel above the composer, and the composer's routing chip. Bound to
   // d2 - the demo's running card - so answering routes somewhere real.
   { cls: "card", textKey: "demo.chat.mirrorQ", ts: iso(8), mirror: true },
+  // ... and one still running (spinner row)
+  { cls: "compaction", text: "", ts: iso(1), extra: { cid: "demo-c2", event: "loading" } },
 ];
 let chatLog: ChatRow[] = CHAT_SEED.map((c) => ({ ...c }));
 
@@ -219,6 +224,8 @@ function transcript(id: string): Step[] {
       { cls: "assistant", role: "assistant", text: t("demo.c2.s1"), ts: iso(1380) },
       { cls: "tool", tool: "Edit", input: "daemon/auth.py", result: "+91 −4", ts: iso(900) },
       { cls: "tool", tool: "Bash", input: "pytest ops/tests/test_auth.py", result: t("demo.testsResult"), ts: iso(120) },
+      { kind: "compaction", event: "completed", pre_tokens: 188000, post_tokens: 6200, duration_ms: 41000, ts: iso(60) },
+      { kind: "compaction", event: "loading", ta: Date.now() / 1000, ts: iso(31) },
       { cls: "note", kind: "gate", text: t("demo.c2.gate"), ts: iso(30) },
       { cls: "assistant", role: "assistant", text: t("demo.c2.s2"), ts: iso(24) },
     ],
@@ -381,6 +388,8 @@ export function demoRespond(method: string, rawPath: string, body?: unknown): un
       const base = { cls: c.cls, ts: hm, text: c.textKey ? t(c.textKey) : (c.text ?? ""), seq: i + 1,
         ...(c.reply_to ? { reply_to: c.reply_to } : {}), ...(c.client_msg_id ? { client_msg_id: c.client_msg_id } : {}),
         ...(c.extra ?? {}),
+        // a running compaction row is fresh by definition (the app drops a stale spinner)
+        ...(c.extra?.event === "loading" ? { ta: Date.now() / 1000 } : {}),
         ...(c.extra?.card ? { cardName: t("demo.c2.task") } : {}) };
       if (!c.mirror) return base;
       // the mirrored card question, expanded at response time (strings follow
