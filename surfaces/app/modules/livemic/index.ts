@@ -13,6 +13,12 @@ export interface LiveMicModule {
    *  unavailable. Waits (bounded) for a still-draining previous stop() to
    *  actually finish before opening a new AudioRecord. */
   start(voiceComm: boolean): Promise<boolean>;
+  /** DICTATION capture (data/dictation_mic.ts): no VAD - raw 16 kHz PCM16 as
+   *  `onChunk` {b64} events of 0.5 s, `onLevel` {level 0..1} for the meter.
+   *  stop() emits the partial tail as a last chunk before it resolves. False =
+   *  the mic is unavailable or the live mode holds it. ABSENT on an APK built
+   *  before this existed - callers must feature-check, not assume. */
+  startStream?(voiceComm: boolean): Promise<boolean>;
   /** Resolves once capture has actually stopped AND any utterance still
    *  mid-flight has been flushed as a final segment - await this before
    *  tearing down onSegment listeners so a trailing segment isn't dropped
@@ -33,7 +39,7 @@ export interface LiveMicModule {
   initLocalTransducer(encoder: string, decoder: string, joiner: string, tokens: string): boolean;
   /** One VAD segment (this module's own WAV shape) -> text, on-device. */
   transcribeLocal(b64: string): Promise<string>;
-  addListener(event: "onSegment" | "onState", cb: (e: any) => void): { remove(): void };
+  addListener(event: "onSegment" | "onState" | "onChunk" | "onLevel", cb: (e: any) => void): { remove(): void };
 }
 
 export interface MicSegment { b64: string; ms: number }

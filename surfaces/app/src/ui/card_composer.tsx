@@ -8,6 +8,8 @@ import {
   pickImages, recoverPendingImages, takePhoto,
 } from "@/data/attachments";
 import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
+import { useDictation } from "@/data/use_dictation";
+import { DictationBar } from "@/ui/dictation_bar";
 import { useT } from "@/i18n";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
@@ -44,7 +46,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  onVoice, recipients, defaultTo, contextChip, onClearContext, onSteerLive, quote, onClearQuote,
+  recipients, defaultTo, contextChip, onClearContext, onSteerLive, quote, onClearQuote,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   /** Typed while busy: try to fold the message into the RUNNING turn first
@@ -60,12 +62,6 @@ export function Composer({
   seed?: { text: string; key: number };
   bottomInset?: number;
   draftKey?: string;   // persist in-progress text per surface (board / each card)
-  /** Open voice mode. Passed in rather than mounted here so the composer stays
-   *  a pure input surface: only the chat screen knows how to run a turn, and
-   *  voice must go through that same path (one chat, spoken or typed). Omitted
-   *  on surfaces that have no voice — the button then does not exist at all,
-   *  rather than existing and refusing. */
-  onVoice?: () => void;
   /** The team-chat roster (Henry / the card's Worker) — omitted on surfaces
    *  with only one possible recipient (the global board chat), which then
    *  gets no @mention popover and no recipient chip. */
@@ -169,6 +165,24 @@ export function Composer({
 
   // external injection (rewind from transcript)
   if (seed && seed.key !== seedKey) { setSeedKey(seed.key); setText(seed.text); }
+
+  // DICTATION (Paseo's composer dictation, data/use_dictation.ts): hold or tap
+  // the mic and talk; the text is APPENDED to what is already typed (never
+  // replaces it), either left for review or sent through the same fire() a
+  // typed message uses - one send path, so queueing/steering/attachments all
+  // behave exactly as they do for typing.
+  const [note, setNote] = useState("");
+  const dict = useDictation({
+    onText: (txt, send) => {
+      const cur = textRef.current;
+      setText(cur && !/\s$/.test(cur) ? `${cur} ${txt}` : cur + txt);
+      if (send) fire();
+    },
+    onEmpty: () => { setNote(tr("dictation.empty")); setTimeout(() => setNote(""), 2500); },
+  });
+  const micDownAt = useRef(0);
+  const stopOnRelease = useRef(false);
+  const dictating = dict.state !== "idle";
 
   function buildOpts(): SteerOpts {
     return { model, thinking, ...(modeOptions ? { mode } : {}),
@@ -462,27 +476,52 @@ export function Composer({
         </View>
       ) : null}
 
-      {/* input row */}
+      {note ? (
+        <Text testID="dictation-note" style={{ color: t.txtTertiary, fontSize: 12, paddingHorizontal: 12, paddingTop: 6 }}>{note}</Text>
+      ) : null}
+
+      {/* input row. While a dictation runs the TEXT FIELD gives way to the
+          dictation bar - but the mic button itself stays mounted in the same
+          spot: it is the target of a hold-to-talk, and a pressed element that
+          unmounts under the finger never receives its release (measured in the
+          browser e2e: the first version swapped the whole row and a held mic
+          could not end the recording). */}
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
+        {dictating ? <DictationBar d={dict} inline /> : (
         <TextInput ref={inputRef} value={text} onChangeText={setText} multiline
           placeholder={placeholder ?? tr("composer.placeholder")} placeholderTextColor={t.txtPlaceholder}
           style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120,
             borderWidth: 1, borderColor: t.borderSubtle }} />
-        {busy && onStop ? (
+        )}
+        {!dictating && busy && onStop ? (
           <Pressable onPress={onStop}
             style={{ backgroundColor: t.danger, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
             <Ionicons name="stop" size={20} color="#fff" />
           </Pressable>
         ) : null}
-        {/* Empty composer -> voice; anything typed -> send. The same swap
-            ChatGPT makes, and for the same reason: the two are never both the
-            obvious next action, so one slot can carry both without a choice. */}
-        {onVoice && !text.trim() && !atts.length ? (
-          <Pressable onPress={onVoice} accessibilityLabel={tr("voice.open")}
-            style={{ backgroundColor: t.accent2, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="mic" size={21} color="#fff" />
+        {/* DICTATE: hold = push-to-talk (release inserts the text for review),
+            tap = start and keep talking (the bar's pencil / arrow end it, and so
+            does tapping this button again). Start is on press-in; a release
+            ends the recording only after a HOLD of 600 ms+ or when this press
+            began on an already-running recording - a short first tap must never
+            end the recording it just began. */}
+        {dict.usable ? (
+          <Pressable testID="composer-dictate" accessibilityLabel={tr("dictation.start")}
+            onPressIn={() => {
+              micDownAt.current = Date.now();
+              stopOnRelease.current = dict.state === "recording";
+              dict.start();
+            }}
+            onPressOut={() => {
+              if (stopOnRelease.current || Date.now() - micDownAt.current >= 600) dict.confirm(false);
+              stopOnRelease.current = false;
+            }}
+            style={{ backgroundColor: dictating ? t.danger : t.surface2, borderColor: dictating ? t.danger : t.borderSubtle,
+              borderWidth: 1, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="mic" size={21} color={dictating ? "#fff" : t.accent} />
           </Pressable>
-        ) : (
+        ) : null}
+        {dictating ? null : (
           /* send stays enabled while busy — the message is queued instead of dropped */
           <Pressable testID="composer-send" onPress={fire} disabled={!text.trim() && !atts.length}
             style={{ backgroundColor: t.accent, borderRadius: 10, width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: (!text.trim() && !atts.length) ? 0.5 : 1 }}>

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,7 +26,6 @@ import * as outbox from "@/data/outbox";
 import { ContextMeter } from "@/ui/context_meter";
 import { UsageWindows } from "@/ui/dash_panels";
 import { Empty } from "@/ui/kit";
-import { VoiceMode, voiceUsable } from "@/ui/voice_mode";
 import { useResponsive } from "@/ui/responsive";
 import * as glassVoice from "@/data/glasses";
 
@@ -452,24 +451,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
   // hides behind the keyboard. Measure the keyboard height and lift the content
   // manually (a height:kb spacer) - works on both platforms without a native lib.
   const [kb, setKb] = useState(0);
-  const [voiceOpen, setVoiceOpen] = useState(false);
-  // Asked once per mount, not per render: capability is resolved by actually
-  // probing the runtime (data/voice.ts caps()), which must not run on every
-  // keystroke. A build with no audio module simply has no microphone button.
-  const canVoice = useRef(voiceUsable()).current;
-  // A DONE-push tap arrives as ?vq=<question>: open voice mode and have Henry
-  // SPEAK the result (owner 2026-08-22) instead of parking the news as text.
-  // Consumed once per value so a re-render doesn't re-fire the turn.
-  const { vq } = useLocalSearchParams<{ vq?: string }>();
-  const [voiceAsk, setVoiceAsk] = useState<string | undefined>(undefined);
-  const vqDone = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    const q = typeof vq === "string" ? vq : undefined;
-    if (!q || !canVoice || vqDone.current === q) return;
-    vqDone.current = q;
-    setVoiceAsk(q);
-    setVoiceOpen(true);
-  }, [vq, canVoice]);
   useEffect(() => {
     const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
     const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
@@ -1120,7 +1101,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
             // writes it to the one knob before spawning - card parity.
             modeOptions={henryModes}
             placeholder={tr("chat.placeholder")} draftKey="board-copilot"
-            onVoice={canVoice ? () => setVoiceOpen(true) : undefined}
             // The routing target, made VISIBLE and switchable rather than
             // inferred. The decree allows "the next message, when it clearly
             // answers the card question" - a chip the owner can see and change
@@ -1138,8 +1118,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : tabClear ? <View style={{ height: tabClear }} /> : null}
       </View>
-      <VoiceMode visible={voiceOpen} onClose={() => { setVoiceOpen(false); setVoiceAsk(undefined); }}
-        onAsk={ask} onCancel={stop} busy={busy} initialAsk={voiceAsk} />
     </View>
   );
 }
@@ -1177,7 +1155,6 @@ export default function ChatScreen() {
   const router = useRouter();
   const tr = useT();
   const { wide } = useResponsive();
-  const { vq } = useLocalSearchParams<{ vq?: string }>();
   // Desktop: the chat is an overlay panel. Desktop reaches the copilot via the
   // in-page CopilotOverlay (board FAB opens the panel store), NOT this route — but
   // if a wide window ever lands here directly (deep link / reload), still render
@@ -1199,7 +1176,6 @@ export default function ChatScreen() {
   // the tab bar. This route used to render a second full-screen ChatBody with no
   // tabs, so a push tap / palette / FAB landed in a different-looking Henry than
   // the tab (owner 2026-10-06). Every caller still names "/chat"; the route is
-  // the single place that sends them to the tab. `vq` (a done-push's spoken
-  // result) rides along - the tab's ChatBody reads it the same way.
-  return <Redirect href={{ pathname: "/(tabs)", params: vq ? { vq } : {} }} />;
+  // the single place that sends them to the tab.
+  return <Redirect href="/(tabs)" />;
 }

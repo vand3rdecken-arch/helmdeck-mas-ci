@@ -94,6 +94,33 @@ def _model():
         return _MODEL
 
 
+#: ONE decode at a time. The dictation stream re-decodes its growing buffer while
+#: the owner still talks, and a live-mode utterance can land in the same second -
+#: two threads inside one sherpa recognizer is not a thing we measured, so the
+#: model has a single door.
+_DECODE = threading.Lock()
+
+
+def transcribe_pcm16(pcm, lang=None):
+    """Raw 16 kHz mono PCM16 little-endian bytes -> text. The streaming
+    dictation path (spine/media/dictation_stream.py) feeds this; it has no WAV
+    container to parse, so it skips the PyAV decode `transcribe` pays."""
+    import numpy as np
+    if not pcm:
+        return ""
+    x = np.frombuffer(pcm[:len(pcm) - (len(pcm) % 2)], dtype="<i2").astype(np.float32) / 32768.0
+    m = _model()
+    with _DECODE:
+        if _MODEL_NAME == "parakeet":
+            s = m.create_stream()
+            s.accept_waveform(16000, x)
+            m.decode_stream(s)
+            return (s.result.text or "").strip()
+        segments, _ = m.transcribe(x, language=(lang or None), beam_size=1,
+                                   vad_filter=False, condition_on_previous_text=False)
+        return " ".join(sg.text.strip() for sg in segments).strip()
+
+
 def transcribe(wav_bytes, lang=None):
     """WAV blob -> (text, info dict). Raises RuntimeError with a human-readable
     reason on anything the caller should surface (missing package, bad blob)."""

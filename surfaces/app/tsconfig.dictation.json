@@ -1,0 +1,23 @@
+{
+  // Standalone compile config for src/data/__dictation_selftest__.ts (streaming
+  // dictation state machine). Same idea as tsconfig.invalidate.json: plain node
+  // resolution + a real commonjs emit, deliberately not extending ./tsconfig.json.
+  //
+  // Run: npx tsc -p tsconfig.dictation.json && node .dictation-out/data/__dictation_selftest__.js
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "target": "es2019",
+    "lib": ["es2019"],
+    "outDir": "./.dictation-out",
+    "rootDir": "./src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": [],
+  "files": ["src/data/__dictation_selftest__.ts"]
+}

@@ -111,49 +111,24 @@ export const composer: Dict = {
   // {cost} arrives pre-rendered: planLabel() on the flat plan ("KI ~x % vom
   // Abo" / "KI 34k Tok"), the measured "AI $x.xx" on a metered plan.
 
-  // -- voice mode (ui/voice_mode.tsx) ---------------------------------------
-  // Deliberately SHORT: these are read at a glance, or not at all — the surface
-  // is meant to be listened to. The state line replaces itself constantly, so a
-  // sentence there would never be finished reading before it changed.
-  "voice.title": { de: "Sprachmodus", en: "Voice mode" },
-  "voice.open": { de: "Sprachmodus", en: "Voice mode" },
-  "voice.close": { de: "Sprachmodus beenden", en: "End voice mode" },
-  "voice.orb": { de: "Sprechen oder unterbrechen", en: "Speak or interrupt" },
-  "voice.you": { de: "Du", en: "You" },
-  "voice.listening": { de: "Ich höre zu…", en: "Listening…" },
-  "voice.thinking": { de: "Henry denkt nach…", en: "Henry is thinking…" },
+  // -- streaming dictation (data/use_dictation.ts) ------------------------------
+  // Hold or tap the mic, talk, the text lands in the input. (The old spoken
+  // "voice mode" conversation screen was removed 2026-10-07 - owner: it did not work well.)
+  "dictation.start": { de: "Diktieren", en: "Dictate" },
+  "dictation.cancel": { de: "Diktat verwerfen", en: "Discard dictation" },
+  "dictation.insert": { de: "Text einfügen", en: "Insert text" },
+  "dictation.send": { de: "Einfügen und senden", en: "Insert and send" },
+  "dictation.working": { de: "Wird umgeschrieben …", en: "Transcribing …" },
+  "dictation.listening": { de: "Ich höre zu …", en: "Listening …" },
+  "dictation.retry": { de: "Nochmal versuchen", en: "Try again" },
+  "dictation.empty": { de: "Nichts verstanden", en: "Didn't catch anything" },
+  "dictation.failed": { de: "Diktat fehlgeschlagen", en: "Dictation failed" },
+  "dictation.micDenied": { de: "Mikrofon nicht erlaubt", en: "Microphone not allowed" },
+  "dictation.micBlocked": { de: "Mikrofon dauerhaft gesperrt", en: "Microphone blocked" },
+  "dictation.openSettings": { de: "Einstellungen öffnen", en: "Open settings" },
+  "dictation.micUnavailable": { de: "Mikrofon nicht verfügbar", en: "Microphone unavailable" },
   "voice.thinkingSecs": { de: "Henry denkt nach… {s}s", en: "Henry is thinking… {s}s" },
-  "voice.speaking": { de: "Henry antwortet", en: "Henry is answering" },
-  "voice.tapToTalk": { de: "Tippen und sprechen", en: "Tap and speak" },
-  "voice.transcript": { de: "Verlauf", en: "Transcript" },
-  "voice.transcriptEmpty": { de: "Noch nichts gesprochen.", en: "Nothing spoken yet." },
-  "voice.handsOn": { de: "Freihändig — Henry hört nach jeder Antwort weiter zu",
-                     en: "Hands-free — Henry keeps listening after each answer" },
-  "voice.handsOff": { de: "Zum Sprechen tippen", en: "Tap to speak" },
-  "voice.liveOn": { de: "Live-Pipeline — offenes Mikro, eigene Spracherkennung (Whisper am PC)",
-                    en: "Live pipeline — open mic, own speech recognition (Whisper on the PC)" },
-  "voice.liveOff": { de: "Live-Pipeline aus — Standard-Spracherkennung des Telefons",
-                     en: "Live pipeline off — the phone's standard speech recognition" },
-  "voice.sttDevice": { de: "Spracherkennung auf dem Gerät (sherpa-onnx)",
-                       en: "Speech recognition on the device (sherpa-onnx)" },
-  "voice.sttPc": { de: "Spracherkennung auf dem PC (Whisper)",
-                   en: "Speech recognition on the PC (Whisper)" },
-  "voice.sttLoading": { de: "Lade Sprachmodell (~71 MB, einmalig)…",
-                        en: "Downloading speech model (~71 MB, once)…" },
-  "voice.hintHands": { de: "Läuft weiter. Tippen unterbricht Henry.",
-                       en: "Keeps going. Tap to interrupt Henry." },
-  "voice.hintPush": { de: "Tippen zum Sprechen, nochmal tippen zum Senden.",
-                      en: "Tap to speak, tap again to send." },
-  "voice.greeting": { de: "Ja? Ich höre.", en: "Yes? I'm listening." },
   // Failure copy: each says what is still possible, never only what broke.
-  "voice.denied": { de: "Kein Mikrofonzugriff — in den Systemeinstellungen erlauben.",
-                    en: "No microphone access — allow it in system settings." },
-  "voice.failed": { de: "Spracherkennung hat nicht geklappt. Nochmal tippen.",
-                    en: "Speech recognition failed. Tap to retry." },
-  "voice.noAudio": { de: "Antwort da, aber ohne Ton — sie steht im Verlauf.",
-                     en: "Answer received, but silent — it is in the transcript." },
-  "voice.speakOnly": { de: "Dieses Gerät kann noch nicht zuhören — Henry liest nur vor.",
-                       en: "This device cannot listen yet — Henry only reads aloud." },
 
   // -- new card ------------------------------------------------------------
   "new.title": { de: "Neue Karte", en: "New card" },

@@ -1148,6 +1148,17 @@ export const api = {
   transcribe: (audioB64: string, lang?: string) =>
     req<{ text: string; info?: { lang?: string; p?: number; dur?: number } }>(
       "POST", "/voice/transcribe", { audio: audioB64, lang }),
+  /** STREAMING dictation (spine/media/dictation_stream.py): numbered PCM16 chunks
+   *  go up WHILE the owner talks, each a small relay frame; the reply carries the
+   *  in-order ack and the partial text. The state machine over these four calls
+   *  is data/dictation.ts - it classifies errors from `status` (ApiError). */
+  dictationStart: (id: string) =>
+    req<{ id: string }>("POST", "/voice/dictation/start", { id, format: "audio/pcm;rate=16000;bits=16" }),
+  dictationChunk: (id: string, seq: number, audio: string) =>
+    req<{ ack: number; partial: string }>("POST", "/voice/dictation/chunk", { id, seq, audio }),
+  dictationFinish: (id: string, finalSeq: number) =>
+    req<{ text: string }>("POST", "/voice/dictation/finish", { id, final_seq: finalSeq }),
+  dictationCancel: (id: string) => req("POST", "/voice/dictation/cancel", { id }),
   /** Settings > System > Daemon (spine/ops/daemonctl.status): derived, never a flag. */
   daemonStatus: () => req<DaemonStatus>("GET", "/admin/daemon"),
   /** The ONE restart verb: 409 + reason "turn_active" while a card turn is live unless forced. */

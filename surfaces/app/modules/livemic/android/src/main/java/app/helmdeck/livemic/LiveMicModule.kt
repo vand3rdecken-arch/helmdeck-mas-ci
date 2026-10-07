@@ -61,6 +61,7 @@ class LiveMicModule : Module() {
     private const val MAX_UTTERANCE_FRAMES = 750  // 15 s hard cap
     private const val ABS_FLOOR = 250.0           // RMS below this is never speech
     private const val SNR = 2.5                   // speech = rms > noiseFloor * SNR
+    private const val CHUNK_SAMPLES = 8000        // dictation: 0.5 s per onChunk
   }
 
   @Volatile private var rec: AudioRecord? = null
@@ -77,7 +78,7 @@ class LiveMicModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("LiveMic")
-    Events("onSegment", "onState")
+    Events("onSegment", "onState", "onChunk", "onLevel")
 
     /** Open the mic and start cutting utterances. Idempotent. Waits (bounded)
      *  for a still-draining previous capture to actually exit first, so two
@@ -87,7 +88,21 @@ class LiveMicModule : Module() {
       val prev = worker
       Thread {
         try { prev?.join(500) } catch (t: Throwable) { /* best effort */ }
-        promise.resolve(startCapture(voiceComm))
+        promise.resolve(startCapture(voiceComm, stream = false))
+      }.start()
+    }
+
+    /** DICTATION capture: no VAD, no cutting - the owner decides when he is
+     *  done (hold / tap), so the mic just streams raw 16 kHz PCM16 as `onChunk`
+     *  events of CHUNK_SAMPLES (0.5 s) each, plus `onLevel` for the meter.
+     *  stop() flushes the partial tail as one last chunk BEFORE it resolves.
+     *  Same generation guard and same AudioRecord ownership as start(). */
+    AsyncFunction("startStream") { voiceComm: Boolean, promise: Promise ->
+      if (running) { promise.resolve(false); return@AsyncFunction }   // the live mode owns the mic
+      val prev = worker
+      Thread {
+        try { prev?.join(500) } catch (t: Throwable) { /* best effort */ }
+        promise.resolve(startCapture(voiceComm, stream = true))
       }.start()
     }
 
@@ -247,7 +262,7 @@ class LiveMicModule : Module() {
   @Volatile private var localRec: Any? = null
 
   @SuppressLint("MissingPermission")   // RECORD_AUDIO is requested by the JS before start()
-  private fun startCapture(voiceComm: Boolean): Boolean {
+  private fun startCapture(voiceComm: Boolean, stream: Boolean): Boolean {
     val minBuf = AudioRecord.getMinBufferSize(
       SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
     if (minBuf <= 0) return false
@@ -264,8 +279,50 @@ class LiveMicModule : Module() {
     rec = r
     running = true
     r.startRecording()
-    worker = Thread { pump(r, myGen) }.apply { isDaemon = true; start() }
+    worker = Thread { if (stream) streamPump(r, myGen) else pump(r, myGen) }
+      .apply { isDaemon = true; start() }
     return true
+  }
+
+  /** The dictation loop: read, chunk, emit. No VAD, no mute gate (nothing is
+   *  speaking while the owner dictates). The tail that is shorter than a full
+   *  chunk is emitted on the way out - stop() must never swallow the last
+   *  words (the same drain-on-exit rule as pump(), see livemic-stop-drops-tail). */
+  private fun streamPump(r: AudioRecord, myGen: Long) {
+    val frame = ShortArray(FRAME)
+    var chunk = ByteArrayOutputStream()
+    var samples = 0
+    var levelAcc = 0.0
+    var levelN = 0
+    var lastLevel = System.currentTimeMillis()
+
+    fun flush() {
+      if (samples == 0) return
+      sendEvent("onChunk", mapOf("b64" to Base64.encodeToString(chunk.toByteArray(), Base64.NO_WRAP)))
+      chunk = ByteArrayOutputStream()
+      samples = 0
+    }
+
+    while (running && activeGen.get() == myGen) {
+      val n = try { r.read(frame, 0, FRAME) } catch (t: Throwable) { -1 }
+      if (n <= 0) break
+      chunk.write(pcmBytes(frame.copyOf(n)))
+      samples += n
+      for (i in 0 until n) levelAcc += frame[i].toDouble() * frame[i]
+      levelN += n
+      if (samples >= CHUNK_SAMPLES) flush()
+      val now = System.currentTimeMillis()
+      if (now - lastLevel >= 80 && levelN > 0) {
+        // 0..1 for the meter; x4 because speech RMS sits far below full scale
+        sendEvent("onLevel", mapOf("level" to minOf(1.0, sqrt(levelAcc / levelN) / 32768.0 * 4.0)))
+        levelAcc = 0.0; levelN = 0; lastLevel = now
+      }
+    }
+    flush()
+    try { r.stop() } catch (t: Throwable) { /* already stopped */ }
+    r.release()
+    if (rec === r) rec = null
+    if (activeGen.get() == myGen) running = false
   }
 
   /** The capture loop. One thread, one owner of every VAD variable. */

@@ -5633,6 +5633,65 @@ DEBT = [
         "since": "2026-10-05",
         "order": 84,
     },
+    {
+        "id": "dictation-chunk-per-relay-frame",
+        "title": "Streaming dictation sends one numbered chunk per sealed relay frame (request + reply every 0.5 s)",
+        "status": "open",
+        "what": "data/dictation.ts sends 0.5 s PCM chunks as ordinary POST "
+                "/voice/dictation/chunk frames through the relay tunnel, each "
+                "answered with {ack, partial}. The relay Worker has no one-way "
+                "stream frame, so every chunk is a request/reply pair (Paseo's "
+                "relay is a transparent pipe instead). Chunk cost on the live "
+                "relay (Cloudflare requests per spoken minute, latency per frame) "
+                "was NOT measured - only the local-HTTP path was.",
+        "why_it_bites": "A long dictation is ~120 relay round trips a minute; on "
+                        "the free Cloudflare plan that adds up (the 2026-09-23 "
+                        "rate-limit incident was exactly this shape), and a slow "
+                        "link makes the ack window, not the model, the latency.",
+        "trigger": "relay request counts rising after dictation ships, or a "
+                   "'dictation hangs' report on mobile data",
+        "fix": "Measure over the real relay first; if it hurts, add a one-way "
+               "{kind:'data'} frame to surfaces/relay/worker/src/room.js that is "
+               "not tracked in `waiting`/`unacked`, acked cumulatively.",
+        "since": "2026-10-07",
+        "order": 85,
+    },
+    {
+        "id": "dictation-pause-heuristic",
+        "title": "Dictation segments are cut at an energy pause (peak < 6% of buffer peak for 0.4 s), not by a VAD model",
+        "status": "open",
+        "what": "spine/media/dictation_stream._find_cut freezes the audio at the "
+                "middle of the last pause so a word is not split between two "
+                "decodes; the threshold is relative to the buffer's own peak.",
+        "why_it_bites": "Very quiet speech or a noisy room can read as a pause "
+                        "inside a word, or a real pause can be missed (then the "
+                        "15 s hard commit cuts mid-speech). Measured: identical "
+                        "to a one-piece decode on clean TTS across 10 pacings; "
+                        "NOT measured on real microphones.",
+        "trigger": "dictation text missing or garbling words mid-sentence on a "
+                   "real phone mic",
+        "fix": "Replace _find_cut's energy rule with a Silero VAD decision "
+               "(the seam is one function) and add a recorded real-mic fixture.",
+        "since": "2026-10-07",
+        "order": 86,
+    },
+    {
+        "id": "dictation-stream-state-in-memory",
+        "title": "A dictation stream lives only in daemon memory (dies on restart; the phone replays)",
+        "status": "open",
+        "what": "dictation_stream._STREAMS is an in-process dict swept after 180 s "
+                "idle. A daemon restart mid-dictation forgets the stream; the "
+                "client recovers by replaying every kept chunk under a new id.",
+        "why_it_bites": "Only a client that is a version old (no replay) loses "
+                        "the recording on a restart; the current app does not. "
+                        "Nothing persists audio on the daemon, by design.",
+        "trigger": "a non-app client (glasses, watch) that streams without "
+                   "keeping its chunks",
+        "fix": "None needed for the app; a client without replay must keep its "
+               "own buffer (the same contract as data/dictation.ts).",
+        "since": "2026-10-07",
+        "order": 87,
+    },
 ]
 
 def list_debt():

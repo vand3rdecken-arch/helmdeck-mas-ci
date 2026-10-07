@@ -252,6 +252,44 @@ def voice_transcribe_post(self, user, body):
     return self._send(200, json.dumps({"text": text, "info": info}))
 
 
+def _dictation(self, user, body, fn):
+    """Shared door of the four /voice/dictation/* routes: DictationError ->
+    its status, with `retryable` so the app knows whether replay can win."""
+    from spine.media import dictation_stream as ds
+    try:
+        return self._send(200, json.dumps(fn(ds, user["name"], body)))
+    except ds.DictationError as e:
+        return self._send(e.status, json.dumps({"error": str(e), "retryable": e.retryable}))
+    except RuntimeError as e:
+        return self._send(501, json.dumps({"error": str(e)[:200], "retryable": False}))
+
+
+def voice_dictation_start_post(self, user, body):
+    return _dictation(self, user, body, lambda ds, o, b: ds.start(
+        o, b.get("id"), b.get("format") or ds.PCM_FORMAT))
+
+
+def voice_dictation_chunk_post(self, user, body):
+    import base64
+
+    def run(ds, owner, b):
+        try:
+            pcm = base64.b64decode(b.get("audio") or "", validate=True)
+        except Exception:
+            raise ds.DictationError("audio must be base64")
+        return ds.chunk(owner, b.get("id"), b.get("seq"), pcm)
+    return _dictation(self, user, body, run)
+
+
+def voice_dictation_finish_post(self, user, body):
+    return _dictation(self, user, body, lambda ds, o, b: ds.finish(
+        o, b.get("id"), b.get("final_seq", -1)))
+
+
+def voice_dictation_cancel_post(self, user, body):
+    return _dictation(self, user, body, lambda ds, o, b: ds.cancel(o, b.get("id")))
+
+
 GET_ROUTES = {
     "/processes": processes_get,
     "/process_templates": process_templates_get,
@@ -262,6 +300,10 @@ POST_ROUTES = {
     "/process_templates/save": process_templates_save_post,
     "/process_templates/from_process": process_templates_from_process_post,
     "/voice/transcribe": voice_transcribe_post,
+    "/voice/dictation/start": voice_dictation_start_post,
+    "/voice/dictation/chunk": voice_dictation_chunk_post,
+    "/voice/dictation/finish": voice_dictation_finish_post,
+    "/voice/dictation/cancel": voice_dictation_cancel_post,
 }
 PUT_ROUTES = {
     "/me/config": me_config_put,
@@ -280,6 +322,10 @@ GET_CAPS = {
 }
 POST_CAPS = {
     "/voice/transcribe": "chat.use",
+    "/voice/dictation/start": "chat.use",
+    "/voice/dictation/chunk": "chat.use",
+    "/voice/dictation/finish": "chat.use",
+    "/voice/dictation/cancel": "chat.use",
     "/process_templates/save": "templates.manage",
     "/process_templates/from_process": "templates.manage",
 }

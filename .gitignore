@@ -115,6 +115,7 @@ surfaces/app/.conncheck-out/
 surfaces/app/.invalidate-out/
 surfaces/app/.relaysocket-out/
 surfaces/app/.hubtest-out/
+surfaces/app/.dictation-out/
 surfaces/app/.ui-out/
 # screenshots + dev-server logs from the e2e_* UI judgements (ops/tests/e2e_*.py)
 .verify/
