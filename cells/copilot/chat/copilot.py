@@ -1993,7 +1993,7 @@ def _judge_excerpt(user):
             "henry_memory_get.py find <begriff>) ==\n" + "\n".join(out) + "\n\n")
 
 
-def _judge_lean_run(prompt, cwd, perm, model, timeout, user):
+def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None):
     """ONE judgement on a FRESH session: the brief + the escalation prompt + a
     short chat excerpt, ~32k tokens instead of re-reading the whole board
     session (measured 2026-10-07: 55k-650k per judgement, avg 209k, 17 calls in
@@ -2009,6 +2009,14 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user):
     argv += harness.cli_args("board-copilot")
     if model:
         argv += ["--model", model]
+    if tools is not None:
+        # The built-in tool block costs ~18k tokens PER STEP (measured 2026-10-07:
+        # Bash 3.8k, Agent 3.3k, Skill 2.7k, Grep 1.7k ...). A deciding round
+        # gets none ("" - the daemon fetches what Henry asks for); a hands round
+        # gets the three it uses. MCP goes off with it: once --tools is set the
+        # MCP schemas stop being deferred and cost ~19k on their own (measured:
+        # 32.6k with the user's servers vs 13.2k without, same empty prompt).
+        argv += ["--tools", tools] + _lean_mcp_args()
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
                          stdin=subprocess.PIPE, env=tool_path(),
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -2039,7 +2047,7 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user):
     return raw
 
 
-def judge(prompt, cwd, perm=None, model="", timeout=900):
+def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None):
     """ONE judgement turn (henry_broker's escalation call) run on the OWNER'S
     OWN board session, from a possibly different cwd/permission level than
     the persistent chat process - not a second, session-less brain.
@@ -2074,7 +2082,7 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
     if not user:
         raise RuntimeError("henry: no owner account to judge on")
     if _judge_lean():
-        return _judge_lean_run(prompt, cwd, perm, model, timeout, user)
+        return _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=tools)
     skey = _skey(user)
     lk = _turn_lock(user)
     lk.acquire()
