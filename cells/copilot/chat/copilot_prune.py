@@ -38,7 +38,8 @@ import re
 import shutil
 
 MARK_CTX = 60_000     # only worth running once the session is at least this big
-TURN_AGE = 6          # a tool_result younger than this (in owner turns) stays whole
+TURN_AGE = 5          # a tool_result younger than this (in owner turns) stays whole
+HEAD_CHARS = 240      # of a pruned result stays in place, so Henry still knows WHAT it was
 MIN_BYTES = 2_000     # ...and only if it was big enough to matter
 
 # Cheap pre-filters so a 100 MB transcript is not fully parsed on every
@@ -74,12 +75,27 @@ def _is_tool_submit(content):
         isinstance(p, dict) and p.get("type") == "tool_result" for p in content)
 
 
-def prune_lines(lines, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=()):
+def _text_of(content):
+    """The text of ONE tool_result, whatever shape it came in as."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(p.get("text") or "") for p in content
+                         if isinstance(p, dict) and p.get("type") == "text")
+    return ""
+
+
+def prune_lines(lines, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=(), store=None):
     """(lines, n_pruned, bytes_saved) over raw .jsonl lines. Only tool_result
     blocks older than `turn_age` OWNER turns AND bigger than `min_bytes` are
     touched; every other line comes back as the identical string it went in
     as. `hidden` = text prefixes of harness turns that must not count as an
-    owner turn (copilot.py passes its keepalive ping)."""
+    owner turn (copilot.py passes its keepalive ping).
+
+    RESTORABLE (owner 2026-10-07, the Manus/Cursor pattern): `store(tool_use_id,
+    text) -> path` keeps the full result on disk and the placeholder names the
+    file plus the first HEAD_CHARS, so a pruned block is a pointer Henry can
+    Read, not a hole. Without `store` the placeholder is the old opaque one."""
     from spine.agent.claude_sessions import _is_steer, _first_text
     hidden = tuple(hidden)
     tool_names = {}       # tool_use_id -> name, read off the assistant's own call
@@ -114,6 +130,17 @@ def prune_lines(lines, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=()):
             if size > min_bytes:
                 placeholder = "[gekürzt: %s, %dkb, Turn %d]" % (
                     tool_names.get(p.get("tool_use_id")) or "tool", max(1, round(size / 1024)), t)
+                if store is not None:
+                    text = _text_of(p.get("content"))
+                    path = None
+                    try:
+                        path = store(p.get("tool_use_id") or "tool", text)
+                    except Exception:                        # noqa: BLE001 - a lost file is a plain cut
+                        path = None
+                    head = " ".join(text[:HEAD_CHARS].split())
+                    placeholder = "%s%s\n%s%s" % (
+                        placeholder[:-1], (" - voll: " + path + "]") if path else "]",
+                        head, " ..." if len(text) > HEAD_CHARS else "")
                 bytes_saved += size - len(placeholder.encode("utf-8"))
                 p = dict(p, content=placeholder)
                 n_pruned += 1
@@ -122,7 +149,19 @@ def prune_lines(lines, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=()):
     return out, n_pruned, bytes_saved
 
 
-def prune_session_file(path, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=()):
+def file_store(store_dir):
+    """A `store` for prune_lines that writes <store_dir>/<tool_use_id>.txt.
+    Returns forward-slash paths (they paste into Read on every shell)."""
+    def _store(tid, text):
+        os.makedirs(store_dir, exist_ok=True)
+        p = os.path.join(store_dir, "%s.txt" % re.sub(r"[^A-Za-z0-9_.-]", "_", str(tid))[:80])
+        with open(p, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        return p.replace("\\", "/")
+    return _store
+
+
+def prune_session_file(path, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=(), store_dir=None):
     """Rewrite ONE session .jsonl in place. (n_pruned, bytes_saved) on a
     write, or None if the file couldn't be read. Writing zero pruned blocks
     is a no-op (no backup, no replace) - most calls above the ctx mark find
@@ -150,7 +189,8 @@ def prune_session_file(path, turn_age=TURN_AGE, min_bytes=MIN_BYTES, hidden=()):
             lines = [ln.rstrip("\r\n") for ln in f if ln.strip()]
     except OSError:
         return None
-    lines, n, saved = prune_lines(lines, turn_age, min_bytes, hidden)
+    lines, n, saved = prune_lines(lines, turn_age, min_bytes, hidden,
+                                  store=file_store(store_dir) if store_dir else None)
     if n == 0:
         return (0, 0)
     shutil.copy2(path, path + ".pre-prune")
