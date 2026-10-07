@@ -35,6 +35,63 @@ CLAUDE_MODELS = [
 # friendly aliases still resolve (older drafts / Auto internals)
 _ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-5"}
 
+# OpenCode Zen gateway models selectable via the `opencode` driver
+# (spine/agent/opencode_driver.py, engines.py builtin "opencode").
+# Free-first per owner request: user picks via /models composer chip,
+# turnopts only whitelists - engine routing is engine_for() below.
+# IDs keep the `opencode/<model-id>` shape OpenCode itself documents
+# (opencode.json `"model": "opencode/gpt-5.5"`).
+OPENCODE_MODELS = [
+    {"id": "opencode/muse-spark-1.3-contributor-free", "label": "Muse Spark 1.3 Free", "desc": "Free · contributor tier"},
+    {"id": "opencode/space-bunny-free", "label": "Space Bunny Free", "desc": "Free · stealth"},
+    {"id": "opencode/big-pickle", "label": "Big Pickle", "desc": "Free · stealth"},
+    {"id": "opencode/longcat-2.5-preview-free", "label": "LongCat 2.5 Free", "desc": "Free"},
+    {"id": "opencode/exo-free", "label": "Exo Free", "desc": "Free"},
+    {"id": "opencode/fledge-alpha-free", "label": "Fledge Alpha Free", "desc": "Free"},
+    {"id": "opencode/mimo-v2.6-flash-free", "label": "MiMo V2.6 Flash Free", "desc": "Free"},
+    {"id": "opencode/mimo-v2.5-free", "label": "MiMo V2.5 Free", "desc": "Free"},
+    {"id": "opencode/ling-3.1-flash-free", "label": "Ling 3.1 Flash Free", "desc": "Free"},
+    {"id": "opencode/nemotron-3-ultra-free", "label": "Nemotron 3 Ultra Free", "desc": "Free"},
+    {"id": "opencode/nemotron-3.5-lightning-free", "label": "Nemotron 3.5 Lightning Free", "desc": "Free"},
+    {"id": "opencode/jev-1.13-free", "label": "Jev 1.13 Free", "desc": "Free · structured"},
+    # Paid fallback: cheap DeepSeek via the same gateway (quality gate target).
+    {"id": "opencode/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "desc": "Cheap fallback"},
+    {"id": "opencode/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "desc": "Strong fallback"},
+]
+
+# Fallback when a free turn answers poorly (empty/refusal) - same gateway,
+# so no second provider to connect.
+FALLBACK_MODEL = "opencode/deepseek-v4-flash"
+
+
+def engine_for(mid):
+    """Driver family for a model id: 'opencode' for `opencode/*`
+    (Zen gateway incl. all free + DeepSeek ids above), else 'claude'.
+
+    ONE owner for the model->driver decision so board chat (copilot.py),
+    card steers (sessions.py) and the turn choke point (turnrunner.py)
+    cannot drift apart."""
+    m = (mid or "").strip().lower()
+    if m.startswith("opencode/"):
+        return "opencode"
+    return "claude"
+
+
+def is_poor_reply(text):
+    """Quality gate for free-model turns: True when the reply is not worth
+    keeping and the caller should retry once on FALLBACK_MODEL. Deliberately
+    narrow (empty / refusal-shaped / error-shaped) - quality grading beyond
+    this is a judge call, not a string check."""
+    t = (text or "").strip()
+    if not t:
+        return True
+    low = t.lower()
+    if len(t) < 20 and any(k in low for k in ("sorry", "can't", "cannot", "error", "failed", "no answer")):
+        return True
+    if low.startswith("error:") or "request failed" in low or "model unavailable" in low:
+        return True
+    return False
+
 # Auto routing looks at STRUCTURAL signals (the card's own facts) first, and only
 # falls back to reading the prompt text - text keywords are noisy ("why not" is
 # not hard work), the card's value/priority/turn-count are facts. Community
@@ -255,7 +312,8 @@ def refresh_models():
 
 def list_models():
     """Curated manifest (labels/order/default) + AUTO-DISCOVERED live models +
-    custom settings.json models, deduped (id order preserved). New Anthropic
+    custom settings.json models + OpenCode gateway models (free + DeepSeek
+    fallback), deduped (id order preserved). New Anthropic
     models are appended automatically; the manifest just gives the known ones
     nice labels and the offline fallback."""
     models = [dict(m) for m in CLAUDE_MODELS]
@@ -268,6 +326,9 @@ def list_models():
     for m in _settings_models():
         if m["id"] not in ids:
             ids.add(m["id"]); models.append(m)
+    for m in OPENCODE_MODELS:
+        if m["id"] not in ids:
+            ids.add(m["id"]); models.append(dict(m))
     return models
 
 

@@ -2458,6 +2458,88 @@ def build_argv(cli_model, sid, system):
     return argv, role_in_turn
 
 
+def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
+                       card, card_run_dir, client_msg_id="", announce=True):
+    """One Henry turn via the OpenCode gateway (free models + DeepSeek fallback).
+
+    Bypass for the Claude-Code persistent process: `opencode/*` ids cannot run
+    on the `claude` CLI. One-shot via opencode_driver (dedicated `opencode
+    serve` per conversation key), same return shape as chat(). Quality gate:
+    poor free reply retries ONCE on turnopts.FALLBACK_MODEL.
+    """
+    from spine.agent import livebuf, turnopts
+    from spine.agent import opencode_driver
+    livebuf.set_field(live_key, "status", "OpenCode " + (cli_model or ""))
+    prompt = (system + "\n\n" + turn) if system else turn
+    sess = _sessions()
+    base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", skey or "u"),
+            "worktree": ROOT, "run_dir": run_dir,
+            "session_id": sess.get(skey)}
+    cfg = {"type": "opencode", "model": cli_model}
+    try:
+        sid, reply, meta = opencode_driver.run(cfg, base, prompt)
+    except Exception as e:                                     # noqa: BLE001
+        reply = "OpenCode-Turn fehlgeschlagen: %s" % str(e)[:300]
+        meta, sid = {"models": [cli_model]}, sess.get(skey)
+    if turnopts.is_poor_reply(reply) and cli_model != turnopts.FALLBACK_MODEL:
+        try:
+            from spine.ops.actionlog import ActionLog as _AL
+            _AL(run_dir).log("note", "Free-Modell antwortete leer - Fallback %s." % turnopts.FALLBACK_MODEL)
+        except Exception:                                      # noqa: BLE001
+            pass
+        try:
+            sid, reply, meta = opencode_driver.run(
+                {"type": "opencode", "model": turnopts.FALLBACK_MODEL}, base, prompt)
+            cli_model = turnopts.FALLBACK_MODEL
+        except Exception:                                      # noqa: BLE001
+            pass
+    if sid:
+        try:
+            sess[skey] = sid
+            _save_sessions(sess)
+        except Exception:                                      # noqa: BLE001
+            pass
+    reply_prose, acts = _parse_reply_actions(reply or "")
+    usage = {"in": 0, "out": 0, "cost": (meta or {}).get("cost_usd")}
+    try:
+        _fold_stats(user, {"usage": {}, "total_cost_usd": (meta or {}).get("cost_usd"),
+                           "modelUsage": {cli_model: {}}}, {})
+    except Exception:                                          # noqa: BLE001
+        pass
+    if card_run_dir:
+        try:
+            from spine.agent import timeline_store as _ts
+            _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
+                {"role": "assistant", "kind": "text", "text": reply_prose,
+                 "by": "Henry", "byKind": "henry", "ts": time.strftime("%H:%M:%S"),
+                 "ta": time.time(), "usage": usage})
+        except Exception:                                      # noqa: BLE001
+            pass
+    else:
+        bot = {"cls": "bot", "text": reply_prose, "ts": time.strftime("%H:%M"), "usage": usage}
+        if client_msg_id:
+            bot["client_msg_id"] = client_msg_id
+        try:
+            _append_log(user, [bot])
+        except Exception:                                      # noqa: BLE001
+            pass
+        if announce:
+            try:
+                from spine.http import server as _srv
+                from spine.comms import notify as _notify
+                _said = reply_prose
+                _srv._bg("chat:notify:" + str(user),
+                         lambda: _notify.chat_reply(_said))
+            except Exception:                                  # noqa: BLE001
+                pass
+    try:
+        livebuf.clear(live_key)
+    except Exception:                                          # noqa: BLE001
+        pass
+    return {"reply": reply_prose, "actions": acts, "refused": [],
+            "cost": (meta or {}).get("cost_usd"), "usage": usage}
+
+
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
          client_msg_id="", announce=True, _retried=False, model_source="user", mode="",
@@ -2826,6 +2908,19 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 "des Owners):\n- " + "\n- ".join(_cap_item(r) for r in _late)
                 + "\n</harness-report>\n\n") + turn
     livebuf.set_field(live_key, "status", "bereitet den Turn vor")
+    # Free-model switching: `opencode/*` ids run on the OpenCode gateway, not
+    # on the Claude-Code warm process (which can only set_model to Claude ids).
+    # NOTE: _lk is ALREADY held here (acquired above) - do not re-acquire.
+    if turnopts.engine_for(cli_model) == "opencode":
+        try:
+            return _chat_via_opencode(user, skey, cli_model, system, turn, run_dir,
+                                      live_key, card, card_run_dir,
+                                      client_msg_id=client_msg_id, announce=announce)
+        finally:
+            try:
+                _lk.release()
+            except Exception:                                  # noqa: BLE001
+                pass
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
     # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old

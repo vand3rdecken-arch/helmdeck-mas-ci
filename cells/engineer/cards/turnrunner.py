@@ -120,6 +120,16 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
             "turns": t.get("turns"), "failed": bool(t.get("gate_failed")),
             "fails": events.consecutive_gate_fails(t["id"]),
             "ctx_tokens": t.get("ctx_tokens")}, policy=_routing_policy(t))
+    # Model->engine routing (free-model switching): an explicit `opencode/*`
+    # pick (free or DeepSeek fallback) runs on the opencode driver, whatever
+    # the card's stored driver says. turnopts.engine_for is the ONE owner.
+    try:
+        from spine.agent import turnopts as _to
+        if model and _to.engine_for(model) == "opencode":
+            _base = engines.config("opencode") or {"type": "opencode"}
+            cfg = {**_base, "model": model}
+    except Exception:                                          # noqa: BLE001
+        pass
     if model:
         cfg = {**cfg, "model": model}
     if perm:
@@ -175,7 +185,25 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
                     "Turn wurde gestoppt, waehrend er auf einen belegten Lock "
                     "(Desktop-Steuerung / Live-Tree) wartete - er wurde nicht "
                     "ausgefuehrt. Einfach neu steuern.")
-            return drivers.run(cfg, t, prompt, by=by)
+            sid, reply, meta = drivers.run(cfg, t, prompt, by=by)
+            # Quality gate (free -> DeepSeek): a poor free-model turn retries
+            # ONCE on FALLBACK_MODEL. Narrow check only (turnopts.is_poor_reply),
+            # no judge call - and never for the fallback itself.
+            try:
+                from spine.agent import turnopts as _to2
+                if (model and _to2.engine_for(model) == "opencode"
+                        and model != _to2.FALLBACK_MODEL
+                        and _to2.is_poor_reply(reply)):
+                    _fb_cfg = {**cfg, "model": _to2.FALLBACK_MODEL}
+                    try:
+                        from spine.ops.actionlog import ActionLog as _AL
+                        _AL(t["run_dir"]).log("note", "Free-Modell antwortete leer - Fallback %s." % _to2.FALLBACK_MODEL)
+                    except Exception:                          # noqa: BLE001
+                        pass
+                    sid, reply, meta = drivers.run(_fb_cfg, t, prompt, by=by)
+            except Exception:                                  # noqa: BLE001
+                pass
+            return sid, reply, meta
     finally:
         if dlock:
             dlock.release()
