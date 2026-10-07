@@ -1518,7 +1518,7 @@ def _compact_row(user, cid, event, **fields):
     each state is its own row sharing `cid`; the client folds rows by cid and
     shows the last state at the first row's position. Returns the cid."""
     cid = cid or "c" + uuid.uuid4().hex[:12]
-    text = ("Verlauf verdichtet" if event == "completed" else
+    text = ("Aufgeraeumt" if event == "pruned" else "Verlauf verdichtet" if event == "completed" else
             "Verdichtung unterbrochen" if event == "interrupted" else "Verdichte den Verlauf")
     _append_log(user, [dict({"cls": "compaction", "cid": cid, "event": event, "text": text,
                              "ts": time.strftime("%H:%M"), "ta": time.time()}, **fields)])
@@ -1614,8 +1614,7 @@ def _do_prune(user, sid):
     m["pruned_at_turn"] = int(m.get("turns") or 0)
     _save_stats(all_st)
     _persist_drop(_skey(user))
-    return ("KONTEXT-PRUNING: %d alte(s) Tool-Ergebnis(se) gekuerzt (~%dkb frei)."
-            % (n, round(saved / 1024)))
+    return {"n": n, "saved_kb": max(1, round(saved / 1024))}
 
 
 def _schedule_prune(user):
@@ -1657,8 +1656,9 @@ def _schedule_prune(user):
                 lk.release()
             if note:
                 prewarm(user, spoken=False)   # the drop above cost the warmth
-                _append_log(user, [{"cls": "act", "text": note,
-                                    "ts": time.strftime("%H:%M")}])
+                # ONE quiet marker row (owner 2026-10-07: "eleganter"), the same
+                # typed item the compaction uses - not a sentence about plumbing
+                _compact_row(user, None, "pruned", saved_kb=note["saved_kb"], pruned=note["n"])
         except Exception as e:                                   # noqa: BLE001
             # best-effort like _maybe_compact, but never SILENT: a rewrite
             # that keeps failing would otherwise look exactly like a

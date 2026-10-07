@@ -101,7 +101,7 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
     const c = m as unknown as CompactionFields;
     return { role: "system", kind: "compaction", cls: m.cls, text: "", ts: m.ts, ta: c.ta, cid: c.cid,
              event: c.event as CompactionEvent, trigger: c.trigger, pre_tokens: c.pre_tokens, post_tokens: c.post_tokens,
-             duration_ms: c.duration_ms };
+             duration_ms: c.duration_ms, saved_kb: c.saved_kb };
   }
   if (m.cls === "act" && (m.hands || m.run)) {
     const hands = !!m.hands;

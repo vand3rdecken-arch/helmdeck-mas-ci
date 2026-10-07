@@ -93,6 +93,7 @@ export const card: Dict = {
   "card.chat.contextFull": { de: "Kontext fast voll — bei Überlauf wird der Verlauf verdichtet, er bleibt erhalten", en: "Context nearly full — on overflow the history is compacted, it stays intact" },
   // Paseo's CompactionMarker labels (ui/compaction_marker.tsx)
   "compaction.loading": { de: "Verdichte den Verlauf …", en: "Compacting history …" },
+  "compaction.pruned": { de: "Aufgeräumt", en: "Tidied up" },
   "compaction.done": { de: "Verlauf verdichtet", en: "History compacted" },
   "compaction.interrupted": { de: "Verdichtung unterbrochen — wird nachgeholt", en: "Compaction interrupted — will retry" },
   "card.chat.awaitingBackground": { de: "Worker wartet auf {n} Hintergrund-Task — nicht auf dich.",

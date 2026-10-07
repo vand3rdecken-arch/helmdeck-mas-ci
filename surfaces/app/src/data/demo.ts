@@ -179,6 +179,7 @@ const CHAT_SEED: ChatRow[] = [
   { cls: "act", textKey: "demo.run.handsRow", ts: iso(19), extra: { hands: "h-demo" } },
   { cls: "act", textKey: "demo.run.cardRow", ts: iso(19), extra: { card: "d2" } },
   { cls: "assistant", textKey: "demo.chat.a2", ts: iso(19) },
+  { cls: "compaction", text: "", ts: iso(18), extra: { cid: "demo-p1", event: "pruned", saved_kb: 14 } },
   // a mirrored card QUESTION: exercises the label header in the transcript, the
   // QuestionPanel above the composer, and the composer's routing chip. Bound to
   // d2 - the demo's running card - so answering routes somewhere real.
