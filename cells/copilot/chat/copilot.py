@@ -1353,7 +1353,42 @@ def _append_log(user, entries):
     except Exception as _be:                                    # noqa: BLE001
         print("copilot: chat cursor bump failed -", str(_be)[:200])
 
-_autocompact_supported = None    # None=unprobed, True/False learned from first /compact
+# "DOES THIS CLI HONOR /compact" - PER SESSION, WITH RETRY, never a process latch.
+#
+# This used to be one module global (`_autocompact_supported = None/True/False`)
+# and that is exactly what burned 2026-10-06/07. Measured: the daemon came up at
+# 13:18:22, compacted the owner's board session ONCE at 13:26:08 - the summary is
+# in the transcript at 11:26:05.846Z - could not SEE that it had worked (see
+# _maybe_compact for the measurement bug), latched False, and then ran 23 hours
+# and 72 board turns with NO compaction at all: 953,876 of 1,000,000 context
+# re-read on every call, ~1.4M input tokens per chat turn, ~85% of the day's
+# whole token spend. One unproven probe must never switch maintenance off for a
+# whole daemon lifetime (debt autocompact-probe-process-global).
+#
+# So the verdict is scoped to the session key it was measured on, and it DECAYS:
+# an unproven attempt buys a BACKOFF, nothing more, and the backoff is bounded -
+# even a CLI that genuinely ignores /compact is re-probed every few hours instead
+# of staying off until a restart. The state is never "off", only "not right now",
+# which is the same shape every other retried maintenance job here has.
+_compact_strikes = {}                    # skey -> (strikes, retry_after epoch)
+_COMPACT_BACKOFF = (900, 3600, 14400)    # 15min, then 1h, then 4h forever
+
+
+def _compact_allowed(skey):
+    """May we spend a /compact probe on this session right now?"""
+    s = _compact_strikes.get(skey)
+    return not s or time.time() >= s[1]
+
+
+def _compact_verdict(skey, proven):
+    """Fold what ONE attempt actually PROVED, at event time. A proven
+    compaction clears the strikes; an unproven one steps the backoff."""
+    if proven:
+        _compact_strikes.pop(skey, None)
+        return
+    n = min((_compact_strikes.get(skey) or (0, 0))[0] + 1, len(_COMPACT_BACKOFF))
+    _compact_strikes[skey] = (n, time.time() + _COMPACT_BACKOFF[n - 1])
+
 
 # Replies that are etiquette, not answers - the exact strings (lowercased,
 # terminal punctuation stripped) the model uses to wave off system turns.
@@ -1637,19 +1672,40 @@ def _maybe_compact(user):
     """Copilot counterpart of sessions._maybe_compact (card parity, re-enabled
     2026-08-14): compact the board-chat session in place once it crosses the
     high-water mark, so a long-running PM conversation never dead-ends or
-    silently overflows into a fresh session. Self-verifying (probes /compact
-    once, learns True/False from whether the context actually shrank) and
+    silently overflows into a fresh session. Self-verifying (it checks that the
+    compaction really happened, from the runtime's own signals - see below) and
     best-effort - never breaks/blocks the turn that already returned to the
-    user. Returns a note to surface in the chat log, or None."""
-    global _autocompact_supported
-    if _autocompact_supported is False:
-        return None
+    user. Returns a note to surface in the chat log, or None.
+
+    WHAT COUNTS AS "IT WORKED" (root-fixed 2026-10-07, card parity restored).
+    This used to infer the shrink from the compact process's own token usage:
+    `after = assistant/result usage or ctx`, then `after <= ctx * 0.75`. That
+    number can never arrive. drivers.py already documents the measured frame
+    sequence of a `/compact` turn - status{compacting} -> status{null} -> init
+    -> compact_boundary{pre_tokens, post_tokens, duration_ms} -> user(summary)
+    -> **result "" with ZERO usage** - so a /compact turn carries NO assistant
+    call and no usage at all. The fallback `or ctx` therefore handed the check
+    the PRE-compaction figure, the check read "nothing shrank", and the probe
+    concluded the CLI ignores /compact about a compaction that had just
+    succeeded. sessions._maybe_compact was fixed for exactly this (its
+    compact_boundary branch + the _compact_marks fallback); this copy was not,
+    and drifted for three weeks.
+    So the verdict now comes from the RUNTIME'S OWN SIGNALS, in the order of
+    how direct the evidence is: the compact_boundary frame (it says the
+    compaction completed AND how big the context is now), else a usage reading
+    that really did shrink, else the compaction summary the CLI wrote into its
+    own transcript (the post-mortem fallback for a process that died before its
+    frames arrived). Only when NONE of the three is there do we know nothing -
+    and then it is a backoff, not a switch (see _compact_strikes)."""
     from cells.engineer.cards import sessions
     from spine.agent import drivers
+    skey = _skey(user)
+    if not _compact_allowed(skey):
+        return None
     st = _stats().get(user) or {}
     ctx = st.get("ctx_tokens") or 0
     sess = _sessions()
-    sid = sess.get(_skey(user))          # BOARD session - the long-lived one
+    sid = sess.get(skey)                # BOARD session - the long-lived one
     # scale the mark with the DERIVED window (sessions._maybe_compact parity):
     # a fixed 160k made a 1M-tier PM session probe /compact at ~16% real fill.
     window = max(st.get("ctx_window") or 0, sessions._CTX_WINDOW)
@@ -1661,15 +1717,18 @@ def _maybe_compact(user):
     # turn respawns on the compacted tip. BOARD key: proactive compaction
     # guards the long-lived board session; card sessions are bounded by their
     # card and are not compacted (see debt henry-card-session-uncompacted).
-    _persist_drop(_skey(user))
+    _persist_drop(skey)
     # ...and BEFORE the history is verdichtet, let Henry put what matters on
     # disk. Order is the whole point: after /compact he only has the summary.
     saved = _save_memory(user, sid)
     pct = min(100, round(ctx / window * 100))
+    # baseline for the post-mortem fallback, taken BEFORE the run: how many
+    # compaction summaries this session's transcript already carries.
+    marks0 = sessions._compact_marks(sid)
     argv = [CLAUDE, "-p", "--output-format", "stream-json", "--include-partial-messages",
             "--verbose", "--permission-mode", "plan", "--resume", sid]
     cmd = drivers._cmd_line(argv)
-    result, new_sid, after_usage = {}, sid, {}
+    result, new_sid, after_usage, compaction = {}, sid, {}, None
     try:
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
@@ -1684,8 +1743,15 @@ def _maybe_compact(user):
             except ValueError:
                 continue
             typ = ev.get("type")
-            if typ == "system" and ev.get("session_id"):
-                new_sid = ev["session_id"]
+            if typ == "system":
+                # THE RUNTIME'S OWN VERDICT (drivers._compact_metadata reads the
+                # same frame for cards): a compact_boundary frame means the
+                # compaction COMPLETED, and it carries the post-compaction
+                # context size - the only trustworthy "after" in this turn.
+                if ev.get("subtype") == "compact_boundary":
+                    compaction = drivers._compact_metadata(ev)
+                if ev.get("session_id"):
+                    new_sid = ev["session_id"]
             elif typ == "assistant":
                 mu = (ev.get("message") or {}).get("usage")
                 if isinstance(mu, dict) and mu:
@@ -1705,7 +1771,7 @@ def _maybe_compact(user):
         chain = [s for s in (m.get("session_chain") or []) if s != sid]
         chain.append(sid)
         m["session_chain"] = chain[-6:]         # bounded - last 6 prior sessions
-        sess[_skey(user)] = sid_final
+        sess[skey] = sid_final
         _save_sessions(sess)
     # measured economics: the compact turn is billed too, but NOT counted as a
     # conversation turn (card parity: sessions._record_econ, not _record_turn).
@@ -1717,9 +1783,19 @@ def _maybe_compact(user):
     m["tokens_in"] = int(m.get("tokens_in") or 0) + u.get("input_tokens", 0) \
         + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
     m["tokens_out"] = int(m.get("tokens_out") or 0) + u.get("output_tokens", 0)
+    # THE "AFTER" FIGURE - measured, or absent. No `or ctx` fallback: handing
+    # the shrink check the PRE-compaction number is what made a working
+    # compaction read as a broken CLI (see this function's docstring). The
+    # boundary frame's post_tokens wins over a usage reading - econ.py gives the
+    # same precedence for cards, because it is measured strictly later in the
+    # same turn.
+    post = (compaction or {}).get("post_tokens")
     after = (after_usage.get("input_tokens", 0) + after_usage.get("cache_creation_input_tokens", 0)
-             + after_usage.get("cache_read_input_tokens", 0)) or ctx
-    m["ctx_tokens"] = after
+             + after_usage.get("cache_read_input_tokens", 0))
+    if isinstance(post, int) and post > 0:
+        after = post
+    if after:
+        m["ctx_tokens"] = after    # a real reading only; _fold_stats owns it otherwise
     # one compaction per turn (see _schedule_compact): a stay-fast mark can sit
     # below what /compact actually reaches, and that must not become a loop.
     m["compacted_at_turn"] = int(st.get("turns") or 0)
@@ -1751,16 +1827,35 @@ def _maybe_compact(user):
                     "sich HIERAUF - im Zweifel nachfragen statt raten.")
     except Exception:
         pass
-    if after <= ctx * 0.75:                     # a real compaction frees a big chunk
-        _autocompact_supported = True
+    # THE VERDICT, most direct evidence first (card parity, sessions._maybe_compact):
+    #   1. the compact_boundary frame        - the runtime SAID it compacted
+    #   2. a usage reading that really shrank - the old check, now only ever
+    #                                          consulted with a REAL number
+    #   3. a new compaction summary in the transcript - the post-mortem fallback
+    #      for a process that died before its frames reached us.
+    # Consulted last, and only when needed, because it costs a pass over the
+    # session file. A ROTATED session carries its own fresh transcript, so the
+    # baseline for it is 0, not the old file's count.
+    proven = bool(compaction) or bool(after and after <= ctx * 0.75)
+    if not proven:
+        proven = sessions._compact_marks(sid_final) > (marks0 if sid_final == sid else 0)
+    _compact_verdict(skey, proven)
+    if not proven:
+        # Nothing was proven - and that is NOT "this CLI cannot compact". Stay
+        # silent in the chat (no per-turn pollution) and let the backoff retry.
+        return None
+    memo = ("Dauerhaftes zuvor ins Gedaechtnis geschrieben" if saved
+            else "Gedaechtnis-Schreibung fehlgeschlagen")
+    if after:
         return ("AUTO-COMPACT (%s): Kontext war bei %d%% (~%dk) - %s, Verlauf "
                 "verdichtet, jetzt ~%dk. Es geht ohne Unterbrechung weiter."
-                % (why, pct, round(ctx / 1000),
-                   "Dauerhaftes zuvor ins Gedaechtnis geschrieben" if saved
-                   else "Gedaechtnis-Schreibung fehlgeschlagen",
-                   round(after / 1000)))
-    _autocompact_supported = False
-    return None    # this CLI doesn't honor /compact - stay silent, no per-turn pollution
+                % (why, pct, round(ctx / 1000), memo, round(after / 1000)))
+    # Compacted, but this turn reported no context figure - the meter stands
+    # right again at the next real turn, whose _fold_stats owns that number
+    # (same wording the card path uses for the same case).
+    return ("AUTO-COMPACT (%s): Kontext war bei %d%% (~%dk) - %s, Verlauf "
+            "verdichtet. Das Kontext-Meter steht erst beim naechsten Turn "
+            "wieder richtig." % (why, pct, round(ctx / 1000), memo))
 
 
 def history(user):
@@ -1933,6 +2028,23 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
         return raw
     finally:
         lk.release()
+        # A JUDGEMENT IS A TURN ON THE BOARD SESSION, so it owes that session the
+        # same maintenance a chat turn does (root-fixed 2026-10-07). Before this,
+        # only chat() scheduled compaction: escalation turns grew the very
+        # session they resume and never once triggered a /compact. Measured
+        # 2026-10-07 on the owner board session at 954k fill: 6 judge turns,
+        # 13.1M input tokens, ~2.2M per turn, all of it re-reading a context
+        # nothing was shrinking. Stamping _last_turn_at is part of it, not
+        # bookkeeping: the compaction worker waits for a LULL measured off that
+        # clock, and a judge turn that does not appear there looks like silence
+        # - the maintenance would take the lock out from under a running
+        # escalation chain. Both calls are best-effort: a judgement that
+        # produced a verdict must never fail on its own housekeeping.
+        try:
+            _last_turn_at[skey] = _last_touch_at[skey] = time.time()
+            _schedule_compact(user)
+        except Exception as _ce:                             # noqa: BLE001
+            print("copilot.judge: compaction scheduling failed -", str(_ce)[:200])
 
 
 def owner_name():

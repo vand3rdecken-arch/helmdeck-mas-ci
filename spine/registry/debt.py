@@ -234,7 +234,17 @@ DEBT = [
                 "tool-result pruning) inherits the SAME board-only scope, "
                 "same call shape (sid = _sessions().get(_skey(user))) - a "
                 "deliberate copy, not an oversight, so both maintenance jobs "
-                "share this one entry instead of two near-duplicate ones.",
+                "share this one entry instead of two near-duplicate ones. "
+                "SECOND, SMALLER GAP, same shape (2026-10-07): the broker's "
+                "escalation turn (copilot.judge) now DOES schedule compaction "
+                "on the board session it resumes - before that it was the one "
+                "turn kind that grew Henry's session and never maintained it - "
+                "but it cannot refresh the ctx METER, because it runs with "
+                "--output-format json whose single `usage` block SUMS every API "
+                "call of the turn (the trap _fold_stats documents). So a judge "
+                "turn's growth is invisible until the next chat turn measures "
+                "it, and a judge-only stretch can sit over the cost line "
+                "without the scheduler knowing.",
         "why_it_bites": "A card whose Henry chat runs long enough would hit "
                         "the model's context window with no proactive "
                         "compaction to save it - the same 'Prompt is too "
@@ -253,7 +263,12 @@ DEBT = [
                "ctx_tokens from copilot_stats), so this is a keying change, "
                "not new machinery - but copilot_stats is itself still keyed "
                "per USER, so that has to be split first or a card turn will "
-               "compact/prune against the board's numbers.",
+               "compact/prune against the board's numbers. For the judge half: "
+               "run the escalation turn on --output-format stream-json and fold "
+               "the LAST assistant call's usage as ctx (exactly what chat() "
+               "does), rather than guessing a context size from a summed usage "
+               "block - the broker's JSON-verdict parsing reads the result "
+               "event's text either way.",
         "since": "2026-09-02",
     },
     {
@@ -1648,32 +1663,46 @@ DEBT = [
     },
     {
         "id": "autocompact-probe-process-global",
-        "title": "The '/compact is supported' probe is ONE process-wide flag for the whole board",
+        "title": "The CARD side's '/compact is supported' probe is still ONE process-wide flag",
         "status": "open",
         "what": "sessions._autocompact_supported is a module global: the FIRST "
-                "card whose compaction fails to shrink turns auto-compaction off "
+                "card whose compaction proves nothing turns auto-compaction off "
                 "for EVERY card in the daemon, until a restart. It is never "
                 "re-probed and it is not keyed by driver, model or CLI version, "
-                "even though a board can run several drivers side by side.",
-        "why_it_bites": "Measured 2026-08-30 (card 20260830-065545): the owner "
-                        "typed while the harness was auto-compacting, steer()'s "
-                        "interrupt-and-replace killed the maintenance turn, and "
-                        "the unchanged context was read as 'this CLI doesn't "
-                        "honor /compact' - latching the global False. One "
+                "even though a board can run several drivers side by side. The "
+                "CHAT side no longer works this way - see the fix note.",
+        "why_it_bites": "Measured twice. 2026-08-30 (card 20260830-065545): the "
+                        "owner typed while the harness was auto-compacting, "
+                        "steer()'s interrupt-and-replace killed the maintenance "
+                        "turn, and the unchanged context was read as 'this CLI "
+                        "doesn't honor /compact' - latching the global False. One "
                         "interrupted turn on one card silently disabled "
                         "compaction board-wide, and the 92%-full session it was "
-                        "trying to save was never compacted again.",
+                        "trying to save was never compacted again. Then 2026-10-07 "
+                        "on the CHAT copy of the same flag, and that one was "
+                        "expensive: the daemon came up 10-06 13:18, compacted the "
+                        "owner's board session once at 13:26 (the summary is in "
+                        "the transcript), could not see that it had worked, "
+                        "latched False - and ran 23 hours and 72 board turns with "
+                        "no compaction at all, at 954k of 1M context re-read on "
+                        "every call, ~85% of the day's entire token spend.",
         "trigger": "A second driver type (codex/opencode/omp) in real use, or any "
                    "further report of auto-compaction 'just stopping' on cards "
                    "that never ran one themselves.",
-        "fix": "Narrowed, not closed. The interrupt half IS fixed (an interrupted "
-               "compaction now teaches nothing and re-queues onto the card via "
-               "compact_pending, retried by the reconciler's "
-               "sweep_pending_compaction), so the flag can only be set by a turn "
-               "that actually RAN to completion - which is what the probe always "
-               "meant to measure. Remaining: key the learned verdict by driver "
-               "name + model instead of one process global, and let it decay so a "
-               "CLI upgrade is re-probed rather than staying off until a restart.",
+        "fix": "Narrowed twice, still open for CARDS. (1) The interrupt half is "
+               "fixed: an interrupted compaction teaches nothing and re-queues "
+               "onto the card via compact_pending, retried by the reconciler's "
+               "sweep_pending_compaction. (2) The CHAT half is fixed outright "
+               "(2026-10-07): copilot._compact_strikes is keyed per SESSION and "
+               "DECAYS - an unproven attempt buys a bounded backoff (15min, 1h, "
+               "4h) instead of an off switch, so even a CLI that really ignores "
+               "/compact is re-probed, and the verdict now comes from the "
+               "runtime's own compact_boundary frame rather than from a token "
+               "count a /compact turn never reports. Remaining: give "
+               "sessions._autocompact_supported the same treatment - per session "
+               "(or per driver+model) and decaying, not one process global. "
+               "copilot._compact_strikes/_compact_allowed/_compact_verdict is the "
+               "shape to copy.",
         "order": 16,
     },
     {

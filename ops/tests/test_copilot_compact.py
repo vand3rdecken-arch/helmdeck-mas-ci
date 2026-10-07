@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """copilot._maybe_compact - the board chat's counterpart of sessions._maybe_compact
 (card parity, re-enabled 2026-08-14 alongside the card version). Before this,
 the board/PM chat had a context meter but NO compaction and NO rotation safety
@@ -8,7 +8,10 @@ net at all - worse off than cards ever were, since even the pre-fix card bug
   - a real compaction (context shrinks >=25%) updates ctx_tokens, bills the
     compact turn's cost WITHOUT incrementing the turn counter, and returns a
     note for the chat log
-  - a CLI that doesn't honor /compact is learned once (no per-turn spawn after)
+  - an attempt that proves nothing costs nothing on the next crossing either
+    (the per-session backoff; that it EXPIRES and retries is pinned in
+    test_copilot_compact_evidence.py, together with the compact_boundary
+    evidence this file's canned turns deliberately do not carry)
   - a session rotation during compaction chains the old id, never drops it"""
 import json, os, sys, tempfile
 
@@ -70,7 +73,7 @@ def _lines(new_sid, after_ctx, cost=0.02, honored=True):
 
 
 # 1) below threshold -> no-op, nothing spawned
-c._autocompact_supported = None
+c._compact_strikes.clear()
 spawned = {"n": 0}
 import subprocess as _sp
 _orig_popen = _sp.Popen
@@ -82,14 +85,14 @@ check(note is None, "below high-water mark: no-op")
 _sp.Popen = _orig_popen
 
 # 2) no session id -> no-op
-c._autocompact_supported = None
+c._compact_strikes.clear()
 c._save_sessions({})
 c._save_stats({"owner": {"ctx_tokens": 180000}})
 note = c._maybe_compact("owner")
 check(note is None, "no session id: no-op")
 
 # 3) real compaction: context shrinks, note returned, turns NOT incremented
-c._autocompact_supported = None
+c._compact_strikes.clear()
 c._save_sessions({"owner": "sess-a"})
 c._save_stats({"owner": {"ctx_tokens": 180000, "turns": 5, "cost": 1.0}})
 _sp.Popen = lambda *a, **k: _FakePopen(_lines("sess-a", 30000, cost=0.03))
@@ -99,17 +102,18 @@ st = c._stats()["owner"]
 check(st["ctx_tokens"] == 30000, "ctx_tokens updated to the post-compact reading")
 check(st["turns"] == 5, "turn counter NOT incremented by the compact call (card parity)")
 check(round(st["cost"], 2) == 1.03, "compact turn's cost still billed")
-check(c._autocompact_supported is True, "support learned True")
+check("owner" not in c._compact_strikes, "a proven compaction leaves no strike")
 _sp.Popen = _orig_popen
 
 # 4) CLI doesn't honor /compact: context doesn't shrink -> learned False, silent
-c._autocompact_supported = None
+c._compact_strikes.clear()
 c._save_sessions({"owner": "sess-b"})
 c._save_stats({"owner": {"ctx_tokens": 180000, "turns": 1, "cost": 0.0}})
 _sp.Popen = lambda *a, **k: _FakePopen(_lines("sess-b", 175000, cost=0.01))
 note = c._maybe_compact("owner")
 check(note is None, "unhonored /compact: no note (no per-turn chat pollution)")
-check(c._autocompact_supported is False, "support learned False")
+check(c._compact_strikes.get("owner", (0, 0))[0] == 1,
+      "nothing proven -> one strike for THIS session (not a process-wide off switch)")
 spawn_count = {"n": 0}
 def _count_spawn(*a, **k):
     spawn_count["n"] += 1
@@ -121,7 +125,7 @@ check(spawn_count["n"] == 0, "learned-unsupported CLI costs nothing on the next 
 _sp.Popen = _orig_popen
 
 # 5) compaction rotates the session id -> old id chained, pointer follows new
-c._autocompact_supported = None
+c._compact_strikes.clear()
 c._save_sessions({"owner": "sess-old"})
 c._save_stats({"owner": {"ctx_tokens": 180000, "turns": 2, "cost": 0.0}})
 _sp.Popen = lambda *a, **k: _FakePopen(_lines("sess-new", 20000))
