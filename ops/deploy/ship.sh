@@ -314,8 +314,11 @@ else
   echo "[ship] native change detected -> bump runtimeVersion, APK build + emulator test + distribute"
   BUMP="$(bump_version)" || { echo "[ship] version bump failed"; exit 1; }
   echo "[ship] version -> $BUMP (new runtimeVersion; old APKs will reject this JS instead of crashing)"
-  if ! bash ops/deploy/build_apk.sh; then
-    echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint"
+  # Build AND distribute are both hard: a built-but-undistributed APK is a failed
+  # native ship (measured 2026-10-07: 1.0.52 built, upload swallowed, OTA pushed
+  # as if the APK existed on the relay).
+  if ! bash ops/deploy/build_apk.sh || ! bash ops/deploy/push_apk.sh; then
+    echo "[ship] APK path failed - reverting version bump, NOT recording fingerprint, NO OTA"
     git checkout -- surfaces/app/app.json 2>/dev/null || true
     exit 1
   fi

@@ -270,7 +270,7 @@ if [ -n "$WITH_AAB" ]; then
   fi
 fi
 echo "[build_apk] APK: $(du -h "$APK" | cut -f1)"
-echo "HOOK-NOTE: APK built ($(du -h "$APK" | cut -f1)) - smoke test + distributing to relay"
+echo "HOOK-NOTE: APK built ($(du -h "$APK" | cut -f1)) - emulator smoke"
 
 # best-effort emulator smoke: install + launch + screenshot + crash check
 if command -v adb >/dev/null 2>&1 && adb get-state 1>/dev/null 2>&1; then
@@ -290,6 +290,8 @@ else
   echo "[build_apk] no emulator/device connected - smoke skipped"
 fi
 
-echo "[build_apk] distribute APK to relay (/apk/helmdeck.apk)"
-bash ops/deploy/push_relay.sh 2>&1 | tail -3 || echo "[build_apk] WARN: relay upload failed"
-echo "[build_apk] done - APK at $APK"
+# Distribution is its own step, NOT swallowed here: ops/deploy/push_apk.sh (ship.sh
+# and the ship card run it right after this script and treat a failure as a
+# failed native ship). This script used to call push_relay.sh with `|| echo WARN`
+# - a dead upload ended in exit 0 and a green-looking ship.
+echo "[build_apk] done - APK at $APK (NOT yet distributed: run ops/deploy/push_apk.sh)"
