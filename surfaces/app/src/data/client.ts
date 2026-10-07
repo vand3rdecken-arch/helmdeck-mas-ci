@@ -292,6 +292,9 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
 export interface Step {
   cls?: string; kind?: string; role?: string; text?: string; ts?: string;
   tool?: string; input?: unknown; result?: string; name?: string;
+  /** kind "compaction" (ui/compaction_marker.tsx) */
+  event?: "started" | "completed" | "failed" | "canceled" | "loading" | "interrupted"; cid?: string; ta?: number;
+  pre_tokens?: number; post_tokens?: number; duration_ms?: number;
 }
 /** `client_msg_id` is the `mid` the sender minted for this message, echoed back
  *  by the daemon on the persisted `you` entry. It is what lets the chat retire
@@ -1159,6 +1162,11 @@ export const api = {
   dictationFinish: (id: string, finalSeq: number) =>
     req<{ text: string }>("POST", "/voice/dictation/finish", { id, final_seq: finalSeq }),
   dictationCancel: (id: string) => req("POST", "/voice/dictation/cancel", { id }),
+  /** Optional second step: fillers / self-corrections / misheard technical words
+   *  (spine/media/dictation_cleanup.py). Always 200: on any doubt `text` is the input. */
+  dictationClean: (text: string) =>
+    req<{ text: string; changed: boolean; skipped?: string | null; ms?: number }>(
+      "POST", "/voice/dictation/clean", { text }),
   /** Settings > System > Daemon (spine/ops/daemonctl.status): derived, never a flag. */
   daemonStatus: () => req<DaemonStatus>("GET", "/admin/daemon"),
   /** The ONE restart verb: 409 + reason "turn_active" while a card turn is live unless forced. */

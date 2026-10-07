@@ -71,8 +71,15 @@ def render_speech():
 # ---- sandbox daemon -------------------------------------------------------
 DPORT = free_port()
 SANDBOX = tempfile.mkdtemp(prefix="hd-dictation-")
+# The sandbox daemon prints one line per request. Into a FILE, never a PIPE: nothing
+# here drains a pipe, and a full 64 KB pipe BLOCKS the daemon on its next print -
+# every request then hangs ("Direktverbindung antwortet nicht") and the page
+# never loads. (Measured 2026-10-07 after ~1,500 chunk requests; it looked like CPU
+# contention for two runs.)
+DLOG = os.path.join(SANDBOX, "daemon.log")
 daemon = subprocess.Popen([sys.executable, os.path.join(HERE, "dictation_sandbox_daemon.py"),
-                           str(DPORT), SANDBOX], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                           str(DPORT), SANDBOX], stdout=open(DLOG, "w", encoding="utf-8"),
+                          stderr=subprocess.STDOUT, text=True)
 DAEMON = "http://127.0.0.1:%d" % DPORT
 
 
@@ -93,7 +100,7 @@ try:
         except Exception:
             time.sleep(0.5)
     else:
-        print(daemon.stdout.read() if daemon.poll() is not None else "daemon did not come up")
+        print(open(DLOG, encoding="utf-8").read()[-1500:] if daemon.poll() is not None else "daemon did not come up")
         sys.exit(2)
     TOKEN = api("POST", "/auth/login", {"name": "owner", "password": PW}).get("token", "")
     check(bool(TOKEN), "sandbox daemon is up and the owner logs in")
@@ -183,6 +190,14 @@ try:
                 calls["transcribe"] += 1
         page.on("request", on_req)
 
+        def on_resp(r):                      # how long the daemon's real cleanup call took
+            if "/voice/dictation/clean" in r.url and r.request.method == "POST" and calls.get("real_clean"):
+                try:
+                    calls["clean_ms"] = r.json().get("ms")
+                except Exception:
+                    pass
+        page.on("response", on_resp)
+
         def fake_chat(route):
             try:
                 calls["chat"].append(json.loads(route.request.post_data or "{}"))
@@ -190,6 +205,24 @@ try:
                 calls["chat"].append({})
             route.fulfill(status=200, content_type="application/json", body="{}")
         page.route("**/chat", lambda route: fake_chat(route) if route.request.method == "POST" else route.continue_())
+
+        # Every dictation fires a cleanup call at the daemon, and a REAL one is a
+        # 4-10 s model process that costs real quota. Only the dedicated cleanup
+        # phase gets the real model (calls["real_clean"]); every other dictation
+        # answers "unchanged" at once, so the other scenarios stay fast and free.
+        calls["real_clean"] = False
+
+        def fake_clean(route):
+            if calls["real_clean"]:
+                route.continue_()
+                return
+            try:
+                body = json.loads(route.request.post_data or "{}")
+            except Exception:
+                body = {}
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(
+                {"text": body.get("text", ""), "changed": False, "skipped": "test", "ms": 0}))
+        page.route("**/voice/dictation/clean", fake_clean)
 
         page.goto(WEB + "/", wait_until="domcontentloaded")
         page.evaluate("localStorage.setItem('helmdeck.config', %r)" % CFG)
@@ -253,6 +286,7 @@ try:
         # ===== 1+2+7: tap, talk, insert ====================================
         print("\n[tap -> talk -> insert]")
         b, page, calls, errors = session(p, loud)
+        calls["real_clean"] = True          # this ONE dictation gets the real cleanup model
         tap(page, '[data-testid="composer-dictate"]')
         page.wait_for_selector('[data-testid="dictation-bar"]', timeout=15000)
         check(True, "tapping the mic opens the dictation bar")
@@ -278,6 +312,45 @@ try:
         check(calls["transcribe"] == 0, "the BATCH route was not used (streaming path)")
         check(calls["finish"] == 1 and calls["start"] == 1, "one stream: start=%d finish=%d" % (calls["start"], calls["finish"]))
         check(page.locator('[data-testid="dictation-bar"]').count() == 0, "the bar is gone after insert")
+
+        # ===== cleanup phase: raw text first, cleaned version swaps in later ==========
+        print("\n[cleanup after insert]")
+        # the raw transcript is what was read the moment it was inserted (`txt`):
+        # by now the daemon may already have swapped the cleaned version in (the
+        # checks above - a one-piece decode of the same audio - take seconds too)
+        raw_in = txt
+        t_clean = time.time()
+        shown_working = False
+        for _ in range(120):                                  # up to ~60 s: a cold CLI spawn is 5-11 s
+            if page.locator('[data-testid="dictation-cleaning"]').count():
+                shown_working = True
+            if page.locator('[data-testid="dictation-cleaned"]').count() or (
+                    shown_working and not page.locator('[data-testid="dictation-cleaning"]').count()):
+                break
+            page.wait_for_timeout(500)
+        after = read(page)
+        swapped = page.locator('[data-testid="dictation-cleaned"]').count() == 1
+        print("   raw    : %r\n   after  : %r   (%.1f s, swapped=%s)" % (raw_in, after, time.time() - t_clean, swapped))
+        check(shown_working or swapped, "the 'tidying up' state showed while the daemon worked")
+        check(len(after) > 10, "the field still holds the dictation after the cleanup phase")
+        if swapped:
+            # A small model is NOT exact on an ambiguous misheard word ("Bird" has come
+            # back as "Branch" - a plausible sentence, and wrong). What must hold is
+            # that it changed the word, kept the rest, and that undo (checked below)
+            # gives the raw text back exactly.
+            check(after != raw_in and len(after.split()) == len(raw_in.split()),
+                  "the misheard word was replaced and the rest kept: %r" % after)
+            print("   the daemon's cleanup call took %s ms" % calls.get("clean_ms"))
+            check(calls.get("clean_ms") is not None and calls["clean_ms"] < 4000,
+                  "the cleanup was fast: %s ms (a cold one-shot took 4,000-11,000 ms)" % calls.get("clean_ms"))
+            page.screenshot(path=os.path.join(SHOTS, "dictation-cleaned.png"))
+            page.click('[data-testid="dictation-undo"]')
+            page.wait_for_timeout(400)
+            check(read(page) == raw_in, "undo restores the raw transcript exactly: %r" % read(page))
+            check(page.locator('[data-testid="dictation-cleaned"]').count() == 0, "the 'tidied up' strip is gone after undo")
+        else:
+            print("   (daemon returned the text unchanged - nothing to swap, which is also valid)")
+        calls["real_clean"] = False         # every later dictation: instant "unchanged", no model load
         page.screenshot(path=os.path.join(SHOTS, "dictation-inserted.png"))
         check(not errors, "no JS exceptions: %s" % errors[:2])
 
@@ -336,6 +409,14 @@ try:
             if calls["chat"]:
                 break
             page.wait_for_timeout(500)
+        if not calls["chat"]:      # diagnose instead of guessing: what is the page showing?
+            print("   DIAG no POST /chat after 30 s: bar=%d sub=%r textarea=%d cleaning=%d cleaned=%d note=%d errors=%s" % (
+                page.locator('[data-testid="dictation-bar"]').count(),
+                (page.inner_text('[data-testid="dictation-sub"]') if page.locator('[data-testid="dictation-sub"]').count() else None),
+                page.locator("textarea").count(), page.locator('[data-testid="dictation-cleaning"]').count(),
+                page.locator('[data-testid="dictation-cleaned"]').count(), page.locator('[data-testid="dictation-note"]').count(),
+                errors[:2]))
+            page.screenshot(path=os.path.join(SHOTS, "dictation-send-diag.png"))
         sent = (calls["chat"][0].get("text") if calls["chat"] else "") or ""
         check(all(k.lower() in sent.lower() for k in KEYS), "the arrow sent the dictated words via POST /chat: %r" % sent)
         check(read(page) == "", "the input is cleared after the send")
@@ -348,7 +429,16 @@ try:
         page.wait_for_selector('[data-testid="dictation-bar"]', timeout=15000)
         page.wait_for_timeout(2200)
         page.click('[data-testid="dictation-insert"]')
-        page.wait_for_selector('[data-testid="dictation-note"]', timeout=30000)
+        try:
+            page.wait_for_selector('[data-testid="dictation-note"]', timeout=30000)
+        except Exception:
+            print("   DIAG silence: bar=%d sub=%r textarea=%d value=%r errors=%s" % (
+                page.locator('[data-testid="dictation-bar"]').count(),
+                (page.inner_text('[data-testid="dictation-sub"]') if page.locator('[data-testid="dictation-sub"]').count() else None),
+                page.locator("textarea").count(),
+                (read(page) if page.locator("textarea").count() else None), errors[:2]))
+            page.screenshot(path=os.path.join(SHOTS, "dictation-silence-diag.png"))
+            raise
         note = page.inner_text('[data-testid="dictation-note"]')
         check(True, "silence is reported instead of inserting nothing silently: %r" % note)
         check(read(page) == "", "silence inserts no text (no hallucinated words)")

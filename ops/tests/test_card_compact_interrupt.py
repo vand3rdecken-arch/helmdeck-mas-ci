@@ -65,6 +65,14 @@ class _Log:
 
 CARD = {}
 
+# The compaction's feed item is a TYPED event now (drivers.settle_compaction ->
+# timeline_store -> the live db), never a note line. Captured here so no test
+# reaches the real store; `_open_compaction` is empty (no frames in these tests),
+# so the real function would be a no-op anyway - this just records the verdict.
+from spine.agent import drivers as _D                     # noqa: E402
+SETTLED = []
+_D.settle_compaction = lambda run_dir, event, **f: SETTLED.append((event, f))
+
 
 def _track(ctx=183450, sid="sess-old"):
     t = {"id": "t1", "run_dir": ".", "ctx_tokens": ctx, "ctx_window": 200000,
@@ -107,11 +115,13 @@ S._turn = _turn_returning("sess-old", "(turn cancelled by you)")
 t = _track()
 lg = _Log()
 del spawned[:]
+del SETTLED[:]
 S._maybe_compact(t, lg)
 check(S._autocompact_supported is None,
       "interrupted compaction learns NOTHING (_autocompact_supported stays unprobed)")
 check(CARD.get("compact_pending") is True, "interrupted compaction re-queues (compact_pending)")
-check(lg.saw("unterbrochen"), "the card log says it was interrupted, not unsupported")
+check([e for e, _ in SETTLED] == ["interrupted"], "the feed item is settled as interrupted, not unsupported")
+check(not lg.notes, "no note line for a compaction event - the typed item carries it")
 check(not lg.saw("honoriert /compact nicht"), "no false 'CLI doesn't honor /compact' verdict")
 check(S.compacting("t1") is None, "registry released after the turn")
 
@@ -161,13 +171,13 @@ lg = _Log()
 second = S._maybe_compact(dict(t), lg)
 check(second is None and len(spawned) == 1,
       "a second compaction on the same card does NOT spawn a rival /compact turn")
-check(lg.saw("laeuft bereits"), "the second caller is told one is already running")
+check(not lg.notes, "the second caller writes no note - the running one already has its status row")
 waiter = _Log()
 t0 = time.time()
 cut = S.await_compaction("t1", waiter, timeout=10)
 check(cut is False, "await_compaction waits for a healthy compaction instead of cutting it")
 check(time.time() - t0 > 0.2, "the waiter actually blocked until the compaction finished")
-check(waiter.saw("Verdichtung laeuft"), "the owner is told why his message starts a moment later")
+check(not waiter.notes, "a waiter writes no 'Verdichtung laeuft' note (was one line PER waiter)")
 first.join(10)
 check(S.compacting("t1") is None, "registry clean afterwards")
 
@@ -232,12 +242,13 @@ def _turn_raises_after_writing(t_, prompt, **kw):
 
 
 S._turn = _turn_raises_after_writing
+del SETTLED[:]
 S._maybe_compact(t, lg)
 check(S._autocompact_supported is True,
       "a stalled turn that DID write a compaction counts as a success, not a failure")
 check(not CARD.get("compact_pending"),
       "a compaction proven by the transcript is NOT re-queued (no pointless retry)")
-check(lg.saw("im Transkript"), "the card log says the compaction landed despite the hang")
+check([e for e, _ in SETTLED] == ["completed"], "the feed item is settled as completed despite the hang")
 
 # 6c) completed turn, meter unmoved, but the transcript shows a compaction ----
 S._autocompact_supported = None
@@ -252,10 +263,11 @@ def _turn_clean_but_writes(t_, prompt, **kw):
 S._turn = _turn_clean_but_writes
 t = _track()
 lg = _Log()
+del SETTLED[:]
 S._maybe_compact(t, lg)
 check(S._autocompact_supported is True,
       "a stale ctx reading no longer produces a false 'CLI doesn't honor /compact'")
-check(lg.saw("Kontext-Meter"), "the log explains the meter lags until the next turn")
+check([e for e, _ in SETTLED] == ["completed"], "the feed item is settled as completed (meter lags)")
 
 # 6d) ...but a turn that compacted NOTHING still learns False -----------------
 S._autocompact_supported = None

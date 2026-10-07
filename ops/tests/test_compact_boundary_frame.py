@@ -192,8 +192,7 @@ S._maybe_compact(t, lg)
 check(S._autocompact_supported is True, "boundary teaches True")
 check(not CARD.get("compact_pending"), "no re-queue")
 check(CARD.get("ctx_tokens") == 14000, "card meter reset to post_tokens")
-check(lg.saw("AUTO-COMPACT ok"), "log says ok")
-check(not lg.saw("unterbrochen") and not lg.saw("nachgeholt"), "no 'interrupted / retry' verdict")
+check(not lg.notes, "no AUTO-COMPACT note line - the boundary frame IS the feed item (driver)")
 
 print("_maybe_compact - boundary wins over a steerer's cut flag (the 23:07 case):")
 S._autocompact_supported = None

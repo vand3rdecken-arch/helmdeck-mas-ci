@@ -286,6 +286,19 @@ def voice_dictation_finish_post(self, user, body):
         o, b.get("id"), b.get("final_seq", -1)))
 
 
+def voice_dictation_clean_post(self, user, body):
+    """Optional second step after a dictation: fix fillers, self-corrections and
+    misheard technical words (spine/media/dictation_cleanup.py). ALWAYS answers
+    200 with {text, changed, skipped, ms}: on any doubt `text` is the input
+    unchanged - the app has already inserted the raw transcript, so a failure
+    here must cost nothing."""
+    from spine.media import dictation_cleanup
+    text = body.get("text")
+    if not isinstance(text, str):
+        return self._send(400, json.dumps({"error": "text required"}))
+    return self._send(200, json.dumps(dictation_cleanup.clean(text, user.get("name"))))
+
+
 def voice_dictation_cancel_post(self, user, body):
     return _dictation(self, user, body, lambda ds, o, b: ds.cancel(o, b.get("id")))
 
@@ -304,6 +317,7 @@ POST_ROUTES = {
     "/voice/dictation/chunk": voice_dictation_chunk_post,
     "/voice/dictation/finish": voice_dictation_finish_post,
     "/voice/dictation/cancel": voice_dictation_cancel_post,
+    "/voice/dictation/clean": voice_dictation_clean_post,
 }
 PUT_ROUTES = {
     "/me/config": me_config_put,
@@ -326,6 +340,7 @@ POST_CAPS = {
     "/voice/dictation/chunk": "chat.use",
     "/voice/dictation/finish": "chat.use",
     "/voice/dictation/cancel": "chat.use",
+    "/voice/dictation/clean": "chat.use",
     "/process_templates/save": "templates.manage",
     "/process_templates/from_process": "templates.manage",
 }

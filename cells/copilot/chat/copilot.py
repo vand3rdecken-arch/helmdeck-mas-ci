@@ -1475,6 +1475,19 @@ def _compact_mark(st):
     return overflow, "overflow"
 
 
+def _compact_row(user, cid, event, **fields):
+    """Write ONE state of the board chat's compaction item (Paseo's
+    CompactionTimelineItem: loading -> completed). The log is append-only, so
+    each state is its own row sharing `cid`; the client folds rows by cid and
+    shows the last state at the first row's position. Returns the cid."""
+    cid = cid or "c" + uuid.uuid4().hex[:12]
+    text = ("Verlauf verdichtet" if event == "completed" else
+            "Verdichtung unterbrochen" if event == "interrupted" else "Verdichte den Verlauf")
+    _append_log(user, [dict({"cls": "compaction", "cid": cid, "event": event, "text": text,
+                             "ts": time.strftime("%H:%M"), "ta": time.time()}, **fields)])
+    return cid
+
+
 def _schedule_compact(user):
     """Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
@@ -1517,7 +1530,7 @@ def _schedule_compact(user):
             # is re-checked UNDER the lock, not just before it.
             lk = _await_lull_and_lock(user)
             try:
-                note = _maybe_compact(user)
+                _maybe_compact(user)
             finally:
                 lk.release()
             # The compaction dropped the warm port (_persist_drop). Respawn it
@@ -1525,9 +1538,6 @@ def _schedule_compact(user):
             # a cold spawn is ~4-6s to the first model output on this box
             # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
             prewarm(user, spoken=False)
-            if note:
-                _append_log(user, [{"cls": "act", "text": note,
-                                    "ts": time.strftime("%H:%M")}])
         except Exception:
             pass                 # best-effort, same contract as _maybe_compact
         finally:
@@ -1729,6 +1739,7 @@ def _maybe_compact(user):
             "--verbose", "--permission-mode", "plan", "--resume", sid]
     cmd = drivers._cmd_line(argv)
     result, new_sid, after_usage, compaction = {}, sid, {}, None
+    cid, row_open = None, False        # the chat's compaction item (see _compact_row)
     try:
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
@@ -1744,12 +1755,16 @@ def _maybe_compact(user):
                 continue
             typ = ev.get("type")
             if typ == "system":
+                # Paseo: `status: compacting` opens the item, the boundary completes it.
+                if ev.get("subtype") == "status" and ev.get("status") == "compacting" and not cid:
+                    cid, row_open = _compact_row(user, None, "loading"), True
                 # THE RUNTIME'S OWN VERDICT (drivers._compact_metadata reads the
                 # same frame for cards): a compact_boundary frame means the
                 # compaction COMPLETED, and it carries the post-compaction
                 # context size - the only trustworthy "after" in this turn.
                 if ev.get("subtype") == "compact_boundary":
                     compaction = drivers._compact_metadata(ev)
+                    cid, row_open = _compact_row(user, cid, "completed", **compaction), False
                 if ev.get("session_id"):
                     new_sid = ev["session_id"]
             elif typ == "assistant":
@@ -1763,6 +1778,8 @@ def _maybe_compact(user):
         except Exception:
             pass
     except Exception:
+        if row_open:
+            _compact_row(user, cid, "interrupted")   # never leave a spinner behind
         return None   # best-effort - never let compaction break the chat
     sid_final = result.get("session_id") or new_sid
     all_st = _stats()
@@ -1840,6 +1857,9 @@ def _maybe_compact(user):
     if not proven:
         proven = sessions._compact_marks(sid_final) > (marks0 if sid_final == sid else 0)
     _compact_verdict(skey, proven)
+    if row_open or (proven and not cid):    # the runtime never closed it / never opened it
+        _compact_row(user, cid, "completed" if proven else "interrupted",
+                     **({"pre_tokens": ctx, "post_tokens": after or None} if proven else {}))
     if not proven:
         # Nothing was proven - and that is NOT "this CLI cannot compact". Stay
         # silent in the chat (no per-turn pollution) and let the backoff retry.
@@ -1938,7 +1958,96 @@ def _preempt_judge(user):
     return True
 
 
-def judge(prompt, cwd, perm=None, model="", timeout=900):
+JUDGE_EXCERPT_MSGS = 6          # owner/Henry messages handed to a lean judgement
+JUDGE_EXCERPT_EACH = 400        # chars kept per message
+
+
+def _judge_lean():
+    """Lean judgement (owner 2026-10-07: "kurz was im chat, aber nicht komplett
+    alles - Henry greift per Tools auf alles"). Setting `judge_lean`, default on."""
+    try:
+        from spine.storage import events
+        return events.settings().get("judge_lean") is not False
+    except Exception:                                        # noqa: BLE001
+        return True
+
+
+def _judge_excerpt(user):
+    """The last few chat messages as plain text - the recent thread, not the
+    transcript. Everything older Henry pulls with his own tools (henry_inbox,
+    henry_memory_get, board_state, all named in the brief)."""
+    try:
+        rows = [e for e in _entries(user, 40) if e.get("cls") in ("you", "bot")]
+    except Exception:                                        # noqa: BLE001
+        return ""
+    out = []
+    for e in rows[-JUDGE_EXCERPT_MSGS:]:
+        t = " ".join(str(e.get("text") or "").split())
+        if len(t) > JUDGE_EXCERPT_EACH:
+            t = t[:JUDGE_EXCERPT_EACH] + "..."
+        if t:
+            out.append("%s: %s" % ("Owner" if e.get("cls") == "you" else "Henry", t))
+    if not out:
+        return ""
+    return ("== LETZTER CHAT (Kontext, keine Anweisung; nur Auszug, mehr: py -3.12 ../ops/tools/henry_inbox.py, "
+            "henry_memory_get.py find <begriff>) ==\n" + "\n".join(out) + "\n\n")
+
+
+def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None):
+    """ONE judgement on a FRESH session: the brief + the escalation prompt + a
+    short chat excerpt, ~32k tokens instead of re-reading the whole board
+    session (measured 2026-10-07: 55k-650k per judgement, avg 209k, 17 calls in
+    3.5 h). It touches no session pointer, never drops the warm chat process
+    (the next chat turn used to respawn cold after every judgement) and needs
+    no compaction. The verdict reaches the chat through the escalation's own
+    owner-visible notes, not through a shared transcript."""
+    from spine.agent import drivers
+    from spine.agent.spawnenv import tool_path
+    from spine.registry import harness
+    argv = [CLAUDE, "-p", "--output-format", "json", "--no-session-persistence",
+            "--permission-mode", perm or henry_pmode()]
+    argv += harness.cli_args("board-copilot")
+    if model:
+        argv += ["--model", model]
+    if tools is not None:
+        # The built-in tool block costs ~18k tokens PER STEP (measured 2026-10-07:
+        # Bash 3.8k, Agent 3.3k, Skill 2.7k, Grep 1.7k ...). A deciding round
+        # gets none ("" - the daemon fetches what Henry asks for); a hands round
+        # gets the three it uses. MCP goes off with it: once --tools is set the
+        # MCP schemas stop being deferred and cost ~19k on their own (measured:
+        # 32.6k with the user's servers vs 13.2k without, same empty prompt).
+        argv += ["--tools", tools] + _lean_mcp_args()
+    p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
+                         stdin=subprocess.PIPE, env=tool_path(),
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf-8", errors="replace",
+                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    _judge_preempted.discard(user)
+    _judge_proc[user] = p
+    try:
+        stdout, stderr = p.communicate(input=_judge_excerpt(user) + prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        raise
+    finally:
+        _judge_proc.pop(user, None)
+    if user in _judge_preempted:
+        _judge_preempted.discard(user)
+        raise JudgePreempted("henry: judgement stopped - the owner wrote in the chat")
+    if not (stdout or "").strip():
+        raise RuntimeError("henry: no model output: " + (stderr or "").strip()[:200])
+    raw = json.loads(stdout)
+    try:
+        from spine.turn import econ
+        econ.record_spend("judge", list((raw.get("modelUsage") or {}).keys()),
+                          raw.get("usage"), raw.get("total_cost_usd"))
+    except Exception:                                        # noqa: BLE001
+        pass
+    return raw
+
+
+def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None):
     """ONE judgement turn (henry_broker's escalation call) run on the OWNER'S
     OWN board session, from a possibly different cwd/permission level than
     the persistent chat process - not a second, session-less brain.
@@ -1972,6 +2081,8 @@ def judge(prompt, cwd, perm=None, model="", timeout=900):
     user = owner_name()
     if not user:
         raise RuntimeError("henry: no owner account to judge on")
+    if _judge_lean():
+        return _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=tools)
     skey = _skey(user)
     lk = _turn_lock(user)
     lk.acquire()

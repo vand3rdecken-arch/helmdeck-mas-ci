@@ -4,6 +4,7 @@
 //
 // Run: npx tsc -p tsconfig.dictation.json && node .dictation-out/data/__dictation_selftest__.js
 import { DictationSession, DictationApi, DictationError, chunksToWavB64, isRetryable } from "./dictation";
+import { applyCleanup, undoCleanup } from "./dictation_clean";
 
 let fails = 0;
 function check(name: string, cond: unknown, detail?: unknown) {
@@ -224,6 +225,22 @@ async function main() {
     check("wav header: RIFF/WAVE, 16 kHz mono, data length", tag(0) === "RIFF" && tag(8) === "WAVE"
       && dv.getUint32(24, true) === 16000 && dv.getUint16(22, true) === 1
       && dv.getUint32(40, true) === 100 && wav.length === 144, wav.length);
+  }
+
+  // 11. cleanup swap: only where the raw dictation still sits verbatim
+  {
+    const raw = "starte den Bild jetzt", cleaned = "Starte den Build jetzt";
+    check("swap works when the field is just the dictation", applyCleanup(raw, raw, cleaned) === cleaned);
+    check("swap keeps what was typed before and after",
+      applyCleanup("Hallo Henry. " + raw + " und danke", raw, cleaned) === "Hallo Henry. " + cleaned + " und danke");
+    check("swap is refused once the owner edited the dictation", applyCleanup("starte den Bild später", raw, cleaned) === null);
+    check("swap is refused after the field was cleared or sent", applyCleanup("", raw, cleaned) === null);
+    check("swap is refused when the cleaned text is empty or identical",
+      applyCleanup(raw, raw, "") === null && applyCleanup(raw, raw, raw) === null);
+    check("two identical dictations: only the LAST one is swapped",
+      applyCleanup(raw + " " + raw, raw, cleaned) === raw + " " + cleaned);
+    check("undo restores the raw text", undoCleanup("x " + cleaned, cleaned, raw) === "x " + raw);
+    check("undo is refused once the cleaned text was changed", undoCleanup("x Starte den Build", cleaned, raw) === null);
   }
 
   console.log(fails ? `\n${fails} failure(s)` : "\nall passed");

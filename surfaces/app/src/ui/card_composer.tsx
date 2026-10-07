@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useTheme } from "@/theme";
-import type { ReplyRef, SteerOpts } from "@/data/client";
+import { api, type ReplyRef, type SteerOpts } from "@/data/client";
+import { applyCleanup, undoCleanup } from "@/data/dictation_clean";
 import {
   type Attach, filesToAttachments, isWeb, MAX_FILES, MAX_MB, mergeAttachments, pickFiles,
   pickImages, recoverPendingImages, takePhoto,
@@ -172,11 +173,39 @@ export function Composer({
   // typed message uses - one send path, so queueing/steering/attachments all
   // behave exactly as they do for typing.
   const [note, setNote] = useState("");
+  // CLEANUP (data/dictation_clean.ts): the raw transcript goes in at once; a few
+  // seconds later the daemon's cleaned version swaps in IF the raw text still sits
+  // verbatim in the field, with a one-tap undo. "Insert and send" skips it - the
+  // owner chose speed there.
+  const [clean, setClean] = useState<"idle" | "working" | "done">("idle");
+  const lastClean = useRef<{ raw: string; cleaned: string } | null>(null);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  async function cleanDictation(raw: string) {
+    setClean("working");
+    try {
+      const r = await api.dictationClean(raw);
+      const next = r.changed ? applyCleanup(textRef.current, raw, r.text) : null;
+      if (!alive.current) return;
+      if (next !== null) {
+        setText(next);
+        lastClean.current = { raw, cleaned: r.text };
+        setClean("done");
+      } else setClean("idle");
+    } catch { if (alive.current) setClean("idle"); }    // an old daemon or a dead link: the raw text stands
+  }
+  function undoClean() {
+    const lc = lastClean.current;
+    lastClean.current = null;
+    if (lc) { const next = undoCleanup(textRef.current, lc.cleaned, lc.raw); if (next !== null) setText(next); }
+    setClean("idle");
+  }
   const dict = useDictation({
     onText: (txt, send) => {
       const cur = textRef.current;
       setText(cur && !/\s$/.test(cur) ? `${cur} ${txt}` : cur + txt);
-      if (send) fire();
+      lastClean.current = null;
+      if (send) fire(); else void cleanDictation(txt);
     },
     onEmpty: () => { setNote(tr("dictation.empty")); setTimeout(() => setNote(""), 2500); },
   });
@@ -478,6 +507,21 @@ export function Composer({
 
       {note ? (
         <Text testID="dictation-note" style={{ color: t.txtTertiary, fontSize: 12, paddingHorizontal: 12, paddingTop: 6 }}>{note}</Text>
+      ) : null}
+      {!dictating && clean === "working" ? (
+        <View testID="dictation-cleaning" style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
+          <ActivityIndicator size="small" color={t.txtTertiary} />
+          <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("dictation.cleaning")}</Text>
+        </View>
+      ) : null}
+      {!dictating && clean === "done" ? (
+        <View testID="dictation-cleaned" style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingTop: 6 }}>
+          <Ionicons name="sparkles" size={13} color={t.accent} />
+          <Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("dictation.cleaned")}</Text>
+          <Pressable testID="dictation-undo" onPress={undoClean} hitSlop={8}>
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "700" }}>{tr("dictation.undo")}</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       {/* input row. While a dictation runs the TEXT FIELD gives way to the

@@ -163,6 +163,114 @@ def _extract_json(txt):
     return None
 
 
+# STAGED JUDGEMENT (owner 2026-10-07: "nur entscheiden was man macht, und bei
+# tatsaechlich nutzen erst lesen"). Round 1 runs with NO tools: the prompt
+# already carries the escalation, the card log, the audit lines and the
+# system snapshot, and the daemon is the hands - Henry answers `need` with a
+# list of what he wants to see, the daemon runs those readers itself and asks
+# once more (still no tools). Only `hands` (he must edit/run something) buys a
+# round WITH the three tools he actually uses. Measured per step: no tools
+# ~12k + prompt, Bash/Read/Edit ~18k, the default block ~30k.
+STAGE1_TOOLS = ""
+HANDS_TOOLS = "Bash,Read,Edit"
+NEED_MAX = 5                      # readers per reload round
+NEED_CAP = 6000                   # chars kept per reader output
+_ROUND = {"tools": None}          # the tools of the round _ask is serving (one owner: _decide)
+
+_NEED_ARGV = {
+    "card": ("board_state.py", ["--card"]),
+    "board": ("board_state.py", []),
+    "inbox": ("henry_inbox.py", []),
+    "memory": ("henry_memory_get.py", ["find"]),
+    "ship_facts": ("ship_facts.py", []),
+}
+
+
+def _run_reader(script, args, timeout=60):
+    """One ops/tools reader, run by the daemon's own interpreter from the repo
+    root (headless PATH has no `py`; the scripts import spine themselves)."""
+    import subprocess
+    import sys as _sys
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    p = subprocess.run([_sys.executable, os.path.join(_HENRY_REPO_ROOT, "ops", "tools", script)] + args,
+                       cwd=_HENRY_REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=timeout, env=env)
+    out = (p.stdout or "") + (("\n[stderr] " + p.stderr.strip()[:300]) if p.returncode else "")
+    return out.strip()
+
+
+def _fetch_need(items, card):
+    """Resolve Henry's `need` list to text. Unknown names are reported, not
+    guessed; everything is capped so one chatty reader cannot swallow the
+    prompt. `memory:<begriff>` carries its own argument; `card` defaults to
+    the escalating card."""
+    blocks = []
+    for raw in list(items or [])[:NEED_MAX]:
+        raw = str(raw).strip()
+        if ":" in raw:                   # card:<id>, memory:<begriff>
+            name, _, arg = raw.partition(":")
+        else:                            # "card <id>" - measured 2026-10-07, the model's first answer
+            name, _, arg = raw.partition(" ")
+        name = name.strip().lower()
+        spec = _NEED_ARGV.get(name)
+        if not spec:
+            blocks.append("[%s] unbekannt - verfuegbar: %s" % (raw, ", ".join(_NEED_ARGV)))
+            continue
+        script, args = spec
+        args = list(args)
+        if name == "card":
+            args.append((arg or card or "").strip())
+        elif name == "memory":
+            if not arg.strip():
+                blocks.append("[memory] braucht einen Begriff: memory:<begriff>")
+                continue
+            args.append(arg.strip())
+        try:
+            out = _run_reader(script, args)
+        except Exception as e:                               # noqa: BLE001
+            out = "[fehlgeschlagen] " + str(e)[:200]
+        if len(out) > NEED_CAP:
+            out = out[:NEED_CAP] + "\n... (gekuerzt)"
+        blocks.append("[%s]\n%s" % (raw, out or "(leer)"))
+    return "\n\n".join(blocks)
+
+
+_STAGE1_TAIL = (
+    "\n\nIn dieser Runde hast du KEINE Werkzeuge - alles, was du weisst, steht oben. "
+    "Fehlt dir etwas, antworte action \"need\" mit \"data\": eine Liste aus "
+    "card, board, inbox, memory:<begriff>, ship_facts (hoechstens %d, genau einmal) - "
+    "der Daemon holt es und fragt dich erneut. "
+    "Musst du selbst Hand anlegen (Dateien aendern, Kommandos ausfuehren), antworte "
+    "action \"hands\" mit \"text\" = was du vorhast; du bekommst dann eine Runde mit "
+    "Werkzeugen. Fertige Arbeit SCHIEBST du durch: action \"move\" mit lane review "
+    "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht parken und auf "
+    "den Owner warten. action \"restart\" = Daemon-Neustart ueber den Harness. "
+    "Antworte am ENDE NUR mit diesem JSON:\n"
+    '{"action": "need|hands|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
+    ' "data": "bei need: die Liste",\n'
+    ' "card": "karten-id oder leer",\n'
+    ' "lane": "bei move: review|done",\n'
+    ' "kind": "bei ship: none|ota|native",\n'
+    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
+    ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
+    ' "why": "ein satz begruendung"}') % NEED_MAX
+
+_HANDS_TAIL = (
+    "\n\nJETZT hast du Werkzeuge (Bash, Read, Edit) und darfst handeln. "
+    "Dein Vorhaben aus der Vorrunde: %s\n"
+    "Fuehre es aus und melde action \"did\" (text: was du getan hast). "
+    "action \"restart\" = Daemon-Neustart ueber den Harness (verweigert von selbst, solange "
+    "eine Karte mitten im Turn ist - NIE taskkill/schtasks selbst tippen). "
+    "Antworte am ENDE NUR mit diesem JSON:\n"
+    '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|ignore",\n'
+    ' "card": "karten-id oder leer",\n'
+    ' "lane": "bei move: review|done",\n'
+    ' "kind": "bei ship: none|ota|native",\n'
+    ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "why": "ein satz begruendung"}')
+
+
 def _ask(prompt, model="", perm=None):
     """Headless judgement call, ON HENRY'S OWN BOARD SESSION (owner decree
     2026-09-14: "zusammenfuehren" - see copilot.judge's docstring for why the
@@ -180,7 +288,8 @@ def _ask(prompt, model="", perm=None):
     _decide to drop to "plan" (no edits) when _dispatcher_privileged(t) says
     the escalating card's owner does not qualify for Henry's hands."""
     from cells.copilot.chat import copilot
-    raw = copilot.judge(prompt, cwd=_HENRY_REPO_ROOT, perm=perm, model=model)
+    raw = copilot.judge(prompt, cwd=_HENRY_REPO_ROOT, perm=perm, model=model,
+                        tools=_ROUND.get("tools"))
     txt = raw.get("result", "")
     d = _extract_json(txt)
     if d is None:
@@ -500,6 +609,40 @@ def _judgement_policy(t):
     return DEFAULT_POLICY
 
 
+def _staged_ask(prompt, esc, privileged):
+    """Round 1 without tools; one `need` reload (still no tools); a `hands`
+    round with HANDS_TOOLS only when Henry says he must act himself and the
+    escalation allows it. A plain `did` from a tool-less round is read as
+    `hands` - nothing was done yet, the text is the plan."""
+    stage1 = prompt + _STAGE1_TAIL
+    _ROUND["tools"] = STAGE1_TOOLS
+    try:
+        d = _ask(stage1, perm="plan")
+        if (d.get("action") or "").strip() == "need":
+            items = d.get("data") or []
+            if isinstance(items, str):
+                items = [x.strip() for x in items.split(",") if x.strip()]
+            escalations.record_note(esc["id"], "Henry liest nach: %s" % ", ".join(map(str, items))[:200])
+            fetched = _fetch_need(items, esc.get("card"))
+            stage1 = (prompt + "\n\n== NACHGELADEN (auf deine Anfrage) ==\n" + fetched
+                      + "\n\nEin zweites \"need\" gibt es nicht - entscheide jetzt." + _STAGE1_TAIL)
+            d = _ask(stage1, perm="plan")
+    finally:
+        _ROUND["tools"] = None
+    action = (d.get("action") or "").strip()
+    if action in ("hands", "did", "need") and privileged:
+        plan = (d.get("text") or d.get("why") or "").strip() or "(kein Vorhaben genannt)"
+        escalations.record_note(esc["id"], "Henry nimmt die Haende: %s" % plan[:200])
+        _ROUND["tools"] = HANDS_TOOLS
+        try:
+            d = _hands_on_ask(prompt + _HANDS_TAIL % plan)
+        finally:
+            _ROUND["tools"] = None
+    elif action == "hands":
+        d["action"] = "did"          # the unprivileged refusal below handles it
+    return d
+
+
 def _decide(esc):
     """One judgement round. Returns True if the escalation was closed."""
     card_log = _card_log_tail(esc.get("card"))
@@ -513,37 +656,21 @@ def _decide(esc):
         + (("Vermerk: %s\n" % esc["last_note"]) if "unterdrueckt" in (esc.get("last_note") or "") else "")
         + ("\n== KARTE (actionlog, juengste zuerst unten) ==\n" + card_log + "\n" if card_log else "")
         + _audit_context(t)
-        + "\n== SYSTEM ==\n" + _snapshot()
-        + "\n\nDu darfst vor der Antwort selbst handeln (Dateien, Kommandos). "
-          "Fertige Arbeit SCHIEBST du durch: action \"move\" mit lane review "
-          "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht "
-          "parken und auf den Owner warten. "
-          "action \"restart\" = Daemon-Neustart ueber den Harness (dasselbe Verb wie der "
-          "Button in Settings > System; verweigert von selbst, solange eine Karte mitten "
-          "im Turn ist - NIE taskkill/schtasks selbst tippen). "
-          "Antworte am ENDE NUR mit diesem JSON:\n"
-          '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
-          ' "card": "karten-id oder leer",\n'
-          ' "lane": "bei move: review|done",\n'
-          ' "kind": "bei ship: none|ota|native",\n'
-          ' "text": "bei did: was du getan hast; bei direct_task/machine_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
-          ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
-          ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
-          ' "why": "ein satz begruendung"}')
+        + "\n== SYSTEM ==\n" + _snapshot())
     if not privileged:
         # This card was filed by a client-role account, not owner/operator -
         # Henry gets NO hands for it (spine.auth.devices' same distinction:
         # dispatched_by, resolved fresh, not the client billing label).
-        # perm="plan" makes any edit attempt fail at the tool layer, and the
-        # prompt says so up front so the turn doesn't waste itself trying.
+        # The staged round has no tools anyway; the note stops him asking
+        # for a hands round he will not get.
         prompt += (
             "\n\nHINWEIS: Diese Karte wurde von einem client-Account "
-            "eingereicht - du hast in diesem Turn KEINE Haende (nur lesen). "
-            "action \"did\" ist nicht verfuegbar; nutze steer/notify_owner/"
+            "eingereicht - du hast fuer sie KEINE Haende (nur lesen). "
+            "action \"hands\"/\"did\" ist nicht verfuegbar; nutze steer/notify_owner/"
             "ignore.")
     from cells.copilot.chat import copilot as _cp
     try:
-        d = _ask(prompt, perm="plan") if not privileged else _hands_on_ask(prompt)
+        d = _staged_ask(prompt, esc, privileged)
     except _cp.JudgePreempted:
         # the owner wrote while this ran - his message went first; not an
         # attempt (the 2-attempt cap is for judgements, not interruptions)
@@ -586,9 +713,21 @@ def _decide(esc):
     # Full text here too: _audit lands as a `note` in the card's ActionLog, and
     # the card chat RENDERS notes (card_transcript.tsx kind === "note") - so a
     # cut here is a mid-word chat message on the card surface as well.
-    _audit(card, "HENRY entschieden (%s): %s - %s" % (
-        esc["kind"], action,
-        (text + (" | " + why if why else "")) if action == "did" else (why or text)))
+    #
+    # ONE card line per decision. A report-back action ends in _notify_owner,
+    # which writes the full "Henry (kind): action - text" into the card audit
+    # itself (its t is the card) - so this audit line used to land a SECOND
+    # time for the same decision, 1s apart (owner screenshot 2026-10-07). It
+    # now only stands alone where the report-back does not reach the card:
+    # `did` (t=None there), the quiet verbs, and a machine card's DONE.
+    _machine_done = action == "move" and lane == "done" and bool(
+        (_find_track(card) or {}).get("machine"))
+    _reports = action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
+                          "machine_task") or (action == "move" and not _machine_done)
+    if not (_reports and action != "did" and _find_track(card)):
+        _audit(card, "HENRY entschieden (%s): %s - %s" % (
+            esc["kind"], action,
+            (text + (" | " + why if why else "")) if action == "did" else (why or text)))
     # REPORT BACK on every closing action (owner decree 2026-08-21: "if the work
     # is done he doesn't report back") - notify_owner/give-up already push; the
     # quiet successes (did/move/rerun/steer) were invisible until now.
@@ -607,11 +746,7 @@ def _decide(esc):
     # which stays dispatch._accept_machine's own job (it already gets the
     # note/reply there - see move_lane's `note` param) so the two don't both
     # print the same reply for the same event.
-    _machine_done = action == "move" and lane == "done" and bool(
-        (_find_track(card) or {}).get("machine"))
-    if action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
-                  "machine_task") or (
-            action == "move" and not _machine_done):
+    if _reports:
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
