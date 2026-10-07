@@ -707,7 +707,7 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="ios"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>App Store</b></span></a>
       <a class="badge" href="${PLAY_URL}" target="_blank" rel="noopener noreferrer" data-cta="android"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 1.8 13.8 12 3.6 22.2c-.4-.2-.6-.6-.6-1.1V2.9c0-.5.2-.9.6-1.1zM15.2 13.4l2.5 2.5-11.6 6.6zM15.2 10.6 6.1 1.5l11.6 6.6 2.5 1.4c.7.4.7 1.2 0 1.6l-2.5 1.4z"/></svg><span><small data-i="badgePlaySmall">Get it on</small><b>Google Play</b></span></a>
       <a class="badge" href="${MS_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="windows-store"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 11 4.4v7.1H3zM12 4.3 21 3v8.5h-9zM3 12.5h8v7.1L3 18.5zM12 12.5h9V21l-9-1.3z"/></svg><span><small data-i="badgeStoreSmall">Get it from</small><b>Microsoft Store</b></span></a>
-      <a class="badge" href="${dlHref(macArm)}" data-cta="mac"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeDlSmall">Download for</small><b>macOS</b></span></a>
+      <a class="badge" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-cta="mac-store"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg><span><small data-i="badgeIosSmall">Download on the</small><b>Mac App Store</b></span></a>
     </div>
     <a class="watch-link" href="#watch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2h8l.8 3.2A5 5 0 0 1 20 10v4a5 5 0 0 1-3.2 4.7L16 22H8l-.8-3.3A5 5 0 0 1 4 14v-4a5 5 0 0 1 3.2-4.8zM12 7.5a1 1 0 0 0-1 1V12c0 .3.1.5.3.7l2 2a1 1 0 0 0 1.4-1.4L13 11.6V8.5a1 1 0 0 0-1-1z"/></svg><span data-i="watchLink">Also on Apple Watch and Wear OS</span><i aria-hidden="true">&rarr;</i></a>
   </div>
@@ -779,10 +779,11 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <div class="dl-card">
         <h3>macOS</h3>
         <p class="dl-meta">${dlMeta(macArm)}${macArm && macX64 ? " · " : ""}${macX64 ? "Intel " + dlMeta(macX64) : ""}</p>
-        <p class="dl-note" data-i="dlMacNote">Signed &amp; notarized by Apple, opens with no Gatekeeper warning.</p>
+        <p class="dl-note" data-i="dlMacNote">From the Mac App Store or as a direct download, signed &amp; notarized by Apple, opens with no Gatekeeper warning.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Download for Apple Silicon</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Download for Intel</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlMacStoreBtn" data-cta="mac-store">Get it on the Mac App Store</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Direct download (.dmg), Apple Silicon</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Direct download (.dmg), Intel</a>
         </div>
       </div>
       <div class="dl-card">
@@ -1014,7 +1015,7 @@ ${wl("wearables")}
       sub:"Dein Team. Deine KI-Agenten. Ein Rhythmus. Überall.",
       objection:"Deine Agenten laufen auf deinem eigenen PC mit deinem eigenen KI-Konto. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
       heroCtaPrimary:"Loslegen",
-      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
+      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator im Mac App Store laden", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
       heroCtaDemo:"Demo ansehen, 30 Sekunden",
       demoTitle:"HelmDeck in 30 Sekunden",
@@ -1059,8 +1060,9 @@ ${wl("wearables")}
       dlBtn:"Herunterladen",
       dlWinNote:"Direkter Download ohne Store: nicht signiert, Windows warnt. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlWinExeBtn:"Direkter Download (.exe)",
-      dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
-      dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
+      dlMacNote:"Aus dem Mac App Store oder als direkter Download, signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
+      dlMacStoreBtn:"Im Mac App Store laden",
+      dlMacArmBtn:"Direkter Download (.dmg), Apple Silicon", dlMacIntelBtn:"Direkter Download (.dmg), Intel",
       dlIosMeta:"Live im App Store",
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
       dlWinStoreBtn:"Im Microsoft Store laden",
@@ -1095,7 +1097,7 @@ ${wl("wearables")}
       sub:"Your team. Your AI agents. One rhythm. Anywhere.",
       objection:"Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.",
       heroCtaPrimary:"Get started",
-      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
+      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Get the operator on the Mac App Store", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
       heroCtaDemo:"Watch the 30 second demo",
       demoTitle:"HelmDeck in 30 seconds",
@@ -1140,8 +1142,9 @@ ${wl("wearables")}
       dlBtn:"Download",
       dlWinNote:"Direct download without the Store: not signed, Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlWinExeBtn:"Direct download (.exe)",
-      dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
-      dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
+      dlMacNote:"From the Mac App Store or as a direct download, signed & notarized by Apple, opens with no Gatekeeper warning.",
+      dlMacStoreBtn:"Get it on the Mac App Store",
+      dlMacArmBtn:"Direct download (.dmg), Apple Silicon", dlMacIntelBtn:"Direct download (.dmg), Intel",
       dlIosMeta:"Live on the App Store",
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
       dlWinStoreBtn:"Get it from the Microsoft Store",
@@ -1175,7 +1178,7 @@ ${wl("wearables")}
   if (lang !== "de" && lang !== "en") lang = "en";
 
   // Platform-aware primary CTA: the visitor's own download first (Android ->
-  // Play, iPhone/iPad -> App Store, macOS -> arm64 dmg, Windows -> exe),
+  // Play, iPhone/iPad -> App Store, macOS -> Mac App Store, Windows -> exe),
   // everything else scrolls to the download grid. Label follows the language.
   (function(){
     var ua = navigator.userAgent || "", a = document.getElementById("hero-dl");
@@ -1183,12 +1186,12 @@ ${wl("wearables")}
     var key = null, href = null;
     if (/Android/i.test(ua)) { key = "heroCtaAndroid"; href = "${PLAY_URL}"; }
     else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${APP_STORE_URL}"; }
-    else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${dlHref(macArm)}"; }
+    else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${APP_STORE_URL}"; }
     else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${MS_STORE_URL}"; }
     if (key && href && href !== "#downloads") {
       a.setAttribute("data-i", key); a.textContent = I18N[lang][key]; a.href = href;
       if (/^https?:/.test(href)) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
-      var ctaPlatform = { heroCtaAndroid:"android", heroCtaIos:"ios", heroCtaMac:"mac", heroCtaWin:"windows" }[key];
+      var ctaPlatform = { heroCtaAndroid:"android", heroCtaIos:"ios", heroCtaMac:"mac-store", heroCtaWin:"windows" }[key];
       if (ctaPlatform) a.setAttribute("data-cta", ctaPlatform);
     }
   })();

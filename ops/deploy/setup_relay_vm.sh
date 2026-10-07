@@ -86,4 +86,4 @@ echo "==> verifying https://$RELAY_DOMAIN/health"
 curl -s -m 20 "https://$RELAY_DOMAIN/health" && echo
 echo
 echo "Box provisioned. From now on, ship relay updates with:"
-echo "  bash ops/deploy/push_relay.sh"
+echo "  (push_relay.sh no longer exists - the public relay is the Cloudflare worker)"

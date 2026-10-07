@@ -108,7 +108,8 @@ answer.
   bash ops/deploy/ship.sh kt-start                    # BEFORE build_apk.sh
   bash ops/deploy/ship.sh bump                         # BEFORE build_apk.sh
   bash ops/deploy/build_apk.sh
-  bash ops/deploy/push_update.sh                       # the matching OTA, always
+  bash ops/deploy/push_apk.sh                          # APK -> GitHub release; a failure = failed ship
+  bash ops/deploy/push_update.sh                       # the matching OTA, always (never after a failed push_apk)
   bash ops/deploy/ship.sh finalize-native <kt-start>   # AFTER a verified success
   bash ops/deploy/ship.sh revert-bump                  # AFTER a final native failure
   ```
