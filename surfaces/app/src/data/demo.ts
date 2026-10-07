@@ -110,7 +110,7 @@ const SEED: Row[] = [
     // parked ON a background task (Phase 2.5): shows the compact one-line
     // task track (expandable) instead of the "waiting for you" pill.
     // Commands/tool output stay untranslated, like every branch name here.
-    waiting_on: "background",
+    waiting_on: "background", phase: "background",
     bg_tasks: {
       tu1: { title: "npx expo export --platform web", status: "running",
              since: epoch(8), detail: "npx expo export --platform web" },
@@ -121,6 +121,20 @@ const SEED: Row[] = [
              since: epoch(90), updated: epoch(60),
              detail: "eas build --platform android --profile preview" },
     },
+  }),
+  row({
+    id: "d8", task: "Login-Fehler beheben", lane: "working", status: "needs_you", phase: "delivered",
+    turns: 2, priority: "normal", created: iso(90), updated: iso(4),
+  }),
+  row({
+    id: "d9", task: "Datenbank wählen", lane: "working", status: "needs_you", phase: "asking",
+    turns: 2, priority: "hoch", created: iso(80), updated: iso(3),
+    question: { id: "q1", kind: "question", asked: "", questions: [
+      { question: "Soll die Migration SQLite oder Postgres nutzen?", header: "DB", options: [], multiSelect: false }] },
+  }),
+  row({
+    id: "d10", task: "Release-Notes prüfen", lane: "review", status: "needs_you", phase: "ready",
+    turns: 4, priority: "normal", created: iso(70), updated: iso(2),
   }),
   row({
     id: "d5", taskKey: "demo.c5.task", lane: "backlog",

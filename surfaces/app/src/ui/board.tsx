@@ -276,7 +276,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {waitsOnTask(k) ? <Chip text={tr("board.card.waitsOnTask")} dot={t.ai} />
-          : k.status ? <Chip text={statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
+          : k.status ? <Chip text={phaseKey(k) ? tr(phaseKey(k)!) : statusLabel(tr, k.status)} dot={statusColor(t, k.status)} /> : null}
         {/* GxP: only rendered for a card in the regulated scope - t.human is the
             "a person did this" token, so the badge reads as a human obligation
             rather than another machine status. */}
