@@ -9,13 +9,17 @@
 //  native  modules/livemic startStream - AudioRecord on the PHONE mic in
 //          MODE_NORMAL, so the glasses' A2DP route is never touched
 //          (ops/docs/glasses-reference.md:209). ABSENT on an APK built before
-//          the module grew it: dictationMicUsable() says so and the composer
-//          then shows no dictation button at all, rather than one that refuses.
+//          the module grew it. THEN the older `start` + onSegment path is used
+//          (VAD-cut WAV per phrase, re-cut here into the same 0.5 s chunks): the
+//          text arrives phrase by phrase instead of word by word, but the
+//          button never disappears from a phone whose APK is older than the OTA
+//          (measured 2026-10-07: 1.0.51 + the dictation bundle = no mic at all).
 
 import { Platform, PermissionsAndroid } from "react-native";
 import LiveMic from "../../modules/livemic";
 
-export const CHUNK_SAMPLES = 8000;          // 0.5 s @ 16 kHz
+import { CHUNK_SAMPLES, feedWav } from "./dictation_wav";
+export { CHUNK_SAMPLES };
 
 export class MicError extends Error {
   constructor(public reason: "denied" | "blocked" | "unavailable", message: string) { super(message); }
@@ -36,7 +40,7 @@ export function dictationMicUsable(): boolean {
     const w = globalThis as any;
     return !!w.navigator?.mediaDevices?.getUserMedia && !!(w.AudioContext || w.webkitAudioContext);
   }
-  return LiveMic != null && typeof LiveMic.startStream === "function";
+  return LiveMic != null && (typeof LiveMic.startStream === "function" || typeof LiveMic.start === "function");
 }
 
 export async function openDictationMic(o: MicOpts): Promise<MicHandle> {
@@ -47,8 +51,8 @@ export async function openDictationMic(o: MicOpts): Promise<MicHandle> {
 
 async function openNative(o: MicOpts): Promise<MicHandle> {
   const mic = LiveMic;
-  if (!mic || typeof mic.startStream !== "function") {
-    throw new MicError("unavailable", "this build has no streaming microphone");
+  if (!mic || (typeof mic.startStream !== "function" && typeof mic.start !== "function")) {
+    throw new MicError("unavailable", "this build has no microphone module");
   }
   if (Platform.OS === "android") {
     const r = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
@@ -57,10 +61,15 @@ async function openNative(o: MicOpts): Promise<MicHandle> {
     if (r === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) throw new MicError("blocked", "microphone permission blocked");
     if (r !== PermissionsAndroid.RESULTS.GRANTED) throw new MicError("denied", "microphone permission denied");
   }
-  const chunks = mic.addListener("onChunk", (e: { b64?: string }) => { if (e?.b64) o.onChunk(e.b64); });
-  const levels = mic.addListener("onLevel", (e: { level?: number }) => o.onLevel?.(e?.level ?? 0));
+  const legacy = typeof mic.startStream !== "function";
+  const chunks = legacy
+    ? mic.addListener("onSegment", (e: { b64?: string }) => { if (e?.b64) feedWav(e.b64, o.onChunk); })
+    : mic.addListener("onChunk", (e: { b64?: string }) => { if (e?.b64) o.onChunk(e.b64); });
+  const levels = legacy
+    ? mic.addListener("onState", (e: { state?: string }) => o.onLevel?.(e?.state === "speech" ? 0.5 : 0.08))
+    : mic.addListener("onLevel", (e: { level?: number }) => o.onLevel?.(e?.level ?? 0));
   let ok = false;
-  try { ok = await mic.startStream(true); } catch { ok = false; }
+  try { ok = legacy ? await mic.start(true) : await mic.startStream!(true); } catch { ok = false; }
   if (!ok) {
     chunks.remove(); levels.remove();
     throw new MicError("unavailable", "microphone unavailable");

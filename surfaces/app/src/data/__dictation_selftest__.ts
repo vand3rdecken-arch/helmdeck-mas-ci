@@ -5,6 +5,7 @@
 // Run: npx tsc -p tsconfig.dictation.json && node .dictation-out/data/__dictation_selftest__.js
 import { DictationSession, DictationApi, DictationError, chunksToWavB64, isRetryable } from "./dictation";
 import { applyCleanup, undoCleanup } from "./dictation_clean";
+import { feedWav, b64ToBytes, bytesToB64, CHUNK_SAMPLES } from "./dictation_wav";
 
 let fails = 0;
 function check(name: string, cond: unknown, detail?: unknown) {
@@ -241,6 +242,30 @@ async function main() {
       applyCleanup(raw + " " + raw, raw, cleaned) === raw + " " + cleaned);
     check("undo restores the raw text", undoCleanup("x " + cleaned, cleaned, raw) === "x " + raw);
     check("undo is refused once the cleaned text was changed", undoCleanup("x Starte den Build", cleaned, raw) === null);
+  }
+
+  {
+    // legacy microphone: one WAV (44-byte header + PCM16) re-cut into 0.5 s chunks, nothing lost
+    const n = 20000;                                      // 1.25 s of audio = 8000 + 8000 + 4000 samples
+    const pcm = new Uint8Array(n * 2);
+    for (let i = 0; i < pcm.length; i++) pcm[i] = (i * 7 + 3) & 255;
+    const wav = new Uint8Array(44 + pcm.length);
+    wav.set(pcm, 44);
+    const got: Uint8Array[] = [];
+    feedWav(bytesToB64(wav), (b) => got.push(b64ToBytes(b)));
+    check("legacy wav: three chunks of 0.5 s, 0.5 s, 0.25 s", got.length === 3
+      && got[0].length === CHUNK_SAMPLES * 2 && got[1].length === CHUNK_SAMPLES * 2 && got[2].length === 8000, got.map((g) => g.length));
+    const joined = new Uint8Array(got.reduce((a, g) => a + g.length, 0));
+    let o = 0; for (const g of got) { joined.set(g, o); o += g.length; }
+    check("legacy wav: the audio is byte-identical, header dropped", joined.length === pcm.length && joined.every((v, i) => v === pcm[i]));
+    let roundTrips = true;
+    for (const len of [1, 2, 3, 4, 5, 100, 101]) {
+      const u = new Uint8Array(len).map((_, i) => (i * 37 + 11) & 255);
+      const r = b64ToBytes(bytesToB64(u));
+      if (r.length !== len || !r.every((v, i) => v === u[i])) roundTrips = false;
+    }
+    check("base64 round-trips every length (padding)", roundTrips);
+    check("a segment shorter than a header yields no chunk", (() => { let c = 0; feedWav(bytesToB64(new Uint8Array(10)), () => c++); return c === 0; })());
   }
 
   console.log(fails ? `\n${fails} failure(s)` : "\nall passed");
