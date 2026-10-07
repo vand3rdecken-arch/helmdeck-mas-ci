@@ -5721,6 +5721,52 @@ DEBT = [
         "since": "2026-10-07",
         "order": 87,
     },
+    {
+        "id": "dictation-cleanup-ambiguous-words",
+        "title": "Dictation cleanup is a small model plus a closed mishear table - ambiguous misheard words can be corrected to the WRONG term",
+        "status": "open",
+        "what": "spine/media/dictation_cleanup.py asks Haiku to drop fillers, resolve "
+                "self-corrections and fix technical words (MISHEARS table + VOCAB + "
+                "recent chat as context). Measured 2026-10-07 on real calls: clear cases "
+                "are right (Bild/Birg -> Build with context, Brunch -> Branch, GTO -> "
+                "GitHub, 'aeh' and 'nein warte' gone, questions stay questions), but with "
+                "NO chat context 'neuen Bird' came back as 'neuen Branch' (a plausible "
+                "sentence, and wrong) - the strict 'when unsure leave it' rule did not hold.",
+        "why_it_bites": "A wrong technical word that LOOKS right is worse than the "
+                        "misheard one the owner would have spotted. The app shows "
+                        "'Aufgeraeumt - Rueckgaengig' and keeps the raw text one tap away, "
+                        "which is the only safeguard.",
+        "trigger": "an owner report of a dictation that came back with a different word than "
+                   "was said, or a cleanup eval (build one from real dictations) under ~90 %",
+        "fix": "Collect real mishear pairs from undo taps and feed them into MISHEARS; "
+               "optionally apply a correction only when the word is in MISHEARS or the "
+               "chat context names it; build a small labelled eval before widening the vocab.",
+        "since": "2026-10-07",
+        "order": 88,
+    },
+    {
+        "id": "dictation-cleanup-cold-cli-spawn",
+        "title": "Each dictation cleanup spawns a fresh claude CLI: 4-11 s and a node process per call",
+        "status": "paid",
+        "what": "The cleanup runs as a one-shot `claude -p` (measured: 519-1,100 context "
+                "tokens, ~$0.0006-0.0012 notional, 4-11 s wall of which most is process "
+                "boot). The text is inserted at once and the cleaned version swaps in "
+                "later, so the owner never waits - but the daemon spends a spawn per "
+                "dictation and at most 2 run at once.",
+        "why_it_bites": "A burst of dictations queues behind two slots, and the swap may "
+                        "arrive after the owner already sent or edited (then it is "
+                        "correctly refused, i.e. the cleanup is wasted).",
+        "trigger": "cleanup regularly arriving after the owner sent, or CPU spikes while dictating",
+        "fix": "PAID 2026-10-07 (same day, owner: 4-11 s 'zu lange'): ONE warm stream-json "
+               "process, booted when a dictation starts (dictation_stream.start -> "
+               "dictation_cleanup.prewarm), recycled after 6 turns, killed after 10 min "
+               "idle or on a timeout/crash, one request at a time. Measured: 0.6-0.8 s per "
+               "cleanup (browser e2e: 953 ms), $0.0014-0.0018 notional, cost recorded as the "
+               "per-turn delta of the CLI's cumulative total. Switch-off: "
+               "settings.dictation_cleanup_warm=false falls back to the one-shot.",
+        "since": "2026-10-07",
+        "order": 89,
+    },
 ]
 
 def list_debt():

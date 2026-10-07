@@ -71,8 +71,10 @@ def fake_decoder(pcm):
 
 
 WARMS = []
+CLEAN_WARMS = []
 ds.decoder = fake_decoder
 ds.warm = lambda: WARMS.append(1)
+ds.cleanup_warm = lambda: CLEAN_WARMS.append(1)      # never spawn a real model process from a test
 ds.PARTIAL_EVERY_S = 0.0           # decode on every chunk so partials are testable
 
 
@@ -93,6 +95,7 @@ WARMS.clear()
 ds.start("o", "w1")
 time.sleep(0.2)
 check("start loads the speech model in the background", WARMS == [1], WARMS)
+check("start also boots the cleanup model process (so the swap is fast)", CLEAN_WARMS == [1], CLEAN_WARMS)
 ds.warm = lambda: (_ for _ in ()).throw(RuntimeError("model missing"))
 try:
     ds.start("o", "w2")

@@ -1162,6 +1162,11 @@ export const api = {
   dictationFinish: (id: string, finalSeq: number) =>
     req<{ text: string }>("POST", "/voice/dictation/finish", { id, final_seq: finalSeq }),
   dictationCancel: (id: string) => req("POST", "/voice/dictation/cancel", { id }),
+  /** Optional second step: fillers / self-corrections / misheard technical words
+   *  (spine/media/dictation_cleanup.py). Always 200: on any doubt `text` is the input. */
+  dictationClean: (text: string) =>
+    req<{ text: string; changed: boolean; skipped?: string | null; ms?: number }>(
+      "POST", "/voice/dictation/clean", { text }),
   /** Settings > System > Daemon (spine/ops/daemonctl.status): derived, never a flag. */
   daemonStatus: () => req<DaemonStatus>("GET", "/admin/daemon"),
   /** The ONE restart verb: 409 + reason "turn_active" while a card turn is live unless forced. */
