@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -922,43 +923,21 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
     }
   }
 
-  // GLASSES CONVERSATION — hands-free loop through GlassVoiceService (native,
-  // Android only, owner only). The button is an AFFORDANCE, not a status: the
-  // service's own foreground notification is the truth surface for "listening/
-  // speaking" (its state lives outside React and survives this screen). Config
-  // is fetched lazily at start — glance_origin + glance_token come from daemon
-  // settings, and passing the RELAY url instead would fail silently off-LAN
-  // (data/glasses.ts explains which URL is the right one).
-  const glassAvail = useMemo(() => glassVoice.caps().available, []);
-  const [glassOn, setGlassOn] = useState(false);
-  const [glassBusy, setGlassBusy] = useState(false);
-  async function toggleGlasses() {
-    if (glassBusy) return;
-    if (glassOn) { glassVoice.stopListening(); setGlassOn(false); return; }
-    setGlassBusy(true);
-    try {
-      const s = await api.settings().catch(() => null);
-      const origin = (s?.glance_origin || "").trim();
-      const token = (s?.glance_token || "").trim();
-      if (!origin || !token || !glassVoice.configure(origin, token)) {
-        appendReply(++turn.current, {
-          cls: "error",
-          text: tr("chat.glassesUnconfigured"),
-        });
-        return;
-      }
-      // ARM, not listen. `listen` opens the mic from HERE, which is exactly what
-      // made the phone the starting point of a hands-free surface (owner,
-      // 2026-09-04: "das muss in Brille aktiviert werden"). Arming parks the
-      // service on the lens's wake counter instead: the owner then taps Speak on
-      // the GLASSES, as often as he likes, without taking the phone out again.
-      // Falls back to the old behaviour on a binary predating arm(), so an OTA
-      // bundle landing on an older APK still works instead of doing nothing.
-      if (glassVoice.arm() || glassVoice.listen(true)) setGlassOn(true);
-    } finally {
-      setGlassBusy(false);
-    }
-  }
+  // The glasses button and its armed GlassVoiceService are gone from this screen
+  // (owner 2026-10-07: the glass logo + the always-on mic notification). A service
+  // armed by an earlier build outlives the app (START_STICKY) and keeps its
+  // "mic" notification in the status bar - stop it once when the chat opens.
+  // ONCE per install, not per open: stopListening goes through startForegroundService,
+  // so calling it on a quiet phone would itself flash the notification.
+  // No-op where the module is absent. The glasses surface is rebuilt separately.
+  useEffect(() => {
+    const KEY = "helmdeck.glassSvcCleared.v1";
+    void AsyncStorage.getItem(KEY).then((v) => {
+      if (v) return;
+      glassVoice.stopListening();
+      void AsyncStorage.setItem(KEY, "1");
+    }).catch(() => { /* storage unavailable: leave the service alone */ });
+  }, []);
   const header = (
     <View style={{ flexDirection: "row", alignItems: "center", padding: 10, gap: 8 }}>
       {tab ? null : <Pressable onPress={onClose} hitSlop={10}><Ionicons name="chevron-back" size={24} color={t.txtSecondary} /></Pressable>}
@@ -987,13 +966,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
               <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>{waiting}</Text>
             </View>
           ) : null}
-        </Pressable>
-      ) : null}
-      {glassAvail && me?.role === "owner" ? (
-        <Pressable onPress={toggleGlasses} hitSlop={10} style={{ marginLeft: "auto" }}
-                   accessibilityLabel={tr("chat.glassesTalk")}>
-          <Ionicons name="glasses-outline" size={24}
-                    color={glassOn ? t.accent : t.txtSecondary} />
         </Pressable>
       ) : null}
     </View>
