@@ -779,10 +779,11 @@ details[open] summary::before{content:"+"; transform:rotate(45deg)}
       <div class="dl-card">
         <h3>macOS</h3>
         <p class="dl-meta">${dlMeta(macArm)}${macArm && macX64 ? " · " : ""}${macX64 ? "Intel " + dlMeta(macX64) : ""}</p>
-        <p class="dl-note" data-i="dlMacNote">Signed &amp; notarized by Apple, opens with no Gatekeeper warning.</p>
+        <p class="dl-note" data-i="dlMacNote">From the Mac App Store or as a direct download, signed &amp; notarized by Apple, opens with no Gatekeeper warning.</p>
         <div class="dl-actions">
-          <a class="btn btn-primary btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Download for Apple Silicon</a>
-          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Download for Intel</a>
+          <a class="btn btn-primary btn-sm btn-block" href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" data-i="dlMacStoreBtn" data-cta="mac-store">Get it on the Mac App Store</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macArm)}" data-i="dlMacArmBtn" data-cta="mac">Direct download (.dmg), Apple Silicon</a>
+          <a class="btn btn-ghost btn-sm btn-block" href="${dlHref(macX64)}" data-i="dlMacIntelBtn" data-cta="mac">Direct download (.dmg), Intel</a>
         </div>
       </div>
       <div class="dl-card">
@@ -1014,7 +1015,7 @@ ${wl("wearables")}
       sub:"Dein Team. Deine KI-Agenten. Ein Rhythmus. Überall.",
       objection:"Deine Agenten laufen auf deinem eigenen PC mit deinem eigenen KI-Konto. Kein Cloud-Account, kein Code verlässt deinen Rechner.",
       heroCtaPrimary:"Loslegen",
-      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator für macOS installieren", heroCtaWin:"Operator für Windows installieren",
+      heroCtaAndroid:"App für Android laden", heroCtaIos:"App für iPhone laden", heroCtaMac:"Operator im Mac App Store laden", heroCtaWin:"Operator für Windows installieren",
       heroCtaTheses:"Die drei Thesen lesen",
       heroCtaDemo:"Demo ansehen, 30 Sekunden",
       demoTitle:"HelmDeck in 30 Sekunden",
@@ -1059,8 +1060,9 @@ ${wl("wearables")}
       dlBtn:"Herunterladen",
       dlWinNote:"Direkter Download ohne Store: nicht signiert, Windows warnt. „Weitere Informationen“ → „Trotzdem ausführen“.",
       dlWinExeBtn:"Direkter Download (.exe)",
-      dlMacNote:"Signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
-      dlMacArmBtn:"Apple Silicon herunterladen", dlMacIntelBtn:"Intel herunterladen",
+      dlMacNote:"Aus dem Mac App Store oder als direkter Download, signiert & von Apple notarisiert, öffnet ohne Gatekeeper-Warnung.",
+      dlMacStoreBtn:"Im Mac App Store laden",
+      dlMacArmBtn:"Direkter Download (.dmg), Apple Silicon", dlMacIntelBtn:"Direkter Download (.dmg), Intel",
       dlIosMeta:"Live im App Store",
       dlIosNote:"Weltweit im App Store verfügbar. Die Apple-Watch-App ist im selben Paket, kein separater Download.",
       dlWinStoreBtn:"Im Microsoft Store laden",
@@ -1095,7 +1097,7 @@ ${wl("wearables")}
       sub:"Your team. Your AI agents. One rhythm. Anywhere.",
       objection:"Your agents run on your own PC with your own AI account. No cloud account, no code leaves your machine.",
       heroCtaPrimary:"Get started",
-      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Install the operator for macOS", heroCtaWin:"Install the operator for Windows",
+      heroCtaAndroid:"Get the app for Android", heroCtaIos:"Get the app for iPhone", heroCtaMac:"Get the operator on the Mac App Store", heroCtaWin:"Install the operator for Windows",
       heroCtaTheses:"Read the three theses",
       heroCtaDemo:"Watch the 30 second demo",
       demoTitle:"HelmDeck in 30 seconds",
@@ -1140,8 +1142,9 @@ ${wl("wearables")}
       dlBtn:"Download",
       dlWinNote:"Direct download without the Store: not signed, Windows will warn you. Click \\u201cMore info\\u201d → \\u201cRun anyway\\u201d.",
       dlWinExeBtn:"Direct download (.exe)",
-      dlMacNote:"Signed & notarized by Apple, opens with no Gatekeeper warning.",
-      dlMacArmBtn:"Download for Apple Silicon", dlMacIntelBtn:"Download for Intel",
+      dlMacNote:"From the Mac App Store or as a direct download, signed & notarized by Apple, opens with no Gatekeeper warning.",
+      dlMacStoreBtn:"Get it on the Mac App Store",
+      dlMacArmBtn:"Direct download (.dmg), Apple Silicon", dlMacIntelBtn:"Direct download (.dmg), Intel",
       dlIosMeta:"Live on the App Store",
       dlIosNote:"Available worldwide on the App Store. The Apple Watch app ships in the same package, no separate download.",
       dlWinStoreBtn:"Get it from the Microsoft Store",
@@ -1175,7 +1178,7 @@ ${wl("wearables")}
   if (lang !== "de" && lang !== "en") lang = "en";
 
   // Platform-aware primary CTA: the visitor's own download first (Android ->
-  // Play, iPhone/iPad -> App Store, macOS -> arm64 dmg, Windows -> exe),
+  // Play, iPhone/iPad -> App Store, macOS -> Mac App Store, Windows -> exe),
   // everything else scrolls to the download grid. Label follows the language.
   (function(){
     var ua = navigator.userAgent || "", a = document.getElementById("hero-dl");
@@ -1183,12 +1186,12 @@ ${wl("wearables")}
     var key = null, href = null;
     if (/Android/i.test(ua)) { key = "heroCtaAndroid"; href = "${PLAY_URL}"; }
     else if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) { key = "heroCtaIos"; href = "${APP_STORE_URL}"; }
-    else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${dlHref(macArm)}"; }
+    else if (/Macintosh/i.test(ua)) { key = "heroCtaMac"; href = "${APP_STORE_URL}"; }
     else if (/Windows/i.test(ua)) { key = "heroCtaWin"; href = "${MS_STORE_URL}"; }
     if (key && href && href !== "#downloads") {
       a.setAttribute("data-i", key); a.textContent = I18N[lang][key]; a.href = href;
       if (/^https?:/.test(href)) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
-      var ctaPlatform = { heroCtaAndroid:"android", heroCtaIos:"ios", heroCtaMac:"mac", heroCtaWin:"windows" }[key];
+      var ctaPlatform = { heroCtaAndroid:"android", heroCtaIos:"ios", heroCtaMac:"mac-store", heroCtaWin:"windows" }[key];
       if (ctaPlatform) a.setAttribute("data-cta", ctaPlatform);
     }
   })();
