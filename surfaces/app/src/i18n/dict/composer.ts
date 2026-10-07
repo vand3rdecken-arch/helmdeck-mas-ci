@@ -124,7 +124,7 @@ export const composer: Dict = {
   "dictation.empty": { de: "Nichts verstanden", en: "Didn't catch anything" },
   "dictation.failed": { de: "Diktat fehlgeschlagen", en: "Dictation failed" },
   "dictation.micDenied": { de: "Mikrofon nicht erlaubt", en: "Microphone not allowed" },
-  "dictation.micBlocked": { de: "Mikrofon dauerhaft gesperrt", en: "Microphone blocked" },
+  "dictation.micBlocked": { de: "Mikrofon gesperrt", en: "Microphone blocked" },
   "dictation.openSettings": { de: "Einstellungen öffnen", en: "Open settings" },
   "dictation.micUnavailable": { de: "Mikrofon nicht verfügbar", en: "Microphone unavailable" },
   "voice.thinkingSecs": { de: "Henry denkt nach… {s}s", en: "Henry is thinking… {s}s" },

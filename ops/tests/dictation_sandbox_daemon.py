@@ -46,10 +46,22 @@ if os.path.isdir(real) and not os.path.exists(link):
     subprocess.run(["cmd", "/c", "mklink", "/J", link, real], check=True, capture_output=True)
 
 db.init()
-auth.create_user("owner", "hunter2hunter2", "owner")
+try:
+    auth.create_user("owner", "hunter2hunter2", "owner")
+except ValueError:                      # a re-run over the same sandbox keeps its owner
+    pass
 
 from http.server import ThreadingHTTPServer               # noqa: E402
 from spine.http.server import H                           # noqa: E402
+
+# The real handler is silent (log_message is a no-op). A sandbox exists to be
+# observed, so it logs one line per request: method, path, status is not
+# available here, but WHICH calls arrived is what the device tests need
+# (did the phone really send chunks, did it call finish).
+def _log(self, *a):
+    print("REQ %s %s" % (self.command, self.path.split("?")[0]))
+    sys.stdout.flush()
+H.log_message = _log
 srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 print("sandbox : %s" % SANDBOX)

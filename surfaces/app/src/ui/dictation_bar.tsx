@@ -52,7 +52,7 @@ export function DictationBar({ d, inline = false }: { d: Dict; inline?: boolean 
           <Text testID="dictation-timer" style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "700",
             fontVariant: ["tabular-nums"] }}>{mmss(d.seconds)}</Text>
         </View>
-        <Text testID="dictation-sub" numberOfLines={1} ellipsizeMode={state === "recording" ? "head" : "tail"}
+        <Text testID="dictation-sub" numberOfLines={failed ? 2 : 1} ellipsizeMode={state === "recording" ? "head" : "tail"}
           style={{ color: failed ? t.danger : t.txtSecondary, fontSize: 12, marginTop: 1 }}>{sub}</Text>
       </View>
 
