@@ -19,6 +19,7 @@ import { BackgroundTasks } from "@/ui/card_background";
 import { Composer, type Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
+import { foldCompaction, type CompactionEvent, type CompactionFields } from "@/ui/compaction_marker";
 import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
 import { ThreadList } from "@/ui/chat_threads";
 import { UnsentStrip } from "@/ui/outbox_strip";
@@ -95,6 +96,13 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // Henry filed/steered a card: the topic continues in that card's thread -
   // draw the hand-over as a tile, not as a sentence about plumbing.
   // A delegated RUN (hands / background agent): a live tile, not a sentence.
+  // Paseo's compaction item: ONE typed row (spinner, then the divider), never prose
+  if (m.cls === "compaction") {
+    const c = m as unknown as CompactionFields;
+    return { role: "system", kind: "compaction", cls: m.cls, text: "", ts: m.ts, ta: c.ta, cid: c.cid,
+             event: c.event as CompactionEvent, trigger: c.trigger, pre_tokens: c.pre_tokens, post_tokens: c.post_tokens,
+             duration_ms: c.duration_ms };
+  }
   if (m.cls === "act" && (m.hands || m.run)) {
     const hands = !!m.hands;
     return { role: "assistant", kind: "run", cls: m.cls, run: m.hands || m.run, runKind: hands ? "hands" : "agent",
@@ -1025,7 +1033,7 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
                   by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })}
                 onJump={(y) => scroll.current?.toY(y)}
                 steps={(() => {
-                const s = msgs.map((m) => withLive(toStep(m, me?.name, tr)));
+                const s = foldCompaction(msgs.map((m) => withLive(toStep(m, me?.name, tr))));
                 // STATIC, local-only greeting (no daemon call, no turn, no
                 // cost) - never persisted, so it renders again every time
                 // this stays true and disappears the moment either half

@@ -568,17 +568,15 @@ def await_compaction(tid, log=None, timeout=_COMPACT_IDLE_S):
     ev = compacting(tid)
     if ev is None:
         return False
-    if log:
-        log.log("note", "⏳ Verdichtung laeuft - deine Anweisung startet direkt danach "
-                        "(der Verlauf bleibt erhalten).")
+    # No note here: the card feed already carries the compaction's own
+    # status row (spinner, drivers._compaction_item). The old "Verdichtung
+    # laeuft" note was written once PER WAITER, so two steers meant two lines.
     if ev.wait(timeout):
         return False
     # Wedged past its own idle bound: the owner goes first, but we record WHY
     # it ended so the shrink check below never reads this as "unsupported".
+    # The row is settled to `interrupted` by _maybe_compact; it is re-queued.
     _compact_interrupted.add(tid)
-    if log:
-        log.log("note", "Verdichtung haengt - wird abgebrochen, deine Anweisung geht vor. "
-                        "Sie wird beim naechsten Leerlauf nachgeholt.")
     return True
 
 
@@ -651,6 +649,7 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
     False (he can see the meter; his ask outranks our probe). Returns the fresh
     track (or None if nothing was done)."""
     global _autocompact_supported
+    from spine.agent import drivers
     if _autocompact_supported is False and not force:
         return None
     ctx = t.get("ctx_tokens", 0)
@@ -688,15 +687,11 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
     # read as evidence about the CLI. One compaction per card, always.
     with _compacting_guard:
         if tid in _compacting:
-            log.log("note", "Verdichtung laeuft bereits - kein zweiter Durchlauf.")
-            return None
+            return None                   # the running one already shows its status row
         done = _threading.Event()
         _compacting[tid] = done
     _compact_interrupted.discard(tid)
     marks0 = _compact_marks(t.get("session_id"))
-    pct = min(100, round(ctx / window * 100))
-    log.log("note", "AUTO-COMPACT: Kontext bei %d%% (~%dk) - ich verdichte die Session, "
-            "damit der Verlauf erhalten bleibt und es weitergeht." % (pct, round(ctx / 1000)))
     # The watchdog here is the SILENCE bound only (see _COMPACT_IDLE_S above for
     # why it is no longer the 180s that killed the 183k compaction mid-work).
     # The 2026-08-15 concern it replaces - a wedged compact turn blocking every
@@ -715,18 +710,13 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
         if _compact_marks(t.get("session_id")) > marks0:
             _autocompact_supported = True
             _mark_compact_pending(tid, False)
-            log.log("note", "AUTO-COMPACT ok: die Verdichtung steht im Transkript - der "
-                            "CLI-Prozess ist danach nur nicht sauber beendet (%s). "
-                            "Die Session ist verdichtet, der naechste Turn startet auf "
-                            "dem kleinen Kontext." % str(e)[:120])
+            drivers.settle_compaction(t["run_dir"], "completed", pre_tokens=ctx)
             return None
         # Genuinely nothing landed. Not evidence about /compact support either -
         # same "learned nothing" case as an interrupt - so re-queue, or the card
         # silently keeps its full context forever.
         _mark_compact_pending(tid, True)
-        log.log("note", "AUTO-COMPACT abgebrochen (%s) - nichts gelernt, Session "
-                        "unveraendert. Wird beim naechsten Leerlauf nachgeholt."
-                % str(e)[:160])
+        drivers.settle_compaction(t["run_dir"], "interrupted")
         return None
     finally:
         with _compacting_guard:
@@ -765,23 +755,15 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
     if cm:
         _autocompact_supported = True
         _mark_compact_pending(tid, False)
-        post = cm.get("post_tokens")
-        dur = cm.get("duration_ms")
-        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%sk (vorher ~%dk, %s) - Verlauf "
-                "verdichtet, es geht ohne Unterbrechung weiter."
-                % (round(post / 1000) if post else "?", round(before / 1000),
-                   ("%ds" % round(dur / 1000)) if dur else "Dauer unbekannt"))
-        return t
+        return t                          # the driver already wrote the completed row
     if interrupted:
         _mark_compact_pending(tid, True)
-        log.log("note", "AUTO-COMPACT unterbrochen - nichts gelernt, nichts verloren. "
-                "Wird beim naechsten Leerlauf automatisch nachgeholt.")
+        drivers.settle_compaction(t["run_dir"], "interrupted")
         return t
     if after <= before * 0.75:            # a real compaction frees a big chunk
         _autocompact_supported = True
         _mark_compact_pending(tid, False)
-        log.log("note", "AUTO-COMPACT ok: Kontext jetzt ~%dk - Verlauf verdichtet, es geht "
-                "ohne Unterbrechung weiter." % round(after / 1000))
+        drivers.settle_compaction(t["run_dir"], "completed", pre_tokens=before, post_tokens=after)
     elif _compact_marks(t.get("session_id")) > marks0:
         # The context figure did not move but the CLI DID write a compaction.
         # The reading is stale, not the compaction absent: ctx_tokens comes from
@@ -791,8 +773,7 @@ def _maybe_compact(t, log, force=False, idle_timeout=None):
         # alone is how a working compaction got switched off.
         _autocompact_supported = True
         _mark_compact_pending(tid, False)
-        log.log("note", "AUTO-COMPACT ok: Verdichtung im Transkript. Das Kontext-Meter "
-                        "steht erst beim naechsten Turn wieder richtig.")
+        drivers.settle_compaction(t["run_dir"], "completed", pre_tokens=before)
     else:
         _autocompact_supported = False
         _mark_compact_pending(tid, False)
@@ -848,9 +829,7 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if (text or "").strip().lower() == "/compact":
         log.log("steer", text)
         if compacting(tid) is not None:
-            log.log("note", "Verdichtung laeuft bereits - dein /compact wartet nicht "
-                            "doppelt, das Ergebnis kommt gleich.")
-            return t
+            return t                       # its status row is already in the feed
         if drivers.turn_inflight(tid):     # queued counts: it is about to run
             _mark_compact_pending(tid, True)
             log.log("note", "Ein Turn laeuft - die Session wird direkt danach verdichtet "

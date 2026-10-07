@@ -10,6 +10,7 @@ import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
 import { RunTile, type RunLive } from "./run_tile";
+import { CompactionMarker, type CompactionEvent, type CompactionFields } from "./compaction_marker";
 import type { ReplyRef } from "@/data/client";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
@@ -32,14 +33,14 @@ export interface TurnUsage {
   input_tokens?: number; output_tokens?: number;
   cache_creation_input_tokens?: number; cache_read_input_tokens?: number;
 }
-export interface TStep {
+export interface TStep extends Omit<CompactionFields, "event"> {
   role?: string;
   kind?: "text" | "thinking" | "tool" | "result" | "todos" | "plan" | "compaction" | "system" | "note" | "turn" | "error" | string;
   cls?: string;
   text?: string; tool?: string; label?: string; result?: string; ok?: boolean; running?: boolean; abandoned?: boolean; ts?: string;
   status?: ToolStatus;           // the 4-state tool-call model
   error?: string | null;         // non-null exactly when status === "failed"
-  event?: TurnEvent;             // kind === "turn": which lifecycle edge
+  event?: TurnEvent | CompactionEvent;   // kind "turn": lifecycle edge; kind "compaction": its state
   usage?: TurnUsage; cost?: number | null;   // turn-end economics (kind === "turn")
   tokIn?: number; tokOut?: number; cacheRead?: number; cacheWrite?: number; ctx?: number;  // kind === "usage": per-turn tokens
   ta?: number;   // absolute epoch (seconds) — the sound sort/merge key
@@ -504,6 +505,9 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
             </View>
           </View>);
+        // a typed compaction item (event set) is Paseo's CompactionMarker; the
+        // event-less step is the session-chain break divider (`prev`) below
+        if (kind === "compaction" && s.event) return <CompactionMarker key={key} s={s} />;
         if (kind === "compaction") return (
           <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ {tr("transcript.compacted")}{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>

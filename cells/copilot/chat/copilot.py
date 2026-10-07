@@ -1475,6 +1475,19 @@ def _compact_mark(st):
     return overflow, "overflow"
 
 
+def _compact_row(user, cid, event, **fields):
+    """Write ONE state of the board chat's compaction item (Paseo's
+    CompactionTimelineItem: loading -> completed). The log is append-only, so
+    each state is its own row sharing `cid`; the client folds rows by cid and
+    shows the last state at the first row's position. Returns the cid."""
+    cid = cid or "c" + uuid.uuid4().hex[:12]
+    text = ("Verlauf verdichtet" if event == "completed" else
+            "Verdichtung unterbrochen" if event == "interrupted" else "Verdichte den Verlauf")
+    _append_log(user, [dict({"cls": "compaction", "cid": cid, "event": event, "text": text,
+                             "ts": time.strftime("%H:%M"), "ta": time.time()}, **fields)])
+    return cid
+
+
 def _schedule_compact(user):
     """Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
@@ -1517,7 +1530,7 @@ def _schedule_compact(user):
             # is re-checked UNDER the lock, not just before it.
             lk = _await_lull_and_lock(user)
             try:
-                note = _maybe_compact(user)
+                _maybe_compact(user)
             finally:
                 lk.release()
             # The compaction dropped the warm port (_persist_drop). Respawn it
@@ -1525,9 +1538,6 @@ def _schedule_compact(user):
             # a cold spawn is ~4-6s to the first model output on this box
             # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
             prewarm(user, spoken=False)
-            if note:
-                _append_log(user, [{"cls": "act", "text": note,
-                                    "ts": time.strftime("%H:%M")}])
         except Exception:
             pass                 # best-effort, same contract as _maybe_compact
         finally:
@@ -1729,6 +1739,7 @@ def _maybe_compact(user):
             "--verbose", "--permission-mode", "plan", "--resume", sid]
     cmd = drivers._cmd_line(argv)
     result, new_sid, after_usage, compaction = {}, sid, {}, None
+    cid, row_open = None, False        # the chat's compaction item (see _compact_row)
     try:
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
@@ -1744,12 +1755,16 @@ def _maybe_compact(user):
                 continue
             typ = ev.get("type")
             if typ == "system":
+                # Paseo: `status: compacting` opens the item, the boundary completes it.
+                if ev.get("subtype") == "status" and ev.get("status") == "compacting" and not cid:
+                    cid, row_open = _compact_row(user, None, "loading"), True
                 # THE RUNTIME'S OWN VERDICT (drivers._compact_metadata reads the
                 # same frame for cards): a compact_boundary frame means the
                 # compaction COMPLETED, and it carries the post-compaction
                 # context size - the only trustworthy "after" in this turn.
                 if ev.get("subtype") == "compact_boundary":
                     compaction = drivers._compact_metadata(ev)
+                    cid, row_open = _compact_row(user, cid, "completed", **compaction), False
                 if ev.get("session_id"):
                     new_sid = ev["session_id"]
             elif typ == "assistant":
@@ -1763,6 +1778,8 @@ def _maybe_compact(user):
         except Exception:
             pass
     except Exception:
+        if row_open:
+            _compact_row(user, cid, "interrupted")   # never leave a spinner behind
         return None   # best-effort - never let compaction break the chat
     sid_final = result.get("session_id") or new_sid
     all_st = _stats()
@@ -1840,6 +1857,9 @@ def _maybe_compact(user):
     if not proven:
         proven = sessions._compact_marks(sid_final) > (marks0 if sid_final == sid else 0)
     _compact_verdict(skey, proven)
+    if row_open or (proven and not cid):    # the runtime never closed it / never opened it
+        _compact_row(user, cid, "completed" if proven else "interrupted",
+                     **({"pre_tokens": ctx, "post_tokens": after or None} if proven else {}))
     if not proven:
         # Nothing was proven - and that is NOT "this CLI cannot compact". Stay
         # silent in the chat (no per-turn pollution) and let the backoff retry.
