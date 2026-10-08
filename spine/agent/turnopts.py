@@ -326,10 +326,26 @@ def list_models():
     for m in _settings_models():
         if m["id"] not in ids:
             ids.add(m["id"]); models.append(m)
-    for m in OPENCODE_MODELS:
-        if m["id"] not in ids:
-            ids.add(m["id"]); models.append(dict(m))
+    # only what can RUN (owner 2026-10-08: "die App soll selbst bemerken, was
+    # funktioniert"): opencode/* ids were offered on a box with no `opencode`
+    # binary and the turn died "[WinError 2] file not found". The engine
+    # probe (cached, re-checked every 60s on a miss) is the one owner of
+    # "installed"; dropping the ids here also drops them from _allowed_ids, so
+    # a stale pick resolves to the default model instead of a dead engine.
+    if _engine_ready("opencode"):
+        for m in OPENCODE_MODELS:
+            if m["id"] not in ids:
+                ids.add(m["id"]); models.append(dict(m))
     return models
+
+
+def _engine_ready(name):
+    try:
+        from spine.agent import engines
+        e = engines.entry(name)
+        return bool(e.get("enabled")) and e.get("status") == "ready"
+    except Exception:                                            # noqa: BLE001
+        return False
 
 
 def _allowed_ids():

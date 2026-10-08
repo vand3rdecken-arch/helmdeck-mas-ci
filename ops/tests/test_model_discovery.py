@@ -82,7 +82,7 @@ with db.conn() as c:
     c.execute("DELETE FROM runtime_doc WHERE key=?", (turnopts._MODELS_CACHE_KEY,))
 turnopts._fetch_models = lambda: None
 models = turnopts.list_models()
-ids = {m["id"] for m in models}
+ids = {m["id"] for m in models if not m["id"].startswith("opencode/")}   # engine-gated, see 6)
 check(ids == {m["id"] for m in turnopts.CLAUDE_MODELS},
       "no token/offline with no cache -> exactly the manifest, never empty")
 check(len(models) > 0, "the picker is never empty even fully offline")
@@ -94,6 +94,29 @@ check(turnopts.DEFAULT_ROUTING_POLICY["auto_model"] == "claude-sonnet-5-5",
 picked = turnopts.pick_model("please fix the flaky test in ci")
 check(picked == "claude-sonnet-5-5",
       "an ordinary Auto turn still routes to Sonnet 5.5 (%r), not a newly discovered model" % picked)
+
+# 6) only what can RUN reaches the picker (owner 2026-10-08: "die App soll
+#    selbst bemerken, was funktioniert") - opencode/* ids were offered with no
+#    `opencode` binary installed and the turn died "[WinError 2]"
+from spine.agent import engines
+_orig_entry = engines.entry
+FREE = turnopts.OPENCODE_MODELS[0]["id"]
+try:
+    engines.entry = lambda name, refresh=False: {"enabled": True, "status": "unavailable"}
+    ids = {m["id"] for m in turnopts.list_models()}
+    check(not any(i.startswith("opencode/") for i in ids),
+          "engine not installed -> no opencode/* model in the picker")
+    check(turnopts.resolve_model(FREE, "hallo") == (None, ""),
+          "a stale opencode pick resolves to the default model, not a dead engine")
+    engines.entry = lambda name, refresh=False: {"enabled": True, "status": "ready"}
+    ids = {m["id"] for m in turnopts.list_models()}
+    check(FREE in ids, "engine ready -> the opencode models are offered again")
+    check(turnopts.resolve_model(FREE, "hallo")[0] == FREE, "...and an explicit pick of one is honoured")
+    engines.entry = lambda name, refresh=False: {"enabled": False, "status": "ready"}
+    check(FREE not in {m["id"] for m in turnopts.list_models()},
+          "engine switched off in settings -> not offered")
+finally:
+    engines.entry = _orig_entry
 
 print()
 if _fails:
