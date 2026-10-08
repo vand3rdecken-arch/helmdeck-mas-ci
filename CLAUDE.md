@@ -66,6 +66,24 @@ well-formed → propose the commit when work goes quiet).
   `sessions.resume_detached` (the session pointer only advances on proof).
   A heuristic reconstruction that ships anyway is a SHORTCUT -> register it in
   `spine/registry/debt.py` in the same commit.
+- DATA MODEL FIRST (owner-decreed 2026-10-08): before ANY new state, config or
+  secret, read where the data model already puts that kind of thing and NAME
+  the home and why the neighbours are wrong - THEN build. Look at
+  `spine/storage/db.py` (tables), the owner module of the nearest layer
+  (`userconfig.py`, `projectconfig.py`, `settings`) and what exports/backups
+  copy. The layers are scoped, not interchangeable: per-account VIEW prefs
+  (`user_config`, closed whitelist, any role may write, exported), workspace
+  policy (`workspace_config` / settings, owner-only), per-project overlay
+  (`project_config`). A thing that fits none gets its OWN table with the same
+  shape, a ledger migration, a validator + size bound, a drop on account
+  delete and a guard against export - it is never squeezed into the closest
+  existing one. SECRETS (API keys, tokens): per ACCOUNT, in the db, encrypted
+  at rest (backups and checkpoints copy the db), entered through the UI, never
+  returned by an endpoint (set/hint only), never in a file, a log or an
+  export, used for the account that dispatched the work and never silently
+  falling back to the owner's. Proposing `settings.json` or a plain env row
+  for a secret is the failure this law exists for. Say the decision in one
+  line before the code (`home: X, because Y, not Z because W`).
 <!-- /henry-laws -->
 
 ## Run / verify
