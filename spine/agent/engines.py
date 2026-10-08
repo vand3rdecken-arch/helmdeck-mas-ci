@@ -212,7 +212,7 @@ def _probe(name, defn):
     return entry
 
 
-def models_of(name):
+def models_of(name, account=None):
     """The models THIS engine can run - the catalog half of the engine, so an
     engine and its models are ONE thing (owner 2026-10-08: "Engine und Modell
     muessen zusammengehoeren"). claude-type engines carry the Claude catalog,
@@ -225,37 +225,47 @@ def models_of(name):
         if kind == "claude":
             return turnopts.claude_models()
         if kind == "opencode":
+            # what the CLI itself lists for THIS account's keys; the hand list
+            # is only the seed (opencode_models.py says why)
+            from spine.agent import opencode_models
+            if _cached_ready("opencode"):
+                return opencode_models.catalog(account or "")
             return [dict(m) for m in turnopts.OPENCODE_MODELS]
     except Exception:              # noqa: BLE001 - the registry must never crash a route
         pass
     return []
 
 
-def entry(name, refresh=False):
+def _cached_ready(name):
+    hit = _cache.get(name)
+    return bool(hit and hit[0] > time.time() and hit[1].get("status") == "ready")
+
+
+def entry(name, refresh=False, account=None):
     defn = _definition(name)
     now = time.time()
     with _lock:
         hit = _cache.get(name)
         if hit and not refresh and hit[0] > now:
             e = dict(hit[1])
-            e["models"] = models_of(name)
+            e["models"] = models_of(name, account)
             return e
     e = _probe(name, defn)
     ttl = PROBE_HIT_TTL if e["status"] == "ready" else PROBE_MISS_TTL
     with _lock:
         _cache[name] = (time.time() + ttl, e)
     e = dict(e)
-    e["models"] = models_of(name)
+    e["models"] = models_of(name, account)
     return e
 
 
-def snapshot(refresh=False):
+def snapshot(refresh=False, account=None):
     """All selectable engines with live status - what /engines serves and
     the New-Request picker renders. Builtin order first, then any extra
     settings-only drivers."""
     names = [e["id"] for e in BUILTIN]
     names += sorted(n for n in _settings_drivers() if n not in _BY_ID)
-    return [entry(n, refresh=refresh) for n in names]
+    return [entry(n, refresh=refresh, account=account) for n in names]
 
 
 def check_selectable(name):
@@ -274,7 +284,7 @@ def check_selectable(name):
     return None
 
 
-def check_pair(name, model):
+def check_pair(name, model, account=None):
     """Refuse an (engine, model) pair the engine cannot run, or None. The
     engine and its model are chosen TOGETHER, so a card cannot be filed on
     `claude` with an `opencode/*` model (or the reverse) and quietly run on
@@ -284,7 +294,7 @@ def check_pair(name, model):
     m = (model or "").strip()
     if m in ("", "auto"):
         return None
-    models = models_of(name)
+    models = models_of(name, account)
     if not models:
         return None
     try:

@@ -19,7 +19,9 @@ from spine.storage import db
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")
 db.init()
 
-from spine.agent import engines, turnopts
+from spine.agent import engines, turnopts, opencode_models
+
+opencode_models.discover = lambda account="": None     # hermetic: no CLI, the seed answers
 
 FAILS = []
 

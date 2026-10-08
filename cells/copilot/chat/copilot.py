@@ -2735,7 +2735,7 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
     Bypass for the Claude-Code persistent process: `opencode/*` ids cannot run
     on the `claude` CLI. One-shot via opencode_driver (dedicated `opencode
     serve` per conversation key), same return shape as chat(). Quality gate:
-    poor free reply retries ONCE on turnopts.FALLBACK_MODEL.
+    poor free reply retries ONCE on turnopts.fallback_model(user) - "" = no retry.
     """
     from spine.agent import livebuf, turnopts
     from spine.agent import opencode_driver
@@ -2752,16 +2752,17 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
     except Exception as e:                                     # noqa: BLE001
         reply = "OpenCode-Turn fehlgeschlagen: %s" % str(e)[:300]
         meta, sid = {"models": [cli_model]}, sess.get(skey)
-    if turnopts.is_poor_reply(reply) and cli_model != turnopts.FALLBACK_MODEL:
+    fb = turnopts.fallback_model(user)
+    if fb and turnopts.is_poor_reply(reply) and cli_model != fb:
         try:
             from spine.ops.actionlog import ActionLog as _AL
-            _AL(run_dir).log("note", "Free-Modell antwortete leer - Fallback %s." % turnopts.FALLBACK_MODEL)
+            _AL(run_dir).log("note", "Free-Modell antwortete leer - Fallback %s." % fb)
         except Exception:                                      # noqa: BLE001
             pass
         try:
             sid, reply, meta = opencode_driver.run(
-                {"type": "opencode", "model": turnopts.FALLBACK_MODEL}, base, prompt)
-            cli_model = turnopts.FALLBACK_MODEL
+                {"type": "opencode", "model": fb}, base, prompt)
+            cli_model = fb
         except Exception:                                      # noqa: BLE001
             pass
     if sid:

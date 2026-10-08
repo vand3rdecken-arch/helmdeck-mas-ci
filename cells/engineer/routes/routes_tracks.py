@@ -363,7 +363,7 @@ def tracks_new_post(self, user, body):
     if bad:
         return self._send(400, json.dumps({"error": bad}))
     model = body.get("model", "")
-    bad = engines.check_pair(driver, model)       # engine + model are one choice
+    bad = engines.check_pair(driver, model, user["name"])       # engine + model are one choice
     if bad:
         return self._send(400, json.dumps({"error": bad}))
     attachments = body.get("attachments")

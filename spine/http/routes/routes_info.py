@@ -112,7 +112,7 @@ def loop_map_get(self, user):
 
 def models_get(self, user):
     from spine.agent import turnopts
-    return self._send(200, json.dumps(turnopts.list_models()))
+    return self._send(200, json.dumps(turnopts.list_models((user or {}).get("name"))))
 
 
 def harness_get(self, user):
@@ -158,7 +158,8 @@ def engines_get(self, user):
     from spine.agent import engines
     q = parse_qs(urlparse(self.path).query)
     refresh = (q.get("refresh") or ["0"])[0] in ("1", "true")
-    return self._send(200, json.dumps({"engines": engines.snapshot(refresh=refresh)},
+    return self._send(200, json.dumps({"engines": engines.snapshot(
+        refresh=refresh, account=(user or {}).get("name"))},
                                       ensure_ascii=False))
 
 

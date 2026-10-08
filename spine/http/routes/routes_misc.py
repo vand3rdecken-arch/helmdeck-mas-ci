@@ -336,6 +336,25 @@ def me_providers_put(self, user, body):
     return self._send(200, json.dumps(dict(_providers_view(user), ok=True)))
 
 
+def me_providers_test_post(self, user, body):
+    """Does MY key for this provider WORK? One real minimal request through the
+    CLI (opencode_models.test) - listing models proves nothing, the CLI lists
+    them for a dummy key too. The outcome is stored (no secret in it) so the
+    settings screen shows it without spending another request."""
+    from spine.agent import opencode_models
+    from spine.storage import usersecrets
+    provider = body.get("provider")
+    if provider not in usersecrets.PROVIDERS:
+        return self._send(400, json.dumps({"error": "unknown provider"}))
+    if not usersecrets.may_store(user["role"]):
+        return self._send(403, json.dumps({"error": "this role cannot test provider keys"}))
+    if provider != "opencode" and not usersecrets.get(user["name"], provider):
+        return self._send(400, json.dumps({"error": "no key stored for this provider"}))
+    res = opencode_models.test(user["name"], provider, str(body.get("model") or ""))
+    usersecrets.record_test(user["name"], provider, res)
+    return self._send(200, json.dumps(dict(res, **_providers_view(user))))
+
+
 def me_providers_delete(self, user, _q):
     from spine.storage import usersecrets
     from spine.auth.auth import _audit
@@ -363,6 +382,7 @@ POST_ROUTES = {
     "/voice/dictation/finish": voice_dictation_finish_post,
     "/voice/dictation/cancel": voice_dictation_cancel_post,
     "/voice/dictation/clean": voice_dictation_clean_post,
+    "/me/providers/test": me_providers_test_post,
 }
 PUT_ROUTES = {
     "/me/config": me_config_put,

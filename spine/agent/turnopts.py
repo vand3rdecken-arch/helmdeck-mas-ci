@@ -35,34 +35,35 @@ CLAUDE_MODELS = [
 # friendly aliases still resolve (older drafts / Auto internals)
 _ALIAS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5", "opus": "claude-opus-5"}
 
-# OpenCode Zen gateway models selectable via the `opencode` driver
-# (spine/agent/opencode_driver.py, engines.py builtin "opencode").
-# Free-first per owner request: user picks via /models composer chip,
-# turnopts only whitelists - engine routing is engine_for() below.
-# IDs keep the `opencode/<model-id>` shape OpenCode itself documents
-# (opencode.json `"model": "opencode/gpt-5.5"`).
+# OpenCode models - the SEED only. The live catalog is derived from the CLI
+# itself (spine/agent/opencode_models.py: `opencode models` for the account's
+# keys); this list is what a box shows when the CLI is missing or silent, and
+# what engine_for()/the whitelist know before any discovery ran. It is the
+# CLI's own list on 2026-10-08 (no key connected = the free Zen models); the
+# earlier hand list carried four ids the CLI does not know (jev-1.13-free,
+# mimo-v2.5-free, opencode/deepseek-v4-flash/-pro - DeepSeek is its own
+# provider, `deepseek/...`, connected by DEEPSEEK_API_KEY). IDs keep the
+# `provider/model` shape OpenCode itself uses.
 OPENCODE_MODELS = [
-    {"id": "opencode/muse-spark-1.3-contributor-free", "label": "Muse Spark 1.3 Free", "desc": "Free · contributor tier"},
-    {"id": "opencode/space-bunny-free", "label": "Space Bunny Free", "desc": "Free · stealth"},
     {"id": "opencode/big-pickle", "label": "Big Pickle", "desc": "Free · stealth"},
+    {"id": "opencode/space-bunny-free", "label": "Space Bunny Free", "desc": "Free · stealth"},
+    {"id": "opencode/muse-spark-1.3-contributor-free", "label": "Muse Spark 1.3 Free", "desc": "Free · contributor tier"},
     {"id": "opencode/longcat-2.5-preview-free", "label": "LongCat 2.5 Free", "desc": "Free"},
-    {"id": "opencode/exo-free", "label": "Exo Free", "desc": "Free"},
-    {"id": "opencode/fledge-alpha-free", "label": "Fledge Alpha Free", "desc": "Free"},
     {"id": "opencode/mimo-v2.6-flash-free", "label": "MiMo V2.6 Flash Free", "desc": "Free"},
-    {"id": "opencode/mimo-v2.5-free", "label": "MiMo V2.5 Free", "desc": "Free"},
     {"id": "opencode/ling-3.1-flash-free", "label": "Ling 3.1 Flash Free", "desc": "Free"},
+    {"id": "opencode/ling-3.0-flash-fin-free", "label": "Ling 3.0 Flash Fin Free", "desc": "Free"},
     {"id": "opencode/nemotron-3-ultra-free", "label": "Nemotron 3 Ultra Free", "desc": "Free"},
     {"id": "opencode/nemotron-3.5-lightning-free", "label": "Nemotron 3.5 Lightning Free", "desc": "Free"},
-    {"id": "opencode/jev-1.13-free", "label": "Jev 1.13 Free", "desc": "Free · structured"},
-    # Paid fallback: cheap DeepSeek via the same gateway (quality gate target).
-    {"id": "opencode/deepseek-v4-flash", "label": "DeepSeek V4 Flash", "desc": "Cheap fallback"},
-    {"id": "opencode/deepseek-v4-pro", "label": "DeepSeek V4 Pro", "desc": "Strong fallback"},
+    {"id": "opencode/exo-free", "label": "Exo Free", "desc": "Free · slow (timed out at 75s)"},
+    {"id": "opencode/fledge-alpha-free", "label": "Fledge Alpha Free", "desc": "Free · not available in every country"},
 ]
 
 # Fallback when a free turn answers poorly (empty/refusal) - same gateway,
 # so no second provider to connect.
-FALLBACK_MODEL = "opencode/deepseek-v4-flash"
-_OPENCODE_IDS = frozenset(m["id"].lower() for m in OPENCODE_MODELS)
+# The retry model for a poor free reply is no constant any more: the old one
+# (`opencode/deepseek-v4-flash`) does not exist - DeepSeek is its own provider -
+# so the retry could never run. fallback_model() answers per account, from what
+# that account's keys actually connect.
 
 
 def engine_for(mid):
@@ -75,12 +76,25 @@ def engine_for(mid):
     card steers (sessions.py) and the turn choke point (turnrunner.py)
     cannot drift apart."""
     m = (mid or "").strip().lower()
-    return "opencode" if m in _OPENCODE_IDS else "claude"
+    try:
+        from spine.agent import opencode_models
+        return "opencode" if m in opencode_models.known_ids() else "claude"
+    except Exception:                                            # noqa: BLE001
+        return "claude"
+
+
+def fallback_model(account=""):
+    """The model a poor free-model reply is retried on, or "" for no retry."""
+    try:
+        from spine.agent import opencode_models
+        return opencode_models.fallback(account)
+    except Exception:                                            # noqa: BLE001
+        return ""
 
 
 def is_poor_reply(text):
     """Quality gate for free-model turns: True when the reply is not worth
-    keeping and the caller should retry once on FALLBACK_MODEL. Deliberately
+    keeping and the caller should retry once on fallback_model(). Deliberately
     narrow (empty / refusal-shaped / error-shaped) - quality grading beyond
     this is a judge call, not a string check."""
     t = (text or "").strip()
@@ -330,7 +344,7 @@ def claude_models():
     return models
 
 
-def list_models():
+def list_models(account=None):
     """The flat model list `/models` serves and the whitelist walks: the
     Claude catalog + the OpenCode models WHEN that engine can run (owner
     2026-10-08: "die App soll selbst bemerken, was funktioniert" - opencode/*
@@ -343,7 +357,8 @@ def list_models():
     models = claude_models()
     ids = {m["id"] for m in models}
     if _engine_ready("opencode"):
-        for m in OPENCODE_MODELS:
+        from spine.agent import opencode_models
+        for m in opencode_models.catalog(account or ""):
             if m["id"] not in ids:
                 ids.add(m["id"]); models.append(dict(m))
     return models
@@ -359,7 +374,13 @@ def _engine_ready(name):
 
 
 def _allowed_ids():
-    return {m["id"] for m in list_models()}
+    ids = {m["id"] for m in list_models()}
+    if _engine_ready("opencode"):
+        # an id some account's discovery returned (a DeepSeek model its key
+        # connects) stays pickable for that account's next turn after a restart
+        from spine.agent import opencode_models
+        ids |= opencode_models.known_ids(lower=False)
+    return ids
 
 
 # The mechanism's own defaults - what every caller gets when it passes no

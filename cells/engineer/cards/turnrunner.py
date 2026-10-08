@@ -187,17 +187,20 @@ def _turn_inner(t, prompt, intent, model=None, perm=None, idle_timeout=None, by=
                     "ausgefuehrt. Einfach neu steuern.")
             sid, reply, meta = drivers.run(cfg, t, prompt, by=by)
             # Quality gate (free -> DeepSeek): a poor free-model turn retries
-            # ONCE on FALLBACK_MODEL. Narrow check only (turnopts.is_poor_reply),
-            # no judge call - and never for the fallback itself.
+            # ONCE on fallback_model(dispatcher) - "" (the dispatcher has no
+            # DeepSeek key) = no retry, never a model that cannot run. Narrow
+            # check only (turnopts.is_poor_reply), no judge call - and never for
+            # the fallback itself.
             try:
                 from spine.agent import turnopts as _to2
-                if (model and _to2.engine_for(model) == "opencode"
-                        and model != _to2.FALLBACK_MODEL
+                _fb = _to2.fallback_model(t.get("dispatched_by") or "") if model else ""
+                if (_fb and _to2.engine_for(model) == "opencode"
+                        and model != _fb
                         and _to2.is_poor_reply(reply)):
-                    _fb_cfg = {**cfg, "model": _to2.FALLBACK_MODEL}
+                    _fb_cfg = {**cfg, "model": _fb}
                     try:
                         from spine.ops.actionlog import ActionLog as _AL
-                        _AL(t["run_dir"]).log("note", "Free-Modell antwortete leer - Fallback %s." % _to2.FALLBACK_MODEL)
+                        _AL(t["run_dir"]).log("note", "Free-Modell antwortete leer - Fallback %s." % _fb)
                     except Exception:                          # noqa: BLE001
                         pass
                     sid, reply, meta = drivers.run(_fb_cfg, t, prompt, by=by)
