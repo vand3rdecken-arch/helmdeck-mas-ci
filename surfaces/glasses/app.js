@@ -473,6 +473,7 @@
   var chatOn = false, chatCtl = null, chatBackoff = 3000;
   var lastTurnSeq = -1;
   var lastSeenState = 'idle';
+  var lastChatHtml = '';
   var lastOptions = [];      // the tappable half of Henry's most recent reply
 
   function chatStreamUrl() {
@@ -709,7 +710,7 @@
     var latest = -1;
     for (var li = chatMsgs.length - 1; li >= 0; li--) { if (!chatMsgs[li].mine) { latest = li; break; } }
     chatMsgs.forEach(function (m, mi) {
-      html += '<div class="msg' + (m.mine ? ' mine' : '') + (mi === latest ? ' latest' : '') + '">'
+      html += '<div class="msg focusable' + (m.mine ? ' mine' : '') + (mi === latest ? ' latest' : '') + '" tabindex="0">'
         + (m.label ? '<div class="msg-label">' + esc(m.label) + '</div>'
                    : '<div class="msg-who">' + (m.mine ? 'Du' : 'Henry') + '</div>')
         + '<div class="msg-body">' + esc(m.text) + '</div></div>';
@@ -728,11 +729,17 @@
     if (!html) {
       html = '<div class="empty">Sprich einfach - Henry hört zu.</div>';
     }
-    box.innerHTML = html;
+    // Re-render only when something changed: the stream wakes every ~20 s, and
+    // replacing the DOM would drop the focus of an owner who is paging back
+    // through the history with the arrow keys.
+    if (html !== lastChatHtml) {
+      lastChatHtml = html;
+      box.innerHTML = html;
+      var sc0 = document.getElementById('talk-scroll');
+      if (sc0) sc0.scrollTop = sc0.scrollHeight;
+    }
     renderOptions();
-    // follow the conversation - the newest line is the one he is reading
-    var sc = document.getElementById('talk-scroll');
-    if (sc) sc.scrollTop = sc.scrollHeight;
+    // (scrolled to the newest line above, when the transcript changed)
   }
 
   function renderOptions() {
@@ -956,6 +963,7 @@
     // fine, which is the kind of gap that only shows up on the device.
     if (id === 'talk') { renderTurnbar(); renderChat(); }
     if (id === 'more') updateVoiceToggleLabel();
+    if (id === 'rooms') loadRooms();
     if (id === 'board') { unseenNew = 0; updateBadge(); refreshIfStale(15000); }
     focusFirst();
   }
@@ -1005,6 +1013,7 @@
       case 'refresh': refresh(); toast('Aktualisiere …'); break;
       case 'tab': screenStack = [btn.getAttribute('data-tab')]; showScreen(btn.getAttribute('data-tab'), true); break;
       case 'mic': micPill(); break;
+      case 'open-room': openRoom(btn.getAttribute('data-id'), btn.getAttribute('data-name')); break;
       case 'toggle-autolisten': toggleAutoListen(); break;
       case 'open-settings': fillSettings(); showScreen('settings'); break;
       case 'open-detail': renderDetail(btn.getAttribute('data-id')); showScreen('detail'); break;
@@ -1024,6 +1033,70 @@
       case 'voice-repeat': repeatBlockerVoice(); break;
       case 'save-settings': doSaveSettings(); break;
     }
+  }
+
+
+  // ---- ROOMS (read-only) ------------------------------------------------------
+  function getJson(path) {
+    var url = sameOrigin() ? path
+      : apiBase() + path + (path.indexOf('?') > -1 ? '&' : '?') + 'token=' + encodeURIComponent(cfg.token);
+    return fetch(url, { cache: 'no-store', headers: glanceHeaders() }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+  function loadRooms() {
+    if (!connected()) return;
+    getJson('/glance/rooms').then(function (j) { renderRooms(j.rooms || []); })
+      .catch(function (e) { renderRooms(null, String(e.message || e)); });
+  }
+  function renderRooms(list, err) {
+    var box = document.getElementById('rooms-list');
+    if (!box) return;
+    box.innerHTML = '';
+    if (err) { box.innerHTML = '<div class="empty">' + esc(err) + '</div>'; setText('rooms-count', ''); return; }
+    var unread = 0;
+    (list || []).forEach(function (r) { unread += r.unread || 0; });
+    setText('rooms-count', unread ? String(unread) : '');
+    if (!list || !list.length) { box.innerHTML = '<div class="empty">Noch keine Rooms.</div>'; return; }
+    list.forEach(function (r) {
+      var el = document.createElement('button');
+      el.className = 'list-item row focusable';
+      el.setAttribute('data-action', 'open-room');
+      el.setAttribute('data-id', r.id);
+      el.setAttribute('data-name', r.name);
+      var ini = (r.name || '?').trim().charAt(0).toUpperCase();
+      el.innerHTML = '<span class="row-icon ask" aria-hidden="true">' + esc(ini) + '</span>'
+        + '<span class="row-body"><span class="li-task" style="display:block">' + esc(r.name) + '</span>'
+        + '<span class="li-sub" style="display:block">' + esc((r.by ? r.by + ': ' : '') + (r.preview || '')) + '</span></span>'
+        + (r.unread ? '<span class="count-pill' + (r.mentions ? ' hot' : '') + '">' + r.unread + '</span>' : '')
+        + '<span class="chev" aria-hidden="true">›</span>';
+      box.appendChild(el);
+    });
+  }
+  function openRoom(id, name) {
+    setText('room-name', name || 'Room');
+    setText('room-meta', '');
+    setHTML('room-chat', '<div class="empty">Lade …</div>');
+    showScreen('room');
+    getJson('/glance/room?id=' + encodeURIComponent(id)).then(function (j) {
+      var html = '';
+      var msgs = j.messages || [];
+      msgs.forEach(function (m, i) {
+        var who = m.mine ? 'Du' : (m.by || '?');
+        if (m.henry && String(who).toLowerCase() !== 'henry') who += ' · Henry';
+        html += '<div class="msg focusable' + (m.mine ? ' mine' : '') + '" tabindex="0">'
+          + '<div class="msg-who">' + esc(who) + '</div>'
+          + '<div class="msg-body">' + esc(m.text) + '</div></div>';
+      });
+      setHTML('room-chat', html || '<div class="empty">Noch keine Nachrichten.</div>');
+      var sc = document.getElementById('room-scroll');
+      if (sc) sc.scrollTop = sc.scrollHeight;
+      var items = document.querySelectorAll('#room-chat .msg');
+      if (items.length) items[items.length - 1].focus();
+    }).catch(function (e) { setHTML('room-chat', '<div class="empty">' + esc(String(e.message || e)) + '</div>'); });
   }
 
   // ---- listening: on by default, switch-off-able -----------------------------

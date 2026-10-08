@@ -98,6 +98,10 @@ CASES = [
     # the lens's hanging read of the Henry conversation + the live turn state
     ("/glance/chat", "GET", "/glance/chat"),
     ("/glance/chat", "POST", None),
+    ("/glance/rooms", "GET", "/glance/rooms"),
+    ("/glance/room", "GET", "/glance/room"),
+    ("/glance/rooms", "POST", None),
+    ("/glance/room", "POST", None),
 
     # the microphone's own state report
     ("/glance/state", "POST", "/glance/state"),
@@ -205,6 +209,8 @@ else:
             EXPECTED_ROUTES = {
                 "/glance", "/glance/answer", "/glance/talk", "/glance/photo",
                 "/glance/banner", "/glance/chat", "/glance/state",
+                # ROOMS, read-only, 2026-10-08
+                "/glance/rooms", "/glance/room",
                 # THE CONFIRM STEP, added 2026-09-04 - and this is the line this
                 # test exists to charge for. Both are narrow by construction:
                 # /glance/decide carries one word from a three-item closed

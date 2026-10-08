@@ -52,6 +52,10 @@ export const PROXY_ROUTES = {
   // Worker needs nothing special for that: it awaits the origin fetch like any
   // other, and 20s is well inside the edge's patience.
   "/glance/chat": "GET",
+  // ROOMS, read-only (2026-10-08). The list and the tail of one room for the OWNER;
+  // nothing posts, nothing marks read. Daemon-side switch: settings.glance_rooms.
+  "/glance/rooms": "GET",
+  "/glance/room": "GET",
   // The microphone's own report - the one signal the daemon cannot observe for
   // itself. Bounded on the daemon side to a two-word vocabulary, so the widest
   // thing this can do is light or clear a "listening" indicator.

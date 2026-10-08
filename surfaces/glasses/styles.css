@@ -620,3 +620,30 @@ input.orb::-webkit-search-cancel-button, input.orb::-webkit-search-decoration { 
 /* the app's own icon in every top-level header (Herald's .app-badge) */
 .app-badge { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: block;
   box-shadow: 0 0 14px rgba(120,100,200,.5), inset 0 0 0 1px rgba(255,255,255,.22); }
+
+/* ======================================================================
+   ROOMS, HISTORY, THE HEADER'S MEHR BUTTON
+   ====================================================================== */
+.more-btn { margin-left: 6px; width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--rim);
+  background: rgba(255,255,255,.10); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.more-btn svg { width: 24px; height: 24px; fill: currentColor; }
+#talk-meta:empty { display: none; }
+.header { padding-right: 12px; }
+
+/* four tabs / a rail of Board - orb - Rooms */
+.tab { width: 134px; gap: 8px; font-size: 17px; }
+.rail-btn { width: 128px; height: 64px; flex-direction: column; gap: 2px; font-size: 14px; border-radius: 28px; }
+.rail-btn svg { width: 24px; height: 24px; }
+
+/* messages are focusable so the arrow keys page back through the history; the
+   focus ring is the cue - a soft bloom, not the button ring */
+.msg.focusable { outline: none; border-radius: 22px; }
+.msg.focusable:focus { transform: none; box-shadow: 0 0 0 2px var(--ring), 0 0 22px var(--bloom); border-color: transparent; }
+.msg.focusable:focus .msg-body { opacity: 1; }
+
+/* rooms */
+.count-pill { min-width: 30px; height: 30px; padding: 0 9px; border-radius: 15px; background: var(--accent); color: #fff;
+  font-size: 16px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.count-pill.hot { background: var(--warn); color: #1a1205; }
+#room-chat .msg .msg-body { font-size: 18px; }
+#room-chat .msg:not(.latest) .msg-body { opacity: .85; font-size: 17px; }

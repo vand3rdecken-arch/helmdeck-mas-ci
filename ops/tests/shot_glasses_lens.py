@@ -58,10 +58,22 @@ GLANCE = {
     "econ": {"needs_you": 3, "yours": 1},
 }
 MSGS = [
+    {"mine": True, "text": "Was steht heute an?"},
+    {"mine": False, "text": "Zwei Karten warten auf dich, eine davon hat ein rotes Gate."},
+    {"mine": True, "text": "Welche zuerst?"},
+    {"mine": False, "text": "Das Gate bei ***-Radar: Es blockiert den Export."},
     {"mine": True, "text": "Wie ist der Stand bei ***?"},
     {"mine": False, "text": "*** wächst 20 %, ist aber 9 % gefallen. Warum, wissen wir nicht. Das klären wir, bevor du nachkaufst."},
 ]
 STATE = {"turn": {"state": "listening", "text": "", "mic": "glasses", "seq": 1, "age": 0}}
+ROOMS = {"rooms": [
+    {"id": "r1", "name": "Acme Projekt", "unread": 3, "mentions": 1, "by": "Lena", "preview": "Können wir den Reset-Link auf 24 h stellen?", "at": "2026-10-08 07:51"},
+    {"id": "r2", "name": "Familie", "unread": 0, "mentions": 0, "by": "***", "preview": "Bin gleich da", "at": "2026-10-07 18:02"}]}
+ROOM = {"id": "r1", "name": "Acme Projekt", "messages": [
+    {"by": "Lena", "mine": False, "henry": False, "text": "Hast du den Link schon angeschaut?", "ts": "07:40"},
+    {"by": "Duy", "mine": True, "henry": False, "text": "Gleich, ich schaue heute Vormittag drauf.", "ts": "07:44"},
+    {"by": "Henry", "mine": False, "henry": True, "text": "Ich habe die Gültigkeit auf 1 Stunde gesetzt, wie besprochen.", "ts": "07:46"},
+    {"by": "Lena", "mine": False, "henry": False, "text": "Können wir den Reset-Link auf 24 h stellen?", "ts": "07:51"}]}
 LISTEN_CALLS = []
 TALK_CALLS = []
 
@@ -84,6 +96,10 @@ with sync_playwright() as pw:
         u = route.request.url
         if "/glance/chat" in u:
             return fulfill(route, chat_body())
+        if "/glance/rooms" in u:
+            return fulfill(route, ROOMS)
+        if "/glance/room" in u:
+            return fulfill(route, ROOM)
         if "/glance/talk" in u:
             TALK_CALLS.append(route.request.post_data)
             return fulfill(route, {"voice": "", "question": None})
@@ -105,7 +121,7 @@ with sync_playwright() as pw:
 
     # 1: Henry home while listening
     check("Henry is the first screen", pg.locator("#talk:not(.hidden)").count() == 1)
-    check("the rail: Board / orb / Mehr", pg.locator("#talk .rail-btn").all_inner_texts() == ["Board", "Mehr"] and pg.locator("#talk .orb").count() == 1, pg.locator("#talk .rail-btn").all_inner_texts())
+    check("the rail: Board / orb / Mehr", pg.locator("#talk .rail-btn").all_inner_texts() == ["Board", "Rooms"] and pg.locator("#talk .orb").count() == 1, pg.locator("#talk .rail-btn").all_inner_texts())
     check("Henry's newest message is the hero card", pg.locator(".msg.latest").count() == 1 and pg.inner_text(".msg.latest").count("***") >= 1)
     check("the phone mic is opt-in: nothing asked on open by default", len(LISTEN_CALLS) == 0, LISTEN_CALLS)
     check("the orb is a real text field (Meta composer)", pg.evaluate("document.getElementById('speak').tagName") == "INPUT")
@@ -153,6 +169,32 @@ with sync_playwright() as pw:
     pg.reload()
     pg.wait_for_timeout(900)
     check("opted in: reopening asks the phone to listen", len(LISTEN_CALLS) == n + 1, (n, LISTEN_CALLS))
+
+    # 4b: history is reachable (messages are focusable) and survives a re-render
+    check("the whole history is in the DOM", pg.locator("#talk-chat .msg").count() >= 6, pg.locator("#talk-chat .msg").count())
+    check("messages are focusable (arrows page through them)", pg.locator("#talk-chat .msg.focusable").count() == pg.locator("#talk-chat .msg").count())
+    pg.focus("#talk-chat .msg >> nth=1")
+    html0 = pg.inner_html("#talk-chat")
+    pg.evaluate("window.dispatchEvent(new Event('visibilitychange'))")
+    pg.wait_for_timeout(300)
+    check("an unchanged transcript does not steal the focus", pg.evaluate("document.activeElement.classList.contains('msg')"))
+    shot("4b-history-focus")
+
+    # 4c: rooms
+    pg.click(".screen:not(.hidden) [data-tab=rooms]")
+    pg.wait_for_timeout(400)
+    check("Rooms tab lists the rooms", pg.locator("#rooms-list .list-item").count() == 2, pg.locator("#rooms-list .list-item").count())
+    check("the unread count shows", "3" in pg.inner_text("#rooms-list .list-item >> nth=0"))
+    check("the last message is previewed", "24 h" in pg.inner_text("#rooms-list .list-item >> nth=0"))
+    shot("4c-rooms")
+    pg.click("#rooms-list .list-item >> nth=0")
+    pg.wait_for_timeout(400)
+    check("a room opens with its messages", pg.locator("#room-chat .msg").count() == 4, pg.locator("#room-chat .msg").count())
+    check("the room title is shown", "Acme" in pg.inner_text("#room-name"))
+    check("Henry's message in a room is labelled", "henry" in pg.inner_text("#room-chat").lower())
+    shot("4d-room")
+    pg.click("#room [data-action=back]")
+    pg.wait_for_timeout(200)
 
     # 5: decide
     pg.click(".screen:not(.hidden) [data-tab=board]")

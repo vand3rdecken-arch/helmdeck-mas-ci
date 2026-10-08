@@ -231,7 +231,7 @@ def glance_talk(self, user, body):
 # two sentences, so this only ever bites on a MIRRORED card line, which the lens
 # shows as context rather than as something to read in full - the card's own text
 # is one tap away on the needs list.
-GLASS_CHAT_MAX = 12
+GLASS_CHAT_MAX = 40          # was 12: the lens scrolls history now (focusable messages)
 GLASS_CHAT_LINE = 400
 
 # How long the lens's hanging read may block before answering with "nothing
@@ -366,6 +366,78 @@ def _glance_messages():
                 ((m.get("cardName") or m.get("card") or "")[:40])
         out.append(row)
     return out[-GLASS_CHAT_MAX:]
+
+
+# ---- ROOMS, read-only (owner 2026-10-08: "wo sind die rooms"). The phone app has
+# Rooms as a tab; the lens shows the same rooms the OWNER is a member of - a list
+# with an unread count and a one-line preview, and the tail of one room. Nothing
+# here posts, and nothing marks a room read: looking at a room through a lens must
+# not change what the phone shows as unread. On with the glance token; set
+# settings.glance_rooms to false to hide the team's rooms from the lens.
+GLASS_ROOM_MAX = 30
+
+
+def _glance_rooms_ok(self):
+    """(owner, None) when the token is right and rooms are not switched off, else
+    (None, error-response-sent)."""
+    from spine.storage import events
+    from cells.copilot.chat import copilot
+    s = events.settings()
+    tok = s.get("glance_token") or ""
+    given = (parse_qs(urlparse(self.path).query).get("token") or [""])[0]
+    if not tok or given != tok:
+        self._send(403, json.dumps({"error": "glance disabled or bad token"}))
+        return None
+    if s.get("glance_rooms") is False:
+        self._send(403, json.dumps({"error": "rooms are off for the glasses (settings.glance_rooms)"}))
+        return None
+    owner = copilot.owner_name()
+    if not owner:
+        self._send(404, json.dumps({"error": "no owner account"}))
+        return None
+    return owner
+
+
+def glance_rooms(self, user):
+    owner = _glance_rooms_ok(self)
+    if not owner:
+        return
+    from cells.copilot.chat import rooms
+    from spine.ops.glances import readable
+    out = []
+    for r in rooms.list_for(owner):
+        out.append({"id": r["id"], "name": (r.get("name") or "")[:60],
+                    "unread": r.get("unread") or 0, "mentions": r.get("unread_mentions") or 0,
+                    "by": (r.get("last_by") or "")[:30],
+                    "preview": readable(r.get("preview") or "", 90),
+                    "at": r.get("last_at") or ""})
+    return self._send(200, json.dumps({"rooms": out}))
+
+
+def glance_room(self, user):
+    owner = _glance_rooms_ok(self)
+    if not owner:
+        return
+    from cells.copilot.chat import rooms
+    from spine.ops.glances import readable
+    rid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+    try:
+        msgs = rooms.history(rid, owner)
+    except PermissionError:
+        return self._send(403, json.dumps({"error": "not a member of this room"}))
+    out = []
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        text = readable(m.get("text") or "", GLASS_CHAT_LINE)
+        if not text:
+            continue
+        out.append({"by": (m.get("by") or "")[:30], "mine": (m.get("by") or "") == owner,
+                    "henry": (m.get("byKind") or "") == "henry" or (m.get("by") or "").lower() == "henry",
+                    "text": text, "ts": m.get("ts") or ""})
+    room = rooms.get(rid) or {}
+    return self._send(200, json.dumps({"id": rid, "name": room.get("name") or "",
+                                       "messages": out[-GLASS_ROOM_MAX:]}))
 
 
 # What a client holding the SHARED glance token may assert about the turn.
@@ -701,6 +773,8 @@ GET_ROUTES = {
     "/glance/chat": glance_chat,
     "/glance/decision": glance_decision,
     "/glance/wake": glance_wake,
+    "/glance/rooms": glance_rooms,
+    "/glance/room": glance_room,
 }
 POST_ROUTES = {
     "/glance/talk": glance_talk,
