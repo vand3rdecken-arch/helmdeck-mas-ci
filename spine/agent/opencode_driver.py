@@ -121,7 +121,7 @@ def _opencode_home():
     return home
 
 
-def _env(cfg):
+def _env(cfg, account=None):
     env = dict(os.environ)
     extra = cfg.get("env") or {}
     prepend = extra.get("PATH+")
@@ -130,6 +130,19 @@ def _env(cfg):
             env[k] = str(v)
     if prepend:
         env["PATH"] = str(prepend) + os.pathsep + env.get("PATH", "")
+    # The DISPATCHING account's own provider keys (spine/storage/usersecrets.py),
+    # decrypted for this one spawn - they win over a plaintext `env` row, and
+    # there is no fallback to another account's. Deliberately HERE and not in
+    # spawnenv._card_env: that overlay reaches every engine, and a claude
+    # process that sees ANTHROPIC_API_KEY switches from the plan to API billing.
+    # OpenCode connects a provider exactly when its variable is set (measured
+    # 2026-10-08: `opencode models deepseek` -> "Provider not found" without it).
+    if account:
+        try:
+            from spine.storage import usersecrets
+            env.update(usersecrets.env_for(account))
+        except Exception:                                      # noqa: BLE001
+            pass          # no key store -> the engine simply has fewer providers
     return env
 
 
@@ -246,6 +259,7 @@ class _OpenCodeSession:
         self.worktree = t.get("worktree") or "."
         self.run_dir = t.get("run_dir") or "."
         self.session_id = t.get("session_id")
+        self.account = t.get("dispatched_by") or ""     # whose provider keys this server runs with
         self.proc = None
         self.client = None
         self.port = None
@@ -270,7 +284,7 @@ class _OpenCodeSession:
         home = _opencode_home()
         self.proc = subprocess.Popen(argv, cwd=home,
                                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE, env=_env(self.cfg),
+                                     stderr=subprocess.PIPE, env=_env(self.cfg, self.account),
                                      text=True, encoding="utf-8", errors="replace",
                                      bufsize=1,
                                      # no console: the daemon runs under pythonw,

@@ -303,10 +303,55 @@ def voice_dictation_cancel_post(self, user, body):
     return _dictation(self, user, body, lambda ds, o, b: ds.cancel(o, b.get("id")))
 
 
+def _providers_view(user):
+    from spine.storage import usersecrets
+    return {"providers": usersecrets.status(user["name"]),
+            "can_store": usersecrets.may_store(user["role"]),
+            "encrypted": usersecrets.available()}
+
+
+def me_providers_get(self, user):
+    """MY provider keys: which are set, the last 4 characters, the last test.
+    Never the key itself - not here, not anywhere (usersecrets.status)."""
+    return self._send(200, json.dumps(_providers_view(user)))
+
+
+def me_providers_put(self, user, body):
+    """Store or replace MY key for one provider. Self-scoped like /me/config:
+    the account is the session's, never the body's. Only owner/operator may
+    store (a client cannot start an engine, so a key would do nothing for it).
+    Audited WITHOUT the value."""
+    from spine.storage import usersecrets
+    from spine.auth.auth import _audit
+    if not usersecrets.may_store(user["role"]):
+        return self._send(403, json.dumps({"error": "this role cannot store provider keys"}))
+    provider, key = body.get("provider"), body.get("key")
+    try:
+        err = usersecrets.put(user["name"], provider, key)
+    except usersecrets.SecretStoreUnavailable as e:
+        return self._send(503, json.dumps({"error": str(e)}))
+    if err:
+        return self._send(400, json.dumps({"error": err}))
+    _audit("provider_key.set", user["name"], provider, hint=key[-4:])
+    return self._send(200, json.dumps(dict(_providers_view(user), ok=True)))
+
+
+def me_providers_delete(self, user, _q):
+    from spine.storage import usersecrets
+    from spine.auth.auth import _audit
+    provider = (_q.get("provider") or [""])[0]
+    if provider not in usersecrets.PROVIDERS:
+        return self._send(400, json.dumps({"error": "unknown provider"}))
+    if usersecrets.delete(user["name"], provider):
+        _audit("provider_key.delete", user["name"], provider)
+    return self._send(200, json.dumps(dict(_providers_view(user), ok=True)))
+
+
 GET_ROUTES = {
     "/processes": processes_get,
     "/process_templates": process_templates_get,
     "/me": me_get,
+    "/me/providers": me_providers_get,
 }
 POST_ROUTES = {
     "/processes/new": processes_new_post,
@@ -322,9 +367,11 @@ POST_ROUTES = {
 PUT_ROUTES = {
     "/me/config": me_config_put,
     "/me/boards": me_boards_put,
+    "/me/providers": me_providers_put,
 }
 DELETE_ROUTES = {
     "/me/boards": me_boards_delete,
+    "/me/providers": me_providers_delete,
 }
 # /processes, /me, /processes/new are open to every role by design (client
 # filtering happens by parameter, not by capability) - no entry here for them.

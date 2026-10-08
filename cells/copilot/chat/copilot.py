@@ -2744,6 +2744,7 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
     sess = _sessions()
     base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", skey or "u"),
             "worktree": ROOT, "run_dir": run_dir,
+            "dispatched_by": user,        # whose provider keys the OpenCode server gets
             "session_id": sess.get(skey)}
     cfg = {"type": "opencode", "model": cli_model}
     try:
