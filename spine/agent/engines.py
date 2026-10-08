@@ -198,18 +198,41 @@ def _probe(name, defn):
     return entry
 
 
+def models_of(name):
+    """The models THIS engine can run - the catalog half of the engine, so an
+    engine and its models are ONE thing (owner 2026-10-08: "Engine und Modell
+    muessen zusammengehoeren"). claude-type engines carry the Claude catalog,
+    opencode its gateway models; the others pick their own model (empty list =
+    "the engine's default"). Read at call time, never cached with the probe:
+    discovery adds Claude models while the CLI stays installed."""
+    kind = _definition(name)["type"]
+    try:
+        from spine.agent import turnopts
+        if kind == "claude":
+            return turnopts.claude_models()
+        if kind == "opencode":
+            return [dict(m) for m in turnopts.OPENCODE_MODELS]
+    except Exception:              # noqa: BLE001 - the registry must never crash a route
+        pass
+    return []
+
+
 def entry(name, refresh=False):
     defn = _definition(name)
     now = time.time()
     with _lock:
         hit = _cache.get(name)
         if hit and not refresh and hit[0] > now:
-            return dict(hit[1])
+            e = dict(hit[1])
+            e["models"] = models_of(name)
+            return e
     e = _probe(name, defn)
     ttl = PROBE_HIT_TTL if e["status"] == "ready" else PROBE_MISS_TTL
     with _lock:
         _cache[name] = (time.time() + ttl, e)
-    return dict(e)
+    e = dict(e)
+    e["models"] = models_of(name)
+    return e
 
 
 def snapshot(refresh=False):
@@ -234,6 +257,29 @@ def check_selectable(name):
         return "driver '%s' is switched off in settings" % name
     if e["type"] != "claude" and e["status"] != "ready":
         return "driver '%s' is not available: %s" % (name, e["error"] or "not installed")
+    return None
+
+
+def check_pair(name, model):
+    """Refuse an (engine, model) pair the engine cannot run, or None. The
+    engine and its model are chosen TOGETHER, so a card cannot be filed on
+    `claude` with an `opencode/*` model (or the reverse) and quietly run on
+    the other engine. "" / "auto" = the engine's default and always fits; an
+    engine with no catalog (omp/codex/pi) cannot be checked, so it passes -
+    refusing there would break filings whose composer still sends a model."""
+    m = (model or "").strip()
+    if m in ("", "auto"):
+        return None
+    models = models_of(name)
+    if not models:
+        return None
+    try:
+        from spine.agent import turnopts
+        m = turnopts._ALIAS.get(m, m)
+    except Exception:              # noqa: BLE001
+        pass
+    if m not in {x["id"] for x in models}:
+        return "model '%s' does not run on engine '%s'" % (m, name)
     return None
 
 

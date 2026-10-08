@@ -363,6 +363,9 @@ def tracks_new_post(self, user, body):
     if bad:
         return self._send(400, json.dumps({"error": bad}))
     model = body.get("model", "")
+    bad = engines.check_pair(driver, model)       # engine + model are one choice
+    if bad:
+        return self._send(400, json.dumps({"error": bad}))
     attachments = body.get("attachments")
     if lane == "backlog":   # filing a request is instant, no session
         return self._send(200, json.dumps(sessions.new_track(

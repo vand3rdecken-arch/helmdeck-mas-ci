@@ -62,19 +62,20 @@ OPENCODE_MODELS = [
 # Fallback when a free turn answers poorly (empty/refusal) - same gateway,
 # so no second provider to connect.
 FALLBACK_MODEL = "opencode/deepseek-v4-flash"
+_OPENCODE_IDS = frozenset(m["id"].lower() for m in OPENCODE_MODELS)
 
 
 def engine_for(mid):
-    """Driver family for a model id: 'opencode' for `opencode/*`
-    (Zen gateway incl. all free + DeepSeek ids above), else 'claude'.
+    """Driver family for a model id: 'opencode' when the id is one of the
+    OpenCode engine's catalog models (OPENCODE_MODELS - the gateway's free +
+    DeepSeek ids), else 'claude'. DERIVED from the catalog the engine owns
+    (spine/agent/engines.py `models`), not guessed from an id prefix.
 
     ONE owner for the model->driver decision so board chat (copilot.py),
     card steers (sessions.py) and the turn choke point (turnrunner.py)
     cannot drift apart."""
     m = (mid or "").strip().lower()
-    if m.startswith("opencode/"):
-        return "opencode"
-    return "claude"
+    return "opencode" if m in _OPENCODE_IDS else "claude"
 
 
 def is_poor_reply(text):
@@ -310,12 +311,12 @@ def refresh_models():
     return _discovered(force=True)
 
 
-def list_models():
+def claude_models():
     """Curated manifest (labels/order/default) + AUTO-DISCOVERED live models +
-    custom settings.json models + OpenCode gateway models (free + DeepSeek
-    fallback), deduped (id order preserved). New Anthropic
+    custom settings.json models, deduped (id order preserved). New Anthropic
     models are appended automatically; the manifest just gives the known ones
-    nice labels and the offline fallback."""
+    nice labels and the offline fallback. This is the `models` of every
+    claude-type engine (spine/agent/engines.py)."""
     models = [dict(m) for m in CLAUDE_MODELS]
     ids = {m["id"] for m in models}
     for m in _discovered():
@@ -326,12 +327,21 @@ def list_models():
     for m in _settings_models():
         if m["id"] not in ids:
             ids.add(m["id"]); models.append(m)
-    # only what can RUN (owner 2026-10-08: "die App soll selbst bemerken, was
-    # funktioniert"): opencode/* ids were offered on a box with no `opencode`
-    # binary and the turn died "[WinError 2] file not found". The engine
-    # probe (cached, re-checked every 60s on a miss) is the one owner of
-    # "installed"; dropping the ids here also drops them from _allowed_ids, so
-    # a stale pick resolves to the default model instead of a dead engine.
+    return models
+
+
+def list_models():
+    """The flat model list `/models` serves and the whitelist walks: the
+    Claude catalog + the OpenCode models WHEN that engine can run (owner
+    2026-10-08: "die App soll selbst bemerken, was funktioniert" - opencode/*
+    ids were offered on a box with no `opencode` binary and the turn died
+    "[WinError 2] file not found"). The engine probe (cached, a miss is
+    re-checked every 60s) is the one owner of "installed"; dropping the ids
+    here also drops them from _allowed_ids, so a stale pick resolves to the
+    default model instead of a dead engine. The per-engine view is
+    engines.snapshot()[i]["models"] - this is its flattened, runnable half."""
+    models = claude_models()
+    ids = {m["id"] for m in models}
     if _engine_ready("opencode"):
         for m in OPENCODE_MODELS:
             if m["id"] not in ids:
