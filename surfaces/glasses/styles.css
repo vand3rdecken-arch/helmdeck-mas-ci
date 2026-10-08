@@ -616,3 +616,7 @@ input.orb { -webkit-appearance: none; appearance: none; width: 104px; height: 10
 input.orb::placeholder { color: transparent; }
 input.orb::-webkit-search-cancel-button, input.orb::-webkit-search-decoration { display: none; }
 .orb.listening { }
+
+/* the app's own icon in every top-level header (Herald's .app-badge) */
+.app-badge { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: block;
+  box-shadow: 0 0 14px rgba(120,100,200,.5), inset 0 0 0 1px rgba(255,255,255,.22); }
