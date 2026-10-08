@@ -101,9 +101,10 @@ with sync_playwright() as pw:
 
     # 1: Henry home while listening
     check("Henry is the first screen", pg.locator("#talk:not(.hidden)").count() == 1)
-    check("three tabs: Henry / Board / Mehr", pg.locator("#talk .tab").all_inner_texts() == ["Henry", "Board", "Mehr"], pg.locator("#talk .tab").all_inner_texts())
+    check("the rail: Board / orb / Mehr", pg.locator("#talk .rail-btn").all_inner_texts() == ["Board", "Mehr"] and pg.locator("#talk .orb").count() == 1, pg.locator("#talk .rail-btn").all_inner_texts())
+    check("Henry's newest message is the hero card", pg.locator(".msg.latest").count() == 1 and pg.inner_text(".msg.latest").count("***") >= 1)
     check("auto-listen asked the phone once on open", len(LISTEN_CALLS) == 1, LISTEN_CALLS)
-    check("tabs are icon over label", pg.locator("#talk .tab svg").count() == 3)
+    check("rail buttons carry icons", pg.locator("#talk .rail-btn svg").count() == 2)
     check("the speak button shows the listening state", "listening" in (pg.get_attribute("#speak", "class") or ""))
     check("no 'listening' sentence on the lens", pg.locator("#turnbar.hidden").count() == 1 and "höre" not in pg.inner_text("#talk").lower())
     check("exactly one primary speak button, focused first", pg.locator("#speak").count() == 1 and pg.evaluate("document.activeElement && document.activeElement.id") == "speak")
@@ -124,20 +125,20 @@ with sync_playwright() as pw:
     shot("2-henry-answer")
 
     # 3: board
-    pg.click(".tab[data-tab=board]")
+    pg.click(".screen:not(.hidden) [data-tab=board]")
     pg.wait_for_timeout(300)
     check("board shows the big number", pg.inner_text("#needs-num").strip() == "3", pg.inner_text("#needs-num"))
-    check("board label is German", "warten auf dich" in pg.inner_text("#needs-label"))
+    check("board label is German", "warten auf dich" in pg.inner_text("#needs-label").lower())
     check("no money or capacity stats", "€" not in pg.inner_text("#board") and "WIP" not in pg.inner_text("#board"))
     shot("3-board")
 
     # 4: more + mute
-    pg.click("#board .tab[data-tab=more]")
+    pg.click("#board [data-tab=more]")
     pg.wait_for_timeout(200)
     shot("4-more")
     pg.click("[data-action=toggle-autolisten]")
     check("auto-listen can be switched off", pg.evaluate("JSON.parse(localStorage.getItem('helmdeck_glance_cfg')).autoListen") is False)
-    pg.click("#more .tab[data-tab=talk]")
+    pg.click("#more [data-tab=talk]")
     pg.wait_for_timeout(200)
     check("the speak button is still there when auto-listen is off", pg.locator("#speak").count() == 1 and pg.inner_text("#speak-label") in ("Sprechen", "Stopp"))
     shot("5-henry-muted")
@@ -147,7 +148,7 @@ with sync_playwright() as pw:
     check("muted: reopening does not ask the phone to listen", len(LISTEN_CALLS) == n, LISTEN_CALLS)
 
     # 5: decide
-    pg.click(".tab[data-tab=board]")
+    pg.click(".screen:not(.hidden) [data-tab=board]")
     pg.wait_for_timeout(200)
     pg.click("#needs-list .list-item >> nth=0")
     pg.wait_for_timeout(300)

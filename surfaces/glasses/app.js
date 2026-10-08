@@ -192,7 +192,7 @@
     }
     items.forEach(function (c) {
       var el = document.createElement('button');
-      el.className = 'list-item focusable';
+      el.className = 'list-item row focusable';
       // A card that is ASKING opens the decision directly. Routing it through
       // the detail screen first would cost an extra tap on a surface where
       // "one card fills the lens" - and the question text IS the context.
@@ -201,8 +201,12 @@
       el.setAttribute('data-id', c.id);
       var chip = '<span class="reason-chip' + (isBad(c) ? ' neg' : (canDecide ? ' ask' : '')) + '">'
         + esc(canDecide ? 'Frage' : reasonLabel(c)) + '</span>';
-      el.innerHTML = '<div class="li-task">' + esc(c.task || '(ohne Titel)') + '</div>'
-        + '<div class="li-sub">' + chip + esc(c.client ? c.client : 'intern') + '</div>';
+      var glyph = canDecide ? '?' : (isBad(c) ? '!' : '✓');
+      var gcls = canDecide ? 'ask' : (isBad(c) ? 'neg' : 'ok');
+      el.innerHTML = '<span class="row-icon ' + gcls + '" aria-hidden="true">' + glyph + '</span>'
+        + '<span class="row-body"><span class="li-task" style="display:block">' + esc(c.task || '(ohne Titel)') + '</span>'
+        + '<span class="li-sub" style="display:block">' + chip + esc(c.client ? c.client : 'intern') + '</span></span>'
+        + '<span class="chev" aria-hidden="true">›</span>';
       list.appendChild(el);
     });
     renderYours(list);
@@ -627,7 +631,7 @@
     var btn = document.getElementById('speak');
     if (!btn) return;
     var listening = (turn.state === 'listening');
-    btn.className = 'speak focusable' + (listening ? ' listening' : '');
+    btn.className = 'orb focusable' + (listening ? ' listening' : '');
     setText('speak-label', listening ? 'Stopp' : 'Sprechen');
     btn.setAttribute('aria-label', listening ? 'Zuhören stoppen' : 'Sprechen');
   }
@@ -687,8 +691,12 @@
     var box = document.getElementById('talk-chat');
     if (!box) return;
     var html = '';
-    chatMsgs.forEach(function (m) {
-      html += '<div class="msg' + (m.mine ? ' mine' : '') + '">'
+    // ONE CARD FILLS THE LENS (display guidelines): Henry's newest message is the
+    // hero, everything older is smaller and dimmer.
+    var latest = -1;
+    for (var li = chatMsgs.length - 1; li >= 0; li--) { if (!chatMsgs[li].mine) { latest = li; break; } }
+    chatMsgs.forEach(function (m, mi) {
+      html += '<div class="msg' + (m.mine ? ' mine' : '') + (mi === latest ? ' latest' : '') + '">'
         + (m.label ? '<div class="msg-label">' + esc(m.label) + '</div>'
                    : '<div class="msg-who">' + (m.mine ? 'Du' : 'Henry') + '</div>')
         + '<div class="msg-body">' + esc(m.text) + '</div></div>';

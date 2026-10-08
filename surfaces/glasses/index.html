@@ -26,20 +26,20 @@
         <div class="chat" id="talk-chat"></div>
         <div class="list-container" id="talk-options"></div>
       </div>
-      <!-- THE PRIMARY ACTION: always here, always the first thing the D-pad lands on.
-           Ring pulses while the phone listens; Enter then means Stopp. -->
-      <button class="speak focusable" id="speak" data-action="mic" data-primary="1" aria-label="Sprechen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><span id="speak-label">Sprechen</span></button>
       <!-- Only for the states that need a WORD (Henry works, a draft waits, a
            turn failed): a dot AND a word, because colour alone is forbidden on
-           this display. Listening and idle show nothing here - the pill says it. -->
+           this display. Listening and idle show nothing here - the orb says it. -->
       <div class="turnbar hidden" id="turnbar">
         <span class="turn-dot" id="turn-dot" aria-hidden="true"></span>
         <span class="turn-label" id="turn-label"></span>
       </div>
-      <nav class="tabs">
-        <button class="tab focusable on" data-action="tab" data-tab="talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><span>Henry</span></button>
-        <button class="tab focusable" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span><span class="badge-dot hidden" aria-hidden="true"></span></button>
-        <button class="tab focusable" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
+      <!-- THE RAIL: Board - the Sprechen orb - Mehr. The orb is the primary action:
+           always here, focused first; the ring pulses while the phone listens and
+           the glyph becomes a stop square (Enter = Stopp). -->
+      <nav class="rail">
+        <button class="rail-btn focusable" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span><i class="badge-dot hidden" aria-hidden="true"></i></button>
+        <div class="orb-wrap"><button class="orb focusable" id="speak" data-action="mic" data-primary="1" aria-label="Sprechen"><svg class="ic-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><svg class="ic-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button><span id="speak-label" class="orb-label">Sprechen</span></div>
+        <button class="rail-btn focusable" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
       </nav>
     </div>
 
