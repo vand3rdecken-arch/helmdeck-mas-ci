@@ -5243,7 +5243,7 @@ DEBT = [
     {
         "id": "board-list-payload-unbounded",
         "title": "GET /tracks ships every field of every card ever - 1.4 MB and growing",
-        "status": "open",
+        "status": "paid",
         "what": "routes_tracks.tracks_list_get returns sessions.present(t) for ALL "
                 "stored tracks - archived and done included - with every stored "
                 "field. Measured 2026-09-11: 216 cards, 1,380,496 bytes raw JSON, "
@@ -5271,6 +5271,7 @@ DEBT = [
                "flags) and exclude archived cards unless ?archived=1; "
                "3) the stream's `v` becomes a per-card cursor so a tick refetches "
                "the changed cards, not the list.",
+        "paid_note": "PAID 2026-10-08 (board overview stage 1): the tracks list is bounded to open cards + done cards from the last 14 days (routes_tracks.DONE_WINDOW_DAYS); the rest answers on ?archived=1.",
         "since": "2026-09-11",
         "order": 69,
     },
@@ -5627,7 +5628,7 @@ DEBT = [
     {
         "id": "tracks-list-unbounded",
         "title": "GET /tracks still returns EVERY card (summary rows, no paging)",
-        "status": "open",
+        "status": "paid",
         "what": "routes_tracks.tracks_list_get slims each row (no bg_tasks, "
                 "last_reply capped) but still lists all non-hidden cards in one "
                 "reply: 1.6 MB / ~2.25 MB sealed for 422 cards on 2026-09-29, "
@@ -5667,6 +5668,7 @@ DEBT = [
                "file (CLAUDE_CONFIG_DIR + a copied/linked .credentials.json) or "
                "an API-key spawn; register room-henry in harness.py AGENT_CELL/"
                "_DEFAULTS and read it via harness.brief().",
+        "paid_note": "PAID 2026-10-08 (board overview stage 1): window = open + recently done, the rest on demand via ?archived=1; policy.done_archive_days (default 60) auto-archives old done cards.",
         "since": "2026-10-05",
         "order": 82,
     },
@@ -5808,6 +5810,23 @@ DEBT = [
                "settings.dictation_cleanup_warm=false falls back to the one-shot.",
         "since": "2026-10-07",
         "order": 89,
+    },
+    {
+        "id": "done-at-reconstructed-from-events",
+        "title": "done_at of pre-2026-10-08 done cards is reconstructed from the done event",
+        "status": "open",
+        "what": "New accepts stamp done_at at event time in the accept mutators. Cards "
+                "that were done before the field existed get it ONCE at daemon start "
+                "(dispatch.backfill_done_at) from their latest `done` event ts - a "
+                "reconstruction, not an observation. A done card with no done event "
+                "gets no date.",
+        "why_it_bites": "A hand-edited or imported done card without a done event shows "
+                        "no date and is never auto-archived.",
+        "trigger": "a done card on the board without a completion date",
+        "fix": "Drop the backfill once no done card lacks done_at (the key is the "
+               "migration marker).",
+        "since": "2026-10-08",
+        "order": 90,
     },
 ]
 

@@ -1271,6 +1271,34 @@ _OUTCOME_BACKFILL_REVIEWED = {
 }
 
 
+def backfill_done_at():
+    """One-shot: stamp done_at on done cards that predate the field, from their
+    latest `done` event (events.emit ts, host-local like `updated`). KEY
+    PRESENCE marks a migrated card; a card with no done event is left alone
+    (the board then simply shows no date and the auto-archive skips it) -
+    debt done-at-reconstructed-from-events."""
+    todo = [t["id"] for t in _load() if t.get("lane") == "done" and "done_at" not in t]
+    if not todo:
+        return 0
+    from spine.storage import events
+    last = {}
+    for e in events.read_events():       # oldest first, so the last write wins
+        if e.get("kind") == "done":
+            last[e.get("track")] = e.get("ts")
+    stamped = 0
+    for tid in todo:
+        if not last.get(tid):
+            continue
+
+        def _stamp(tt):
+            if "done_at" in tt:
+                return False             # lost the race to an accept mutator
+            tt["done_at"] = last[tid]
+        if _mutate(tid, _stamp) is not None:
+            stamped += 1
+    return stamped
+
+
 def backfill_outcomes():
     """One-shot outcome backfill for pre-outcome done cards, run at daemon
     start (next to apply_board_directives - same repo-data-applied-once shape).
@@ -1330,6 +1358,7 @@ def _accept_machine(t, lane, actor, log, note=""):
 
     def _accept(tt):
         tt["status"] = "accepted"; tt["mode"] = mode; tt["lane"] = "done"
+        tt["done_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _record_outcome(tt)
     t = _mutate(t["id"], _accept) or t
     events.emit("lane", t["id"], frm="review", to="done")

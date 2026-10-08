@@ -144,6 +144,9 @@ DEFAULTS = {
         # which roles may RECONFIGURE the workspace from the copilot chat
         # (actions/steering stay available to owner+operator regardless)
         "chat_configure_roles": ["owner"],
+        # Done cards older than this many days are archived by the reconciler
+        # (actor "policy", reversible like any archive). 0 = never.
+        "done_archive_days": 60,
         # LOAD-AWARE ADMISSION (ops/docs/backlog/load-aware-admission, the desktop-lock
         # pattern generalized to CPU): a heavy op (gate run, ops/deploy/preview
         # hook - APK/Gradle build + emulator boot) admits immediately when

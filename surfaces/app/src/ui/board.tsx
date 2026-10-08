@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -9,8 +9,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
-import { cardStation, columnLabel, groupByColumn, renderColumns, useBoards,
-  type RenderColumn } from "@/data/boards";
+import { cardStation, columnLabel, doneBucket, doneTime, groupByColumn, isOlderDone,
+  matchesQuick, NO_QUICK, quickActive, renderColumns, useBoards,
+  type Quick, type RenderColumn } from "@/data/boards";
+import { OLDER_KEY } from "@/data/tracks_sync";
 import { useDemo } from "@/data/demo";
 import { needsOwner, phaseKey } from "@/data/phase";
 import { useHealth } from "@/data/health";
@@ -81,6 +83,17 @@ export function useLaneLabels() {
   const labels = me?.ui?.lane_labels ?? data?.settings?.policy?.lane_labels ?? {};
   return (lane: string) => labels[lane]
     ?? (LANE_KEY[lane] ? tr(LANE_KEY[lane]) : lane.charAt(0).toUpperCase() + lane.slice(1));
+}
+
+/** The completion date on a done card: "Fertig · 14:32" today, "Fertig · 03.10."
+ *  otherwise. A card with no done_at (reconstruction found no event) falls
+ *  back to the old accepted line. */
+function doneStamp(k: Track, tr: TFn) {
+  const d = k.done_at;
+  if (!d) return tr("board.accepted") + (k.updated ? ` · ${k.updated}` : "");
+  const today = new Date().toLocaleDateString("sv");   // YYYY-MM-DD, local
+  const when = d.slice(0, 10) === today ? d.slice(11, 16) : `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
+  return tr("board.doneAt", { when });
 }
 
 function prioOrd(p?: string) { return { urgent: 0, high: 1, medium: 2, low: 3 }[p ?? ""] ?? 2; }
@@ -201,7 +214,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     k.status === "running" ? null :
     (k.lane === "working" && k.last_reply) ? k.last_reply :
     (k.lane === "review" && k.last_reply) ? tr("board.card.delivered", { text: k.last_reply }) :
-    k.lane === "done" ? tr("board.accepted") + (k.updated ? ` · ${k.updated}` : "") : null;
+    k.lane === "done" ? doneStamp(k, tr) : null;
 
   return (
     <Pressable
@@ -350,7 +363,7 @@ const repoName = (p?: string) =>
   (p ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "—";
 
 function ScopeChip({ label, count, active, onPress }: {
-  label: string; count: number; active: boolean; onPress: () => void;
+  label: string; count?: number; active: boolean; onPress: () => void;
 }) {
   const t = useTheme();
   return (
@@ -362,10 +375,65 @@ function ScopeChip({ label, count, active, onPress }: {
         borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }}>
       <Text numberOfLines={1} style={{ color: active ? t.accent : t.txtSecondary,
         fontSize: 12, fontWeight: "500", maxWidth: 170 }}>{label}</Text>
-      <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>{count}</Text>
+      {count === undefined ? null
+        : <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>{count}</Text>}
     </Pressable>
   );
 }
+
+/** Jira-style quick filters beside the scope chips: mine / last 7 days / high
+ *  priority + free text. Local screen state, not a saved view. (The repo filter
+ *  is the ScopeBar's own repo chips - not repeated here.) */
+function QuickBar({ q, onChange }: { q: Quick; onChange: (q: Quick) => void }) {
+  const t = useTheme();
+  const tr = useT();
+  const flip = (k: "mine" | "week" | "prio") => onChange({ ...q, [k]: !q[k] });
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+      <ScopeChip label={tr("board.quick.mine")} active={q.mine} onPress={() => flip("mine")} />
+      <ScopeChip label={tr("board.quick.week")} active={q.week} onPress={() => flip("week")} />
+      <ScopeChip label={tr("board.quick.prio")} active={q.prio} onPress={() => flip("prio")} />
+      <TextInput value={q.text} onChangeText={(text) => onChange({ ...q, text })}
+        placeholder={tr("board.quick.search")} placeholderTextColor={t.txtPlaceholder}
+        accessibilityLabel={tr("board.quick.search")}
+        style={{ flexGrow: 1, flexBasis: 140, maxWidth: 260, color: t.txtPrimary, fontSize: 12,
+          backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
+          borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }} />
+      {quickActive(q) ? (
+        <Pressable onPress={() => onChange(NO_QUICK)} hitSlop={6} accessibilityRole="button">
+          <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("board.quick.clear")}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/** Done column sub-header (Heute / Diese Woche / Älter). */
+function DoneGroupLabel({ bucket }: { bucket: string }) {
+  const t = useTheme();
+  const tr = useT();
+  return (
+    <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600", letterSpacing: 0.4,
+      textTransform: "uppercase", paddingHorizontal: 6, paddingTop: 6, paddingBottom: 2 }}>
+      {tr("board.done." + bucket)}
+    </Text>
+  );
+}
+
+/** "N ältere" - the Done column's door to the archive view. */
+function OlderLink({ n, onPress }: { n: number; onPress: () => void }) {
+  const t = useTheme();
+  const tr = useT();
+  if (n <= 0) return null;
+  return (
+    <Pressable onPress={onPress} hitSlop={6} accessibilityRole="link" style={{ paddingVertical: 8, paddingHorizontal: 6 }}>
+      <Text style={{ color: t.accent, fontSize: 12.5, fontWeight: "600" }}>{tr("board.done.olderLink", { n })}</Text>
+    </Pressable>
+  );
+}
+
+/** Done cards newest first, with a header before the first card of each bucket. */
+const doneNewestFirst = (a: Track, b: Track) => (doneTime(b) ?? 0) - (doneTime(a) ?? 0);
 
 /** Which slice of the cards the lanes render. Lives ON THE BOARD, not only in
  *  the desktop sidebar: that sidebar mounts only when `useResponsive().wide`,
@@ -508,9 +576,12 @@ function OverflowMark({ color }: { color: string }) {
 }
 
 function WideKanban({
-  tracks, columns, label, qc, onError, onInfo, onMove, gateDone,
+  tracks, columns, label, qc, onError, onInfo, onMove, gateDone, olderCount, onOlder,
 }: {
   tracks: Track[];
+  /** Done cards past the window, and the way into them (the archive view). */
+  olderCount: number;
+  onOlder: () => void;
   /** The active board's columns PLUS any derived overflow ones. Never
    *  `board.columns` raw - see renderColumns for why that would hide cards. */
   columns: RenderColumn[];
@@ -531,7 +602,7 @@ function WideKanban({
 
   const grouped = useMemo(() => {
     const g = groupByColumn(columns, tracks);
-    for (const id of Object.keys(g)) g[id] = g[id].slice().sort(laneSort);
+    for (const c of columns) g[c.id] = g[c.id].slice().sort(c.station === "done" ? doneNewestFirst : laneSort);
     return g;
   }, [columns, tracks]);
 
@@ -602,6 +673,7 @@ function WideKanban({
     } catch (e) { onError(String((e as Error).message)); }
   }, [tracks, grouped, indexAt, targetAt, qc, onError, onInfo, gateDone]);
 
+  const now = Date.now();
   const Ins = () => <View style={{ height: 2, borderRadius: 2, backgroundColor: t.accent, marginVertical: 2 }} />;
 
   return (
@@ -641,6 +713,8 @@ function WideKanban({
             ) : (
               inCol.map((k, i) => (
                 <React.Fragment key={k.id}>
+                  {col.station === "done" && (i === 0 || doneBucket(inCol[i - 1], now) !== doneBucket(k, now))
+                    ? <DoneGroupLabel bucket={doneBucket(k, now)} /> : null}
                   {indicator?.col === col.id && indicator.index === i ? <Ins /> : null}
                   <DraggableCard k={k} colId={col.id} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
                     {/* real onMove, not a no-op: the ⋯ menu button inside the
@@ -652,6 +726,7 @@ function WideKanban({
               ))
             )}
             {indicator?.col === col.id && indicator.index === inCol.length && inCol.length > 0 ? <Ins /> : null}
+            {col.station === "done" ? <OlderLink n={olderCount} onPress={onOlder} /> : null}
           </View>
         );
       })}
@@ -771,9 +846,20 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const demoActive = useDemo((s) => s.active);
   const showDemoInvite = !filter && !demoActive && rows.length === 0 && !isLoading
     && (offline || !!error || !!dataErr);
+  // Done cards past the 14-day window leave the board for the archive view.
+  // The server holds most back (older_done); this also covers a card the app
+  // already holds that has aged out since the last baseline.
+  const now = Date.now();
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  const { data: serverOlder } = useQuery<number>({ queryKey: OLDER_KEY, queryFn: () => 0, enabled: false, initialData: 0 });
+  const [quick, setQuick] = useState<Quick>(NO_QUICK);
+  const heldOlder = Array.isArray(data) ? data.filter((k) => !k.archived && isOlderDone(k, now)).length : 0;
+  const olderCount = (serverOlder ?? 0) + heldOlder;
   const shown = rows.filter((k) => {
+    if (!matchesQuick(k, quick, me?.name, now)) return false;
+    if (eff === "archived") return !!k.archived || isOlderDone(k, now);
+    if (isOlderDone(k, now)) return false;
     if (eff === "needs_you") return needsOwner(k) && !k.archived;
-    if (eff === "archived") return !!k.archived;
     if (eff.startsWith("client:")) return k.client === eff.slice(7) && !k.archived;
     // repo scope: the card's own workplace path (machine cards carry a plain
     // folder here). Client-side only - /tracks never filtered by repo.
@@ -908,6 +994,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         </View>
       ) : null}
       {!filter ? <ScopeBar rows={rows} filter={eff} onSet={setStoreFilter} /> : null}
+      {!filter ? <QuickBar q={quick} onChange={setQuick} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && !archiveView && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
@@ -925,7 +1012,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (
         // desktop kanban: the board's column plates side by side, drag to move/reorder
-        <WideKanban tracks={shown} columns={columns} label={label} qc={qc} onError={showToast} onInfo={showToast} onMove={onMove} gateDone={gateDone} />
+        <WideKanban tracks={shown} columns={columns} label={label} qc={qc} onError={showToast} onInfo={showToast} onMove={onMove} gateDone={gateDone}
+          olderCount={olderCount} onOlder={() => setStoreFilter("archived")} />
       ) : (
         // phone: the same columns, stacked. One grouping function for both
         // layouts, so a card can never be in one column on the desktop and
@@ -933,7 +1021,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         (() => {
           const grouped = groupByColumn(columns, shown);
           return columns.map((col) => {
-            const inCol = (grouped[col.id] ?? []).slice().sort(laneSort);
+            const inCol = (grouped[col.id] ?? []).slice().sort(col.station === "done" ? doneNewestFirst : laneSort);
             return (
               <View key={col.id} style={{ gap: 8 }}>
                 <View style={[s.row, { marginTop: 8 }]}>
@@ -945,7 +1033,14 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                   <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{inCol.length}</Text>
                 </View>
                 {inCol.length === 0 ? <Empty text={tr("ui.empty")} /> :
-                  inCol.map((k) => <Card key={k.id} k={k} onMove={onMove} />)}
+                  inCol.map((k, i) => (
+                    <React.Fragment key={k.id}>
+                      {col.station === "done" && (i === 0 || doneBucket(inCol[i - 1], now) !== doneBucket(k, now))
+                        ? <DoneGroupLabel bucket={doneBucket(k, now)} /> : null}
+                      <Card k={k} onMove={onMove} />
+                    </React.Fragment>
+                  ))}
+                {col.station === "done" ? <OlderLink n={olderCount} onPress={() => setStoreFilter("archived")} /> : null}
               </View>
             );
           });

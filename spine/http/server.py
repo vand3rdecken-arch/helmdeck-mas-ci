@@ -761,6 +761,9 @@ def serve(port=8140, takeover=False):
     stamped = sessions.backfill_outcomes()  # one-shot: stamp reviewed outcomes onto pre-outcome
     if stamped:                             # done cards (pays debt legacy-outcome-on-read)
         print("SESSIONS: backfilled outcome on %d legacy done card(s)" % stamped)
+    n_done = sessions.backfill_done_at()    # one-shot: done_at from the done event (debt done-at-reconstructed-from-events)
+    if n_done:
+        print("SESSIONS: backfilled done_at on %d legacy done card(s)" % n_done)
     from spine.auth import auth
     from spine.storage import events
     if auth.migrate_legacy(events.settings().get("users")):

@@ -139,3 +139,50 @@ export function groupByColumn(columns: RenderColumn[], cards: Track[]) {
  *  overflow column always shows the station name; it has no label to carry. */
 export const columnLabel = (c: RenderColumn, stationLabel: (s: string) => string) =>
   (c.overflow ? "" : c.label) || stationLabel(c.station);
+
+/** The Done column shows this many days; older done cards live in the archive
+ *  view. Mirrors DONE_WINDOW_DAYS in cells/engineer/routes/routes_tracks.py,
+ *  which bounds the list the same way - the two must agree or a card the
+ *  server still sends would be hidden here (or the other way round). */
+export const DONE_WINDOW_DAYS = 14;
+
+const DAY_MS = 86_400_000;
+
+/** done_at is the daemon's host-local "YYYY-MM-DD HH:MM:SS" stamp. */
+export const doneTime = (k: Track) => {
+  const t = k.done_at ? Date.parse(k.done_at.replace(" ", "T")) : NaN;
+  return Number.isNaN(t) ? null : t;
+};
+
+/** Which Done sub-group a card belongs to. A done card with no done_at has an
+ *  unknown age: it stays visible (under "older") rather than silently vanish. */
+export function doneBucket(k: Track, now: number): "today" | "week" | "older" | "hidden" {
+  const t = doneTime(k);
+  if (t === null) return "older";
+  const midnight = new Date(now).setHours(0, 0, 0, 0);
+  if (t >= midnight) return "today";
+  if (t >= now - 7 * DAY_MS) return "week";
+  if (t >= now - DONE_WINDOW_DAYS * DAY_MS) return "older";
+  return "hidden";
+}
+
+/** A done card past the window - what the "N older" link counts. */
+export const isOlderDone = (k: Track, now: number) =>
+  cardStation(k) === "done" && doneBucket(k, now) === "hidden";
+
+/** Jira-style quick filters. Local screen state, not a saved view (stage 2). */
+export interface Quick { mine: boolean; week: boolean; prio: boolean; text: string }
+export const NO_QUICK: Quick = { mine: false, week: false, prio: false, text: "" };
+export const quickActive = (f: Quick) => f.mine || f.week || f.prio || f.text.trim() !== "";
+
+export function matchesQuick(k: Track, f: Quick, me: string | undefined, now: number) {
+  if (f.mine && !(me && (k.client === me || (k.zugewiesen_an ?? []).includes(me)))) return false;
+  if (f.prio && k.priority !== "urgent" && k.priority !== "high") return false;
+  if (f.week) {
+    const t = Date.parse((k.done_at || k.updated || "").replace(" ", "T"));
+    if (Number.isNaN(t) || t < now - 7 * DAY_MS) return false;
+  }
+  const q = f.text.trim().toLowerCase();
+  if (q && !`${k.task ?? ""} ${k.repo ?? ""} ${k.branch ?? ""} ${k.id ?? ""}`.toLowerCase().includes(q)) return false;
+  return true;
+}
