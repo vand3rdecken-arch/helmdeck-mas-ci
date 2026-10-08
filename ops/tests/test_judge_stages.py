@@ -4,12 +4,14 @@
 
 Pinned:
  1. a plain verdict costs ONE tool-less call
- 2. `need` -> the daemon fetches, the second call carries the data, still no
-    tools, and a second `need` is not honoured (falls through as a verb)
+ 2. `need` -> the daemon fetches, the next call carries the data, still no
+    tools; up to NEED_ROUNDS reloads, then `need` falls through as a verb;
+    never plan mode (the ExitPlanMode runaway)
  3. `hands` (privileged) -> the hands round runs with HANDS_TOOLS and the plan
  4. a bare `did` from a tool-less round is read as `hands` (nothing was done)
  5. `hands` on an unprivileged escalation never reaches the hands round
  6. _fetch_need: unknown readers are named, memory needs a term, output is capped
+ 7. _ask: a tool-less round gets the output cap + short timeout, hands does not
 Everything is faked at _ask/_hands_on_ask/_run_reader - no model, no db writes
 beyond the escalation notes, which go to a sandbox data root.
 Run: py -3.12 ops/tests/test_judge_stages.py
@@ -47,6 +49,7 @@ def fake_hands(prompt, timeout=60):
     return dict(SCRIPT.pop(0))
 
 
+_orig_ask = hb._ask
 hb._ask = fake_ask
 hb._hands_on_ask = fake_hands
 _orig_fetch = hb._fetch_need
@@ -63,7 +66,7 @@ check("plain verdict: tail names need/hands", '"need|hands|' in CALLS[0][2])
 check("plain verdict: round tools reset", hb._ROUND["tools"] is None)
 check("plain verdict: verdict passes through", d["action"] == "steer")
 
-# 2: need -> reload once
+# 2: need -> reload
 SCRIPT = [{"action": "need", "data": ["card", "memory:relay"]},
           {"action": "move", "lane": "review"}]
 CALLS.clear()
@@ -71,14 +74,28 @@ d = hb._staged_ask("P", ESC, True)
 check("need: two calls", len(CALLS) == 2, len(CALLS))
 check("need: both without tools", all(c[1] == "" for c in CALLS))
 check("need: second prompt carries the fetched data", "FETCHED(card,memory:relay|k1)" in CALLS[1][2])
-check("need: second prompt forbids another need", "Ein zweites \"need\" gibt es nicht" in CALLS[1][2])
+check("need: an early reload does not forbid searching on", "entscheide jetzt" not in CALLS[1][2])
 check("need: final verdict returned", d["action"] == "move")
 
-SCRIPT = [{"action": "need", "data": "board, inbox"}, {"action": "need", "data": ["card"]}]
+# 2b: he may search on (owner 2026-10-08: "wenn ich nicht weiss, weiter suchen
+# in Memories") - each round keeps what the earlier ones fetched; capped
+SCRIPT = [{"action": "need", "data": "board, inbox"}, {"action": "need", "data": ["card"]},
+          {"action": "need", "data": ["memory:deal"]}, {"action": "need", "data": ["ship_facts"]}]
 CALLS.clear()
 d = hb._staged_ask("P", ESC, False)
 check("need as a comma string is split", "FETCHED(board,inbox|k1)" in CALLS[1][2])
-check("a second need is not honoured (unprivileged: falls through)", len(CALLS) == 2 and d["action"] == "need")
+check("need: NEED_ROUNDS reloads, then no more", len(CALLS) == 1 + hb.NEED_ROUNDS, len(CALLS))
+check("need: later rounds keep earlier fetches",
+      "FETCHED(board,inbox|k1)" in CALLS[-1][2] and "FETCHED(memory:deal|k1)" in CALLS[-1][2])
+check("need: only the last round says decide now", "entscheide jetzt" in CALLS[-1][2]
+      and not any("entscheide jetzt" in c[2] for c in CALLS[:-1]))
+check("need past the cap falls through (unprivileged)", d["action"] == "need")
+
+# 2c: the tool-less round never runs in plan mode - plan mode orders an
+# ExitPlanMode call the round cannot make; measured 2026-10-07/08: the model
+# typed the call, invented its result and ran to the 128k output cap (14 min)
+check("tool-less rounds are not plan mode", all(c[3] != "plan" for c in CALLS)
+      and all(c[3] == hb.STAGE1_PERM for c in CALLS), [c[3] for c in CALLS])
 
 # 3: hands (privileged)
 SCRIPT = [{"action": "hands", "text": "gate log lesen und fix pushen"},
@@ -105,6 +122,25 @@ CALLS.clear()
 d = hb._staged_ask("P", ESC, False)
 check("unprivileged hands: no hands round", [c[0] for c in CALLS] == ["ask"])
 check("unprivileged hands: surfaces as did for the refusal gate", d["action"] == "did")
+
+# 7: _ask caps a tool-less round (output + wall clock), the hands round keeps its budget
+from cells.copilot.chat import copilot as _cp            # noqa: E402
+JUDGED = []
+_orig_judge = _cp.judge
+_cp.judge = lambda prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=None: (
+    JUDGED.append((tools, timeout, max_output)) or {"result": '{"action": "ignore"}'})
+hb._ask = _orig_ask
+try:
+    hb._ROUND["tools"] = hb.STAGE1_TOOLS
+    hb._ask("P")
+    hb._ROUND["tools"] = hb.HANDS_TOOLS
+    hb._ask("P")
+finally:
+    hb._ROUND["tools"] = None
+    _cp.judge = _orig_judge
+check("tool-less round: output capped + short timeout",
+      JUDGED[0] == ("", hb.STAGE1_TIMEOUT, hb.STAGE1_MAX_OUT), JUDGED)
+check("hands round: no output cap, full budget", JUDGED[1] == (hb.HANDS_TOOLS, 900, None), JUDGED)
 
 # 6: _fetch_need
 hb._fetch_need = _orig_fetch            # back to the real one, reader faked

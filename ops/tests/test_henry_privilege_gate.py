@@ -10,7 +10,7 @@ Covers:
   1. _dispatcher_privileged: owner/operator dispatcher -> True, client
      dispatcher -> False, no card / agent-name dispatcher (pm, henry) ->
      True (nothing to restrict FROM - unchanged from before this fix)
-  2. _decide: an unprivileged escalation calls _ask with perm="plan" (no
+  2. _decide: an unprivileged escalation is judged in a tool-less round (no
      edits possible at the tool layer) and the prompt tells Henry he has
      no hands this round
   3. _decide: even if the model answers "did" anyway on an unprivileged
@@ -94,6 +94,7 @@ def main():
     def fake_ask_did(prompt, model="", perm=None):
         calls["prompt"] = prompt
         calls["perm"] = perm
+        calls["tools"] = hb._ROUND.get("tools")
         return {"action": "did", "card": calls["card"], "text": "fixed it", "why": "x"}
 
     orig_ask = hb._ask
@@ -105,7 +106,10 @@ def main():
         hb._ask = fake_ask_did
         calls["card"] = "c-client"
         closed = hb._decide({"id": "e1", "kind": "test", "card": "c-client", "detail": ""})
-        ok(calls["perm"] == "plan", "unprivileged escalation calls _ask with perm='plan'")
+        # the guard is the tool-less round (no tools = no edits), not plan mode -
+        # plan mode in a tool-less round is the ExitPlanMode runaway
+        ok(calls["tools"] == "" and calls["perm"] != "plan",
+           "unprivileged escalation is judged in a tool-less round, not plan mode")
         ok("KEINE Haende" in calls["prompt"], "prompt tells Henry he has no hands this round")
         ok(closed is False, "a 'did' answer on an unprivileged escalation is REFUSED (stays open)")
         ok(len(executed) == 0, "_execute was never reached - refused before it could close via did")
@@ -123,11 +127,12 @@ def main():
         # is scoped to hands, not to Henry acting on the escalation at all.
         def fake_ask_steer(prompt, model="", perm=None):
             calls["perm"] = perm
+            calls["tools"] = hb._ROUND.get("tools")
             return {"action": "steer", "card": "c-client", "text": "please retry", "why": "x"}
         hb._ask = fake_ask_steer
         executed.clear()
         closed = hb._decide({"id": "e3", "kind": "test", "card": "c-client", "detail": ""})
-        ok(calls["perm"] == "plan", "still perm='plan' for the unprivileged card")
+        ok(calls["tools"] == "", "still a tool-less round for the unprivileged card")
         ok(closed is True and executed[0][0] == "steer",
            "a non-'did' action on an unprivileged card still executes normally")
     finally:

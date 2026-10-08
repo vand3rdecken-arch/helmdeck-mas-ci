@@ -172,7 +172,16 @@ def _extract_json(txt):
 # round WITH the three tools he actually uses. Measured per step: no tools
 # ~12k + prompt, Bash/Read/Edit ~18k, the default block ~30k.
 STAGE1_TOOLS = ""
+# NOT "plan": plan mode tells the model to finish with ExitPlanMode, a tool a
+# tool-less round does not have - it then TYPED the call, invented the result
+# ("<system>Tool ran without output</system>") and looped to the 128k output
+# cap: 3 of 12 staged judgements 2026-10-07/08, 14 min + $3.5 each, 0 of 347
+# before. With no tools there is nothing for plan mode to protect.
+STAGE1_PERM = "default"
+STAGE1_MAX_OUT = "8000"           # a verdict is one JSON; a runaway stops here
+STAGE1_TIMEOUT = 180              # s - was the 900s hands budget
 HANDS_TOOLS = "Bash,Read,Edit"
+NEED_ROUNDS = 3                   # reloads per judgement (owner: "weitersuchen duerfen")
 NEED_MAX = 5                      # readers per reload round
 NEED_CAP = 6000                   # chars kept per reader output
 _ROUND = {"tools": None}          # the tools of the round _ask is serving (one owner: _decide)
@@ -238,7 +247,7 @@ def _fetch_need(items, card):
 _STAGE1_TAIL = (
     "\n\nIn dieser Runde hast du KEINE Werkzeuge - alles, was du weisst, steht oben. "
     "Fehlt dir etwas, antworte action \"need\" mit \"data\": eine Liste aus "
-    "card, board, inbox, memory:<begriff>, ship_facts (hoechstens %d, genau einmal) - "
+    "card, board, inbox, memory:<begriff>, ship_facts (hoechstens %d pro Runde, bis zu %d Runden) - "
     "der Daemon holt es und fragt dich erneut. "
     "Musst du selbst Hand anlegen (Dateien aendern, Kommandos ausfuehren), antworte "
     "action \"hands\" mit \"text\" = was du vorhast; du bekommst dann eine Runde mit "
@@ -254,7 +263,7 @@ _STAGE1_TAIL = (
     ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
     ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
     ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
-    ' "why": "ein satz begruendung"}') % NEED_MAX
+    ' "why": "ein satz begruendung"}') % (NEED_MAX, NEED_ROUNDS)
 
 _HANDS_TAIL = (
     "\n\nJETZT hast du Werkzeuge (Bash, Read, Edit) und darfst handeln. "
@@ -288,8 +297,11 @@ def _ask(prompt, model="", perm=None):
     _decide to drop to "plan" (no edits) when _dispatcher_privileged(t) says
     the escalating card's owner does not qualify for Henry's hands."""
     from cells.copilot.chat import copilot
-    raw = copilot.judge(prompt, cwd=_HENRY_REPO_ROOT, perm=perm, model=model,
-                        tools=_ROUND.get("tools"))
+    tools = _ROUND.get("tools")
+    toolless = tools == STAGE1_TOOLS
+    raw = copilot.judge(prompt, cwd=_HENRY_REPO_ROOT, perm=perm, model=model, tools=tools,
+                        timeout=STAGE1_TIMEOUT if toolless else 900,
+                        max_output=STAGE1_MAX_OUT if toolless else None)
     txt = raw.get("result", "")
     d = _extract_json(txt)
     if d is None:
@@ -610,23 +622,27 @@ def _judgement_policy(t):
 
 
 def _staged_ask(prompt, esc, privileged):
-    """Round 1 without tools; one `need` reload (still no tools); a `hands`
-    round with HANDS_TOOLS only when Henry says he must act himself and the
-    escalation allows it. A plain `did` from a tool-less round is read as
-    `hands` - nothing was done yet, the text is the plan."""
-    stage1 = prompt + _STAGE1_TAIL
+    """Round 1 without tools; up to NEED_ROUNDS `need` reloads (still no
+    tools, each adds to what he already read); a `hands` round with
+    HANDS_TOOLS only when Henry says he must act himself and the escalation
+    allows it. A plain `did` from a tool-less round is read as `hands` -
+    nothing was done yet, the text is the plan."""
     _ROUND["tools"] = STAGE1_TOOLS
+    fetched = []
     try:
-        d = _ask(stage1, perm="plan")
-        if (d.get("action") or "").strip() == "need":
+        d = _ask(prompt + _STAGE1_TAIL, perm=STAGE1_PERM)
+        for n in range(NEED_ROUNDS):
+            if (d.get("action") or "").strip() != "need":
+                break
             items = d.get("data") or []
             if isinstance(items, str):
                 items = [x.strip() for x in items.split(",") if x.strip()]
             escalations.record_note(esc["id"], "Henry liest nach: %s" % ", ".join(map(str, items))[:200])
-            fetched = _fetch_need(items, esc.get("card"))
-            stage1 = (prompt + "\n\n== NACHGELADEN (auf deine Anfrage) ==\n" + fetched
-                      + "\n\nEin zweites \"need\" gibt es nicht - entscheide jetzt." + _STAGE1_TAIL)
-            d = _ask(stage1, perm="plan")
+            fetched.append(_fetch_need(items, esc.get("card")))
+            last = n == NEED_ROUNDS - 1
+            d = _ask(prompt + "\n\n== NACHGELADEN (auf deine Anfrage) ==\n" + "\n\n".join(fetched)
+                     + ("\n\nWeiteres \"need\" gibt es nicht - entscheide jetzt." if last else "")
+                     + _STAGE1_TAIL, perm=STAGE1_PERM)
     finally:
         _ROUND["tools"] = None
     action = (d.get("action") or "").strip()

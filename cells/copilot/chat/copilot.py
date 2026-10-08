@@ -2033,7 +2033,7 @@ def _judge_excerpt(user):
             "henry_memory_get.py find <begriff>) ==\n" + "\n".join(out) + "\n\n")
 
 
-def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None):
+def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None, max_output=None):
     """ONE judgement on a FRESH session: the brief + the escalation prompt + a
     short chat excerpt, ~32k tokens instead of re-reading the whole board
     session (measured 2026-10-07: 55k-650k per judgement, avg 209k, 17 calls in
@@ -2057,8 +2057,11 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None):
         # MCP schemas stop being deferred and cost ~19k on their own (measured:
         # 32.6k with the user's servers vs 13.2k without, same empty prompt).
         argv += ["--tools", tools] + _lean_mcp_args()
+    env = tool_path()
+    if max_output:
+        env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(max_output)
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
-                         stdin=subprocess.PIPE, env=tool_path(),
+                         stdin=subprocess.PIPE, env=env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -2087,7 +2090,7 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None):
     return raw
 
 
-def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None):
+def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=None):
     """ONE judgement turn (henry_broker's escalation call) run on the OWNER'S
     OWN board session, from a possibly different cwd/permission level than
     the persistent chat process - not a second, session-less brain.
@@ -2122,7 +2125,8 @@ def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None):
     if not user:
         raise RuntimeError("henry: no owner account to judge on")
     if _judge_lean():
-        return _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=tools)
+        return _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=tools,
+                               max_output=max_output)
     skey = _skey(user)
     lk = _turn_lock(user)
     lk.acquire()
