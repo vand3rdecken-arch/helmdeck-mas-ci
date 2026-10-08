@@ -122,13 +122,20 @@ def _record_turn_shape(t, meta):
     tools = meta.get("turn_tools")
     if not tools:
         return
+    # turn_in = FRESH input (input + cache_creation); cache_read is kept
+    # apart and the ratio is cost-weighted (cache_read ~0.1x), see
+    # drivers._turn_shape_watch.
     tin, tout = meta.get("turn_in", 0), meta.get("turn_out", 0)
-    ratio = round(tin / float(max(tout, 1)), 1)
+    tcr = meta.get("turn_cache_read", 0)
+    twt = meta.get("turn_in_weighted", tin)
+    ratio = round(twt / float(max(tout, 1)), 1)
     ended = time.strftime("%Y-%m-%d %H:%M:%S")
     t["turn_tools"], t["turn_in"], t["turn_out"] = tools, tin, tout
+    t["turn_cache_read"], t["turn_in_weighted"] = tcr, twt
     t["turn_ratio"], t["turn_ended"] = ratio, ended
     hist = t.setdefault("turn_history", [])
-    hist.append({"tools": tools, "in": tin, "out": tout, "ratio": ratio, "ended": ended})
+    hist.append({"tools": tools, "in": tin, "cache_read": tcr, "out": tout,
+                 "ratio": ratio, "ended": ended})
     del hist[:-5]
 
 

@@ -301,6 +301,10 @@ _TURN_BURN_REEMIT_S = 900      # a turn-burn Henry decided within this window is
 # card 20260920-230628-direct ran 123 tool calls in one turn (19.4M in vs
 # 0.10M out, 190:1) before anything noticed - WARN at 40 catches it a third
 # of the way in, ALARM at 80 well before the invoice does.
+# The WARN/ALARM rungs count TOOL CALLS, not tokens, so the cache_read split
+# (turn_in = fresh only) does not move them; only the reported in:out ratio
+# is now cost-weighted (cache_read ~0.1x of a fresh input token).
+_CACHE_READ_WEIGHT = 0.1
 _TURN_TOOLS_WARN = 40
 _TURN_TOOLS_ALARM = 80
 _sweeper_started = False
@@ -1251,9 +1255,15 @@ class _ClaudeSession:
                     and p.get("type") == "tool_use" and p.get("name") in ("WebSearch", "WebFetch"))
             u = msg.get("usage")
             if isinstance(u, dict) and u:
-                cur["turn_in"] = cur.get("turn_in", 0) + int(u.get("input_tokens") or 0) \
-                    + int(u.get("cache_creation_input_tokens") or 0) \
-                    + int(u.get("cache_read_input_tokens") or 0)
+                # cache_read is re-sent context billed at ~0.1x, NOT fresh
+                # input: kept apart, so a 190:1 "ratio" is not mostly cache.
+                fresh = int(u.get("input_tokens") or 0) \
+                    + int(u.get("cache_creation_input_tokens") or 0)
+                cr = int(u.get("cache_read_input_tokens") or 0)
+                cur["turn_in"] = cur.get("turn_in", 0) + fresh
+                cur["turn_cache_read"] = cur.get("turn_cache_read", 0) + cr
+                cur["turn_in_weighted"] = cur.get("turn_in_weighted", 0) \
+                    + int(fresh + cr * _CACHE_READ_WEIGHT)
                 cur["turn_out"] = cur.get("turn_out", 0) + int(u.get("output_tokens") or 0)
             if cur.get("turn_tools", 0) > _TURN_TOOLS_WARN:
                 self._turn_shape_check(cur)
@@ -1272,13 +1282,13 @@ class _ClaudeSession:
         n = cur.get("turn_tools", 0)
         if n > _TURN_TOOLS_ALARM and not cur.get("shape_alarm_fired"):
             cur["shape_alarm_fired"] = True
-            ratio = cur.get("turn_in", 0) / float(max(cur.get("turn_out", 0), 1))
+            ratio = cur.get("turn_in_weighted", 0) / float(max(cur.get("turn_out", 0), 1))
             try:
                 if self.run_dir:
                     from spine.ops.actionlog import ActionLog
                     ActionLog(self.run_dir).log("note",
                         "\U0001F6A8 Turn-Form ALARM: %d Werkzeugaufrufe in diesem Turn "
-                        "(Schwelle %d), Verhaeltnis %.0f:1 Eingabe:Ausgabe - Turn laeuft "
+                        "(Schwelle %d), Verhaeltnis %.0f:1 kostengewichtet Eingabe:Ausgabe - Turn laeuft "
                         "weiter, nur gemeldet." % (n, _TURN_TOOLS_ALARM, ratio))
             except Exception:
                 pass
@@ -1286,7 +1296,7 @@ class _ClaudeSession:
                 from cells.copilot.planning.pm_comm import _to_henry
                 _to_henry("turn-shape", card=self.tid,
                     detail=("Karte %s: laufender Turn hat %d Werkzeugaufrufe erreicht "
-                            "(Schwelle %d), Verhaeltnis %.0f:1 Eingabe:Ausgabe. Nur eine "
+                            "(Schwelle %d), Verhaeltnis %.0f:1 kostengewichtet Eingabe:Ausgabe. Nur eine "
                             "Meldung - der Turn wird NICHT abgebrochen."
                             % (self.tid, n, _TURN_TOOLS_ALARM, ratio)),
                     feed="Turn-Form ALARM auf Karte %s: %d Aufrufe, %.0f:1"
@@ -1621,7 +1631,9 @@ class _ClaudeSession:
                 # turn-shape snapshot (order 77) - the driver's own live fold,
                 # not re-derived from cumulative tokens_in/out (_record_turn_shape).
                 "turn_tools": cur.get("turn_tools", 0), "turn_web": cur.get("turn_web", 0),
-                "turn_in": cur.get("turn_in", 0), "turn_out": cur.get("turn_out", 0)}
+                "turn_in": cur.get("turn_in", 0), "turn_out": cur.get("turn_out", 0),
+                "turn_cache_read": cur.get("turn_cache_read", 0),
+                "turn_in_weighted": cur.get("turn_in_weighted", 0)}
         # a compaction that ran INSIDE this turn (system/compact_boundary seen
         # by the pump): {trigger, pre_tokens, post_tokens, duration_ms}. The
         # /compact turn has no assistant call of its own, so ctx_usage is empty

@@ -139,17 +139,18 @@ def main():
             # result. Lets a test dial the exact tool count and in:out ratio
             # a real 123-call turn would have produced, without the CLI.
             try:
-                _, n_s, in_s, out_s = text.split(":", 3)
-                n, tin, tout = int(n_s), int(in_s), int(out_s)
+                _p = text.split(":")
+                n, tin, tout = int(_p[1]), int(_p[2]), int(_p[3])
+                tcr = int(_p[4]) if len(_p) > 4 else 0
             except ValueError:
-                n, tin, tout = 10, 100, 10
+                n, tin, tout, tcr = 10, 100, 10, 0
             for i in range(n):
                 emit({"type": "assistant", "session_id": SID, "message": {
                     "role": "assistant",
                     "content": [{"type": "tool_use", "id": "tu%d" % i, "name": "Bash",
                                  "input": {"command": "step %d" % i}}],
                     "usage": {"input_tokens": tin, "output_tokens": tout,
-                              "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}})
+                              "cache_read_input_tokens": tcr, "cache_creation_input_tokens": 0}}})
             emit({"type": "result", "subtype": "success", "result": "shape-done",
                   "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
                   "modelUsage": {"claude-fake": {}}, "session_id": SID})

@@ -75,8 +75,10 @@ export interface Track {
    *  drivers._turn_shape_watch. turn_history keeps the last 5 turns'
    *  shape so a single outlier reads against a pattern. */
   turn_tools?: number; turn_in?: number; turn_out?: number; turn_ratio?: number;
+  /** turn_in = fresh input only; cache_read apart; ratio = cost-weighted. */
+  turn_cache_read?: number; turn_in_weighted?: number;
   turn_ended?: string;
-  turn_history?: { tools: number; in: number; out: number; ratio: number; ended: string }[];
+  turn_history?: { tools: number; in: number; cache_read?: number; out: number; ratio: number; ended: string }[];
   ctx_tokens?: number;   // current context-window size (last turn's input side) - for the meter
   /** the model's context WINDOW, derived daemon-side from the model id ([1m] =
    *  1M) and from evidence (a successful call proves a lower bound). The meter

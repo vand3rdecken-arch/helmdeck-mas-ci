@@ -5510,7 +5510,20 @@ DEBT = [
                "shape next to tokens/models on the card. Still open: (1) evict or "
                "replace a tool result with a file reference once it is N rounds old and "
                "its file still exists - the actual fix for the cost itself, not just its "
-               "visibility.",
+               "visibility. Partly paid 2026-10-08 (measurement): turn_in is now FRESH "
+               "input only (input + cache_creation), cache_read is kept apart "
+               "(turn_cache_read) and the shown ratio is cost-weighted (cache_read x0.1, "
+               "turn_in_weighted); the 40/80 rungs count tool calls so they did not move. "
+               "Eviction checked 2026-10-08 against the shipped claude.exe: the CLI owns "
+               "the message history and has its own clear_tool_uses_20250919 / keep-recent "
+               "microcompact (persisted-output file, keep last 5, >=20k saved), but it only "
+               "fires after an idle gap >= 3900s or on a server context hint, has no env/"
+               "flag/settings knob for a busy turn, and a PostToolUse hook can only rewrite "
+               "a result at arrival (updatedToolOutput), not evict it later. The only "
+               "pass-through is --autocompact <100k-1M tokens> (whole-context summary, not "
+               "per-result eviction), not yet wired. Open: decide between wiring "
+               "--autocompact as a per-turn context cap, or owning the API loop to evict "
+               "like OpenCode compaction.ts (a different architecture).",
         "since": "2026-09-21",
         "order": 77,
     },

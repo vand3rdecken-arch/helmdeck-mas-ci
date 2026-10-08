@@ -142,6 +142,16 @@ check([h["tools"] for h in hist] == [42, 43, 44, 45, 46],
       "turn_history keeps the last 5, oldest dropped (got %r)" % [h["tools"] for h in hist])
 check(last.get("turn_tools") == 46, "the card's turn_tools is the LATEST turn's (got %r)" % last.get("turn_tools"))
 
+# --- 5) cache_read is NOT fresh input: split + cost-weighted ratio ------------
+# 10 calls, each in=100 fresh, out=10, cache_read=10000. Old code folded
+# cache_read into turn_in (turn_in=1_001_000, ratio 10010:1).
+t = _run_and_finish("shape-cache", "__SHAPE__:10:100:10:10000")
+check(t.get("turn_in") == 1000, "turn_in is FRESH input only (got %r)" % t.get("turn_in"))
+check(t.get("turn_cache_read") == 100000, "turn_cache_read kept apart (got %r)" % t.get("turn_cache_read"))
+check(t.get("turn_in_weighted") == 11000, "weighted = fresh + 0.1*cache_read (got %r)" % t.get("turn_in_weighted"))
+check(t.get("turn_ratio") == 110.0, "ratio is cost-weighted (got %r)" % t.get("turn_ratio"))
+check(t["turn_history"][-1].get("cache_read") == 100000, "history carries cache_read")
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails)); sys.exit(1)
