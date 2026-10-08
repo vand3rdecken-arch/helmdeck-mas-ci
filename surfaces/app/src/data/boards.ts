@@ -169,20 +169,3 @@ export function doneBucket(k: Track, now: number): "today" | "week" | "older" | 
 /** A done card past the window - what the "N older" link counts. */
 export const isOlderDone = (k: Track, now: number) =>
   cardStation(k) === "done" && doneBucket(k, now) === "hidden";
-
-/** Jira-style quick filters. Local screen state, not a saved view (stage 2). */
-export interface Quick { mine: boolean; week: boolean; prio: boolean; text: string }
-export const NO_QUICK: Quick = { mine: false, week: false, prio: false, text: "" };
-export const quickActive = (f: Quick) => f.mine || f.week || f.prio || f.text.trim() !== "";
-
-export function matchesQuick(k: Track, f: Quick, me: string | undefined, now: number) {
-  if (f.mine && !(me && (k.client === me || (k.zugewiesen_an ?? []).includes(me)))) return false;
-  if (f.prio && k.priority !== "urgent" && k.priority !== "high") return false;
-  if (f.week) {
-    const t = Date.parse((k.done_at || k.updated || "").replace(" ", "T"));
-    if (Number.isNaN(t) || t < now - 7 * DAY_MS) return false;
-  }
-  const q = f.text.trim().toLowerCase();
-  if (q && !`${k.task ?? ""} ${k.repo ?? ""} ${k.branch ?? ""} ${k.id ?? ""}`.toLowerCase().includes(q)) return false;
-  return true;
-}

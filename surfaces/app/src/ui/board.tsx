@@ -1,7 +1,7 @@
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+﻿import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Animated as RNAnimated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -10,8 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/data/client";
 import { useBoardFilter } from "@/data/boardfilter";
 import { cardStation, columnLabel, doneBucket, doneTime, groupByColumn, isOlderDone,
-  matchesQuick, NO_QUICK, quickActive, renderColumns, useBoards,
-  type Quick, type RenderColumn } from "@/data/boards";
+  renderColumns, useBoards, type RenderColumn } from "@/data/boards";
 import { OLDER_KEY } from "@/data/tracks_sync";
 import { useDemo } from "@/data/demo";
 import { needsOwner, phaseKey } from "@/data/phase";
@@ -29,7 +28,7 @@ import { useActionSheet } from "./action_sheet";
 import { SignOff } from "./sign_off";
 import { SignOffBatch } from "./sign_off_batch";
 
-/** Content-layer card (Apple HIG: don't put Liquid Glass in the content layer —
+/** Content-layer card (Apple HIG: don't put Liquid Glass in the content layer â€”
  *  use an opaque standard surface with a hairline + soft elevation shadow, and
  *  let the aurora show through the *chrome* instead). */
 function contentCardStyle(t: ThemeTokens) {
@@ -85,12 +84,12 @@ export function useLaneLabels() {
     ?? (LANE_KEY[lane] ? tr(LANE_KEY[lane]) : lane.charAt(0).toUpperCase() + lane.slice(1));
 }
 
-/** The completion date on a done card: "Fertig · 14:32" today, "Fertig · 03.10."
+/** The completion date on a done card: "Fertig Â· 14:32" today, "Fertig Â· 03.10."
  *  otherwise. A card with no done_at (reconstruction found no event) falls
  *  back to the old accepted line. */
 function doneStamp(k: Track, tr: TFn) {
   const d = k.done_at;
-  if (!d) return tr("board.accepted") + (k.updated ? ` · ${k.updated}` : "");
+  if (!d) return tr("board.accepted") + (k.updated ? ` Â· ${k.updated}` : "");
   const today = new Date().toLocaleDateString("sv");   // YYYY-MM-DD, local
   const when = d.slice(0, 10) === today ? d.slice(11, 16) : `${d.slice(8, 10)}.${d.slice(5, 7)}.`;
   return tr("board.doneAt", { when });
@@ -108,14 +107,14 @@ function laneSort(a: Track, b: Track) {
 const isRunning = (k: Track) => k.status === "running" || k.lane === "working";
 
 /** Two lines of a PM work package, worth reading. The stored body is structured
- *  (NUTZERGESCHICHTE / FERTIG, WENN / …); flattened raw, the ALL-CAPS heads run
- *  into the prose ("NUTZERGESCHICHTE Als Owner… FERTIG, WENN - Die…") and eat
+ *  (NUTZERGESCHICHTE / FERTIG, WENN / â€¦); flattened raw, the ALL-CAPS heads run
+ *  into the prose ("NUTZERGESCHICHTE Als Ownerâ€¦ FERTIG, WENN - Dieâ€¦") and eat
  *  the preview. Drop the heads and lead with the actual user story. */
 function descPreview(d?: string) {
   const body = (d ?? "").split("\n").filter((l) => {
     const s = l.trim();
     if (!s) return false;
-    return !(s.length <= 40 && s === s.toUpperCase() && /[A-ZÄÖÜ]/.test(s));
+    return !(s.length <= 40 && s === s.toUpperCase() && /[A-ZÃ„Ã–Ãœ]/.test(s));
   });
   return body.join(" ").replace(/\s+/g, " ").trim();
 }
@@ -129,7 +128,7 @@ const isGating = (k: Track) => k.status === "gating";
  *  Review/Done now run in the BACKGROUND (the gate alone is a subprocess with a
  *  600s ceiling), so the move answers {gating:true} and the real verdict lands
  *  on the card, in the chat and by push. Acknowledge the START here rather than
- *  reporting an outcome we don't have yet — the old inline call blocked the
+ *  reporting an outcome we don't have yet â€” the old inline call blocked the
  *  request for minutes and put the only copy of the reason in a 5s toast. */
 function laneVerdict(res: LaneMove, lane: string): string | null {
   // The onboarding example card refuses every move off Backlog (it never runs
@@ -167,7 +166,7 @@ function laneVerdict(res: LaneMove, lane: string): string | null {
   return lane === "working" ? tt("board.verdict.dispatched") : lane === "backlog" ? tt("board.verdict.queued") : null;
 }
 
-/** A softly pulsing dot — the board's live "this card's agent is running" cue.
+/** A softly pulsing dot â€” the board's live "this card's agent is running" cue.
  *  Works everywhere (LiveThumb hides itself over the relay the phone uses).
  *  Uses RN's core Animated, NOT reanimated: the enabled React Compiler mangles
  *  reanimated's useAnimatedStyle worklet (crashed with "undefined is not a
@@ -228,7 +227,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
     >
       {/* Visible menu affordance. The card menu used to be LONG-PRESS only,
           which is undiscoverable and unreachable with a mouse - on desktop the
-          menu was simply inaccessible. This ⋯ opens the same action sheet on a
+          menu was simply inaccessible. This â‹¯ opens the same action sheet on a
           plain tap. A nested Pressable captures the touch, so it does not also
           open the card. */}
       <Pressable onPress={() => onMove(k)} hitSlop={8}
@@ -239,7 +238,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       </Pressable>
       {tint ? (
         <Text style={{ color: tint, fontSize: 11.5, fontWeight: "600", paddingRight: 22 }}>
-          {k.status === "needs_you" ? "● " + tr(phaseKey(k) ?? "status.needsYou") : tr("board.card.bounced")}
+          {k.status === "needs_you" ? "â— " + tr(phaseKey(k) ?? "status.needsYou") : tr("board.card.bounced")}
         </Text>
       ) : null}
       {k.phase === "asking" && askText(k) ? (
@@ -268,7 +267,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       {/* Last-reply preview: clamped by default, TAP to expand in place. The
           hard 2-line clamp with flattened newlines made long worker replies
           unreadable on the board (owner report) - and the only alternative was
-          opening the card. A nested Pressable (same trick as the ⋯ menu above)
+          opening the card. A nested Pressable (same trick as the â‹¯ menu above)
           toggles the clamp without also navigating into the card. */}
       {sub ? (
         <Pressable onPress={() => setSubOpen((v) => !v)} hitSlop={4}>
@@ -285,7 +284,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         </Pressable>
       ) : null}
       <View style={[s.row, { flexWrap: "wrap", gap: 6 }]}>
-        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>⛓ {stepNo ? tr("board.step", { n: String(stepNo) }) : (k.process_title ?? tr("board.process"))}</Text> : null}
+        {k.process ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>â›“ {stepNo ? tr("board.step", { n: String(stepNo) }) : (k.process_title ?? tr("board.process"))}</Text> : null}
         {k.driver && k.driver !== "claude" ? <Text style={{ color: t.accent, fontSize: 11, fontWeight: "600" }}>{k.driver}</Text> : null}
         {k.priority && k.priority !== "medium" ? <Chip text={prioLabel(tr, k.priority)} dot={k.priority === "urgent" ? t.danger : t.warn} /> : null}
         {waitsOnTask(k) ? <Chip text={tr("board.card.waitsOnTask")} dot={t.ai} />
@@ -306,7 +305,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
                 dot={k.device_stale ? t.danger : t.ai} />
         ) : null}
         {k.due ? <Chip text={tr("board.due", { d: k.due })} /> : null}
-        {k.value > 0 ? <Chip text={`€${k.value}`} /> : null}
+        {k.value > 0 ? <Chip text={`â‚¬${k.value}`} /> : null}
         {k.ai_cost > 0 ? <Chip text={flat
           ? planLabel(tr, e?.plan_pct, (k.tokens_in ?? 0) + (k.tokens_out ?? 0))
           : `AI $${k.ai_cost.toFixed(2)}`} /> : null}
@@ -334,7 +333,7 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
     k.mode === "human" ? tr("board.why.human") : k.mode === "cowork" ? tr("board.why.cowork") : tr("board.why.next");
   return (
     <View style={[s.nextup, { backgroundColor: t.warn + "12", borderColor: t.warn + "66" }]}>
-      <Text style={{ color: t.warn, fontSize: 11.5, fontWeight: "700" }}>▸ {tr("board.nextUp")}</Text>
+      <Text style={{ color: t.warn, fontSize: 11.5, fontWeight: "700" }}>â–¸ {tr("board.nextUp")}</Text>
       {items.slice(0, 4).map((k) => (
         <Pressable key={k.id} onPress={() => router.push(`/card/${k.id}`)} style={[s.row, { gap: 8 }]}>
           <Dot color={statusColor(t, k.status)} />
@@ -360,7 +359,7 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
  *  repo, so this is a display label only - the filter value stays the full path
  *  because two projects can share a basename. */
 const repoName = (p?: string) =>
-  (p ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "—";
+  (p ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "â€”";
 
 function ScopeChip({ label, count, active, onPress }: {
   label: string; count?: number; active: boolean; onPress: () => void;
@@ -381,34 +380,8 @@ function ScopeChip({ label, count, active, onPress }: {
   );
 }
 
-/** Jira-style quick filters beside the scope chips: mine / last 7 days / high
- *  priority + free text. Local screen state, not a saved view. (The repo filter
- *  is the ScopeBar's own repo chips - not repeated here.) */
-function QuickBar({ q, onChange }: { q: Quick; onChange: (q: Quick) => void }) {
-  const t = useTheme();
-  const tr = useT();
-  const flip = (k: "mine" | "week" | "prio") => onChange({ ...q, [k]: !q[k] });
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
-      <ScopeChip label={tr("board.quick.mine")} active={q.mine} onPress={() => flip("mine")} />
-      <ScopeChip label={tr("board.quick.week")} active={q.week} onPress={() => flip("week")} />
-      <ScopeChip label={tr("board.quick.prio")} active={q.prio} onPress={() => flip("prio")} />
-      <TextInput value={q.text} onChangeText={(text) => onChange({ ...q, text })}
-        placeholder={tr("board.quick.search")} placeholderTextColor={t.txtPlaceholder}
-        accessibilityLabel={tr("board.quick.search")}
-        style={{ flexGrow: 1, flexBasis: 140, maxWidth: 260, color: t.txtPrimary, fontSize: 12,
-          backgroundColor: t.surface2, borderColor: t.borderSubtle, borderWidth: 1,
-          borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5 }} />
-      {quickActive(q) ? (
-        <Pressable onPress={() => onChange(NO_QUICK)} hitSlop={6} accessibilityRole="button">
-          <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("board.quick.clear")}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
 
-/** Done column sub-header (Heute / Diese Woche / Älter). */
+/** Done column sub-header (Heute / Diese Woche / Ã„lter). */
 function DoneGroupLabel({ bucket }: { bucket: string }) {
   const t = useTheme();
   const tr = useT();
@@ -420,7 +393,7 @@ function DoneGroupLabel({ bucket }: { bucket: string }) {
   );
 }
 
-/** "N ältere" - the Done column's door to the archive view. */
+/** "N Ã¤ltere" - the Done column's door to the archive view. */
 function OlderLink({ n, onPress }: { n: number; onPress: () => void }) {
   const t = useTheme();
   const tr = useT();
@@ -717,7 +690,7 @@ function WideKanban({
                     ? <DoneGroupLabel bucket={doneBucket(k, now)} /> : null}
                   {indicator?.col === col.id && indicator.index === i ? <Ins /> : null}
                   <DraggableCard k={k} colId={col.id} onMoveTarget={onMoveTarget} onDropCard={onDropCard} onMeasure={onMeasure}>
-                    {/* real onMove, not a no-op: the ⋯ menu button inside the
+                    {/* real onMove, not a no-op: the â‹¯ menu button inside the
                         card needs it, and long-press is unreachable with a mouse
                         on desktop (the card menu was inaccessible there). */}
                     <Card k={k} onMove={onMove} />
@@ -735,7 +708,7 @@ function WideKanban({
 }
 
 /** Shown when the board can't reach a daemon. HelmDeck is a companion app, so
- *  "offline" is also what every first-time visitor sees before pairing — the
+ *  "offline" is also what every first-time visitor sees before pairing â€” the
  *  one place where offering the demo actually helps instead of nagging. */
 function DemoInvite() {
   const t = useTheme();
@@ -778,7 +751,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // Freshness is driven by the global version long-poll (useGlobalStream); this
   // interval is just a slow safety net if that loop errors.
   // While the daemon is gating/merging a card, 20s is far too coarse to feel
-  // like feedback — poll hard until the verdict lands, then back off.
+  // like feedback â€” poll hard until the verdict lands, then back off.
   // No timer (2026-09-24): every writer of this data moves the daemon's `v`,
   // and a moved `v` reaches the phone as a pushed event (or the long-poll)
   // that invalidates every query - app/_layout.tsx useGlobalStream. A timer
@@ -824,8 +797,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const setStoreFilter = useBoardFilter((s) => s.setFilter);
   const eff = filter ?? storeFilter;
   // Normally Track[]. Over the relay a hiccup or a pairing/pin mismatch
-  // (the daemon's 409 "another phone is paired…") comes back as an {error}
-  // OBJECT, not an array — `?? []` doesn't catch that, and calling .filter on
+  // (the daemon's 409 "another phone is pairedâ€¦") comes back as an {error}
+  // OBJECT, not an array â€” `?? []` doesn't catch that, and calling .filter on
   // it white-screened the whole board. Guard the shape and surface the message.
   // The synced board (["tracks"]) holds the non-archived view only; the Archive
   // filter has its own list, fetched only while it is open.
@@ -839,7 +812,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     ? String((data as { error?: unknown }).error ?? "") : "";
   // Offer the sample board wherever the board is UNUSABLE with nothing to show:
   // hard-offline (health store) OR any query error OR an error payload. The
-  // health store alone is too narrow — a reachable-but-unauthenticated daemon
+  // health store alone is too narrow â€” a reachable-but-unauthenticated daemon
   // (401, e.g. an emulator hitting 10.0.2.2) round-trips fine so health stays
   // "ok", yet the board is just as empty and unpaired as a first-launch tester's.
   const offline = useHealth((s) => s.status === "offline");
@@ -850,13 +823,10 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // The server holds most back (older_done); this also covers a card the app
   // already holds that has aged out since the last baseline.
   const now = Date.now();
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const { data: serverOlder } = useQuery<number>({ queryKey: OLDER_KEY, queryFn: () => 0, enabled: false, initialData: 0 });
-  const [quick, setQuick] = useState<Quick>(NO_QUICK);
   const heldOlder = Array.isArray(data) ? data.filter((k) => !k.archived && isOlderDone(k, now)).length : 0;
   const olderCount = (serverOlder ?? 0) + heldOlder;
   const shown = rows.filter((k) => {
-    if (!matchesQuick(k, quick, me?.name, now)) return false;
     if (eff === "archived") return !!k.archived || isOlderDone(k, now);
     if (isOlderDone(k, now)) return false;
     if (eff === "needs_you") return needsOwner(k) && !k.archived;
@@ -872,7 +842,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   // about what this screen claims to display - a card hidden by the Archive
   // filter is not "invisible", it is filtered.
   const columns = useMemo(() => renderColumns(active, shown), [active, shown]);
-  // Moving from the ⋯ sheet targets a STATION, offered under the board's own
+  // Moving from the â‹¯ sheet targets a STATION, offered under the board's own
   // wording. Deduped by station: two columns showing one station are one
   // destination, and listing it twice would read as two different places.
   const moveTargets = useMemo(() => {
@@ -885,7 +855,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
       title: k.task,
       message: tr("board.moveTo"),
       options: moveTargets.filter((c) => c.station !== cardStation(k)).map((c) => ({
-        label: "→ " + columnLabel(c, label),
+        label: "â†’ " + columnLabel(c, label),
         onPress: async () => {
           const l = c.station;
           if (gateDone(k, l)) return;
@@ -941,7 +911,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
           borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12 }}>
           <Ionicons name="shield-checkmark" size={15} color={t.human} />
           <Text style={{ color: t.txtSecondary, fontSize: 12.5, flex: 1 }}>
-            {tr("sign.badgeNeeds")} · {signable.length}
+            {tr("sign.badgeNeeds")} Â· {signable.length}
           </Text>
           {picking ? (
             <>
@@ -986,7 +956,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                 <Ionicons name={on ? "checkbox" : "square-outline"} size={18}
                           color={on ? t.human : t.txtPlaceholder} />
                 <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>
-                  {k.id} · {k.task}
+                  {k.id} Â· {k.task}
                 </Text>
               </Pressable>
             );
@@ -994,7 +964,6 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         </View>
       ) : null}
       {!filter ? <ScopeBar rows={rows} filter={eff} onSet={setStoreFilter} /> : null}
-      {!filter ? <QuickBar q={quick} onChange={setQuick} /> : null}
       {!filter ? <LayoutToggle layout={layout} onSet={setLayout} /> : null}
       {!filter && !archiveView && nextUp.length > 0 ? (
         <NextUp items={nextUp} onDone={async (k) => {
@@ -1007,7 +976,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         shown.length === 0 ? <Empty text={tr("board.emptyNeedsYou")} /> :
           shown.map((k) => <Card key={k.id} k={k} onMove={onMove} />)
       ) : layout === "timeline" ? (
-        // Timeline = the old web's day-scaled bar view (created→last activity,
+        // Timeline = the old web's day-scaled bar view (createdâ†’last activity,
         // today line, due diamonds). No separate "Gantt" tab anymore.
         <GanttView tracks={shown} onOpen={(id) => router.push(`/card/${id}`)} wide={wide} />
       ) : wide && layout === "board" ? (

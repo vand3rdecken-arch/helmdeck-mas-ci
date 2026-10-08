@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """The structural debt register - the program's own list of load-bearing
 shortcuts. Debt lives IN the code (reviewed like code, updated when paid),
 is visible in the History view, known to the copilot, and convertible to a
@@ -2362,7 +2362,7 @@ DEBT = [
         "id": "plugin-kernel-dual-nav",
         "title": "Plugin kernel boots alongside expo-router (two navigation systems)",
         "status": "open",
-        "progress": "ec7e307: the PRODUCTION tab set is now registry-driven — root "
+        "progress": "ec7e307: the PRODUCTION tab set is now registry-driven â€” root "
                     "_layout boots the 'app' profile + provides the kernel; "
                     "(tabs)/_layout renders <Tabs.Screen> from the nav.tabs surface "
                     "plugin with a 1:1 hard-coded fallback (never bricks). "
@@ -2531,7 +2531,7 @@ DEBT = [
     },
     {
         "id": "daemon-god-files",
-        "title": "Daemon god-file breakup — SUBSTANTIALLY RESOLVED: 23 service/"
+        "title": "Daemon god-file breakup â€” SUBSTANTIALLY RESOLVED: 23 service/"
                  "route modules extracted, server.py's ENTIRE route surface "
                  "is now dispatch-table-driven (2109 -> 478 lines); pm.py's "
                  "notice cluster investigated and DECLINED (confirmed genuinely "
@@ -2809,7 +2809,7 @@ DEBT = [
     {
         "id": "orphan-root-paths-events-jsonl-incident",
         "title": "Modules with their own hardcoded ROOT path silently bypass "
-                 "db.py sandboxing in tests — one real incident, partially fixed",
+                 "db.py sandboxing in tests â€” one real incident, partially fixed",
         "status": "open",
         "what": "While route-testing /processes (test_server_routes.py, part of "
                 "the daemon-god-files work): processes.py had its OWN flat-file "
@@ -3809,7 +3809,7 @@ DEBT = [
                 "NOT guessed - every symbol was read out of the real 0.9.0 AARs "
                 "with javap after fetching them from GitHub Packages, so the "
                 "signatures are measured even though the code is unbuilt.",
-        "why_it_bites": "⚠ UPDATED 2026-09-04 - THE 'UNCOMPILED' PREMISE IS DEAD "
+        "why_it_bites": "âš  UPDATED 2026-09-04 - THE 'UNCOMPILED' PREMISE IS DEAD "
                         "and the entry is retitled to what actually remains. "
                         "MEASURED against the shipped artifact, not reasoned: all "
                         "four classes - app/helmdeck/voice/GlassVoiceService, "
@@ -4275,7 +4275,7 @@ DEBT = [
                 "surfaces/app/src/app/card/[id].tsx) only folds the finished "
                 "reply into the card's timeline once the whole turn returns.",
         "why_it_bites": "A slow Henry turn on a card shows nothing but the "
-                        "local 'Henry denkt…' indicator (card.chat.henryThinking) "
+                        "local 'Henry denktâ€¦' indicator (card.chat.henryThinking) "
                         "for the full duration, instead of live text appearing "
                         "the way a card Worker's own turn streams.",
         "trigger": "a card-scoped Henry turn regularly takes long enough "
@@ -4293,7 +4293,7 @@ DEBT = [
                "(our send is running AND r.card === this card) because the feed "
                "is per user and turns are serialised - an unscoped read would "
                "have painted a board-chat answer into a card's timeline. The "
-               "'Henry denkt…' row now stands down as soon as prose arrives.",
+               "'Henry denktâ€¦' row now stands down as soon as prose arrives.",
         "order": 50,
     },
     {
@@ -4309,7 +4309,7 @@ DEBT = [
         "why_it_bites": "It is the exact failure the templates were written to "
                         "avoid, and spine/registry/templates.py's own docstring "
                         "names it: a value that reports success and changes "
-                        "nothing. The PRD's tables (§3.1/§3.2) mark the card "
+                        "nothing. The PRD's tables (Â§3.1/Â§3.2) mark the card "
                         "kind 'neu als Repo-Default', so this half was always "
                         "future work - but until it is wired the documents "
                         "template CANNOT promise 'direkt im Ordner'. Its prose "
@@ -4354,7 +4354,7 @@ DEBT = [
                         "these two policy keys it does not. It is NOT silent: "
                         "the deviation is recorded in projects.overrides/applied "
                         "at write time and the pipeline card renders 'vom "
-                        "Standard abgewichen' (PRD §5 accepted exactly this "
+                        "Standard abgewichen' (PRD Â§5 accepted exactly this "
                         "trade). But visible drift is still drift, and the "
                         "measured proof is in ops/docs/shots/harness/"
                         "repo-code.png: the code repo shows two deviations it "
@@ -4374,7 +4374,7 @@ DEBT = [
                "values above their loops (the hoist was WHY they had to be "
                "global) and resolve at the decision point, where the card's repo "
                "is in hand. capacity.wip_limit deliberately stays workspace-wide: "
-               "it is a property of the machine, per PRD §9 A. resolve()'s "
+               "it is a property of the machine, per PRD Â§9 A. resolve()'s "
                "deviation check compares per-repo now, or every repo whose "
                "template legitimately differs from the workspace default would "
                "show a permanent phantom deviation. A repo with no template is "
@@ -4965,7 +4965,7 @@ DEBT = [
         "why_it_bites": "RESOLVED for the backend + export/import track "
                         "(ops/tests/test_process_templates.py, full round "
                         "trip through the real HTTP handlers). The UI split "
-                        "(a Vorlagen list above the Läufe list on the "
+                        "(a Vorlagen list above the LÃ¤ufe list on the "
                         "Prozesse screen, 'als Vorlage speichern' action) "
                         "is NOT yet built - the API is there "
                         "(GET /process_templates, POST /process_templates/"
@@ -5668,7 +5668,7 @@ DEBT = [
                "file (CLAUDE_CONFIG_DIR + a copied/linked .credentials.json) or "
                "an API-key spawn; register room-henry in harness.py AGENT_CELL/"
                "_DEFAULTS and read it via harness.brief().",
-        "paid_note": "PAID 2026-10-08 (board overview stage 1): window = open + recently done, the rest on demand via ?archived=1; policy.done_archive_days (default 60) auto-archives old done cards.",
+        "paid_note": "PAID 2026-10-08 (board overview stage 1): window = open + recently done, the rest on demand via ?archived=1.",
         "since": "2026-10-05",
         "order": 82,
     },

@@ -469,31 +469,6 @@ def check_landed_not_closed():
                                         or (r or {}).get("gate_report") or "")[:300]))
 
 
-def sweep_done_archive(now=None):
-    """Archive done cards older than policy.done_archive_days (Jira/Linear
-    auto-archive of closed issues). Acts on done_at, the completion the accept
-    mutators recorded - a done card without it is left alone. Reversible: the
-    same archive_track the owner uses, actor 'policy'. Capped per tick so the
-    first run over a long backlog is spread out, not one burst."""
-    from spine.storage import events
-    from cells.engineer.cards import cardadmin
-    days = ((events.settings().get("policy") or {}).get("done_archive_days") or 0)
-    if not isinstance(days, (int, float)) or days <= 0:
-        return []
-    cutoff = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime((now or time.time()) - days * 86400))
-    old = [t["id"] for t in _load()
-           if t.get("lane") == "done" and not t.get("archived")
-           and t.get("done_at") and t["done_at"] < cutoff]
-    done = []
-    for tid in old[:25]:
-        try:
-            cardadmin.archive_track(tid, on=True, actor="policy")
-            done.append(tid)
-        except Exception as e:
-            print("done-archive error for %s: %s" % (tid, e), flush=True)
-    return done
-
-
 def sweep_pending_compaction():
     """Retry a compaction that got cut. sessions._maybe_compact re-queues onto
     the card (compact_pending) whenever its /compact turn was interrupted
@@ -586,10 +561,6 @@ def start_zombie_reconciler(interval=20, min_idle_s=45, landed_check_every=6):
                     check_landed_not_closed()
                 except Exception as e:
                     print("landed-not-closed check error: %s" % e, flush=True)
-                try:
-                    sweep_done_archive()
-                except Exception as e:
-                    print("done-archive sweep error: %s" % e, flush=True)
     threading.Thread(target=_loop, daemon=True).start()
 
 
