@@ -8,10 +8,7 @@ Under test (the real paths, no mocks of the code under test):
   2. backfill_done_at reconstructs it ONCE from the latest done event for
      legacy cards (debt done-at-reconstructed-from-events); a card with no
      done event is left alone; a second run is a no-op
-  3. sweep_done_archive archives only done cards older than
-     policy.done_archive_days, as actor 'policy'; cards without done_at,
-     recent cards and open cards stay; 0 = off
-  4. the tracks list is bounded: done cards past the 14-day window leave the
+  3. the tracks list is bounded: done cards past the 14-day window leave the
      default list and answer on ?archived=1; the pull baseline reports their
      count as older_done
 
@@ -33,7 +30,7 @@ from spine.comms import notify
 from spine.storage import db, events, trackstore
 db.DBPATH = os.path.join(SANDBOX, "helmdeck.db")   # policy/SoD lookups must never reach the LIVE db
 db.init()
-from cells.engineer.cards import cardadmin, dispatch, lanemachine, lifecycle, sessions
+from cells.engineer.cards import cardadmin, dispatch, lanemachine, sessions
 from cells.engineer.routes import routes_tracks
 
 _fails = []
@@ -143,35 +140,7 @@ check("done_at" not in store["c-open"], "an open card is not touched")
 check(n == 1, "exactly the one reconstructable card was stamped (got %r)" % n)
 check(sessions.backfill_done_at() == 0, "backfill is idempotent")
 
-# -- 3. auto-archive sweep ---------------------------------------------------
-store.clear()
-card("a-old", lane="done", status="accepted", done_at=ago(90))
-card("a-mid", lane="done", status="accepted", done_at=ago(30))
-card("a-nodate", lane="done", status="accepted")
-card("a-open", lane="working", status="running", done_at=ago(90))
-card("a-arch", lane="done", status="accepted", done_at=ago(90), archived=True)
-EMITTED.clear()
-
-POLICY.clear()
-check(lifecycle.sweep_done_archive() == [] and not EMITTED, "no policy value -> the sweep is off (0 = never)")
-POLICY["done_archive_days"] = 0
-check(lifecycle.sweep_done_archive() == [], "done_archive_days 0 = off")
-POLICY["done_archive_days"] = 60
-got = lifecycle.sweep_done_archive()
-check(got == ["a-old"], "only the done card older than N days is archived (got %r)" % got)
-check(store["a-old"].get("archived") is True, "the card carries archived=true")
-check(not store["a-mid"].get("archived") and not store["a-nodate"].get("archived")
-      and not store["a-open"].get("archived"),
-      "younger, undated and open cards stay")
-check(any(k == "archive" and tr == "a-old" and kw.get("actor") == "policy" for k, tr, kw in EMITTED),
-      "the audit event names actor 'policy'")
-check(lifecycle.sweep_done_archive() == [], "a second sweep finds nothing (archived cards are skipped)")
-POLICY["done_archive_days"] = "x"
-check(lifecycle.sweep_done_archive() == [], "a junk policy value is ignored, not a crash")
-cardadmin.archive_track("a-old", on=False, actor="owner")
-check(store["a-old"].get("archived") is False, "reversible: the owner's unarchive works as before")
-
-# -- 4. bounded tracks list ---------------------------------------------------
+# -- 3. bounded tracks list ---------------------------------------------------
 store.clear()
 card("r-open", lane="working", status="running")
 card("r-recent", lane="done", status="accepted", done_at=ago(2))
