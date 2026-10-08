@@ -164,22 +164,46 @@ check("REAL cost accumulated onto cur - the whole point of going native",
       s._cur["cost_usd"] == 0.0042)
 
 # ============================================================================
-print("_fold_delta / _fold_part dedup - a settled part matching a streamed delta is dropped:")
-rd2 = os.path.join(TMP, "dedup")
+print("measured event shapes (real opencode-ai, 2026-10-08) - the reply is the answer, not the prompt:")
+rd2 = os.path.join(TMP, "measured")
 os.makedirs(rd2, exist_ok=True)
-s2 = make_session("card-dedup", rd2)
+s2 = make_session("card-measured", rd2)
 s2._cur = {"status": None, "error": None, "cost_usd": 0.0, "running_tools": set(),
           "done": threading.Event(), "last_event": time.time()}
-s2._fold_delta({"partID": "p1", "field": "text"})
-check("delta registers the dedup key, folds nothing itself",
-      "text:p1" in s2._streamed_keys and not timeline_store.read(rd2))
-s2._fold_part({"part": {"type": "text", "id": "p1", "text": "final text"}}, is_delta=False)
-check("the matching settled part is DROPPED (already streamed), not double-folded",
-      not timeline_store.read(rd2) and "text:p1" not in s2._streamed_keys)
-# a DIFFERENT part id is NOT deduped.
-s2._fold_part({"part": {"type": "text", "id": "p2", "text": "a fresh part"}}, is_delta=False)
-check("an unrelated part id folds normally", any(x.get("text") == "a fresh part"
-                                                 for x in timeline_store.read(rd2)))
+sid2 = s2.session_id
+for ev in [
+    {"type": "message.updated", "properties": {"info": {"id": "mu", "role": "user", "sessionID": sid2}}},
+    {"type": "message.part.updated", "properties": {"part": {"type": "text", "id": "pu",
+        "messageID": "mu", "sessionID": sid2, "text": "Antworte nur mit BANANE"}}},
+    {"type": "message.updated", "properties": {"info": {"id": "ma", "role": "assistant", "sessionID": sid2}}},
+    {"type": "message.part.updated", "properties": {"part": {"type": "text", "id": "pa",
+        "messageID": "ma", "sessionID": sid2, "text": ""}}},
+    {"type": "message.part.delta", "properties": {"partID": "pa", "field": "text",
+        "delta": "BAN", "sessionID": sid2}},
+    {"type": "message.part.updated", "properties": {"part": {"type": "text", "id": "pa",
+        "messageID": "ma", "sessionID": sid2, "text": "BANANE"}}},
+]:
+    s2._on_event(ev)
+texts = [x for x in timeline_store.read(rd2) if x.get("kind") == "text"]
+check("the prompt's own echoed part is NOT folded as assistant text",
+      not any(x.get("text") == "Antworte nur mit BANANE" for x in texts))
+check("the settled answer folds even though a delta streamed it first",
+      [x.get("text") for x in texts] == ["BANANE"])
+s2._on_event({"type": "message.part.updated", "properties": {"part": {"type": "text",
+    "id": "pa", "messageID": "ma", "sessionID": sid2, "text": "BANANE!"}}})
+texts = [x for x in timeline_store.read(rd2) if x.get("kind") == "text"]
+check("a repeated frame for the same part updates one step, no duplicate",
+      [x.get("text") for x in texts] == ["BANANE!"])
+
+print("_OpenCodeClient.prompt_async - the body the real server accepts:")
+posted = []
+cl = opencode_driver._OpenCodeClient("http://127.0.0.1:1")
+cl._post = lambda path, body, timeout=30.0: posted.append((path, body))
+cl.prompt_async("ses1", ".", [{"type": "text", "text": "hi"}], model="opencode/big-pickle")
+check("async endpoint (/message blocks until the reply is done)",
+      posted[-1][0] == "/session/ses1/prompt_async")
+check("model is {providerID, modelID} - a bare string is a 400",
+      posted[-1][1]["model"] == {"providerID": "opencode", "modelID": "big-pickle"})
 
 # ============================================================================
 print("run_turn - full flow: system prompt separate from parts, session.idle terminal:")

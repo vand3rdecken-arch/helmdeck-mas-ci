@@ -19,13 +19,16 @@ in this module, kept explicit rather than blurred together:
   ready-signal (:371), the dedicated-vs-shared acquisition trigger
   (opencode-agent.ts:1291-1293: `launchContext?.env ? acquireDedicated :
   acquireCurrent`), the SSE consume shape (`client.global.event({signal,
-  sseMaxRetryAttempts:0})`, opencode-agent.ts:3495-3509), delta/full
-  dedup by partID (:2489-2502), cost accumulation from `part.cost`
+  sseMaxRetryAttempts:0})`, opencode-agent.ts:3495-3509), cost accumulation from `part.cost`
   (:808-858), the interrupt-then-poll-idle-before-next-turn sequence
   (:3009-3110), and turn-end being `session.idle` on the EVENT BUS, not
   an HTTP response (`session.promptAsync` is fire-and-forget).
 
-  INFERRED, NOT CONFIRMED: the exact REST endpoint PATHS. Paseo talks to
+  MEASURED against opencode-ai (2026-10-08): POST /session/{id}/prompt_async
+  with model as {providerID, modelID}; parts carry no role (message.updated
+  does); a part's message.part.updated repeats as it grows.
+
+  INFERRED, NOT CONFIRMED: the other REST endpoint PATHS. Paseo talks to
   OpenCode through `@opencode-ai/sdk` (a third-party TS package, not
   vendored in this checkout), so calls like `client.session.create(...)`
   are visible as SDK METHOD NAMES, never as raw HTTP - `client.session.
@@ -160,12 +163,21 @@ class _OpenCodeClient:
         # systemPrompt} : {})` alongside `parts`, not folded into them). Doing
         # this by concatenation instead would show the owner's feed the
         # entire harness brief prepended to every single turn's visible text.
+        # The server validates `model` as {providerID, modelID} - a bare
+        # "opencode/big-pickle" string is a 400 ("Expected object | null"),
+        # measured 2026-10-08. And /message is SYNCHRONOUS (blocks until the
+        # reply is done, so any turn over the 15s timeout failed); the turn's
+        # progress arrives on the SSE bus, so the async endpoint is the one.
         body = {"sessionID": session_id, "directory": directory, "parts": parts}
         if model:
-            body["model"] = model
+            if isinstance(model, str):
+                prov, _, mid = model.partition("/")
+                model = {"providerID": prov, "modelID": mid} if mid else None
+            if model:
+                body["model"] = model
         if system:
             body["system"] = system
-        self._post("/session/%s/message" % session_id, body, timeout=15.0)
+        self._post("/session/%s/prompt_async" % session_id, body, timeout=15.0)
 
     def abort(self, session_id, directory, timeout=5.0):
         try:
@@ -244,7 +256,7 @@ class _OpenCodeSession:
         self.spawn_time = 0.0
         self.err_tail = []
         self._stream_resp = None
-        self._streamed_keys = set()
+        self._msg_roles = {}     # messageID -> role, from message.updated
         from spine.registry import harness
         agent = "machine-worker" if t.get("machine") else "card-worker"
         self.brief = harness.brief(agent)
@@ -381,8 +393,10 @@ class _OpenCodeSession:
         if sid is not None and sid != self.session_id:
             return    # not our session (belongs to a different card's - moot
                        # in dedicated mode, kept for defensive correctness
-        if etype == "message.part.delta":
-            self._fold_delta(props)
+        if etype == "message.updated":
+            info = props.get("info") or {}
+            if info.get("id") and info.get("role"):
+                self._msg_roles[info["id"]] = info["role"]
         elif etype == "message.part.updated":
             self._fold_part(props, is_delta=False)
         elif etype == "session.idle":
@@ -402,39 +416,33 @@ class _OpenCodeSession:
             if req_id:
                 self.client.permission_reply(req_id, self.worktree, "once")
 
-    def _fold_delta(self, props):
-        """Dedup bookkeeping only - claude's driver clears its live partial
-        on the settled frame; OpenCode instead needs the settled
-        message.part.updated to SKIP re-emitting what a delta already
-        streamed (opencode-agent.ts:2489-2502). Deltas themselves are not
-        folded as their own steps - only the settled part is, exactly like
-        claude's stream_event deltas are display-only."""
-        part_id = props.get("partID") or props.get("id")
-        field = props.get("field") or "text"
-        if part_id:
-            self._streamed_keys.add("%s:%s" % (field, part_id))
-
     def _fold_part(self, props, is_delta):
         part = props.get("part") or props
         ptype = part.get("type")
-        part_id = part.get("id") or props.get("partID")
-        key = "%s:%s" % (ptype, part_id) if part_id else None
-        if key and key in self._streamed_keys:
-            self._streamed_keys.discard(key)
+        # Parts carry no role - it lives on the message (message.updated,
+        # which the server sends before the message's parts). The prompt's own
+        # part echoes back on the bus; folded as "assistant" it became the
+        # reply (measured 2026-10-08). Deltas are display-only and not folded,
+        # so the settled part is the ONLY copy of the text - never deduped
+        # against them (that dropped every streamed answer).
+        if self._msg_roles.get(part.get("messageID")) == "user":
             return
+        # one step per part: a part's updated frame repeats as it grows, and
+        # same-id patches fold into one record
+        step = "s:" + (part.get("id") or _uid())
         ts, ta = _time.strftime("%H:%M:%S", _time.localtime()), _time.time()
         cur = self._cur
         if ptype == "text":
             role = part.get("role") or "assistant"
             text = _clean_text((part.get("text") or "").strip())
             if text:
-                timeline_store.append(self.run_dir, "s:" + _uid(),
+                timeline_store.append(self.run_dir, step,
                     {"role": role, "kind": "text", "text": text[:_TL_MAX_TEXT],
                      "ts": ts, "ta": ta})
         elif ptype == "reasoning":
             text = (part.get("text") or "").strip()
             if text:
-                timeline_store.append(self.run_dir, "s:" + _uid(),
+                timeline_store.append(self.run_dir, step,
                     {"role": "assistant", "kind": "thinking", "text": text[:_TL_MAX_THINK],
                      "ts": ts, "ta": ta})
         elif ptype == "tool":
