@@ -36,6 +36,7 @@ import datetime
 import json
 import re
 import sys
+import time
 
 # provider id -> the environment variable the OpenCode/OMP engines read it
 # from. A CLOSED set, in code: adding one is a deliberate act with a name, a
@@ -48,6 +49,7 @@ PROVIDERS = {
     "opencode":   {"label": "OpenCode Zen", "env": "OPENCODE_API_KEY"},
 }
 ROLES = ("owner", "operator")
+RUNNING_STALE_S = 150      # a test "running" longer than this is read as interrupted (the daemon died mid-test)
 MIN_LEN, MAX_LEN = 8, 512
 _VALUE_RE = re.compile(r"[!-~]+")   # printable ASCII; used with fullmatch - `$` would pass a trailing newline
 
@@ -159,8 +161,10 @@ def drop_user(user):
 
 
 def count(user):
+    """STORED KEYS of this account (a keyless row only carries a test result)."""
     from spine.storage import db
-    return db.conn().execute("SELECT COUNT(*) FROM user_secret WHERE user=?", (user,)).fetchone()[0]
+    return db.conn().execute("SELECT COUNT(*) FROM user_secret WHERE user=? AND value_enc!=''",
+                             (user,)).fetchone()[0]
 
 
 def status(user):
@@ -168,27 +172,58 @@ def status(user):
     NEVER the value."""
     from spine.storage import db
     rows = {r[0]: r for r in db.conn().execute(
-        "SELECT provider,hint,updated_at,test FROM user_secret WHERE user=?", (user,)).fetchall()}
+        "SELECT provider,hint,updated_at,test,value_enc!='' FROM user_secret WHERE user=?", (user,)).fetchall()}
     out = []
     for pid, meta in PROVIDERS.items():
         r = rows.get(pid)
+        has_key = bool(r and r[4])
         try:
             test = json.loads(r[3]) if r and r[3] else None
         except ValueError:
             test = None
-        out.append({"id": pid, "label": meta["label"], "env": meta["env"], "set": bool(r),
-                    "hint": ("..." + r[1]) if r else "", "updated_at": r[2] if r else "",
+        if test and test.get("status") == "running" and time.time() - test.get("started", 0) > RUNNING_STALE_S:
+            # DERIVED at read time, never a stored flag: the thread that would
+            # have finished this test died with the daemon
+            test = {"ok": False, "status": "error", "reason": "the test was interrupted", "model": "", "ms": 0}
+        out.append({"id": pid, "label": meta["label"], "env": meta["env"], "set": has_key,
+                    "hint": ("..." + r[1]) if has_key else "", "updated_at": r[2] if has_key else "",
                     "test": test})
     return out
 
 
-def record_test(user, provider, result):
-    """Remember the outcome of a Test (no secret in it) so the UI can show it
-    without re-spending a request."""
+def _write_test(user, provider, result):
+    """UPSERT the test JSON. A provider that needs no key (the Zen free tier)
+    has no key row - it gets one with value_enc='' that only carries the result;
+    set/get/env_for/count all read `value_enc != ''` as "no key"."""
     from spine.storage import db
     with db.conn() as c:
-        c.execute("UPDATE user_secret SET test=? WHERE user=? AND provider=?",
-                  (json.dumps(dict(result, at=_now())), user, provider))
+        n = c.execute("UPDATE user_secret SET test=? WHERE user=? AND provider=?",
+                      (json.dumps(result), user, provider)).rowcount
+        if not n:
+            c.execute("INSERT INTO user_secret(user,provider,value_enc,hint,updated_at,test) VALUES(?,?,?,?,?,?)",
+                      (user, provider, "", "", _now(), json.dumps(result)))
+
+
+def mark_running(user, provider):
+    """Claim a test for this (account, provider). False if one is already running
+    (fresh) - the button is idempotent, a double tap spends one request."""
+    from spine.storage import db
+    cur = {s["id"]: s for s in status(user)}[provider]["test"]
+    if cur and cur.get("status") == "running":
+        return False
+    _write_test(user, provider, {"ok": False, "status": "running", "reason": "", "model": "", "ms": 0,
+                                 "started": time.time()})
+    db.bump()
+    return True
+
+
+def record_test(user, provider, result):
+    """Remember the outcome of a Test (no secret in it) so the UI shows it
+    without re-spending a request. bump(): the app learns of it from the
+    daemon's event stream and reloads - no polling."""
+    from spine.storage import db
+    _write_test(user, provider, dict(result, at=_now()))
+    db.bump()
 
 
 def get(user, provider):
@@ -196,7 +231,7 @@ def get(user, provider):
     from spine.storage import db
     r = db.conn().execute("SELECT value_enc FROM user_secret WHERE user=? AND provider=?",
                           (user, provider)).fetchone()
-    if not r:
+    if not r or not r[0]:
         return None
     try:
         return decrypt(user, provider, r[0])

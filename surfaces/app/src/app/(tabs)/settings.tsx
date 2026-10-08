@@ -29,6 +29,7 @@ import type { ChatContext } from "@/app/chat";
 import { CellsCatalog } from "@/ui/cells_catalog";
 import { ConnectionCheck } from "@/ui/connection_check";
 import { EnginesSection } from "@/ui/engines_section";
+import { ProvidersSection } from "@/ui/providers_section";
 import { UsagePanel } from "@/ui/dash_panels";
 // import { HarnessSection } from "@/ui/harness_section";  // commented out with its render below
 // import { GxpActivate } from "@/ui/gxp_activate";  // commented out with the door render below
@@ -644,6 +645,11 @@ export default function Settings() {
             enable switch, tap for diagnostic + executable/env override. */}
         <Panel>
           <EnginesSection />
+        </Panel>
+        {/* Provider keys - the account's OWN, in the db, encrypted (CLAUDE.md
+            "DATA MODEL FIRST"); the engines above only say what is installed. */}
+        <Panel>
+          <ProvidersSection />
         </Panel>
         {pmEnabled ? (
           <Panel>

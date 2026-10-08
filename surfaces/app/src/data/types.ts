@@ -214,6 +214,20 @@ export interface EngineEntry {
    *  Absent on a daemon from before 2026-10-08; [] = the engine picks its own. */
   models?: { id: string; label?: string; desc?: string }[];
 }
+/** One provider key of MY account (GET /me/providers). The key itself is never
+ *  in any response - only whether it is set, its last 4 characters and the
+ *  outcome of the last real test. */
+export interface ProviderEntry {
+  id: string; label: string; env: string; set: boolean; hint: string; updated_at: string;
+  test: null | { ok: boolean; status: string; reason: string; model: string; ms: number; at?: string };
+}
+export interface ProvidersView {
+  providers: ProviderEntry[];
+  /** owner/operator only - a client files cards, it cannot start an engine */
+  can_store: boolean;
+  /** false where the daemon has no at-rest encryption: saving is refused, never plaintext */
+  encrypted: boolean;
+}
 export interface Metrics {
   settings?: {
     currency: string; value_per_card: number; default_repo: string;

@@ -46,7 +46,7 @@ export interface DaemonStatus {
 export interface DaemonRestart {
   ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;
 }
-import type { Track, LaneMove, Metrics, EngineEntry, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
+import type { Track, LaneMove, Metrics, EngineEntry, ProvidersView, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
   PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
   GxpState } from "./types";
 import type { VoiceClip } from "./voice";
@@ -986,6 +986,17 @@ export const api = {
   // the "once" is not tracked on the device).
   migrateMyConfig: (config: Partial<Profile>) =>
     req<MyConfigResult>("PUT", "/me/config", { config, migrate: true }),
+  // MY provider keys (spine/storage/usersecrets.py): self-scoped like the
+  // profile, owner/operator only. Every answer is the keyless view - set / last 4
+  // characters / last real test - never the key.
+  providers: () => req<ProvidersView>("GET", "/me/providers"),
+  setProvider: (provider: string, key: string) =>
+    req<ProvidersView & { ok?: boolean; error?: string }>("PUT", "/me/providers", { provider, key }),
+  deleteProvider: (provider: string) =>
+    req<ProvidersView & { ok?: boolean; error?: string }>("DELETE", `/me/providers?provider=${encodeURIComponent(provider)}`),
+  testProvider: (provider: string) =>
+    req<ProvidersView & { ok: boolean; status: string; reason: string; model: string; ms: number; error?: string }>(
+      "POST", "/me/providers/test", { provider }),
   // MY OWN boards (accounts-boards-prd phase 2), on the same self-scoped PUT
   // for the same reason as the profile above. Create vs. update is decided by
   // `board.id`, not by the verb: omit it and the daemon MINTS one (so no

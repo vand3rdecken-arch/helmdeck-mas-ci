@@ -138,17 +138,57 @@ def call(method, path, body=None, who=None):
         return e.code, e.read().decode()
 
 
-om.test = lambda account, provider, model="": {"ok": True, "status": "ok", "reason": "", "model": "deepseek/deepseek-flash", "ms": 42}
+import time
+GATE = threading.Event()
+
+
+def slow_test(account, provider, model=""):
+    GATE.wait(10)
+    return {"ok": True, "status": "ok", "reason": "", "model": "deepseek/deepseek-flash", "ms": 42}
+
+
+def wait_result(who, provider, want, secs=8):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        d = {p["id"]: p for p in us.status(who)}[provider]
+        if (d["test"] or {}).get("status") == want:
+            return d
+        time.sleep(0.1)
+    return {"test": None}
+
+
+om.test = slow_test
 check(call("POST", "/me/providers/test", {"provider": "nope"}, who="owner1")[0] == 400, "unknown provider -> 400")
 check(call("POST", "/me/providers/test", {"provider": "deepseek"}, who="owner1")[0] == 400, "no key stored -> 400, no request spent")
 check(call("POST", "/me/providers/test", {"provider": "deepseek"}, who="ada2")[0] in (400, 403), "a client cannot test")
 if us.available():
     call("PUT", "/me/providers", {"provider": "deepseek", "key": "sk-test-0123456789abcdefAAAA"}, who="owner1")
+    t0 = time.time()
     code, raw = call("POST", "/me/providers/test", {"provider": "deepseek"}, who="owner1")
     r = json.loads(raw)
     d = {p["id"]: p for p in r["providers"]}["deepseek"]
-    check(code == 200 and r["ok"] and d["test"]["status"] == "ok" and d["test"]["ms"] == 42, "result stored on the row and returned")
-    check("sk-test" not in raw, "...with no key in the answer")
+    check(code == 200 and r["started"] and time.time() - t0 < 3, "the POST answers AT ONCE (a real test takes 10-80s, longer than any app transport bound)")
+    check(d["test"]["status"] == "running" and d["set"], "...and the row says running")
+    code, raw2 = call("POST", "/me/providers/test", {"provider": "deepseek"}, who="owner1")
+    check(json.loads(raw2)["started"] is False, "a second tap while it runs starts nothing (idempotent)")
+    v0 = db._version
+    GATE.set()
+    d = wait_result("owner1", "deepseek", "ok")
+    check(d["test"] and d["test"]["ms"] == 42, "the result lands on the row when the thread finishes")
+    check(db._version > v0, "...and bumps the version, so the app reloads it from the event stream (no polling)")
+    check("sk-test" not in json.dumps(us.status("owner1")), "...with no key anywhere")
+    check(json.loads(call("GET", "/me/providers", who="owner1")[1])["providers"][0]["test"] is not None, "GET shows the stored result")
+
+    print("8. keyless provider (the Zen free tier) + an interrupted test")
+    GATE.clear(); GATE.set()
+    check(call("POST", "/me/providers/test", {"provider": "opencode"}, who="owner1")[0] == 200, "a provider that needs no key may be tested without one")
+    z = wait_result("owner1", "opencode", "ok")
+    check(z["test"] and z["set"] is False and z["hint"] == "", "its result is stored, and it still reads as NO key")
+    check(us.get("owner1", "opencode") is None and us.env_for("owner1").get("OPENCODE_API_KEY") is None, "a keyless row never becomes an env var")
+    check(us.count("owner1") == 1, "count() counts keys, not test rows")
+    us._write_test("owner1", "openai", {"status": "running", "started": time.time() - 999})
+    o = {p["id"]: p for p in us.status("owner1")}["openai"]
+    check(o["test"]["status"] == "error" and "interrupted" in o["test"]["reason"], "a test 'running' for 999s reads as interrupted (derived, not a stored flag)")
 srv.shutdown()
 
 print()

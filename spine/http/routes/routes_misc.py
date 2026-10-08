@@ -339,8 +339,9 @@ def me_providers_put(self, user, body):
 def me_providers_test_post(self, user, body):
     """Does MY key for this provider WORK? One real minimal request through the
     CLI (opencode_models.test) - listing models proves nothing, the CLI lists
-    them for a dummy key too. The outcome is stored (no secret in it) so the
-    settings screen shows it without spending another request."""
+    them for a dummy key too. It runs in the BACKGROUND (see below); the
+    outcome is stored on the row (no secret in it) and shown without spending
+    another request."""
     from spine.agent import opencode_models
     from spine.storage import usersecrets
     provider = body.get("provider")
@@ -350,9 +351,22 @@ def me_providers_test_post(self, user, body):
         return self._send(403, json.dumps({"error": "this role cannot test provider keys"}))
     if provider != "opencode" and not usersecrets.get(user["name"], provider):
         return self._send(400, json.dumps({"error": "no key stored for this provider"}))
-    res = opencode_models.test(user["name"], provider, str(body.get("model") or ""))
-    usersecrets.record_test(user["name"], provider, res)
-    return self._send(200, json.dumps(dict(res, **_providers_view(user))))
+    account, model = user["name"], str(body.get("model") or "")
+    started = usersecrets.mark_running(account, provider)
+    if started:
+        # A real request takes 10-80s - longer than any transport bound the app
+        # has (8s direct, 20s relay). So the POST answers at once and the
+        # result lands on the row; record_test bumps the version, the app's
+        # event stream reloads it. No blocking call, no polling.
+        def _run():
+            try:
+                res = opencode_models.test(account, provider, model)
+            except Exception as e:                                # noqa: BLE001
+                res = {"ok": False, "status": "error", "reason": str(e)[:160], "model": model, "ms": 0}
+            usersecrets.record_test(account, provider, res)
+        import threading
+        threading.Thread(target=_run, daemon=True, name="provider-test").start()
+    return self._send(200, json.dumps(dict(_providers_view(user), ok=True, started=started)))
 
 
 def me_providers_delete(self, user, _q):
