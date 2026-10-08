@@ -38,7 +38,12 @@
            the glyph becomes a stop square (Enter = Stopp). -->
       <nav class="rail">
         <button class="rail-btn focusable" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span><i class="badge-dot hidden" aria-hidden="true"></i></button>
-        <div class="orb-wrap"><button class="orb focusable" id="speak" data-action="mic" data-primary="1" aria-label="Sprechen"><svg class="ic-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><svg class="ic-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg></button><span id="speak-label" class="orb-label">Sprechen</span></div>
+        <!-- THE COMPOSER FIELD. A plain text field: when the owner targets it and presses
+             Enter, the glasses open THEIR OWN composer (dictation, Neural Handwriting,
+             on-screen keyboard - Meta docs, "Text input", firmware v127+). The text comes
+             back as an ordinary change event; no SDK, no permission, no phone service.
+             Drawn as the round Sprechen orb: the glyph sits ON the transparent field. -->
+        <div class="orb-wrap"><div class="orb-field"><svg class="ic-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><input class="orb focusable" id="speak" data-primary="1" type="search" enterkeyhint="send" autocomplete="off" placeholder="Sprechen oder schreiben" aria-label="Sprechen oder schreiben"></div><span id="speak-label" class="orb-label">Sprechen · Schreiben</span></div>
         <button class="rail-btn focusable" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
       </nav>
     </div>
@@ -73,8 +78,12 @@
       </header>
       <div class="content">
         <div class="list-container">
+          <button class="list-item focusable" data-action="talk-speak">
+            <div class="li-task">Mit dem Handy sprechen</div>
+            <div class="li-sub">öffnet das Handy-Mikrofon, falls der Brillen-Dienst läuft</div>
+          </button>
           <button class="list-item focusable" data-action="toggle-autolisten">
-            <div class="li-task">Beim Öffnen zuhören</div>
+            <div class="li-task">Handy-Mikrofon beim Öffnen</div>
             <div class="li-sub" id="autolisten-state">an</div>
           </button>
           <button class="list-item focusable" data-action="voice-toggle">

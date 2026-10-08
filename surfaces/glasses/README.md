@@ -13,15 +13,13 @@ surface** - the conversation fills the lens - with **Board** (what waits on you)
 and **Mehr** (listening, voice, connection) as tabs behind it. Same palette and
 shapes as the app (violet Henry, blue actions), German.
 
-The microphone is ONE pill in the header: a glyph and a ring, never a sentence. It
-listens as soon as the app opens (a tone says so), switches off with Enter on the
-pill (or Mehr), and does not come back until switched on. One follow-up window
-after an answer, never a loop.
-
-Honest limit: the lens only ASKS the phone service to open the mic. Switching off
-stops the lens asking; a mic already open closes on its own silence timeout. The
-phone service must be running (it is no longer armed by a button in the app - see
-the glasses card).
+**Input is Meta's own composer** (Meta docs, "Text input", firmware v127+, Meta AI
+app v272+): the round Sprechen orb is a real `<input type="search">`. Target it and
+press Enter and the glasses open their composer - dictation, Neural Handwriting or
+the on-screen keyboard - and the committed text arrives as a `change` event, which
+goes to Henry via `/glance/talk`. No SDK, no permission, no phone service, no mic
+notification. (`.focus()` from script does NOT open it; the owner must activate it.)
+The phone microphone (`/glance/listen`) is now an opt-in path under Mehr.
 
 ```
 surfaces/glasses/

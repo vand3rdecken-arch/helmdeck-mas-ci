@@ -425,7 +425,7 @@
   }
   function updateVoiceToggleLabel() {
     setText('voice-state', voiceMuted ? 'aus' : 'an');
-    setText('autolisten-state', cfg.autoListen === false ? 'aus' : 'an');
+    setText('autolisten-state', cfg.autoListen === true ? 'an' : 'aus');
   }
   function repeatBlockerVoice() {
     if (!lastBlockerVoiceUrl) { toast('Nichts zu wiederholen'); return; }
@@ -628,12 +628,25 @@
   // The pill is the whole microphone UI: ring pulses while listening, a slash
   // while auto-listening is switched off. Enter on it = speak now / switch off.
   function renderPill() {
-    var btn = document.getElementById('speak');
-    if (!btn) return;
-    var listening = (turn.state === 'listening');
-    btn.className = 'orb focusable' + (listening ? ' listening' : '');
-    setText('speak-label', listening ? 'Stopp' : 'Sprechen');
-    btn.setAttribute('aria-label', listening ? 'Zuhören stoppen' : 'Sprechen');
+    var f = document.getElementById('speak');
+    if (!f) return;
+    var listening = (turn.state === 'listening');       // the phone mic path (opt-in), if it is running
+    f.className = 'orb focusable' + (listening ? ' listening' : '');
+    setText('speak-label', listening ? 'Handy hört zu' : 'Sprechen · Schreiben');
+  }
+
+  // THE COMPOSER: Enter on the field opens the glasses' own composer (dictation,
+  // handwriting, keyboard). We only listen for the committed text.
+  function wireComposer() {
+    var f = document.getElementById('speak');
+    if (!f) return;
+    f.addEventListener('change', function () {
+      var t = (f.value || '').trim();
+      f.value = '';
+      if (!t) return;
+      audioUnlock();
+      talk(t);
+    });
   }
 
   // Tones, not words. WebAudio is the one sound path the lens documents as
@@ -1019,7 +1032,7 @@
   // short follow-up - never an endless loop: one follow-up per heard sentence.
   var lastAutoAsk = 0, followUps = 0;
   var autoPaused = false;      // 'Stopp' pauses the lens's asking until the next manual Sprechen
-  function autoListenOn() { return cfg.autoListen !== false && !autoPaused && connected(); }
+  function autoListenOn() { return cfg.autoListen === true && !autoPaused && connected(); }
   function maybeAutoListen(reason) {
     if (!autoListenOn() || document.hidden) return;
     var st = turn.state || 'idle';
@@ -1045,9 +1058,9 @@
     renderPill();
   }
   function toggleAutoListen() {
-    cfg.autoListen = (cfg.autoListen === false); saveCfg(cfg);
+    cfg.autoListen = (cfg.autoListen !== true); saveCfg(cfg);
     updateVoiceToggleLabel(); renderPill();
-    toast(cfg.autoListen === false ? 'Zuhören aus' : 'Zuhören an');
+    toast(cfg.autoListen === true ? 'Handy-Mikrofon an' : 'Handy-Mikrofon aus');
   }
 
   function fillSettings() {
@@ -1109,6 +1122,8 @@
     var dur = Math.min(8000, 3500 + words * 300);
     bannerTimer = setTimeout(function () { el.classList.add('hidden'); }, dur);
   }
+
+  wireComposer();
 
   // ---- boot -----------------------------------------------------------------
   // The registered URL may carry the token, in which case the glasses go

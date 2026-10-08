@@ -10,7 +10,7 @@ layout and structure, not brightness.
 
 Run: py -3.12 ops/tests/shot_glasses_lens.py [outdir]
 Asserts the structure (tabs, one mic pill, no text label while listening, the
-auto-listen request on open, mute persistence) and prints the PNG paths.
+composer field = Meta's own text input, phone mic opt-in) and prints the PNG paths.
 """
 import http.server
 import json
@@ -63,6 +63,7 @@ MSGS = [
 ]
 STATE = {"turn": {"state": "listening", "text": "", "mic": "glasses", "seq": 1, "age": 0}}
 LISTEN_CALLS = []
+TALK_CALLS = []
 
 
 def chat_body():
@@ -83,6 +84,9 @@ with sync_playwright() as pw:
         u = route.request.url
         if "/glance/chat" in u:
             return fulfill(route, chat_body())
+        if "/glance/talk" in u:
+            TALK_CALLS.append(route.request.post_data)
+            return fulfill(route, {"voice": "", "question": None})
         if "/glance/listen" in u:
             LISTEN_CALLS.append(route.request.post_data)
             return fulfill(route, {"ok": True})
@@ -103,12 +107,13 @@ with sync_playwright() as pw:
     check("Henry is the first screen", pg.locator("#talk:not(.hidden)").count() == 1)
     check("the rail: Board / orb / Mehr", pg.locator("#talk .rail-btn").all_inner_texts() == ["Board", "Mehr"] and pg.locator("#talk .orb").count() == 1, pg.locator("#talk .rail-btn").all_inner_texts())
     check("Henry's newest message is the hero card", pg.locator(".msg.latest").count() == 1 and pg.inner_text(".msg.latest").count("***") >= 1)
-    check("auto-listen asked the phone once on open", len(LISTEN_CALLS) == 1, LISTEN_CALLS)
+    check("the phone mic is opt-in: nothing asked on open by default", len(LISTEN_CALLS) == 0, LISTEN_CALLS)
+    check("the orb is a real text field (Meta composer)", pg.evaluate("document.getElementById('speak').tagName") == "INPUT")
     check("rail buttons carry icons", pg.locator("#talk .rail-btn svg").count() == 2)
     check("the speak button shows the listening state", "listening" in (pg.get_attribute("#speak", "class") or ""))
     check("no 'listening' sentence on the lens", pg.locator("#turnbar.hidden").count() == 1 and "höre" not in pg.inner_text("#talk").lower())
     check("exactly one primary speak button, focused first", pg.locator("#speak").count() == 1 and pg.evaluate("document.activeElement && document.activeElement.id") == "speak")
-    check("while listening the button says Stopp, with no 'höre' sentence", pg.inner_text("#speak-label") == "Stopp", pg.inner_text("#speak-label"))
+    check("the label names both ways in", "Sprechen" in pg.inner_text("#speak-label") or "Handy" in pg.inner_text("#speak-label"), pg.inner_text("#speak-label"))
     shot("1-henry-listening")
 
     # 2: after an answer: options + no pill ring
@@ -117,11 +122,13 @@ with sync_playwright() as pw:
     pg.evaluate("1")
     pg.reload()
     pg.wait_for_timeout(900)
-    check("after an answer the label is Sprechen again", pg.inner_text("#speak-label") == "Sprechen", pg.inner_text("#speak-label"))
-    n0 = len(LISTEN_CALLS)
-    pg.click("#speak")
-    pg.wait_for_timeout(300)
-    check("tapping Sprechen asks the phone to listen again", len(LISTEN_CALLS) == n0 + 1, (n0, len(LISTEN_CALLS)))
+    check("after an answer the label is Sprechen · Schreiben again", pg.inner_text("#speak-label") == "Sprechen · Schreiben", pg.inner_text("#speak-label"))
+    # what Meta's composer does: the text lands in the field and a change event fires
+    pg.fill("#speak", "Zeig mir das ***-Radar")
+    pg.dispatch_event("#speak", "change")
+    pg.wait_for_timeout(400)
+    check("composer text goes to Henry (POST /glance/talk)", len(TALK_CALLS) == 1 and "***-Radar" in (TALK_CALLS[0] or ""), TALK_CALLS)
+    check("the field is empty again afterwards", pg.input_value("#speak") == "")
     shot("2-henry-answer")
 
     # 3: board
@@ -137,15 +144,15 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(200)
     shot("4-more")
     pg.click("[data-action=toggle-autolisten]")
-    check("auto-listen can be switched off", pg.evaluate("JSON.parse(localStorage.getItem('helmdeck_glance_cfg')).autoListen") is False)
+    check("the phone mic can be switched on in Mehr", pg.evaluate("JSON.parse(localStorage.getItem('helmdeck_glance_cfg')).autoListen") is True)
     pg.click("#more [data-tab=talk]")
     pg.wait_for_timeout(200)
-    check("the speak button is still there when auto-listen is off", pg.locator("#speak").count() == 1 and pg.inner_text("#speak-label") in ("Sprechen", "Stopp"))
-    shot("5-henry-muted")
+    check("the composer field is still there", pg.locator("#speak").count() == 1)
+    shot("5-henry-phone-mic-on")
     n = len(LISTEN_CALLS)
     pg.reload()
     pg.wait_for_timeout(900)
-    check("muted: reopening does not ask the phone to listen", len(LISTEN_CALLS) == n, LISTEN_CALLS)
+    check("opted in: reopening asks the phone to listen", len(LISTEN_CALLS) == n + 1, (n, LISTEN_CALLS))
 
     # 5: decide
     pg.click(".screen:not(.hidden) [data-tab=board]")
