@@ -555,6 +555,26 @@ def _rm(path):
 
 
 
+# Mid-turn context cap (debt tool-results-never-evicted-quadratic-turn-cost):
+# every call re-sends the whole history, so a long turn costs ~N^2. The CLI
+# has no per-result eviction for a busy turn, but `--autocompact <tokens>` makes
+# it summarise the context once it reaches that size. Home: the driver cfg
+# (workspace policy, same layer as perm/model/idle_timeout), key `autocompact`;
+# 0 = leave the CLI's own window. 150k matches sessions._COMPACT_AT_TOKENS.
+AUTOCOMPACT_DEFAULT = 150_000
+_AUTOCOMPACT_MIN, _AUTOCOMPACT_MAX = 100_000, 1_000_000
+
+
+def autocompact_tokens(cfg):
+    """Tokens for --autocompact, or 0 for none. Clamped to the CLI's 100k-1M."""
+    v = (cfg or {}).get("autocompact", AUTOCOMPACT_DEFAULT)
+    try:
+        v = int(v or 0)
+    except (TypeError, ValueError):
+        return AUTOCOMPACT_DEFAULT
+    return 0 if v <= 0 else max(_AUTOCOMPACT_MIN, min(_AUTOCOMPACT_MAX, v))
+
+
 def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None):
     """THE assembly point for a card/machine `claude` argv. ONE owner.
 
@@ -586,6 +606,9 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     argv += harness.cli_args(agent)
     if cfg.get("model"):
         argv += ["--model", cfg["model"]]
+    ac = autocompact_tokens(cfg)
+    if ac:
+        argv += ["--autocompact", str(ac)]
     # EVERY worker may read the live web through the real browser
     # (helmdeck-browser: navigate/read/find/click/type, self-registered by
     # agentcli._builtin_mcp_servers, opens Chrome lazily on first use). A

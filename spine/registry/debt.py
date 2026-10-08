@@ -5479,7 +5479,7 @@ DEBT = [
     {
         "id": "tool-results-never-evicted-quadratic-turn-cost",
         "title": "A turn's cost grows with the square of its tool calls: results are capped per call, never evicted",
-        "status": "open",
+        "status": "paid",
         "what": "Bash output is truncated at 30k characters PER CALL, but a result "
                 "then stays in the context for the rest of the turn and is re-sent on "
                 "every later call. So an agent that develops interactively (write "
@@ -5521,11 +5521,40 @@ DEBT = [
                "flag/settings knob for a busy turn, and a PostToolUse hook can only rewrite "
                "a result at arrival (updatedToolOutput), not evict it later. The only "
                "pass-through is --autocompact <100k-1M tokens> (whole-context summary, not "
-               "per-result eviction), not yet wired. Open: decide between wiring "
-               "--autocompact as a per-turn context cap, or owning the API loop to evict "
-               "like OpenCode compaction.ts (a different architecture).",
+               "per-result eviction). PAID 2026-10-08 as far as the CLI allows: "
+               "drivers.build_argv now passes --autocompact (default 150k, driver cfg key "
+               "`autocompact`, clamped 100k-1M, 0 = off) as a mid-turn context cap; the "
+               "per-result eviction (placeholder, file, 2 KB preview) is the new debt "
+               "turn-eviction-is-whole-context-summary-only.",
         "since": "2026-09-21",
         "order": 77,
+    },
+    {
+        "id": "turn-eviction-is-whole-context-summary-only",
+        "title": "The mid-turn context cap summarises everything; old tool results are not evicted one by one",
+        "status": "open",
+        "what": "The only busy-turn lever the claude CLI exposes is --autocompact, which "
+                "summarises the WHOLE context at the cap (lossy, one cache break per "
+                "compaction). OpenCode compaction.ts and the API's clear_tool_uses instead "
+                "replace only old tool results (newest ~40k protected, last 2 turns or 3 "
+                "calls kept, only when >=20k is saved, exempt-tool list, file plus 2 KB "
+                "preview). The CLI's own clear_tool_uses fires only after >= 3900 s idle "
+                "or on a server hint. Estimated (NOT measured) saving of the cap on the "
+                "123-call incident: ~40 percent of raw input tokens, less in quota because "
+                "cache_read costs ~0.1x.",
+        "why_it_bites": "Details a worker still needs (an exact error, a file body) can "
+                        "be lost in the summary; the cap value 150k is a guess until real "
+                        "turns are measured with turn_in_weighted.",
+        "trigger": "a turn compacts and then re-reads what it had already read, or the "
+                   "weighted ratio of long turns stays high after the cap.",
+        "fix": "Measure turn_in_weighted before and after on real long turns and tune "
+               "`autocompact`. If summary loss or cost still bites: per-result eviction "
+               "needs us to own the API loop (large rebuild: tools, permissions, MCP, "
+               "resume, quota metering) or running such cards on the OpenCode driver. "
+               "Also: _opts_sig does not include the cap, so a changed value applies at "
+               "the next fresh spawn, not to a live persistent session.",
+        "since": "2026-10-08",
+        "order": 90,
     },
     {
         "id": "worker-brief-mirror-already-drifted",
