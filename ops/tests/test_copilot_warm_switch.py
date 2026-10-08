@@ -14,10 +14,11 @@ Uses ops/tests/fake_claude.py as the CLI stand-in - it answers set_model /
 set_permission_mode control_requests exactly like the real binary, so nothing
 here needs a live daemon, a session or the network.
 """
-import os, subprocess, sys, time
+import os, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
+os.environ["HELMDECK_DATA_ROOT"] = tempfile.mkdtemp(prefix="helmdeck-warm-switch-")
 
 from cells.copilot.chat import copilot                                  # noqa: E402
 
@@ -39,19 +40,25 @@ def spawn(script_args):
                             encoding="utf-8", errors="replace", bufsize=1)
 
 
+def K(model, mode):
+    """The REAL key shape _persist_get builds - a hand-made short tuple here is
+    how a 3-name unpack in _persist_switch outlived the 4th field unnoticed."""
+    return (model, mode, copilot._brief_fp(), copilot.henry_chat_tools())
+
+
 def main():
     mode = copilot.henry_pmode()
 
     # -- 1. a model change reuses the LIVE process via the control plane ------
     p = spawn([FAKE])
-    copilot._persist[USER] = {"p": p, "key": ("claude-sonnet-5", mode)}
+    copilot._persist[USER] = {"p": p, "key": K("claude-sonnet-5", mode)}
     t0 = time.time()
     got, fresh = copilot._persist_get(USER, "claude-opus-5", None, "brief")
     dt = time.time() - t0
     check("model change reuses the same process", got is p)
     check("reuse is not reported as a fresh spawn", fresh is False)
     check("key advanced to the new model",
-          copilot._persist[USER]["key"] == ("claude-opus-5", mode),
+          copilot._persist[USER]["key"] == K("claude-opus-5", mode),
           "key=%r" % (copilot._persist[USER]["key"],))
     check("switch is fast (no respawn, no resume prefill)", dt < 3.0, "took %.2fs" % dt)
     check("process still alive after the switch", p.poll() is None)
@@ -71,7 +78,7 @@ def main():
 
     # -- 2. an unchanged key must not touch the control plane at all ---------
     p2 = spawn([FAKE])
-    copilot._persist[USER] = {"p": p2, "key": ("claude-sonnet-5", mode)}
+    copilot._persist[USER] = {"p": p2, "key": K("claude-sonnet-5", mode)}
     got2, fresh2 = copilot._persist_get(USER, "claude-sonnet-5", None, "brief")
     check("identical key reuses without a switch", got2 is p2 and fresh2 is False)
     copilot._persist_drop(USER)
@@ -79,13 +86,13 @@ def main():
     # -- 3. a process that never answers must NOT be adopted -----------------
     # (no monkey patches: the key advances on the runtime's confirmation only)
     deaf = spawn(["-c", "import sys\nfor _ in sys.stdin: pass\n"])
-    ent = {"p": deaf, "key": ("claude-sonnet-5", mode)}
+    ent = {"p": deaf, "key": K("claude-sonnet-5", mode)}
     t0 = time.time()
-    ok = copilot._persist_switch(ent, ("claude-opus-5", mode))
+    ok = copilot._persist_switch(ent, K("claude-opus-5", mode))
     dt = time.time() - t0
     check("unconfirmed switch is refused", ok is False)
     check("refused switch leaves the key untouched",
-          ent["key"] == ("claude-sonnet-5", mode), "key=%r" % (ent["key"],))
+          ent["key"] == K("claude-sonnet-5", mode), "key=%r" % (ent["key"],))
     check("refusal is bounded by the 3s control timeout", dt < 6.0, "took %.2fs" % dt)
     try:
         deaf.kill()
@@ -95,9 +102,9 @@ def main():
     # -- 4. a DEAD process is never handed back ------------------------------
     p3 = spawn([FAKE])
     p3.kill(); p3.wait(timeout=5)
-    copilot._persist[USER] = {"p": p3, "key": ("claude-sonnet-5", mode)}
+    copilot._persist[USER] = {"p": p3, "key": K("claude-sonnet-5", mode)}
     ent_before = copilot._persist.get(USER)
-    switched = copilot._persist_switch(ent_before, ("claude-opus-5", mode))
+    switched = copilot._persist_switch(ent_before, K("claude-opus-5", mode))
     check("dead process cannot be switched", switched is False)
     copilot._persist_drop(USER)
 
@@ -105,14 +112,14 @@ def main():
     # (it must not switch a warm process to its own guess just to have the next
     # real turn switch it back)
     p4 = spawn([FAKE])
-    copilot._persist[USER] = {"p": p4, "key": ("claude-sonnet-5", mode)}
+    copilot._persist[USER] = {"p": p4, "key": K("claude-sonnet-5", mode)}
     copilot._prewarm_at.pop(USER, None)
     copilot.prewarm(USER, spoken=True)          # would guess haiku
     time.sleep(1.5)                             # it is fire-and-forget
     check("prewarm does not disturb a live process",
           copilot._persist.get(USER) is not None
           and copilot._persist[USER]["p"] is p4
-          and copilot._persist[USER]["key"] == ("claude-sonnet-5", mode),
+          and copilot._persist[USER]["key"] == K("claude-sonnet-5", mode),
           "key=%r" % ((copilot._persist.get(USER) or {}).get("key"),))
     # ...and it throttles itself against the /chat/history fallback poll
     before = copilot._prewarm_at.get(USER)

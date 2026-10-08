@@ -712,10 +712,13 @@ def _persist_switch(ent, key):
     failure returns False and the caller falls back to today's drop+respawn, so
     the worst case is exactly the behaviour we had before.
     """
-    old_model, old_mode, old_fp = ent["key"]
-    new_model, new_mode, new_fp = key
-    if new_fp != old_fp:
-        return False          # the brief moved; only a respawn can carry it
+    # the key is _persist_get's (model, mode, brief fp, tools) - a 3-name unpack
+    # here survived the tools field (c7479d8f) and crashed EVERY model switch:
+    # "Henry hat nicht geantwortet: too many values to unpack" 2026-10-08 09:30
+    old_model, old_mode, old_fp, old_tools = ent["key"]
+    new_model, new_mode, new_fp, new_tools = key
+    if new_fp != old_fp or new_tools != old_tools:
+        return False          # brief or tool block moved; only a respawn carries it
     p = ent["p"]
     if new_model != old_model and not _control(p, "set_model", model=(new_model or "default")):
         return False
