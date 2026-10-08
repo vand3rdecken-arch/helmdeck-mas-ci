@@ -21,7 +21,13 @@ import { useT } from "@/i18n";
 import { fieldStyle, Hint } from "@/ui/settings_sections";
 import { useTheme } from "@/theme";
 
-type Mode = "in" | "up" | "setup";
+// "choose" + "connect" are the first-run fork (no owner yet): this PC becomes the
+// server (-> "setup"), or it only attaches to a server that already exists
+// (-> "connect", the same pairing code the phone's PairingGate takes).
+type Mode = "in" | "up" | "setup" | "choose" | "connect";
+
+const hasInviteLink = () =>
+  !!new URLSearchParams(globalThis.location?.search ?? "").get("invite");
 
 export function LoginScreen() {
   const t = useTheme();
@@ -38,6 +44,7 @@ export function LoginScreen() {
   // workspace lets anyone in without one. The code field used to be hidden
   // whenever the FIRST was true, so a workspace that had only ever issued an
   // invite code showed the sign-up tab with nowhere to type the code.
+  const [setupNeeded, setSetupNeeded] = useState(false);
   const [canSignUp, setCanSignUp] = useState(false);
   const [noCodeNeeded, setNoCodeNeeded] = useState(false);
   const [name, setName] = useState("");
@@ -51,7 +58,8 @@ export function LoginScreen() {
   useEffect(() => {
     api.authState()
       .then((s) => {
-        if (s.setup_needed) setMode("setup");
+        setSetupNeeded(!!s.setup_needed);
+        if (s.setup_needed) setMode(hasInviteLink() ? "setup" : "choose");
         setCanSignUp(!!s.registration);
         setNoCodeNeeded(!!s.registration_open);
       })
@@ -90,8 +98,71 @@ export function LoginScreen() {
     }
   };
 
-  const title = tr(mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount" : "login.signIn");
+  const [pair, setPair] = useState("");
+
+  const connect = async () => {
+    const applied = useConfig.getState().applyPairing(pair);
+    if (!applied.ok) { setErr(applied.reason); return; }
+    setBusy(true); setErr("");
+    try {
+      await api.me();
+      useAuthGate.getState().clearAuthRequired();
+      qc.invalidateQueries();
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e)); setBusy(false);
+    }
+  };
+
+  const title = tr(mode === "choose" ? "login.chooseTitle" : mode === "connect" ? "login.connectTitle"
+    : mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount" : "login.signIn");
   const showsInvite = mode === "up" && !noCodeNeeded;
+  const backLink = (
+    <Pressable onPress={() => { setMode("choose"); setErr(""); }} style={{ paddingVertical: 6 }}>
+      <Text style={{ color: t.txtTertiary, fontSize: 13, fontWeight: "600" }}>← {tr("login.back")}</Text>
+    </Pressable>
+  );
+
+  if (mode === "choose") {
+    const card = (titleKey: string, bodyKey: string, onPress: () => void) => (
+      <Pressable onPress={onPress}
+        style={{ backgroundColor: t.surface1, borderWidth: 1, borderColor: t.borderSubtle, borderRadius: 14, padding: 16, gap: 6 }}>
+        <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "700" }}>{tr(titleKey)}</Text>
+        <Text style={{ color: t.txtSecondary, fontSize: 13, lineHeight: 19 }}>{tr(bodyKey)}</Text>
+      </Pressable>
+    );
+    return (
+      <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
+        <View style={{ width: "100%", maxWidth: 460, gap: 14 }}>
+          <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
+          <Hint text={tr("login.chooseHint")} />
+          {card("login.chooseServerTitle", "login.chooseServerBody", () => setMode("setup"))}
+          {card("login.chooseClientTitle", "login.chooseClientBody", () => setMode("connect"))}
+        </View>
+      </View>
+    );
+  }
+
+  if (mode === "connect") {
+    return (
+      <View style={{ flex: 1, backgroundColor: t.canvas, alignItems: "center", justifyContent: "center", padding: 28 }}>
+        <View style={{ width: "100%", maxWidth: 460, gap: 14 }}>
+          {setupNeeded ? backLink : null}
+          <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
+          <Text style={{ color: t.txtSecondary, fontSize: 13, lineHeight: 20 }}>{tr("login.connectSteps")}</Text>
+          <TextInput value={pair} onChangeText={setPair} autoCapitalize="none" autoCorrect={false} multiline autoFocus
+            placeholder={tr("settings.more.pairPh")} placeholderTextColor={t.txtTertiary}
+            style={[field, { minHeight: 70 }]} />
+          {err ? <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text> : null}
+          <Pressable onPress={connect} disabled={busy || !pair.trim()}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+              backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 14, opacity: !pair.trim() ? 0.6 : 1 }}>
+            {busy ? <ActivityIndicator color="#fff" /> : null}
+            <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>{tr("login.connectBtn")}</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: t.canvas }}
@@ -101,6 +172,7 @@ export function LoginScreen() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <View style={{ width: "100%", maxWidth: 420, gap: 14 }}>
             <View style={{ gap: 6 }}>
+              {mode === "setup" ? backLink : null}
               <Text style={{ color: t.txtPrimary, fontSize: 24, fontWeight: "700" }}>{title}</Text>
               {mode === "setup" ? (
                 <Hint text={tr("login.setupHint")} />

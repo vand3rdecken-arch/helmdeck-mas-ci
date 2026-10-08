@@ -86,4 +86,28 @@ export const onboard: Dict = {
   "login.passwordNew": { de: "Passwort (mind. 8 Zeichen)", en: "Password (at least 8 characters)" },
   "login.invite": { de: "Einladungscode", en: "Invitation code" },
   "login.failed": { de: "Anmeldung fehlgeschlagen", en: "Sign-in failed" },
+
+  // ---- first-run fork: server vs. client (login_screen.tsx mode "choose") ----
+  "login.chooseTitle": { de: "Wie willst du HelmDeck nutzen?", en: "How do you want to use HelmDeck?" },
+  "login.chooseHint": {
+    de: "HelmDeck braucht EINEN Server: den Rechner, auf dem die Agenten laufen und die Daten liegen. Alle anderen Geräte (Handy, weitere PCs) sind nur Fenster darauf.",
+    en: "HelmDeck needs ONE server: the machine where the agents run and the data lives. Every other device (phone, more PCs) is just a window onto it.",
+  },
+  "login.chooseServerTitle": { de: "Dieser PC ist der Server", en: "This PC is the server" },
+  "login.chooseServerBody": {
+    de: "Mein erster HelmDeck-Rechner. Du legst jetzt das Owner-Konto an. Handy und andere Geräte koppelst du später an diesen PC.",
+    en: "My first HelmDeck machine. You create the owner account now. You pair your phone and other devices to this PC later.",
+  },
+  "login.chooseClientTitle": { de: "Mit bestehendem Server verbinden", en: "Connect to an existing server" },
+  "login.chooseClientBody": {
+    de: "HelmDeck läuft schon auf einem anderen Rechner. Dieser PC zeigt dann nur dessen Oberfläche, mit deinem vorhandenen Konto.",
+    en: "HelmDeck already runs on another machine. This PC then only shows its interface, using your existing account.",
+  },
+  "login.connectTitle": { de: "Mit bestehendem Server verbinden", en: "Connect to an existing server" },
+  "login.connectSteps": {
+    de: "1. Am Server-Rechner: Einstellungen → Team & Geräte → Telefon koppeln.\n2. Pairing-Code oder Link kopieren.\n3. Hier einfügen. Eine Einladung von jemand anderem funktioniert genauso.",
+    en: "1. On the server machine: Settings → Team & devices → Pair phone.\n2. Copy the pairing code or link.\n3. Paste it here. An invitation from someone else works the same way.",
+  },
+  "login.connectBtn": { de: "Verbinden", en: "Connect" },
+  "login.back": { de: "Zurück", en: "Back" },
 };

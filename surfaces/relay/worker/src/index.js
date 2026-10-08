@@ -193,7 +193,34 @@ async function toRoom(request, env, url, inner) {
     method: request.method, body, headers: { "content-type": "application/json" } }));
 }
 
+// CORS for the ONE route a browser-origin client (the desktop shell's SPA, the
+// web app) calls: POST /relay. Native phones never preflight, so this was
+// invisible until the desktop tried to pair as a CLIENT (measured 2026-10-08:
+// "Relay unreachable" - the preflight got a 404 without Allow-Origin and the
+// browser dropped the request). `*` is safe here: the body is E2E-sealed to
+// the room's daemon key, the relay reads nothing, and no cookie/credential
+// rides on this request (auth is inside the sealed inner request).
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, GET, OPTIONS",
+  "access-control-allow-headers": "content-type",
+  "access-control-max-age": "86400",
+};
+const CORS_PATHS = new Set(["/relay", "/health"]);
+
 export default {
+  async fetch(request, env) {
+    const p = new URL(request.url).pathname;
+    if (!CORS_PATHS.has(p)) return route.fetch(request, env);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+    const r = await route.fetch(request, env);
+    const out = new Response(r.body, r);   // r.headers is immutable; copy, then add
+    for (const [k, v] of Object.entries(CORS)) out.headers.set(k, v);
+    return out;
+  },
+};
+
+const route = {
   async fetch(request, env) {
     const url = new URL(request.url);
     const p = url.pathname;
