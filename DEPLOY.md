@@ -776,6 +776,13 @@ rejection risk), and Submission Options (certification notes explain
 already-installed `git`/`python`/`claude`, installs nothing itself, autostart
 is opt-in only).
 
+**Update 2026-10-08: Submission 3 in certification** (0.2.26 was live via
+Submission 2). `HelmDeck-0.2.28-x64.appx` (fixes 477a8bdb, 80f3e2e3, 251a3bf5)
+replaced 0.2.26 under Packages, release notes set for en-US and de-DE,
+everything else unchanged. Upload trap: Playwright over `connect_over_cdp`
+refuses files over 50 MB (`set_input_files`); raw CDP `DOM.setFileInputFiles`
+with the local path works because Chrome runs on the same box.
+
 **What the owner may still want to revisit**, none of them blockers:
 - A decision on **arm64**: this build is x64-only, matching the NSIS build's
   own scope (§1b); a native arm64 Windows box would be needed to add it, same
