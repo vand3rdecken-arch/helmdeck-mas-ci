@@ -252,7 +252,9 @@ class _OpenCodeSession:
 
     def _spawn(self):
         self.port = _free_port()
-        argv = [self.cfg.get("exe") or OPENCODE, "serve", "--port", str(self.port)]
+        from spine.agent import engines
+        argv = [self.cfg.get("exe") or engines.exe_for("opencode") or OPENCODE,
+                "serve", "--port", str(self.port)]
         home = _opencode_home()
         self.proc = subprocess.Popen(argv, cwd=home,
                                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

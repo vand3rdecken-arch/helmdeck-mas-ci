@@ -69,6 +69,11 @@ _BY_ID = {e["id"]: e for e in BUILTIN}
 # (omp_driver.OMP). Kept here so the probe and the spawn agree.
 _FALLBACK_PATHS = {
     "omp": [os.path.expandvars(r"C:\Users\%USERNAME%\AppData\Local\omp\omp.exe")],
+    # `npm i -g opencode-ai` ships a NATIVE exe; the daemon runs with a
+    # stripped PATH (spawnenv), so PATH alone misses it - same reason claude
+    # resolves through agentcli.CLAUDE.
+    "opencode": [os.path.expandvars(r"%ProgramFiles%\nodejs\node_modules\opencode-ai\bin\opencode.exe"),
+                 os.path.expandvars(r"%APPDATA%\npm\node_modules\opencode-ai\bin\opencode.exe")],
 }
 
 _cache = {}            # id -> (expires_at, entry)
@@ -158,6 +163,15 @@ def _resolve_exe(name, defn):
         if real:
             return list(real)
     return [found]
+
+
+def exe_for(name):
+    """The executable a driver should spawn for engine `name` - the SAME
+    resolution the availability probe uses (settings exe, PATH, off-PATH
+    fallback), so "probe says ready" and "the turn can spawn it" cannot
+    disagree. None when it is not installed."""
+    argv = _resolve_exe(name, _definition(name))
+    return argv[0] if argv else None
 
 
 def _probe(name, defn):

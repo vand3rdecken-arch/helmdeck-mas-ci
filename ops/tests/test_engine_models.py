@@ -67,6 +67,22 @@ check(OC not in {m["id"] for m in turnopts.list_models()}, "/models drops it whe
 check(OC in ids({e["id"]: e for e in engines.snapshot()}["opencode"]),
       "...but the engine entry still lists its models (shown greyed out in the picker)")
 
+# exe_for = the probe's own resolution (a daemon with a stripped PATH still finds
+# the npm-global native exe) - "probe says ready" and "the turn can spawn" agree
+import shutil
+_orig_which, _orig_isfile = shutil.which, os.path.isfile
+FAKE = os.path.expandvars(r"%ProgramFiles%
+odejs
+ode_modules\opencode-aiin\opencode.exe")
+try:
+    shutil.which = lambda b, *a, **k: None
+    os.path.isfile = lambda p: p == FAKE or _orig_isfile(p)
+    check(engines.exe_for("opencode") == FAKE, "exe_for: PATH misses, the npm-global exe is found off-PATH")
+    os.path.isfile = lambda p: False
+    check(engines.exe_for("opencode") is None, "exe_for: nothing installed -> None")
+finally:
+    shutil.which, os.path.isfile = _orig_which, _orig_isfile
+
 print()
 if FAILS:
     print("FAILED: %d" % len(FAILS)); sys.exit(1)
