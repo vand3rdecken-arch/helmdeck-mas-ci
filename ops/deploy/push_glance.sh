@@ -38,10 +38,10 @@ WORKER="$ROOT/surfaces/glasses/worker"
 PUBLIC="$WORKER/public"
 NAME="helmdeck-glance"
 
-# The three files that ARE the app. Kept explicit rather than copying the whole
+# The files that ARE the app (page, style, script and the icon set Herald ships per app). Kept explicit rather than copying the whole
 # directory: surfaces/glasses/ also holds README.md, dist/ and the worker itself, none of
 # which belong on a public origin.
-ASSETS=(index.html styles.css app.js)
+ASSETS=(index.html styles.css app.js icon.svg favicon.png manifest.webmanifest)
 
 sync_public() {
   rm -rf "$PUBLIC"

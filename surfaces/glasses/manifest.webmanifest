@@ -1,0 +1,24 @@
+{
+  "name": "HelmDeck · Henry",
+  "short_name": "HelmDeck",
+  "description": "Talk to Henry and see what waits on you, on Meta Ray-Ban Display. Dictate, write or handwrite with the glasses' own composer; Henry answers out loud.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0b0f",
+  "theme_color": "#7A62E6",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 256x256 384x384 512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "type": "image/png",
+      "sizes": "256x256"
+    }
+  ],
+  "id": "/"
+}
