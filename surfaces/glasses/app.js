@@ -624,13 +624,12 @@
   // The pill is the whole microphone UI: ring pulses while listening, a slash
   // while auto-listening is switched off. Enter on it = speak now / switch off.
   function renderPill() {
-    var pill = document.getElementById('mic-pill');
-    if (!pill) return;
+    var btn = document.getElementById('speak');
+    if (!btn) return;
     var listening = (turn.state === 'listening');
-    var muted = cfg.autoListen === false && !listening;
-    pill.className = 'mic-pill focusable' + (listening ? ' listening' : '') + (muted ? ' muted' : '');
-    pill.setAttribute('aria-label', listening ? 'Mikrofon an - Enter schaltet das Zuhören aus'
-      : muted ? 'Zuhören aus - Enter schaltet an' : 'Sprechen');
+    btn.className = 'speak focusable' + (listening ? ' listening' : '');
+    setText('speak-label', listening ? 'Stopp' : 'Sprechen');
+    btn.setAttribute('aria-label', listening ? 'Zuhören stoppen' : 'Sprechen');
   }
 
   // Tones, not words. WebAudio is the one sound path the lens documents as
@@ -953,7 +952,9 @@
   }
   function focusFirst() {
     var f = visibleFocusables();
-    if (f.length) f[0].focus();
+    // the primary action first (Sprechen on the Henry screen), else the first row
+    var prim = f.filter(function (el) { return el.hasAttribute('data-primary'); })[0];
+    if (prim) prim.focus(); else if (f.length) f[0].focus();
   }
   document.addEventListener('keydown', function (e) {
     var f = visibleFocusables();
@@ -1009,7 +1010,8 @@
   // we ask once (a tone says the mic is up), and once more after an answer for a
   // short follow-up - never an endless loop: one follow-up per heard sentence.
   var lastAutoAsk = 0, followUps = 0;
-  function autoListenOn() { return cfg.autoListen !== false && connected(); }
+  var autoPaused = false;      // 'Stopp' pauses the lens's asking until the next manual Sprechen
+  function autoListenOn() { return cfg.autoListen !== false && !autoPaused && connected(); }
   function maybeAutoListen(reason) {
     if (!autoListenOn() || document.hidden) return;
     var st = turn.state || 'idle';
@@ -1020,19 +1022,19 @@
     lastAutoAsk = Date.now();
     askToListen();
   }
+  // THE BIG BUTTON. Not listening: ask the phone to open the mic (a tone says it
+  // did). Listening: Stopp - the lens stops asking for now (a mic already open
+  // closes by its own silence timeout; the phone cannot be told to stop from here).
   function micPill() {
-    var listening = (turn.state === 'listening');
-    if (listening) {                                        // switch listening off
-      cfg.autoListen = false; saveCfg(cfg);
-      beep([440, 330], 120);
-      toast('Zuhören aus');
-    } else if (cfg.autoListen === false) {                  // switch it back on, and listen now
-      cfg.autoListen = true; saveCfg(cfg);
-      lastAutoAsk = Date.now(); askToListen();
-    } else {                                                // speak now
-      lastAutoAsk = Date.now(); askToListen();
+    if (turn.state === 'listening') {
+      autoPaused = true;
+      beep([880, 560], 110);
+    } else {
+      autoPaused = false;
+      lastAutoAsk = Date.now();
+      askToListen();
     }
-    renderPill(); updateVoiceToggleLabel();
+    renderPill();
   }
   function toggleAutoListen() {
     cfg.autoListen = (cfg.autoListen === false); saveCfg(cfg);

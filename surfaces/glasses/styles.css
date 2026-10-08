@@ -371,3 +371,69 @@ html, body {
   border-radius: 999px; border: 1px solid var(--warn); color: var(--warn); margin-right: 8px; }
 .reason-chip.neg { border-color: var(--danger); color: var(--danger); }
 .reason-chip.ask { border-color: var(--accent); color: var(--accent); }
+
+
+/* ======================================================================
+   POLISH PASS (owner 2026-10-07: "das Design sieht nicht schoen aus - check warum")
+   Measured causes, fixed here: (1) every row and tab sat at opacity .8 on a grey
+   fill - grey text on grey, flat; (2) the tab bar was three huge flat boxes with
+   no icons, the app's is icon over label on a transparent bar; (3) answers were
+   plain grey bars; (4) body type 16-18px with an empty band above the chat;
+   (5) the mic was a corner pill, not the primary action.
+   ====================================================================== */
+.list-item, .nav-item, .tab { opacity: 1; }
+.list-item { border: 1px solid var(--edge); padding: 14px 18px; }
+.list-item .li-task { font-size: 19px; font-weight: 600; color: #fff; }
+.li-sub { font-size: 14px; color: var(--txt2); margin-top: 6px; }
+.list-item.muted { opacity: .75; }
+.focusable:focus { transform: none; border-color: #fff; box-shadow: 0 0 0 2px #fff; }
+.list-item.focusable:focus { transform: none; }
+
+.header { height: 60px; margin-top: 12px; }
+.brand { font-size: 30px; }
+.spark { width: 28px; height: 28px; }
+#conn-dot { font-size: 22px; }
+
+/* conversation: larger type, more air, Henry carries his label like the app */
+.chat { gap: 16px; padding: 4px 2px; }
+.msg { max-width: 94%; }
+.msg-body { font-size: 20px; line-height: 1.38; padding: 12px 16px; border-radius: 18px; }
+.msg-who { font-size: 12px; margin-bottom: 4px; }
+.msg.mine .msg-body { border-radius: 18px 18px 6px 18px; }
+.msg:not(.mine) .msg-body { border-radius: 18px 18px 18px 6px; border-width: 1.5px; }
+.empty { font-size: 20px; color: var(--txt2); padding: 60px 16px; }
+
+/* answers: outlined chips (the app's quick replies), not grey bars */
+#talk-options { gap: 10px; margin-top: 12px; }
+#talk-options .list-item { border: 2px solid var(--accent); background: transparent; border-radius: 28px;
+  padding: 12px 22px; min-height: 56px; }
+#talk-options .list-item .li-task { font-size: 19px; }
+#talk-options .list-item .li-sub { display: none; }
+#talk-options .list-item.primary { background: var(--accent); border-color: var(--accent); }
+
+/* THE PRIMARY ACTION */
+.speak { flex-shrink: 0; margin-top: 10px; height: 72px; width: 100%; border-radius: 36px; border: 0;
+  background: #7A62E6; color: #fff; font-size: 23px; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; gap: 12px; position: relative; }
+.speak svg { width: 30px; height: 30px; fill: currentColor; }
+.speak.listening { background: #5B46C2; animation: speakring 1.5s ease-out infinite; }
+@keyframes speakring { 0% { box-shadow: 0 0 0 0 rgba(150,122,240,.75); } 100% { box-shadow: 0 0 0 16px rgba(150,122,240,0); } }
+.speak:focus { box-shadow: 0 0 0 3px #fff; }
+.speak.listening:focus { animation: none; box-shadow: 0 0 0 3px #fff; }
+
+/* TAB BAR: transparent, hairline above, icon over label, accent when active */
+.tabs { gap: 4px; padding-top: 6px; margin-top: 8px; border-top: 1px solid var(--edge); }
+.tab { height: 84px; min-height: 84px; background: transparent; border: 2px solid transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  color: var(--txt2); font-size: 16px; font-weight: 600; border-radius: 16px; }
+.tab svg { width: 30px; height: 30px; fill: currentColor; }
+.tab.on { color: var(--accent); border-color: transparent; }
+.tab:focus { background: var(--surface); }
+.tabs .badge-dot { top: 8px; right: calc(50% - 26px); }
+
+/* BOARD */
+.hero-num { font-size: 76px; }
+.hero-label { font-size: 24px; font-weight: 700; }
+.hero-sub { font-size: 15px; }
+.reason-chip { font-size: 14px; }
+.toast { font-size: 16px; padding: 10px 20px; }

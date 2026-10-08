@@ -21,15 +21,14 @@
         <span class="brand"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z"/></svg>Henry</span>
         <span class="header-meta" id="conn-dot" title="Verbindung">•</span>
         <span class="header-meta" id="talk-meta"></span>
-        <button class="mic-pill focusable" id="mic-pill" data-action="mic" aria-label="Mikrofon">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>
-          <i class="mic-slash" aria-hidden="true"></i>
-        </button>
       </header>
       <div class="content scrollable" id="talk-scroll">
         <div class="chat" id="talk-chat"></div>
         <div class="list-container" id="talk-options"></div>
       </div>
+      <!-- THE PRIMARY ACTION: always here, always the first thing the D-pad lands on.
+           Ring pulses while the phone listens; Enter then means Stopp. -->
+      <button class="speak focusable" id="speak" data-action="mic" data-primary="1" aria-label="Sprechen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg><span id="speak-label">Sprechen</span></button>
       <!-- Only for the states that need a WORD (Henry works, a draft waits, a
            turn failed): a dot AND a word, because colour alone is forbidden on
            this display. Listening and idle show nothing here - the pill says it. -->
@@ -38,10 +37,9 @@
         <span class="turn-label" id="turn-label"></span>
       </div>
       <nav class="tabs">
-        <button class="tab focusable on" data-action="tab" data-tab="talk">Henry</button>
-        <button class="tab focusable" data-action="tab" data-tab="board">Board
-          <span class="badge-dot hidden" aria-hidden="true"></span></button>
-        <button class="tab focusable" data-action="tab" data-tab="more">Mehr</button>
+        <button class="tab focusable on" data-action="tab" data-tab="talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><span>Henry</span></button>
+        <button class="tab focusable" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span><span class="badge-dot hidden" aria-hidden="true"></span></button>
+        <button class="tab focusable" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
       </nav>
     </div>
 
@@ -62,9 +60,9 @@
         <div class="list-container" id="needs-list"></div>
       </div>
       <nav class="tabs">
-        <button class="tab focusable" data-action="tab" data-tab="talk">Henry</button>
-        <button class="tab focusable on" data-action="tab" data-tab="board">Board</button>
-        <button class="tab focusable" data-action="tab" data-tab="more">Mehr</button>
+        <button class="tab focusable" data-action="tab" data-tab="talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><span>Henry</span></button>
+        <button class="tab focusable on" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span></button>
+        <button class="tab focusable" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
       </nav>
     </div>
 
@@ -93,10 +91,9 @@
         </div>
       </div>
       <nav class="tabs">
-        <button class="tab focusable" data-action="tab" data-tab="talk">Henry</button>
-        <button class="tab focusable" data-action="tab" data-tab="board">Board
-          <span class="badge-dot hidden" aria-hidden="true"></span></button>
-        <button class="tab focusable on" data-action="tab" data-tab="more">Mehr</button>
+        <button class="tab focusable" data-action="tab" data-tab="talk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg><span>Henry</span></button>
+        <button class="tab focusable" data-action="tab" data-tab="board"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg><span>Board</span><span class="badge-dot hidden" aria-hidden="true"></span></button>
+        <button class="tab focusable on" data-action="tab" data-tab="more"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg><span>Mehr</span></button>
       </nav>
     </div>
 

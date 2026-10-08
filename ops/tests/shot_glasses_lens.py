@@ -103,9 +103,11 @@ with sync_playwright() as pw:
     check("Henry is the first screen", pg.locator("#talk:not(.hidden)").count() == 1)
     check("three tabs: Henry / Board / Mehr", pg.locator("#talk .tab").all_inner_texts() == ["Henry", "Board", "Mehr"], pg.locator("#talk .tab").all_inner_texts())
     check("auto-listen asked the phone once on open", len(LISTEN_CALLS) == 1, LISTEN_CALLS)
-    check("the mic pill shows the listening state", "listening" in (pg.get_attribute("#mic-pill", "class") or ""))
+    check("tabs are icon over label", pg.locator("#talk .tab svg").count() == 3)
+    check("the speak button shows the listening state", "listening" in (pg.get_attribute("#speak", "class") or ""))
     check("no 'listening' sentence on the lens", pg.locator("#turnbar.hidden").count() == 1 and "höre" not in pg.inner_text("#talk").lower())
-    check("exactly one microphone control", pg.locator(".mic-pill").count() == 1)
+    check("exactly one primary speak button, focused first", pg.locator("#speak").count() == 1 and pg.evaluate("document.activeElement && document.activeElement.id") == "speak")
+    check("while listening the button says Stopp, with no 'höre' sentence", pg.inner_text("#speak-label") == "Stopp", pg.inner_text("#speak-label"))
     shot("1-henry-listening")
 
     # 2: after an answer: options + no pill ring
@@ -114,6 +116,11 @@ with sync_playwright() as pw:
     pg.evaluate("1")
     pg.reload()
     pg.wait_for_timeout(900)
+    check("after an answer the label is Sprechen again", pg.inner_text("#speak-label") == "Sprechen", pg.inner_text("#speak-label"))
+    n0 = len(LISTEN_CALLS)
+    pg.click("#speak")
+    pg.wait_for_timeout(300)
+    check("tapping Sprechen asks the phone to listen again", len(LISTEN_CALLS) == n0 + 1, (n0, len(LISTEN_CALLS)))
     shot("2-henry-answer")
 
     # 3: board
@@ -132,7 +139,7 @@ with sync_playwright() as pw:
     check("auto-listen can be switched off", pg.evaluate("JSON.parse(localStorage.getItem('helmdeck_glance_cfg')).autoListen") is False)
     pg.click("#more .tab[data-tab=talk]")
     pg.wait_for_timeout(200)
-    check("the pill shows muted", "muted" in (pg.get_attribute("#mic-pill", "class") or ""))
+    check("the speak button is still there when auto-listen is off", pg.locator("#speak").count() == 1 and pg.inner_text("#speak-label") in ("Sprechen", "Stopp"))
     shot("5-henry-muted")
     n = len(LISTEN_CALLS)
     pg.reload()
