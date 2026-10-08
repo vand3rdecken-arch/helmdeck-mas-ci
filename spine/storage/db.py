@@ -2279,6 +2279,19 @@ def _m19(c):
     c.execute("CREATE INDEX IF NOT EXISTS chat_grant_reads_account ON chat_grant_reads(account)")
 
 
+@_migration(20, "user-secret")
+def _m20(c):
+    """Per-ACCOUNT provider keys (spine/storage/usersecrets.py has the why: not
+    user_config - whitelisted view prefs that /harness/export hands out - and
+    not workspace settings). `value_enc` is a DPAPI blob, never plaintext;
+    `hint` the last 4 characters; `test` the last Test outcome as JSON (no
+    secret in it). Keyed on the account NAME like user_config."""
+    c.execute("""CREATE TABLE IF NOT EXISTS user_secret(
+        user TEXT NOT NULL, provider TEXT NOT NULL, value_enc TEXT NOT NULL,
+        hint TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL, test TEXT,
+        PRIMARY KEY(user, provider))""")
+
+
 def chat_grant_put(g):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO chat_grants(id,account,grantee,created,expires,revoked) "

@@ -463,6 +463,13 @@ def delete_user(name, actor=None):
         config_dropped = db.user_config_drop_user(name)
     except Exception:
         pass
+    # ...and their provider keys, same reason and a worse failure: a later
+    # account of the same name would otherwise inherit a stranger's API keys.
+    try:
+        from spine.storage import usersecrets
+        usersecrets.drop_user(name)
+    except Exception:
+        pass
     # ...and their personal boards, for exactly the same reason: `boards.owner`
     # is the account NAME too (accounts-boards-prd phase 2). The shared default
     # board has owner="" and is never touched here - it outlives its creator,

@@ -36,7 +36,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # now that accounts are a db table this export walks like any other.
 _SECRET_KEY = re.compile(r"^(token|sk|secret|api_token|password|key_b64|pw|th)$|_(token|secret)$")
 _BLOB_COLS = ("data", "json", "value", "content")
-_SKIP_TABLES = ("sqlite_sequence",)
+# user_secret: provider keys are DPAPI blobs that only open for this Windows account
+# on this machine - an export/takeout/restore carrying them would be a copy of a
+# secret that cannot even be used elsewhere. A restore means re-entering the key.
+_SKIP_TABLES = ("sqlite_sequence", "user_secret")
 # scope column per table: which column carries the account / the project
 _ACCOUNT_COL = {"boards": "owner", "user_config": "user", "memory": "account",
                 "chat": "account", "auth_sessions": "account", "devices": "account"}

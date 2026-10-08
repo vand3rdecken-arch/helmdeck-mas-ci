@@ -169,6 +169,10 @@ def rename_block_reason(name):
     n = len(db.user_config_get(name))
     if n:
         why.append("%d saved profile setting(s)" % n)
+    from spine.storage import usersecrets
+    k = usersecrets.count(name)
+    if k:
+        why.append("%d stored provider key(s)" % k)
     b = boards.personal_count(name)
     if b:
         why.append("%d personal board(s)" % b)
