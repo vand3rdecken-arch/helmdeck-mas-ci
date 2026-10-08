@@ -33,24 +33,20 @@ def ok(cond, what):
 print("compaction mark (copilot)")
 
 # 2026-09-15: the line is a NUMBER (COMPACT_COST_LINE), decoupled from
-# voice_model. Measured over the last 8 compaction windows: zero board calls
-# on haiku, so "stay-fast" guarded a model never used, and a 1M voice model
-# would have silently lifted the mark to 800k. Same value as before (168k =
-# haiku window - headroom), so nothing moved the day this landed.
+# voice_model (a 1M voice model must not lift the mark to 800k). Owner
+# 2026-10-07 set it to 100k (50% of 200k, Gemini CLI's default).
 mark, why = copilot._compact_mark({"ctx_window": 1_000_000})
 ok(why == "cost-line", "a 1M session is governed by the cost line, not overflow")
-ok(mark == copilot.COMPACT_COST_LINE == 168_000,
-   "the mark IS the cost line, and it equals the old haiku-derived value (%d)" % mark)
-ok(mark == turnopts.model_window("claude-haiku-4-5") - turnopts.CTX_HEADROOM,
-   "...which is still haiku's window minus headroom - documented, not derived at runtime")
+ok(mark == copilot.COMPACT_COST_LINE == 100_000,
+   "the mark IS the cost line (%d)" % mark)
 ok(HENRY_CTX >= mark,
    "Henry at 615,889 compacts (old overflow-only rule: %s)" % (HENRY_CTX >= 800_000))
 
-# a small-window session must keep the overflow guard - stay-fast would be
-# LOOSER there (168k vs 160k) and must not be allowed to relax the wall.
+# a 200k session: the cost line (100k) is stricter than the overflow wall
+# (160k), so it governs; the wall is only the binding one under 125k windows.
 small, why_small = copilot._compact_mark({"ctx_window": 200_000})
-ok(why_small == "overflow" and small == 160_000,
-   "a 200k session keeps the stricter overflow guard (%d, %s)" % (small, why_small))
+ok(why_small == "cost-line" and small == 100_000,
+   "a 200k session is governed by the stricter cost line (%d, %s)" % (small, why_small))
 
 # token-burn-hardening Karte D companion (2026-09-11): _compact_mark takes no
 # history, so it must judge the window it is HANDED, not one cached from
@@ -79,7 +75,7 @@ ok("MEMORY" in copilot_memory.SAVE_PROMPT,
 # ordering is the whole point: save runs BEFORE /compact
 src = open(os.path.join(os.path.dirname(copilot.__file__), "copilot.py"),
            encoding="utf-8").read()
-ok(src.index("_save_memory(user, sid)") < src.index('p.stdin.write("/compact")'),
+ok(src.index("_save_memory(user, sid)") < src.index('p.stdin.write("/compact "'),
    "memory is written BEFORE the history is compacted")
 ok('"--permission-mode", henry_pmode()' in src,
    "the save turn runs with hands (acceptEdits), not in plan mode")

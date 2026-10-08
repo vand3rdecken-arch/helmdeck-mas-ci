@@ -467,7 +467,7 @@ def _bg_continue(user, done, seen=False):
         print("copilot: bg-continue turn failed -", str(e)[:200], flush=True)
 
 
-def prewarm(user, spoken=True):
+def prewarm(user, spoken=True, force=False):
     """Fire-and-forget: spawn the user's warm chat process AND run a hidden
     warmup turn on it. Called when voice mode OPENS (the greeting fetch) and
     when the board chat is OPENED (the /chat/history fetch), so the two slow
@@ -492,7 +492,10 @@ def prewarm(user, spoken=True):
     control plane instead of respawning), it just warms less."""
     now = time.time()
     with _persist_lock:
-        if now - _prewarm_at.get(user, 0.0) < _PREWARM_COOLDOWN:
+        # force: the caller JUST dropped the warm port itself (compaction/prune),
+        # so the cooldown, which only exists to bound a spawn that keeps
+        # failing, must not swallow the rewarm and leave the next turn cold.
+        if not force and now - _prewarm_at.get(user, 0.0) < _PREWARM_COOLDOWN:
             return
         _prewarm_at[user] = now
 
@@ -1569,15 +1572,32 @@ def _schedule_compact(user):
             # deferrable forever). See _await_lull_and_lock for why the lull
             # is re-checked UNDER the lock, not just before it.
             lk = _await_lull_and_lock(user)
+            note = None
             try:
+                # PRUNE RIDES ALONG (owner 2026-10-08): both rewrite the session
+                # and void the warm port + prompt cache, so they pay that ONE
+                # drop together, in this lull, never as a separate pass. Pruning
+                # first also gives /compact a smaller transcript to read. The
+                # full pruned results stay on disk (state/ctx/<sid>/, named in
+                # the placeholder) and _maybe_compact saves Henry's memory to
+                # the db before it verdichtet.
+                _sid = _sessions().get(_skey(user))
+                if _sid:
+                    try:
+                        note = _do_prune(user, _sid)
+                    except Exception as e:                       # noqa: BLE001
+                        print("copilot: prune failed -", str(e)[:200], flush=True)
                 _maybe_compact(user)
             finally:
                 lk.release()
+            if note:
+                _compact_row(user, None, "pruned", saved_kb=note["saved_kb"], pruned=note["n"])
             # The compaction dropped the warm port (_persist_drop). Respawn it
             # NOW, in the lull, not on the clock of the owner's next question:
             # a cold spawn is ~4-6s to the first model output on this box
             # (measured 2026-09-13: init 2.6-4.1s, first assistant 4.2-5.6s).
-            prewarm(user, spoken=False)
+            # force: the cooldown must not swallow this rewarm.
+            prewarm(user, spoken=False, force=True)
         except Exception:
             pass                 # best-effort, same contract as _maybe_compact
         finally:
@@ -1658,7 +1678,7 @@ def _schedule_prune(user):
             finally:
                 lk.release()
             if note:
-                prewarm(user, spoken=False)   # the drop above cost the warmth
+                prewarm(user, spoken=False, force=True)   # the drop above cost the warmth
                 # ONE quiet marker row (owner 2026-10-07: "eleganter"), the same
                 # typed item the compaction uses - not a sentence about plumbing
                 _compact_row(user, None, "pruned", saved_kb=note["saved_kb"], pruned=note["n"])
@@ -3811,7 +3831,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
     _schedule_compact(user)      # background + single-flight, never blocks this reply
-    _schedule_prune(user)        # independent cleanup - see its own docstring
+    # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
+    # measured): standalone it rewrote the session at 60k, dropped the warm
+    # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
+    # ~20 kb saved. It now runs only inside _schedule_compact's lull, sharing
+    # the one cache drop compaction pays anyway, followed by a forced rewarm.
     refused = []
     if acts and not allow_actions:
         # ADVISORY CALLER (glass mode). The lens authenticates with a single
