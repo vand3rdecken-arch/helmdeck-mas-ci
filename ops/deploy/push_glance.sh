@@ -41,7 +41,7 @@ NAME="helmdeck-glance"
 # The files that ARE the app (page, style, script and the icon set Herald ships per app). Kept explicit rather than copying the whole
 # directory: surfaces/glasses/ also holds README.md, dist/ and the worker itself, none of
 # which belong on a public origin.
-ASSETS=(index.html styles.css app.js favicon.png icon-512.png manifest.webmanifest)
+ASSETS=(index.html styles.css app.js favicon.png favicon.ico apple-touch-icon.png icon-512.png manifest.webmanifest)
 
 sync_public() {
   rm -rf "$PUBLIC"
