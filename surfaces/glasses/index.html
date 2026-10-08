@@ -1,62 +1,102 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
-  <meta name="description" content="Glanceable HelmDeck ops view for Meta Ray-Ban Display: cards that need you, capacity and SoW margin at a glance.">
+  <meta name="description" content="HelmDeck auf der Meta Ray-Ban Display: Henry als Hauptansicht, dahinter das Board.">
   <meta name="mrbd-web-app-capable" content="yes">
-  <title>HelmDeck Glance</title>
+  <title>HelmDeck</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="app">
-    <!-- Home / glance -->
-    <div id="home" class="screen">
+    <!-- HENRY - the main surface, like the phone app's first tab (owner
+         2026-10-07: "Henry als Mainchat, Boards dahinter, genauso aufgebaut wie
+         die App"). The conversation fills the lens; the microphone is ONE pill in
+         the header, a glyph and a pulsing ring, never a sentence: it listens as
+         soon as the app opens and says so with a tone. The screen id stays
+         `talk` - the conversation machinery below keys on it. -->
+    <div id="talk" class="screen">
       <header class="header">
-        <h1>HelmDeck</h1>
-        <span class="header-meta" id="conn-dot" title="connection">•</span>
-      </header>
-      <div class="content">
-        <div class="hero" id="hero-needs">
-          <div class="hero-num" id="needs-num">–</div>
-          <div class="hero-label">need you</div>
-          <div class="hero-sub" id="needs-age"></div>
-        </div>
-        <div class="statrow">
-          <div class="stat"><span class="stat-v" id="stat-wip">–</span><span class="stat-l">WIP</span></div>
-          <div class="stat"><span class="stat-v" id="stat-head">–</span><span class="stat-l">headroom</span></div>
-          <div class="stat"><span class="stat-v" id="stat-margin">–</span><span class="stat-l">margin</span></div>
-        </div>
-      </div>
-      <nav class="nav-bar">
-        <button class="nav-item focusable primary" data-action="open-needs">Needs you
-          <span class="badge-dot hidden" id="needs-badge" aria-hidden="true"></span>
+        <span class="brand"><svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z"/></svg>Henry</span>
+        <span class="header-meta" id="conn-dot" title="Verbindung">•</span>
+        <span class="header-meta" id="talk-meta"></span>
+        <button class="mic-pill focusable" id="mic-pill" data-action="mic" aria-label="Mikrofon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z"/></svg>
+          <i class="mic-slash" aria-hidden="true"></i>
         </button>
-        <!-- THE MIC TRIGGER. Replaces the old "Ask", which sent one hardcoded
-             sentence and could therefore only ever produce one answer - the
-             "generische Antwort" the owner called out. This asks the parked
-             phone service to open the GLASSES microphone; the lens itself
-             cannot capture (webview denies all capture, measured on-device). -->
-        <button class="nav-item focusable" data-action="talk-speak">Speak</button>
-        <button class="nav-item focusable" data-action="open-sow">SoW</button>
-        <button class="nav-item focusable" data-action="open-settings">⚙</button>
+      </header>
+      <div class="content scrollable" id="talk-scroll">
+        <div class="chat" id="talk-chat"></div>
+        <div class="list-container" id="talk-options"></div>
+      </div>
+      <!-- Only for the states that need a WORD (Henry works, a draft waits, a
+           turn failed): a dot AND a word, because colour alone is forbidden on
+           this display. Listening and idle show nothing here - the pill says it. -->
+      <div class="turnbar hidden" id="turnbar">
+        <span class="turn-dot" id="turn-dot" aria-hidden="true"></span>
+        <span class="turn-label" id="turn-label"></span>
+      </div>
+      <nav class="tabs">
+        <button class="tab focusable on" data-action="tab" data-tab="talk">Henry</button>
+        <button class="tab focusable" data-action="tab" data-tab="board">Board
+          <span class="badge-dot hidden" aria-hidden="true"></span></button>
+        <button class="tab focusable" data-action="tab" data-tab="more">Mehr</button>
       </nav>
     </div>
 
-    <!-- Needs-you list -->
-    <div id="needs" class="screen hidden">
+    <!-- BOARD - the overview behind Henry: what waits on the owner. One number,
+         then the cards. No money, no capacity table: the phone's board tab is
+         the place for that. -->
+    <div id="board" class="screen hidden">
       <header class="header">
-        <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1>Needs you</h1>
+        <span class="brand">Board</span>
         <span class="header-meta" id="needs-count"></span>
       </header>
       <div class="content">
+        <div class="hero">
+          <div class="hero-num" id="needs-num">–</div>
+          <div class="hero-label" id="needs-label">warten auf dich</div>
+          <div class="hero-sub" id="needs-age"></div>
+        </div>
         <div class="list-container" id="needs-list"></div>
       </div>
-      <nav class="nav-bar">
-        <button class="nav-item focusable" data-action="refresh">Refresh</button>
-        <button class="nav-item focusable" id="voice-toggle-btn" data-action="voice-toggle">Voice on</button>
-        <button class="nav-item focusable" data-action="voice-repeat">Repeat</button>
+      <nav class="tabs">
+        <button class="tab focusable" data-action="tab" data-tab="talk">Henry</button>
+        <button class="tab focusable on" data-action="tab" data-tab="board">Board</button>
+        <button class="tab focusable" data-action="tab" data-tab="more">Mehr</button>
+      </nav>
+    </div>
+
+    <!-- MEHR - listening, voice, connection. -->
+    <div id="more" class="screen hidden">
+      <header class="header">
+        <span class="brand">Mehr</span>
+      </header>
+      <div class="content">
+        <div class="list-container">
+          <button class="list-item focusable" data-action="toggle-autolisten">
+            <div class="li-task">Beim Öffnen zuhören</div>
+            <div class="li-sub" id="autolisten-state">an</div>
+          </button>
+          <button class="list-item focusable" data-action="voice-toggle">
+            <div class="li-task">Henry spricht</div>
+            <div class="li-sub" id="voice-state">an</div>
+          </button>
+          <button class="list-item focusable" data-action="voice-repeat">
+            <div class="li-task">Letzte Ansage wiederholen</div>
+          </button>
+          <button class="list-item focusable" data-action="open-settings">
+            <div class="li-task">Verbindung</div>
+            <div class="li-sub">Adresse und Token</div>
+          </button>
+        </div>
+      </div>
+      <nav class="tabs">
+        <button class="tab focusable" data-action="tab" data-tab="talk">Henry</button>
+        <button class="tab focusable" data-action="tab" data-tab="board">Board
+          <span class="badge-dot hidden" aria-hidden="true"></span></button>
+        <button class="tab focusable on" data-action="tab" data-tab="more">Mehr</button>
       </nav>
     </div>
 
@@ -64,14 +104,14 @@
     <div id="detail" class="screen hidden">
       <header class="header">
         <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1>Card</h1>
+        <span class="brand">Karte</span>
       </header>
       <div class="content">
         <div class="detail-task" id="detail-task">–</div>
         <div class="detail-meta" id="detail-meta"></div>
       </div>
       <nav class="nav-bar hidden" id="detail-nav">
-        <button class="nav-item focusable primary" data-action="open-decide">Decide</button>
+        <button class="nav-item focusable primary" data-action="open-decide">Entscheiden</button>
       </nav>
     </div>
 
@@ -80,7 +120,7 @@
     <div id="decide" class="screen hidden">
       <header class="header">
         <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1 id="decide-head">Decide</h1>
+        <span class="brand" id="decide-head">Entscheiden</span>
         <span class="header-meta" id="decide-step"></span>
       </header>
       <div class="content">
@@ -89,67 +129,25 @@
       </div>
     </div>
 
-    <!-- SoW margin -->
-    <div id="sow" class="screen hidden">
-      <header class="header">
-        <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1>SoW margin</h1>
-      </header>
-      <div class="content">
-        <div class="list-container" id="sow-list"></div>
-      </div>
-    </div>
-
-    <!-- Settings -->
+    <!-- Connection -->
     <div id="settings" class="screen hidden">
       <header class="header">
         <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1>Connect</h1>
+        <span class="brand">Verbindung</span>
       </header>
       <div class="content">
-        <label class="field-label" for="cfg-base">Daemon URL (optional)</label>
+        <label class="field-label" for="cfg-base">Adresse des Daemons (optional)</label>
         <input id="cfg-base" class="field focusable" type="url" inputmode="url"
-          placeholder="empty = this same server" autocomplete="off">
-        <label class="field-label" for="cfg-token">Glance token</label>
+          placeholder="leer = dieser Server" autocomplete="off">
+        <label class="field-label" for="cfg-token">Glance-Token</label>
         <input id="cfg-token" class="field focusable" type="text"
-          placeholder="paste from Settings" autocomplete="off">
-        <div class="field-hint">Owner sets the token in HelmDeck Settings. Read-only.
-          Leave the URL empty when the Glance worker serves this app.</div>
+          placeholder="aus den Einstellungen einfügen" autocomplete="off">
+        <div class="field-hint">Den Token legt der Owner in den HelmDeck-Einstellungen fest.
+          Adresse leer lassen, wenn der Glance-Worker diese App ausliefert.</div>
       </div>
       <nav class="nav-bar">
-        <button class="nav-item focusable primary" data-action="save-settings">Save &amp; connect</button>
+        <button class="nav-item focusable primary" data-action="save-settings">Speichern &amp; verbinden</button>
       </nav>
-    </div>
-
-    <!-- GLASS MODE: the conversation with HENRY.
-         Built to the same shape the Wear OS watch uses (HenryScreen.kt): the
-         whole exchange is visible, the owner's own words appear the moment they
-         are sent rather than after the answer, and the machine's state is
-         readable at all times.
-
-         The lens's own twist, and the reason this screen exists at all: the
-         glasses have no microphone of their own to show. The mic is opened by
-         GlassVoiceService on the PHONE, so the listening state is REPORTED to
-         the daemon and mirrored here - #turnbar is the only place the owner can
-         ever see that something is hearing him. It is pinned outside the
-         scrolling area on purpose: the state must not scroll away. -->
-    <div id="talk" class="screen hidden">
-      <header class="header">
-        <button class="back-btn focusable" data-action="back">&#8592;</button>
-        <h1 id="talk-head">Henry</h1>
-        <span class="header-meta" id="talk-meta"></span>
-      </header>
-      <div class="content scrollable" id="talk-scroll">
-        <div class="chat" id="talk-chat"></div>
-        <div class="list-container" id="talk-options"></div>
-      </div>
-      <!-- LIVE TURN STATE. A dot AND a word: the display guidelines forbid
-           colour as the sole indicator, and on the waveguide a colour shift
-           alone is exactly what a bystander-lit lens loses first. -->
-      <div class="turnbar" id="turnbar">
-        <span class="turn-dot" id="turn-dot" aria-hidden="true"></span>
-        <span class="turn-label" id="turn-label">Ready</span>
-      </div>
     </div>
 
     <!-- transient status line -->

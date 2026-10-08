@@ -1,4 +1,6 @@
-/* HelmDeck Glance — Meta Ray-Ban Display (600x600 additive waveguide).
+/* HelmDeck on the Meta Ray-Ban Display (600x600 additive waveguide).
+   Same palette and shapes as the phone app (theme/tokens.ts, dark): Henry = violet
+   #967AF0, actions = blue #2396E5, ok/warn/danger = #5CB572/#E59C4B/#EA6A66.
    Black = transparent (real world shows through); UI surfaces are dark gray so
    they read as opaque. White text at high contrast. D-pad focus states. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -26,10 +28,10 @@ html, body {
   display: flex; align-items: center; gap: 12px;
 }
 .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
-.header-meta { margin-left: auto; font-size: 12px; color: #B0B3B8; }
-#conn-dot { font-size: 20px; color: #B0B3B8; }
-#conn-dot.ok { color: #31C46B; }
-#conn-dot.err { color: #FF5A5F; }
+.header-meta { margin-left: auto; font-size: 12px; color: #CACDCE; }
+#conn-dot { font-size: 20px; color: #CACDCE; }
+#conn-dot.ok { color: #5CB572; }
+#conn-dot.err { color: #EA6A66; }
 
 .back-btn {
   width: 56px; height: 56px; flex-shrink: 0; font-size: 26px;
@@ -42,10 +44,10 @@ html, body {
 /* hero glance number */
 .hero { text-align: center; padding: 18px 0 10px; }
 .hero-num { font-size: 96px; font-weight: 700; line-height: 1; }
-.hero-label { font-size: 22px; font-weight: 700; color: #E4E6EB; margin-top: 4px; }
+.hero-label { font-size: 22px; font-weight: 700; color: #E4E6E6; margin-top: 4px; }
 /* how old the number is, plus work only the owner can start - both are
    context for the hero, never competition with it */
-.hero-sub { font-size: 14px; color: #B0B3B8; margin-top: 8px; min-height: 18px; }
+.hero-sub { font-size: 14px; color: #CACDCE; margin-top: 8px; min-height: 18px; }
 
 /* stat row */
 .statrow { display: flex; gap: 8px; margin-top: 12px; }
@@ -54,7 +56,7 @@ html, body {
   text-align: center;
 }
 .stat-v { display: block; font-size: 26px; font-weight: 700; }
-.stat-l { display: block; font-size: 12px; color: #B0B3B8; margin-top: 2px; }
+.stat-l { display: block; font-size: 12px; color: #CACDCE; margin-top: 2px; }
 
 /* lists */
 .list-container { display: flex; flex-direction: column; gap: 8px; }
@@ -66,17 +68,17 @@ html, body {
 }
 .list-item .li-task { font-size: 16px; font-weight: 600; line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.li-sub { font-size: 12px; color: #B0B3B8; margin-top: 4px; }
+.li-sub { font-size: 12px; color: #CACDCE; margin-top: 4px; }
 .li-margin { float: right; font-weight: 700; }
-.li-margin.pos { color: #31C46B; }
-.li-margin.neg { color: #FF5A5F; }
+.li-margin.pos { color: #5CB572; }
+.li-margin.neg { color: #EA6A66; }
 /* a card the owner cannot just accept - red gate, unlandable branch, dead
    dispatch. Same red as a negative margin: bad news reads bad at a glance. */
-.li-sub.neg, .detail-meta .neg { color: #FF5A5F; }
-.empty { text-align: center; color: #B0B3B8; font-size: 16px; padding: 40px 12px; }
+.li-sub.neg, .detail-meta .neg { color: #EA6A66; }
+.empty { text-align: center; color: #CACDCE; font-size: 16px; padding: 40px 12px; }
 /* the "only you can start" group: present, but visibly quieter than a blocker
    and not focusable - there is nothing to open, it is a reminder */
-.group-label { font-size: 13px; font-weight: 700; color: #B0B3B8;
+.group-label { font-size: 13px; font-weight: 700; color: #CACDCE;
   text-transform: uppercase; letter-spacing: .06em; margin: 18px 0 8px 2px; }
 /* quieter than a blocker, but not faint: on an ADDITIVE display dimmer means
    more transparent, so ambient light eats the difference - 0.65 keeps the
@@ -87,14 +89,14 @@ html, body {
    literally means more transparent - "Send" is the one that survives bright
    ambient light. The reject stays an ordinary row: discarding is recoverable
    (he just speaks again), sending is not. */
-.list-item.primary { opacity: 1; border-color: #31C46B; }
+.list-item.primary { opacity: 1; border-color: #5CB572; }
 
 /* detail */
 .detail-task { font-size: 22px; font-weight: 700; line-height: 1.35; }
-.detail-meta { margin-top: 14px; font-size: 16px; color: #E4E6EB; line-height: 1.7; }
+.detail-meta { margin-top: 14px; font-size: 16px; color: #E4E6E6; line-height: 1.7; }
 /* WHY the card is stuck - the failing assertion, the conflict, the question.
    It is the most actionable text on the screen, so it gets body size and a
-   readable grey: 12px #B0B3B8 (the list's caption style) is thin enough to
+   readable grey: 12px #CACDCE (the list's caption style) is thin enough to
    disappear on an additive waveguide, which is where this is read. */
 .detail-why { display: block; margin-top: 10px; font-size: 15px;
   color: #CFD2D6; line-height: 1.5; }
@@ -124,7 +126,7 @@ html, body {
 .msg { max-width: 88%; }
 .msg.mine { align-self: flex-end; }
 .msg-who {
-  font-size: 11px; font-weight: 700; color: #B0B3B8;
+  font-size: 11px; font-weight: 700; color: #CACDCE;
   letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px;
 }
 .msg.mine .msg-who { text-align: right; }
@@ -137,7 +139,7 @@ html, body {
    because on an additive display a "tinted background" is just a dimmer one -
    the pixels that reach the eye are the bright ones, so the edge is what
    carries the distinction. */
-.msg.mine .msg-body { border-color: #2A6DF4; background: #16202F; }
+.msg.mine .msg-body { border-color: #2396E5; background: #14222E; }
 
 /* THE PENDING LINE - what he just said, on screen before Henry has answered.
    This is the half the card was written about: until now the spoken words went
@@ -145,7 +147,7 @@ html, body {
    showed them, so the owner had no way to check that he had been heard
    correctly before it was sent in his name. Dashed edge = not yet part of the
    record; it becomes an ordinary .msg the moment the transcript carries it. */
-.msg.pending .msg-body { border-style: dashed; border-color: #2A6DF4; }
+.msg.pending .msg-body { border-style: dashed; border-color: #2396E5; }
 
 /* A DRAFT - spoken, shown, and NOT SENT until he says so. Amber rather than the
    pending blue on purpose: blue here means "on its way to Henry", and a sentence
@@ -153,14 +155,14 @@ html, body {
    Same amber as .msg-label, which is already this surface's "needs you" tone.
    Slightly larger because reading it accurately IS the task - he is checking the
    recogniser's work, not skimming a log. */
-.msg.pending.draft .msg-body { border-style: solid; border-color: #FFB020;
+.msg.pending.draft .msg-body { border-style: solid; border-color: #E59C4B;
   font-size: 17px; line-height: 1.35; }
-.msg.pending.draft .msg-who { color: #FFB020; }
+.msg.pending.draft .msg-who { color: #E59C4B; }
 
 /* a MIRRORED card event ("Question - card name") - the same one-inbox lines the
    watch shows. Context here, never tappable: answering a card has exactly one
    path on this surface (the decide screen), and a second one would be drift. */
-.msg-label { font-size: 11px; font-weight: 700; color: #FFB020;
+.msg-label { font-size: 11px; font-weight: 700; color: #E59C4B;
   letter-spacing: .03em; margin-bottom: 3px; }
 
 /* ---- THE LIVE TURN STATE --------------------------------------------------
@@ -175,33 +177,33 @@ html, body {
   flex-shrink: 0; height: 56px; display: flex; align-items: center; gap: 12px;
   padding: 0 6px; border-top: 1px solid #3A3B3C; margin-top: 6px;
 }
-.turn-label { font-size: 17px; font-weight: 700; color: #E4E6EB; }
+.turn-label { font-size: 17px; font-weight: 700; color: #E4E6E6; }
 .turn-dot {
   width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
-  background: #B0B3B8;
+  background: #CACDCE;
 }
 /* LISTENING is the one state that must be unmistakable across a room, so it is
    the only one that moves. The pulse is a CSS keyframe animation, never a JS
    timer: the platform performance guidance asks for exactly that ("avoid
    continuous setInterval/requestAnimationFrame loops... prefer CSS
    transitions"), and it stops on its own the moment the class is removed. */
-.turnbar.listening .turn-dot { background: #31C46B; animation: pulse 1.25s ease-in-out infinite; }
+.turnbar.listening .turn-dot { background: #5CB572; animation: pulse 1.25s ease-in-out infinite; }
 .turnbar.listening .turn-label { color: #FFFFFF; }
 .turnbar.heard .turn-dot,
-.turnbar.thinking .turn-dot { background: #2A6DF4; animation: pulse 1.9s ease-in-out infinite; }
+.turnbar.thinking .turn-dot { background: #2396E5; animation: pulse 1.9s ease-in-out infinite; }
 /* WAITING ON HIM. Steady amber, never pulsing: a pulse on this surface means
    "something is happening" (mic open, Henry working), and a draft is the exact
    opposite - everything has stopped until he decides. */
-.turnbar.draft .turn-dot { background: #FFB020; }
-.turnbar.draft .turn-label { color: #FFB020; }
-.turnbar.answered .turn-dot { background: #31C46B; }
-.turnbar.failed .turn-dot { background: #FF5A5F; }
-.turnbar.failed .turn-label { color: #FF5A5F; }
+.turnbar.draft .turn-dot { background: #E59C4B; }
+.turnbar.draft .turn-label { color: #E59C4B; }
+.turnbar.answered .turn-dot { background: #5CB572; }
+.turnbar.failed .turn-dot { background: #EA6A66; }
+.turnbar.failed .turn-label { color: #EA6A66; }
 /* WHICH mic is open. A real distinction, not decoration: the glasses mic runs
    over Bluetooth HFP and collapses all glasses audio to 8 kHz while it is live,
    so "glasses" and "phone" are two different experiences and the owner should be
    able to see which one he is in. */
-/* NOT 12px #B0B3B8. That is the exact weight this repo's trap register records
+/* NOT 12px #CACDCE. That is the exact weight this repo's trap register records
    as disappearing on the waveguide, and the first screenshot pass of this
    screen shows it going thin next to the label beside it. Same correction
    .detail-why already carries, for the same reason and to the same values. */
@@ -240,17 +242,17 @@ html, body {
 .talk-reply { font-size: 18px; line-height: 1.4; color: #F2F3F5; margin-bottom: 14px; }
 /* "the agent tried to change the board and I blocked it" is a HONESTY signal,
    not a caption - the one thing that must not quietly vanish. The default
-   header-meta (12px #B0B3B8) is precisely the weight this document's own trap
+   header-meta (12px #CACDCE) is precisely the weight this document's own trap
    register says disappears on the waveguide, so it gets warn colour and bold. */
-.header-meta.warn { color: #FFB020; font-weight: 700; }
+.header-meta.warn { color: #E59C4B; font-weight: 700; }
 
 /* settings fields */
-.field-label { display: block; font-size: 12px; color: #B0B3B8; margin: 10px 2px 4px; }
+.field-label { display: block; font-size: 12px; color: #CACDCE; margin: 10px 2px 4px; }
 .field {
   width: 100%; height: 48px; background: #1C1E21; border: 2px solid transparent;
   border-radius: 12px; color: #fff; font-size: 16px; padding: 0 14px;
 }
-.field-hint { font-size: 12px; color: #B0B3B8; margin: 10px 2px; }
+.field-hint { font-size: 12px; color: #CACDCE; margin: 10px 2px; }
 
 /* bottom nav */
 .nav-bar {
@@ -263,8 +265,8 @@ html, body {
   color: #fff; font-size: 18px; font-weight: 600; opacity: 0.8;
   transition: transform .12s ease-out, opacity .12s ease-out, border-color .12s ease-out;
 }
-.nav-item.primary { background: #2A6DF4; }
-.nav-item.danger { color: #FF5A5F; }
+.nav-item.primary { background: #2396E5; }
+.nav-item.danger { color: #EA6A66; }
 
 /* a new needs_you blocker landed since the owner last opened the list - same
    red as every other "bad news" signal in this app (li-margin.neg, #conn-dot
@@ -272,7 +274,7 @@ html, body {
 .badge-dot {
   position: absolute; top: 10px; right: 10px;
   width: 12px; height: 12px; border-radius: 50%;
-  background: #FF5A5F; border: 2px solid #1C1E21;
+  background: #EA6A66; border: 2px solid #1C1E21;
 }
 
 /* focus state: scale up slightly, full opacity, white ring */
@@ -284,7 +286,7 @@ html, body {
 
 /* toast */
 .toast {
-  position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 84px; transform: translateX(-50%);   /* under the header: never over the options */
   background: #1C1E21; color: #fff; font-size: 14px; padding: 8px 16px;
   border-radius: 999px; border: 1px solid #3A3B3C; white-space: nowrap;
 }
@@ -309,3 +311,63 @@ html, body {
   .turnbar.heard .turn-dot,
   .turnbar.thinking .turn-dot { animation: none; }
 }
+
+
+/* ======================================================================
+   THE APP'S STRUCTURE ON THE LENS (owner 2026-10-07)
+   Henry first, Board and Mehr behind it as tabs - the phone's tab bar, three
+   of its four entries (Rooms has no place on a lens).
+   ====================================================================== */
+:root { --accent: #2396E5; --violet: #967AF0; --ok: #5CB572; --warn: #E59C4B;
+        --danger: #EA6A66; --txt: #E4E6E6; --txt2: #CACDCE; --surface: #1C1E21; --edge: #3A3B3C; }
+
+.brand { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; display: inline-flex;
+  align-items: center; gap: 8px; }
+.spark { width: 26px; height: 26px; fill: var(--violet); }
+.header .header-meta { margin-left: 0; }
+#talk-meta { margin-left: auto; }
+.header .mic-pill { margin-left: auto; }
+#talk-meta:not(:empty) + .mic-pill { margin-left: 8px; }
+
+/* THE MICROPHONE PILL: a glyph and a ring, no sentence. It listens from the moment
+   the app opens; a tone says so, this shows it. States: listening (violet ring
+   pulses), idle (outline), muted (slashed, grey). Motion is a CSS animation. */
+.mic-pill { position: relative; width: 64px; height: 64px; flex-shrink: 0; border-radius: 32px;
+  background: var(--surface); border: 2px solid var(--edge); display: flex; align-items: center;
+  justify-content: center; color: var(--txt); }
+.mic-pill svg { width: 28px; height: 28px; fill: currentColor; }
+.mic-slash { display: none; position: absolute; width: 38px; height: 3px; background: var(--danger);
+  transform: rotate(-45deg); border-radius: 2px; }
+.mic-pill.listening { border-color: var(--violet); color: #fff; }
+.mic-pill.listening::after { content: ""; position: absolute; inset: -6px; border-radius: 38px;
+  border: 2px solid var(--violet); animation: ring 1.4s ease-out infinite; }
+.mic-pill.muted { color: var(--txt2); opacity: .8; }
+.mic-pill.muted .mic-slash { display: block; }
+.mic-pill:focus { border-color: #fff; }
+@keyframes ring { 0% { opacity: .9; transform: scale(.92); } 100% { opacity: 0; transform: scale(1.18); } }
+
+/* TAB BAR - the app's bottom tabs, 88px targets */
+.tabs { flex-shrink: 0; display: flex; gap: 8px; padding-top: 8px; }
+.tab { position: relative; flex: 1; height: 88px; min-height: 88px; background: var(--surface);
+  border: 2px solid transparent; border-radius: 16px; color: var(--txt2); font-size: 20px;
+  font-weight: 600; opacity: .8; }
+.tab.on { color: #fff; border-color: var(--accent); opacity: 1; }
+.tab:focus { border-color: #fff; opacity: 1; transform: scale(1.03); outline: none; }
+.tabs .badge-dot { top: 12px; right: 18px; }
+
+/* HENRY'S BUBBLE: violet edge, like the app's Henry message. The owner's stays blue. */
+.msg:not(.mine) .msg-body { border-color: var(--violet); }
+.msg:not(.mine) .msg-who { color: var(--violet); }
+.msg-body { font-size: 18px; }
+.turnbar.hidden { display: none; }
+.turnbar.listening .turn-dot { background: var(--violet); }
+
+/* BOARD */
+.hero-num { font-size: 88px; }
+.hero { padding: 8px 0 10px; }
+.hero-num.zero { color: var(--ok); }
+.li-sub.neg { color: var(--danger); }
+.reason-chip { display: inline-block; font-size: 13px; font-weight: 700; padding: 2px 10px;
+  border-radius: 999px; border: 1px solid var(--warn); color: var(--warn); margin-right: 8px; }
+.reason-chip.neg { border-color: var(--danger); color: var(--danger); }
+.reason-chip.ask { border-color: var(--accent); color: var(--accent); }

@@ -1,5 +1,5 @@
-// HelmDeck Glance — Meta Ray-Ban Display webapp.
-// Read-only glance at the HelmDeck daemon's /glance endpoint (token-gated).
+// HelmDeck on the Meta Ray-Ban Display - Henry first, Board and Mehr as tabs (the
+// phone app's structure). Reads the daemon's /glance endpoints (token-gated).
 // D-pad / EMG navigation, no touch. Polling is bounded and foreground-only
 // (see startPoll/stopPoll) - "start timers on demand, stop them when not
 // visible" (performance-guidelines.md) and never a FAST poll (glass-crud-
@@ -12,7 +12,7 @@
   var CFG_KEY = 'helmdeck_glance_cfg';
   var cfg = loadCfg();
   var data = { needs_you: [], yours: [], econ: {}, sows: [] };
-  var screenStack = ['home'];
+  var screenStack = ['talk'];
   var fetchedAt = 0;          // ms, local clock: when THIS build last got data
   // diff detection for proactive notification. null = not yet baselined (no
   // notification on the very first load - every card would look "new").
@@ -93,7 +93,7 @@
           : [];
         knownIds = ids;
         data = d; fetchedAt = Date.now();
-        dot.className = 'ok'; renderHome(); renderNeeds(); renderSow();
+        dot.className = 'ok'; renderBoardHead(); renderNeeds();
         if (fresh.length) {
           unseenNew += fresh.length;
           updateBadge();
@@ -108,7 +108,7 @@
       .catch(function (e) {
         // keep showing the last data, but STOP claiming it is current: a stale
         // "all clear" is the one thing this display must never imply
-        dot.className = 'err'; renderHome(); toast('Offline: ' + e.message);
+        dot.className = 'err'; renderBoardHead(); toast('Offline: ' + e.message);
       });
   }
 
@@ -137,32 +137,31 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { refreshIfStale(10000); startPoll(); startChatStream(); }
+    if (!document.hidden) { refreshIfStale(10000); startPoll(); startChatStream(); maybeAutoListen('open'); }
     else { stopPoll(); stopChatStream(); }
   });
 
   function ageText() {
     if (!fetchedAt) return '';
     var s = Math.round((Date.now() - fetchedAt) / 1000);
-    if (s < 45) return 'just now';
-    if (s < 5400) return Math.round(s / 60) + ' min ago';
-    return Math.round(s / 3600) + ' h ago';
+    if (s < 45) return 'gerade eben';
+    if (s < 5400) return 'vor ' + Math.round(s / 60) + ' min';
+    return 'vor ' + Math.round(s / 3600) + ' h';
   }
 
   // ---- rendering ------------------------------------------------------------
-  function cur() { return (data.econ && data.econ.currency === 'USD') ? '$' : '€'; }
-
-  function renderHome() {
+  function renderBoardHead() {
     var e = data.econ || {};
-    setText('needs-num', e.needs_you != null ? String(e.needs_you) : '0');
-    setText('stat-wip', (e.wip != null ? e.wip : '–') + '/' + (e.wip_limit != null ? e.wip_limit : '–'));
-    setText('stat-head', e.headroom != null ? String(e.headroom) : '–');
-    setText('stat-margin', e.margin != null ? cur() + Math.round(e.margin) : '–');
+    var n = e.needs_you != null ? e.needs_you : (data.needs_you || []).length;
+    setText('needs-num', String(n || 0));
+    var num = document.getElementById('needs-num');
+    if (num) num.classList.toggle('zero', !n);
+    setText('needs-label', n === 1 ? 'wartet auf dich' : (n ? 'warten auf dich' : 'alles erledigt'));
     // unstarted work only the owner can begin - a SEPARATE line, never folded
     // into the big number, so a backlog can't drown out a red gate
     var yours = (e.yours != null) ? e.yours : (data.yours || []).length;
     var age = ageText();
-    var sub = yours ? ('+' + yours + ' only you can start') : '';
+    var sub = yours ? ('+' + yours + ' nur du kannst starten') : '';
     if (age) sub = sub ? (sub + ' · ' + age) : age;
     setText('needs-age', sub);
   }
@@ -170,13 +169,13 @@
   // WHY the card is blocked on you (daemon: sessions.BLOCKER_REASONS). Older
   // daemons send no `reason`, so fall back to the boolean they do send.
   var REASON = {
-    question: 'asks you', delivered: 'ready for you', review: 'accept it',
-    gate: 'gate red', conflict: 'cannot land', failed: 'failed'
+    question: 'Frage', delivered: 'bereit', review: 'abnehmen',
+    gate: 'Gate rot', conflict: 'Konflikt', failed: 'fehlgeschlagen'
   };
   function reasonOf(c) {
     return c.reason || (c.asking ? 'question' : 'delivered');
   }
-  function reasonLabel(c) { return REASON[reasonOf(c)] || 'needs you'; }
+  function reasonLabel(c) { return REASON[reasonOf(c)] || 'wartet'; }
   function isBad(c) {
     var r = reasonOf(c);
     return r === 'gate' || r === 'conflict' || r === 'failed';
@@ -188,7 +187,7 @@
     setText('needs-count', items.length ? String(items.length) : '');
     list.innerHTML = '';
     if (!items.length) {
-      list.innerHTML = '<div class="empty">Nothing needs you.<br>All clear ✓</div>';
+      list.innerHTML = '<div class="empty">Nichts wartet auf dich ✓</div>';
       return;
     }
     items.forEach(function (c) {
@@ -200,10 +199,10 @@
       var canDecide = !!(c.question && (c.question.questions || []).length);
       el.setAttribute('data-action', canDecide ? 'open-decide' : 'open-detail');
       el.setAttribute('data-id', c.id);
-      var sub = (canDecide ? 'tap to decide' : reasonLabel(c))
-        + ' · ' + (c.client ? c.client : 'internal');
-      el.innerHTML = '<div class="li-task">' + esc(c.task || '(untitled)') + '</div>'
-        + '<div class="li-sub' + (isBad(c) ? ' neg' : '') + '">' + esc(sub) + '</div>';
+      var chip = '<span class="reason-chip' + (isBad(c) ? ' neg' : (canDecide ? ' ask' : '')) + '">'
+        + esc(canDecide ? 'Frage' : reasonLabel(c)) + '</span>';
+      el.innerHTML = '<div class="li-task">' + esc(c.task || '(ohne Titel)') + '</div>'
+        + '<div class="li-sub">' + chip + esc(c.client ? c.client : 'intern') + '</div>';
       list.appendChild(el);
     });
     renderYours(list);
@@ -216,29 +215,14 @@
     if (!mine.length) return;
     var hd = document.createElement('div');
     hd.className = 'group-label';
-    hd.textContent = 'Only you can start';
+    hd.textContent = 'Nur du kannst starten';
     list.appendChild(hd);
     mine.forEach(function (c) {
       var el = document.createElement('div');
       el.className = 'list-item muted';
-      el.innerHTML = '<div class="li-task">' + esc(c.task || '(untitled)') + '</div>'
-        + '<div class="li-sub">' + esc((c.mode || 'manual') + ' · '
-          + (c.client ? c.client : 'internal')) + '</div>';
-      list.appendChild(el);
-    });
-  }
-
-  function renderSow() {
-    var list = document.getElementById('sow-list');
-    var items = data.sows || [];
-    list.innerHTML = '';
-    if (!items.length) { list.innerHTML = '<div class="empty">No SoWs yet.</div>'; return; }
-    items.forEach(function (s) {
-      var el = document.createElement('div');
-      el.className = 'list-item';
-      var cls = s.margin >= 0 ? 'pos' : 'neg';
-      el.innerHTML = '<span class="li-margin ' + cls + '">' + cur() + Math.round(s.margin) + '</span>'
-        + '<div class="li-task">' + esc(s.name || '(SoW)') + '</div>';
+      el.innerHTML = '<div class="li-task">' + esc(c.task || '(ohne Titel)') + '</div>'
+        + '<div class="li-sub">' + esc((c.mode || 'manuell') + ' · '
+          + (c.client ? c.client : 'intern')) + '</div>';
       list.appendChild(el);
     });
   }
@@ -251,13 +235,13 @@
     var c = cardById(id);
     var nav = document.getElementById('detail-nav');
     if (!c) {
-      setText('detail-task', 'Card not found'); setHTML('detail-meta', '');
+      setText('detail-task', 'Karte nicht gefunden'); setHTML('detail-meta', '');
       nav.classList.add('hidden'); return;
     }
-    setText('detail-task', c.task || '(untitled)');
+    setText('detail-task', c.task || '(ohne Titel)');
     setHTML('detail-meta',
-      'Blocked &nbsp;<b' + (isBad(c) ? ' class="neg"' : '') + '>' + esc(reasonLabel(c)) + '</b><br>'
-      + 'Client &nbsp;<b>' + (c.client ? esc(c.client) : 'internal') + '</b>'
+      'Blockiert &nbsp;<b' + (isBad(c) ? ' class="neg"' : '') + '>' + esc(reasonLabel(c)) + '</b><br>'
+      + 'Kunde &nbsp;<b>' + (c.client ? esc(c.client) : 'intern') + '</b>'
       + (c.detail ? '<span class="detail-why">' + esc(c.detail) + '</span>' : ''));
     // The Decide button exists only when there is something to decide - a
     // button that opens an empty screen is worse than no button.
@@ -278,7 +262,7 @@
   function openDecide(id) {
     var c = cardById(id);
     if (!c || !c.question || !(c.question.questions || []).length) {
-      toast('Nothing to decide'); return;
+      toast('Nichts zu entscheiden'); return;
     }
     decide = { cardId: id, qid: c.question.id, questions: c.question.questions,
                idx: 0, answers: {} };
@@ -291,13 +275,13 @@
     var q = decide.questions[decide.idx];
     var n = decide.questions.length;
     var nopt = (q.options || []).length;
-    setText('decide-head', q.header || 'Decide');
+    setText('decide-head', q.header || 'Entscheiden');
     // Say how many options there ARE. With the protocol's maximum of six the
     // last one sits below the fold on first paint - the D-pad scrolls to it
     // (measured: every option reaches fullyVisible), but a glance display must
     // never leave the owner unaware a choice exists at all.
     setText('decide-step',
-      (n > 1 ? (decide.idx + 1) + '/' + n + ' · ' : '') + nopt + ' options');
+      (n > 1 ? (decide.idx + 1) + '/' + n + ' · ' : '') + nopt + ' Optionen');
     setText('decide-q', q.question || '');
     var list = document.getElementById('decide-options');
     list.innerHTML = '';
@@ -324,9 +308,9 @@
   }
 
   function submitDecision() {
-    if (!connected()) { toast('Not connected'); return; }
+    if (!connected()) { toast('Nicht verbunden'); return; }
     var d = decide;
-    toast('Sending…');
+    toast('Sende …');
     fetch(apiBase() + '/glance/answer', {
       method: 'POST',
       headers: glanceHeaders({ 'Content-Type': 'application/json' }),
@@ -339,11 +323,11 @@
       });
     }).then(function () {
       decide = null;
-      toast('Answered ✓');
+      toast('Beantwortet ✓');
       // the card is now RUNNING again, so the board this lens shows is stale by
       // definition - re-read it rather than leave the answered card sitting in
       // the needs-you list
-      screenStack = ['home']; showScreen('home', true); refresh();
+      screenStack = ['board']; showScreen('board', true); refresh();
     }).catch(function (e) {
       toast(String(e.message || e));
     });
@@ -433,13 +417,14 @@
     cfg.voiceMuted = voiceMuted;
     saveCfg(cfg);
     updateVoiceToggleLabel();
-    toast(voiceMuted ? 'Voice off' : 'Voice on');
+    toast(voiceMuted ? 'Henry spricht nicht' : 'Henry spricht');
   }
   function updateVoiceToggleLabel() {
-    setText('voice-toggle-btn', voiceMuted ? 'Voice off' : 'Voice on');
+    setText('voice-state', voiceMuted ? 'aus' : 'an');
+    setText('autolisten-state', cfg.autoListen === false ? 'aus' : 'an');
   }
   function repeatBlockerVoice() {
-    if (!lastBlockerVoiceUrl) { toast('Nothing to repeat'); return; }
+    if (!lastBlockerVoiceUrl) { toast('Nichts zu wiederholen'); return; }
     audioUnlock();                       // this tap IS a gesture - unlocks too
     // same clip already loaded (nothing spoken since) - just restart it;
     // otherwise (re)load it fresh, same as a first play
@@ -483,6 +468,7 @@
   var chatCursor = null, glassCursor = null;
   var chatOn = false, chatCtl = null, chatBackoff = 3000;
   var lastTurnSeq = -1;
+  var lastSeenState = 'idle';
   var lastOptions = [];      // the tappable half of Henry's most recent reply
 
   function chatStreamUrl() {
@@ -568,9 +554,12 @@
       var qs = (turn.question && turn.question.questions) || [];
       lastOptions = qs.length ? (qs[0].options || []) : [];
     }
+    var prevState = lastSeenState; lastSeenState = turn.state;
     renderTurnbar();
     if (screenStack[screenStack.length - 1] === 'talk') renderChat();
     maybeOpenTalk();
+    if (turn.state === 'heard') followUps = 0;               // he spoke: a new follow-up is earned
+    if (turn.state === 'answered' && prevState !== 'answered') setTimeout(function () { maybeAutoListen('follow-up'); }, 2500);
   }
 
   // BRING THE SCREEN TO THE CONVERSATION. The owner speaks without touching the
@@ -598,17 +587,16 @@
     showScreen('talk');                  // renders the conversation on arrival
   }
 
+  // Words only for the states that need one. `listening` has none on purpose: the
+  // microphone pill (ring + glyph) and a tone say it (owner 2026-10-07: "kein
+  // 'ich hoere', nur ein Ton").
   var TURN_LABEL = {
-    idle: 'Ready',
-    listening: 'Listening',
-    // Phrased as the QUESTION it is, not as a status ("Draft"). The bar is the
-    // only thing above the sentence, so it has to say what the two buttons under
-    // it are for.
-    draft: 'Send this?',
-    heard: 'Heard you',
-    thinking: 'Henry is thinking',
-    answered: 'Answered',
-    failed: 'No answer - ask again'
+    idle: '', listening: '',
+    draft: 'Senden?',
+    heard: 'Verstanden',
+    thinking: 'Henry denkt nach',
+    answered: '',
+    failed: 'Keine Antwort - frag nochmal'
   };
   // A transient state this old is not credible any more - the mic owner is a
   // separate process on a separate device and can die without ever reporting
@@ -619,23 +607,62 @@
 
   function renderTurnbar() {
     var bar = document.getElementById('turnbar');
-    if (!bar) return;
     var st = turn.state || 'idle';
-    bar.className = 'turnbar ' + st;
-    var label = TURN_LABEL[st] || st;
-    if (TALK_STATES[st] && typeof turn.age === 'number' && turn.age > TURN_STALE_S) {
-      label += ' (' + Math.round(turn.age / 60) + ' min)';
+    if (bar) {
+      var label = TURN_LABEL[st] || '';
+      if (TALK_STATES[st] && typeof turn.age === 'number' && turn.age > TURN_STALE_S && label) {
+        label += ' (' + Math.round(turn.age / 60) + ' min)';
+      }
+      bar.className = 'turnbar ' + st + (label ? '' : ' hidden');
+      setText('turn-label', label);
     }
-    setText('turn-label', label);
-    // WHICH microphone. Only while one is actually open: naming a mic next to
-    // "Answered" would suggest something is still listening when nothing is.
-    var mic = document.getElementById('turn-mic');
-    if (!mic) {
-      mic = document.createElement('span');
-      mic.id = 'turn-mic'; mic.className = 'turn-mic';
-      bar.appendChild(mic);
-    }
-    mic.textContent = (st === 'listening' && turn.mic) ? (turn.mic + ' mic') : '';
+    renderPill();
+    earcon(st);
+  }
+
+  // ---- THE MICROPHONE PILL + TONES ------------------------------------------
+  // The pill is the whole microphone UI: ring pulses while listening, a slash
+  // while auto-listening is switched off. Enter on it = speak now / switch off.
+  function renderPill() {
+    var pill = document.getElementById('mic-pill');
+    if (!pill) return;
+    var listening = (turn.state === 'listening');
+    var muted = cfg.autoListen === false && !listening;
+    pill.className = 'mic-pill focusable' + (listening ? ' listening' : '') + (muted ? ' muted' : '');
+    pill.setAttribute('aria-label', listening ? 'Mikrofon an - Enter schaltet das Zuhören aus'
+      : muted ? 'Zuhören aus - Enter schaltet an' : 'Sprechen');
+  }
+
+  // Tones, not words. WebAudio is the one sound path the lens documents as
+  // working (the reference's coach app uses earcons for exactly this); a context
+  // can be refused before the first gesture - then the pill still shows it.
+  var audioCtx = null;
+  function beep(freqs, ms) {
+    try {
+      if (voiceMuted) return;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = audioCtx || new AC();
+      if (audioCtx.state === 'suspended' && audioCtx.resume) audioCtx.resume();
+      var t = audioCtx.currentTime;
+      freqs.forEach(function (f, i) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + i * ms / 1000);
+        g.gain.exponentialRampToValueAtTime(0.18, t + i * ms / 1000 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + (i + 1) * ms / 1000);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(t + i * ms / 1000); o.stop(t + (i + 1) * ms / 1000 + 0.02);
+      });
+    } catch (e) { /* a tone is an enhancement */ }
+  }
+  var lastToneState = 'idle';
+  function earcon(st) {
+    if (st === lastToneState) return;
+    var was = lastToneState; lastToneState = st;
+    if (st === 'listening') beep([660, 880], 110);                               // open: two rising notes
+    else if (was === 'listening' && st !== 'listening') beep([880, 560], 110);   // closed: falling
+    else if (st === 'failed') beep([300], 220);
   }
 
   // The pending line: what he said, before the transcript carries it.
@@ -664,7 +691,7 @@
     chatMsgs.forEach(function (m) {
       html += '<div class="msg' + (m.mine ? ' mine' : '') + '">'
         + (m.label ? '<div class="msg-label">' + esc(m.label) + '</div>'
-                   : '<div class="msg-who">' + (m.mine ? 'You' : 'Henry') + '</div>')
+                   : '<div class="msg-who">' + (m.mine ? 'Du' : 'Henry') + '</div>')
         + '<div class="msg-body">' + esc(m.text) + '</div></div>';
     });
     var pend = pendingText();
@@ -675,11 +702,11 @@
       // telling him the same thing about two opposite situations.
       var draft = turn.state === 'draft';
       html += '<div class="msg mine pending' + (draft ? ' draft' : '') + '">'
-        + '<div class="msg-who">' + (draft ? 'You said' : 'You') + '</div>'
+        + '<div class="msg-who">' + (draft ? 'Du hast gesagt' : 'Du') + '</div>'
         + '<div class="msg-body">' + esc(pend) + '</div></div>';
     }
     if (!html) {
-      html = '<div class="empty">Say something, or tap Ask.</div>';
+      html = '<div class="empty">Sprich einfach - Henry hört zu.</div>';
     }
     box.innerHTML = html;
     renderOptions();
@@ -698,8 +725,8 @@
     // choices, nothing else - this is the confirm step and it is the only thing
     // the owner can do here.
     if (turn.state === 'draft') {
-      [['talk-send', 'Send', 'ask Henry this'],
-       ['talk-redo', 'Speak again', 'discard and re-record']
+      [['talk-send', 'Senden', 'Henry fragen'],
+       ['talk-redo', 'Nochmal sprechen', 'verwerfen und neu aufnehmen']
       ].forEach(function (o) {
         var el = document.createElement('button');
         el.className = 'list-item focusable' + (o[0] === 'talk-send' ? ' primary' : '');
@@ -728,7 +755,7 @@
 
   function talkStart() {
     audioUnlock();                       // MUST be inside the gesture
-    talk('Where do things stand, and what should I do next?');
+    talk('Wo stehen wir, und was soll ich als Nächstes tun?');
   }
 
   /**
@@ -745,7 +772,7 @@
    * something, and the reply arrives seconds later with no gesture of its own.
    */
   function askToListen() {
-    if (!connected()) { toast('Not connected'); return; }
+    if (!connected()) { toast('Nicht verbunden'); return; }
     audioUnlock();
     setText('talk-meta', '');
     fetch(apiBase() + '/glance/listen', {
@@ -762,7 +789,7 @@
       // actually opened, and it reports that itself a beat later via
       // /glance/state - claiming it here would be the lens asserting something
       // it cannot observe, which is the one thing this surface must never do.
-      toast('Sprich…');
+      // no toast: the tone and the pill say it
     }).catch(function (e) {
       setText('talk-meta', String(e.message || e));
       document.getElementById('talk-meta').className = 'header-meta warn';
@@ -786,7 +813,7 @@
    */
   function decideDraft(decision) {
     if (talkBusy) return;
-    if (!connected()) { toast('Not connected'); return; }
+    if (!connected()) { toast('Nicht verbunden'); return; }
     audioUnlock();                       // the answer plays after Send
     talkBusy = true;
     renderOptions();                     // buttons away - the tap registered
@@ -809,7 +836,7 @@
       // meaning: the phone gave up on this one, or a newer draft replaced it.
       // Say that rather than "error", or the owner re-taps a dead button.
       setText('talk-meta', /409|no live draft/.test(String(e.message || e))
-        ? 'that draft expired - speak again'
+        ? 'Entwurf abgelaufen - sprich nochmal'
         : String(e.message || e));
       document.getElementById('talk-meta').className = 'header-meta warn';
       renderOptions();
@@ -819,7 +846,7 @@
 
   function talk(message) {
     if (talkBusy) return;
-    if (!connected()) { toast('Not connected'); return; }
+    if (!connected()) { toast('Nicht verbunden'); return; }
     talkBusy = true;
     setText('talk-meta', '');
     // OPTIMISTIC, and immediately corrected. The daemon sets `heard` the moment
@@ -856,7 +883,7 @@
       var b = document.createElement('button');
       b.className = 'list-item focusable';
       b.setAttribute('data-action', 'talk-retry');
-      b.innerHTML = '<div class="li-task">Try again</div>';
+      b.innerHTML = '<div class="li-task">Nochmal versuchen</div>';
       list.appendChild(b);
       focusFirst();
     });
@@ -867,7 +894,7 @@
     // The agent is told this surface is advisory. If it tried to change the
     // board anyway, SAY so - the owner must never believe a change landed.
     var refused = (j.refused && j.refused.length) ? j.refused : null;
-    setText('talk-meta', refused ? 'not run: ' + refused.join(', ') : '');
+    setText('talk-meta', refused ? 'nicht ausgeführt: ' + refused.join(', ') : '');
     document.getElementById('talk-meta').className =
       'header-meta' + (refused ? ' warn' : '');
     var qs = (j.question && j.question.questions) || [];
@@ -888,8 +915,8 @@
       var b = document.createElement('button');
       b.className = 'list-item focusable';
       b.setAttribute('data-action', 'talk-retry');
-      b.innerHTML = '<div class="li-task">Ask again</div>'
-        + '<div class="li-sub">no options came back</div>';
+      b.innerHTML = '<div class="li-task">Nochmal fragen</div>'
+        + '<div class="li-sub">keine Optionen erhalten</div>';
       list.appendChild(b);
     }
     focusFirst();
@@ -908,6 +935,8 @@
     // out of a card, say) from landing on a stale screen while the others are
     // fine, which is the kind of gap that only shows up on the device.
     if (id === 'talk') { renderTurnbar(); renderChat(); }
+    if (id === 'more') updateVoiceToggleLabel();
+    if (id === 'board') { unseenNew = 0; updateBadge(); refreshIfStale(15000); }
     focusFirst();
   }
   function goBack() {
@@ -951,13 +980,10 @@
     var a = btn.getAttribute('data-action');
     switch (a) {
       case 'back': goBack(); break;
-      case 'refresh': refresh(); toast('Refreshing…'); break;
-      case 'open-needs':
-        refreshIfStale(15000);
-        unseenNew = 0; updateBadge();     // the owner looked - the badge's job is done
-        showScreen('needs');
-        break;
-      case 'open-sow': showScreen('sow'); break;
+      case 'refresh': refresh(); toast('Aktualisiere …'); break;
+      case 'tab': screenStack = [btn.getAttribute('data-tab')]; showScreen(btn.getAttribute('data-tab'), true); break;
+      case 'mic': micPill(); break;
+      case 'toggle-autolisten': toggleAutoListen(); break;
       case 'open-settings': fillSettings(); showScreen('settings'); break;
       case 'open-detail': renderDetail(btn.getAttribute('data-id')); showScreen('detail'); break;
       case 'open-decide': openDecide(btn.getAttribute('data-id')); break;
@@ -978,6 +1004,42 @@
     }
   }
 
+  // ---- listening: on by default, switch-off-able -----------------------------
+  // The phone service is the microphone; the lens only asks it to open. On open
+  // we ask once (a tone says the mic is up), and once more after an answer for a
+  // short follow-up - never an endless loop: one follow-up per heard sentence.
+  var lastAutoAsk = 0, followUps = 0;
+  function autoListenOn() { return cfg.autoListen !== false && connected(); }
+  function maybeAutoListen(reason) {
+    if (!autoListenOn() || document.hidden) return;
+    var st = turn.state || 'idle';
+    if (st === 'listening' || st === 'heard' || st === 'thinking' || st === 'draft' || talkBusy) return;
+    if (Date.now() - lastAutoAsk < 20000) return;          // no hammering the phone
+    if (reason === 'follow-up' && followUps >= 1) return;
+    if (reason === 'follow-up') followUps += 1;
+    lastAutoAsk = Date.now();
+    askToListen();
+  }
+  function micPill() {
+    var listening = (turn.state === 'listening');
+    if (listening) {                                        // switch listening off
+      cfg.autoListen = false; saveCfg(cfg);
+      beep([440, 330], 120);
+      toast('Zuhören aus');
+    } else if (cfg.autoListen === false) {                  // switch it back on, and listen now
+      cfg.autoListen = true; saveCfg(cfg);
+      lastAutoAsk = Date.now(); askToListen();
+    } else {                                                // speak now
+      lastAutoAsk = Date.now(); askToListen();
+    }
+    renderPill(); updateVoiceToggleLabel();
+  }
+  function toggleAutoListen() {
+    cfg.autoListen = (cfg.autoListen === false); saveCfg(cfg);
+    updateVoiceToggleLabel(); renderPill();
+    toast(cfg.autoListen === false ? 'Zuhören aus' : 'Zuhören an');
+  }
+
   function fillSettings() {
     document.getElementById('cfg-base').value = cfg.base || '';
     document.getElementById('cfg-token').value = cfg.token || '';
@@ -986,8 +1048,8 @@
     cfg.base = document.getElementById('cfg-base').value.trim();
     cfg.token = document.getElementById('cfg-token').value.trim();
     saveCfg(cfg);
-    toast('Saved');
-    screenStack = ['home']; showScreen('home', true);
+    toast('Gespeichert');
+    screenStack = ['talk']; showScreen('talk', true);
     refresh();
     // First run reaches the board through THIS path, never through boot - so
     // without starting it here the conversation stream would stay dead until the
@@ -1014,9 +1076,8 @@
   // the small dot on "Needs you": persists (unlike the banner) until the
   // owner actually opens the list, so a missed banner is never the only shot.
   function updateBadge() {
-    var b = document.getElementById('needs-badge');
-    if (!b) return;
-    b.classList.toggle('hidden', unseenNew <= 0);
+    var bs = document.querySelectorAll('.tab[data-tab="board"] .badge-dot');
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('hidden', unseenNew <= 0);
   }
 
   // The proactive notification itself. Deliberately NOT the toast() function:
@@ -1029,7 +1090,7 @@
   function notifyBanner(n) {
     var el = document.getElementById('notify-banner');
     if (!el) return;
-    var msg = n + ' new · needs you';
+    var msg = n + (n === 1 ? ' neu · wartet auf dich' : ' neu · warten auf dich');
     el.textContent = msg;
     el.classList.remove('hidden');
     if (bannerTimer) clearTimeout(bannerTimer);
@@ -1046,12 +1107,12 @@
   updateVoiceToggleLabel();
   if (!connected()) { fillSettings(); showScreen('settings', true); }
   else {
-    showScreen('home', true); refresh();
+    showScreen('talk', true); refresh();
     // The conversation stream runs from ANY screen, not just the talk one: the
     // owner speaks without touching the lens, so the display has to be able to
     // notice a mic opening while he is looking at the board. It is one hanging
     // request that transmits nothing until something moves - strictly less
     // traffic than the 60s board poll beside it.
-    if (!document.hidden) { startPoll(); startChatStream(); }
+    if (!document.hidden) { startPoll(); startChatStream(); maybeAutoListen('open'); }
   }
 })();
