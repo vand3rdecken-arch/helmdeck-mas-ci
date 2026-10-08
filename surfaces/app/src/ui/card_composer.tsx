@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "@/theme";
 import { api, type ReplyRef, type SteerOpts } from "@/data/client";
 import { applyCleanup, undoCleanup } from "@/data/dictation_clean";
@@ -108,6 +109,23 @@ export function Composer({
   const [thinking, setThinking] = useState("");
   const [mode, setMode] = useState(modeOptions?.[0]?.id ?? "");
   const [picker, setPicker] = useState(false);
+  // Engine and model are ONE choice: the picker is grouped by engine, each with
+  // its own models, and an engine that cannot run here stays visible - greyed,
+  // with the reason - instead of vanishing or failing the turn later.
+  // One group per engine TYPE (claude-desktop is a card capability grant, not a
+  // second chat engine). A daemon without `models` on /engines (or no engine
+  // with a catalog) falls back to the flat list the surface passed in.
+  const { data: engineData } = useQuery({ queryKey: ["engines"], queryFn: () => api.engines(), staleTime: 60_000 });
+  const modelGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; label: string; ready: boolean; models: { id: string; label?: string; desc?: string }[] }[] = [];
+    for (const e of engineData?.engines ?? []) {
+      if (!e.enabled || !e.models?.length || seen.has(e.type)) continue;
+      seen.add(e.type);
+      out.push({ id: e.id, label: e.label, ready: e.status === "ready", models: e.models });
+    }
+    return out;
+  }, [engineData]);
   const [modePicker, setModePicker] = useState(false);   // permission-mode sheet
   const [to, setTo] = useState(defaultTo);
   const manualTo = useRef(false);
@@ -606,17 +624,11 @@ export function Composer({
           <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>{tr("composer.model")}</Text>
             <ScrollView>
-              {["auto", ...models].map((raw) => {
-                // /models returns objects {id,label,desc}; older/custom setups may
-                // return plain id strings. Normalise both so we never render an
-                // object as a React child (that crashed the whole app -> black).
-                const id = typeof raw === "string" ? raw : raw.id;
-                const label = id === "auto" ? tr("composer.modelAuto")
-                  : typeof raw === "string" ? raw : (raw.label || raw.id);
-                const desc = typeof raw === "string" ? "" : (raw.desc || "");
-                return (
-                  <Pressable key={id} onPress={() => { pickModel(id); setPicker(false); }}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+              {(() => {
+                const row = (id: string, label: string, desc: string, off = false) => (
+                  <Pressable key={id} disabled={off} onPress={() => { pickModel(id); setPicker(false); }}
+                    style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11,
+                      borderTopWidth: 1, borderTopColor: t.borderSubtle, opacity: off ? 0.45 : 1 }}>
                     <Ionicons name={id === model ? "radio-button-on" : "radio-button-off"} size={16} color={id === model ? t.accent : t.txtTertiary} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{label}</Text>
@@ -624,7 +636,23 @@ export function Composer({
                     </View>
                   </Pressable>
                 );
-              })}
+                const auto = row("auto", tr("composer.modelAuto"), "");
+                if (modelGroups.length === 0) {
+                  // /models returns objects {id,label,desc}; older/custom setups may
+                  // return plain id strings. Normalise both so we never render an
+                  // object as a React child (that crashed the whole app -> black).
+                  return [auto, ...models.map((raw) => {
+                    const id = typeof raw === "string" ? raw : raw.id;
+                    return row(id, typeof raw === "string" ? raw : (raw.label || raw.id), typeof raw === "string" ? "" : (raw.desc || ""));
+                  })];
+                }
+                return [auto, ...modelGroups.flatMap((g) => [
+                  <Text key={"h-" + g.id} style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 }}>
+                    {g.label}{g.ready ? "" : " · " + tr("new.engineMissing")}
+                  </Text>,
+                  ...g.models.map((m) => row(m.id, m.label || m.id, m.desc || "", !g.ready)),
+                ])];
+              })()}
             </ScrollView>
           </View>
         </Pressable>

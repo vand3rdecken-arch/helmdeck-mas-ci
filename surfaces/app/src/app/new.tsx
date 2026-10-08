@@ -57,7 +57,7 @@ export default function NewCard() {
   // this field cards could only ever get a sticky model via a chat steer,
   // and that pick used to not even persist onto the card (see steer() fix).
   const [model, setModel] = useState("auto");
-  const { data: modelList } = useModels();
+  const { data: modelList } = useModels();      // old daemon (no `models` on /engines): the flat list
   const [busy, setBusy] = useState(false);
   // Inline error: Alert.alert is a NO-OP on react-native-web (desktop), so a
   // rejected create/adopt used to fail completely silently - the owner clicked
@@ -94,6 +94,22 @@ export default function NewCard() {
   const engines = (engineData?.engines ?? []).filter((e) => e.enabled);
   const drivers = engines.map((e) => e.id);
   const engineOf = (id: string) => engines.find((e) => e.id === id);
+  // Engine and model are ONE choice: the model chips are the PICKED engine's own
+  // catalog (GET /engines `models`, spine/agent/engines.py), not a flat list
+  // that lets Claude + an OpenCode model be combined. An engine with no
+  // catalog (omp/codex/pi) picks its own model, so the row is hidden. Against
+  // a daemon one step behind (no `models` field) the flat /models list stands.
+  const engineModels: string[] | null = (() => {
+    const e = engineOf(driver);
+    if (!e || !Array.isArray(e.models)) {
+      return (modelList ?? []).map((m) => (typeof m === "string" ? m : m.id));
+    }
+    return e.models.map((m) => m.id);
+  })();
+  // a model that does not run on the newly picked engine falls back to Auto
+  useEffect(() => {
+    if (model !== "auto" && engineModels && !engineModels.includes(model)) setModel("auto");
+  }, [engineModels?.join("|"), model]);
   // Default = the first READY engine (claude on any box that got past
   // onboarding). Only fills an empty pick, never overrides a user's choice.
   useEffect(() => {
@@ -278,10 +294,14 @@ export default function NewCard() {
               placeholderTextColor={t.txtPlaceholder} style={field} />
           )}
           <View style={{ height: 10 }} />
-          <Caption text={tr("new.model")} />
-          <ChipPick options={["auto", ...(modelList ?? []).map((m) => (typeof m === "string" ? m : m.id))]}
-            selected={[model]} onToggle={setModel} single
-            labelFor={(id) => id === "auto" ? tr("composer.modelAutoShort") : id.replace("claude-", "").replace(/-\d{8}$/, "")} />
+          {engineModels && engineModels.length > 0 ? (
+            <>
+              <Caption text={tr("new.model")} />
+              <ChipPick options={["auto", ...engineModels]}
+                selected={[model]} onToggle={setModel} single
+                labelFor={(id) => id === "auto" ? tr("composer.modelAutoShort") : id.replace("claude-", "").replace(/-\d{8}$/, "")} />
+            </>
+          ) : null}
         </Panel>
         {err ? (
           <View style={{ backgroundColor: t.danger + "1A", borderColor: t.danger + "66", borderWidth: 1,

@@ -210,6 +210,9 @@ export interface EngineEntry {
   enabled: boolean;
   /** the editable settings row - send it back WHOLE on save (one-level merge) */
   config: { exe?: string; env?: Record<string, string>; enabled?: boolean };
+  /** the models THIS engine can run - engine and model are one catalog.
+   *  Absent on a daemon from before 2026-10-08; [] = the engine picks its own. */
+  models?: { id: string; label?: string; desc?: string }[];
 }
 export interface Metrics {
   settings?: {
