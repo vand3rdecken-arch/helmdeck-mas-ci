@@ -71,9 +71,7 @@ check(OC in ids({e["id"]: e for e in engines.snapshot()}["opencode"]),
 # the npm-global native exe) - "probe says ready" and "the turn can spawn" agree
 import shutil
 _orig_which, _orig_isfile = shutil.which, os.path.isfile
-FAKE = os.path.expandvars(r"%ProgramFiles%
-odejs
-ode_modules\opencode-aiin\opencode.exe")
+FAKE = os.path.expandvars("%ProgramFiles%" + os.sep.join(["", "nodejs", "node_modules", "opencode-ai", "bin", "opencode.exe"]))
 try:
     shutil.which = lambda b, *a, **k: None
     os.path.isfile = lambda p: p == FAKE or _orig_isfile(p)
