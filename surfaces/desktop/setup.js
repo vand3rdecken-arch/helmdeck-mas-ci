@@ -345,7 +345,26 @@ function openClaudeLoginTerminal(claude) {
       // a path like C:\Program Files\nodejs\claude.cmd survives. Pre-quoting
       // the title by hand produced a doubly-quoted token, and the unquoted
       // ProgramFiles path made `cmd /k` try to run "C:\Program".
-      const { cmd, prefixArgs } = resolveClaudeSpawn(claude);
+      const { cmd, prefixArgs, useShell } = resolveClaudeSpawn(claude);
+      // HIDDEN by default (owner 2026-10-08: a bare console on first start looked
+      // like a crash). `claude auth login` needs no TTY: it opens the browser
+      // itself and finishes on the local OAuth callback, and waitForAuth's poll
+      // is what decides. Only the shim-through-shell fallback keeps the visible
+      // terminal, since a hidden shell there cannot be told to quote safely.
+      if (!useShell) {
+        const p = spawn(cmd, [...prefixArgs, "auth", "login"],
+          { shell: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: hydratedEnv() });
+        let seen = "";
+        p.stdout.on("data", (d) => {
+          seen += d.toString();
+          const m = /https:\/\/\S+/.exec(seen);
+          if (m && !p._told) { p._told = true; say("Falls sich kein Browser öffnet: " + m[0], "hint"); }
+        });
+        p.stderr.on("data", () => {});
+        p.on("error", () => { /* waitForAuth reports the missing login */ });
+        setTimeout(() => { try { p.kill(); } catch { /* already gone */ } }, 6 * 60 * 1000).unref();
+        return true;
+      }
       spawn("cmd.exe", ["/c", "start", "Claude Code Login", "cmd", "/k", cmd, ...prefixArgs],
         { shell: false, windowsHide: false, detached: true, stdio: "ignore", env: hydratedEnv() }).unref();
       return true;
@@ -704,12 +723,12 @@ function startSetupServer(ctx) {
       return;
     }
     if (!claudeAuthed(claude)) {
-      say("Claude Code ist nicht angemeldet — öffne ein Anmeldefenster…");
+      say("Claude Code ist nicht angemeldet — öffne die Anmeldung im Browser…");
       if (!openClaudeLoginTerminal(claude)) {
         say("Konnte kein Terminal öffnen — führe `claude` im Terminal aus und melde dich an.", "err");
         return;
       }
-      say("Melde dich im geöffneten Fenster an — ich warte…", "hint");
+      say("Melde dich im Browser an — ich warte…", "hint");
       if (!(await waitForAuth(claude, 5 * 60 * 1000))) {
         say("Noch nicht angemeldet — melde dich an und drücke dann hier erneut Start.", "err");
         return;
@@ -778,16 +797,16 @@ function startSetupServer(ctx) {
       }
       say("Claude Code gefunden: " + (claude.version || "ok"), "ok");
       if (!claudeAuthed(claude)) {
-        say("Claude Code ist nicht angemeldet — öffne ein Anmeldefenster…");
+        say("Claude Code ist nicht angemeldet — öffne die Anmeldung im Browser…");
         if (!openClaudeLoginTerminal(claude)) {
           say("Konnte kein Terminal öffnen.", "err");
           say("Führe im Terminal `claude` aus, melde dich an, dann hier erneut starten.", "hint");
           return;
         }
-        say("Melde dich im geöffneten Fenster an — ich warte…", "hint");
+        say("Melde dich im Browser an — ich warte…", "hint");
         if (!(await waitForAuth(claude, 5 * 60 * 1000))) {
           say("Noch nicht angemeldet.", "err");
-          say("Melde dich im geöffneten Fenster an und drücke dann hier erneut Start.", "hint");
+          say("Melde dich im Browser an und drücke dann hier erneut Start.", "hint");
           return;
         }
       }
