@@ -22,8 +22,6 @@ import sys
 import time
 import urllib.request
 
-from playwright.sync_api import sync_playwright
-
 from spine.ops.actionlog import ActionLog
 from spine.media import wincap
 
@@ -494,6 +492,12 @@ class AgentBrowser:
                 self._cap = wincap.start(run_dir)
                 self.log.log("note", "attached to HelmDeck Chrome (CDP :%d)" % port)
             else:
+                # Imported HERE, not at module top: only this fallback needs it,
+                # and the packaged desktop ships without playwright (stdlib +
+                # pynacl tier). A top-level import made every importer - the
+                # idle-check's tab line, the CDP path - die with "No module
+                # named playwright" on a fresh install (2026-10-08).
+                from playwright.sync_api import sync_playwright
                 self._pw = sync_playwright().start()
                 # FALLBACK: a blank sandbox context with Playwright's native webm.
                 self._browser = self._pw.chromium.launch(channel="msedge", headless=headless)
