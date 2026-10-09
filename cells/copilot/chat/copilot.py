@@ -1428,7 +1428,7 @@ _FILLER_REPLIES = {"no response requested"}
 _compacting = set()              # users with a background compaction in flight
 
 
-def _await_lull_and_lock(user):
+def _await_lull_and_lock(user, lull=180):
     """Acquire the user's turn lock only once the chat has been quiet for a
     few minutes - shared by every background maintenance job that must never
     step on a live conversation (_schedule_compact, _schedule_prune).
@@ -1449,10 +1449,10 @@ def _await_lull_and_lock(user):
 
     lk = _turn_lock(user)
     while True:
-        while time.time() - t0 < 1800 and _quiet_for() < 180:
+        while time.time() - t0 < 1800 and _quiet_for() < lull:
             time.sleep(15)
         lk.acquire()
-        if _quiet_for() >= 180 or time.time() - t0 >= 1800:
+        if _quiet_for() >= lull or time.time() - t0 >= 1800:
             return lk
         lk.release()
         time.sleep(15)
@@ -1531,8 +1531,15 @@ def _compact_row(user, cid, event, **fields):
     return cid
 
 
-def _schedule_compact(user):
-    """Compact in the BACKGROUND, off the request thread. The
+def _schedule_compact(user, immediate=False):
+    """immediate=True (turns nobody is waiting on: a card note, a hands result,
+    a background-agent wake - owner 2026-10-09): start at once instead of after
+    the 3-minute lull. The lull is measured from the last turn, so it expired
+    exactly while the owner read the note and typed the answer, and that
+    message queued behind the compaction ("Verlauf wird gerade verdichtet").
+    After an OWNER turn the lull stays: he answers within a minute or two.
+
+    Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
     worker, read 2026-08-23): history compaction is maintenance and must never
     be a pause in the conversation. Before this, _maybe_compact ran inside the
@@ -1571,7 +1578,7 @@ def _schedule_compact(user):
             # compaction goes ahead anyway (the overflow guard must not be
             # deferrable forever). See _await_lull_and_lock for why the lull
             # is re-checked UNDER the lock, not just before it.
-            lk = _await_lull_and_lock(user)
+            lk = _await_lull_and_lock(user, lull=0 if immediate else 180)
             note = None
             try:
                 # PRUNE RIDES ALONG (owner 2026-10-08): both rewrite the session
@@ -3835,7 +3842,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
 
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
-    _schedule_compact(user)      # background + single-flight, never blocks this reply
+    # harness_note = a machine-initiated turn (nobody waits on it): compact now
+    _schedule_compact(user, immediate=bool(harness_note))  # background + single-flight, never blocks this reply
     # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
     # measured): standalone it rewrote the session at 60k, dropped the warm
     # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
