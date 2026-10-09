@@ -562,6 +562,11 @@ export function Composer({
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
         {dictating ? <DictationBar d={dict} inline /> : (
         <TextInput ref={inputRef} value={text} onChangeText={setText} multiline
+          // Web/desktop: Enter sends, Shift+Enter is a newline (IME composing excluded).
+          onKeyPress={isWeb ? (e: any) => {
+            const ne = e.nativeEvent;
+            if (ne.key === "Enter" && !ne.shiftKey && !ne.isComposing) { e.preventDefault?.(); fire(); }
+          } : undefined}
           placeholder={placeholder ?? tr("composer.placeholder")} placeholderTextColor={t.txtPlaceholder}
           style={{ flex: 1, color: t.txtPrimary, backgroundColor: t.surface2, borderRadius: 10, padding: 10, maxHeight: 120,
             borderWidth: 1, borderColor: t.borderSubtle }} />

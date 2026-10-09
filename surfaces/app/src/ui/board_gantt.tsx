@@ -1,3 +1,4 @@
+import { cardTitle } from "./card_title";
 import React from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -280,7 +281,7 @@ export function GanttView({ tracks, onOpen, wide }: { tracks: Track[]; onOpen: (
                       style={{ flexDirection: "row", alignItems: "stretch", minHeight: rowH, borderBottomWidth: 1,
                         borderBottomColor: t.borderSubtle }}>
                       <View style={{ width: side, paddingHorizontal: 10, paddingLeft: multi ? 22 : 10, paddingVertical: 6, justifyContent: "center" }}>
-                        <Text style={{ color: t.txtPrimary, fontSize: 12 }} numberOfLines={3}>{r.k.task}</Text>
+                        <Text style={{ color: t.txtPrimary, fontSize: 12 }} numberOfLines={3}>{cardTitle(r.k.task)}</Text>
                       </View>
                       <View style={{ width: W, minHeight: rowH, justifyContent: "center" }}>
                         {/* today marker */}
@@ -364,7 +365,7 @@ function VerticalTimeline({ groups, collapsed, setCollapsed, onOpen, now, t, tr 
                       backgroundColor: late ? t.danger : laneColor(t, r.k.lane) }} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ color: t.txtPrimary, fontSize: 12.5 }} numberOfLines={3}>{r.k.task}</Text>
+                    <Text style={{ color: t.txtPrimary, fontSize: 12.5 }} numberOfLines={3}>{cardTitle(r.k.task)}</Text>
                     <Text style={{ color: t.txtTertiary, fontSize: 10.5, marginTop: 1 }}>
                       {(r.k.branch || (LANE_KEY[r.k.lane] ? tr(LANE_KEY[r.k.lane]) : r.k.lane)) + (late ? " · " + tr("gantt.overdue") : "")}
                     </Text>

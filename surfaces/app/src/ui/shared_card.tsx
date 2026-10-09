@@ -1,3 +1,4 @@
+import { cardTitle } from "@/ui/card_title";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { ScrollView, Text, View } from "react-native";
@@ -38,7 +39,7 @@ export function SharedCardView({ k }: { k: Track }) {
     ? (k as { geteilt_mit?: string[] }).geteilt_mit! : [];
   return (
     <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
-      <ScreenHeader title={k.task} onBack={() => router.back()} />
+      <ScreenHeader title={cardTitle(k.task)} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={{ padding: 14, gap: 12, paddingBottom: insets.bottom + 24,
         width: "100%", maxWidth: wide ? 720 : undefined, alignSelf: "center" }}>
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>

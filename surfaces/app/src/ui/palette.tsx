@@ -3,6 +3,7 @@
 // prefix runs a board-copilot command inline. On web it mounts under a global
 // Cmd/Ctrl-K key handler (app/_layout.tsx); on native it's opened via the tab
 // bar / a button and renders whenever the `open` state is true.
+import { cardTitle } from "@/ui/card_title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -84,7 +85,7 @@ export function CommandPalette() {
     const cards: Row[] = (tracks ?? [])
       .filter((k: Track) => !term || fuzzy(`${k.task} ${k.branch ?? ""} ${k.client ?? ""}`, term))
       .slice(0, 8)
-      .map((k: Track) => ({ kind: "card", label: k.task, hint: k.lane || "", go: `/card/${k.id}`, status: k.status }));
+      .map((k: Track) => ({ kind: "card", label: cardTitle(k.task), hint: k.lane || "", go: `/card/${k.id}`, status: k.status }));
     return [...views.slice(0, 6), ...cards];
   }, [q, tracks, isCmd, localViews]);
 

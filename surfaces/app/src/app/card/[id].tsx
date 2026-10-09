@@ -1,3 +1,4 @@
+import { cardTitle } from "@/ui/card_title";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
@@ -875,7 +876,7 @@ function FullCardScreen() {
   function moveSheet() {
     if (!k) return;
     sheet.show({
-      title: k.task,
+      title: cardTitle(k.task),
       message: tr("card.move.to"),
       // next step first + labelled, then the rest — like Jira's transition list
       options: LANES.filter((l) => l !== k.lane)
@@ -925,7 +926,7 @@ function FullCardScreen() {
   function menu() {
     if (!k) return;
     sheet.show({
-      title: k.task,
+      title: cardTitle(k.task),
       options: [
         ...(nextLane ? [{ label: `${tr("card.move.advance")}  →  ${laneLabel(nextLane)}`, onPress: () => moveTo(nextLane) }] : []),
         { label: tr("card.move.to"), onPress: moveSheet },

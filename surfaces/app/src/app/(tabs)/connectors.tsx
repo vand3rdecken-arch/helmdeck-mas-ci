@@ -1,3 +1,4 @@
+import { cardTitle } from "@/ui/card_title";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -47,7 +48,7 @@ function CardTile({ k, wide }: { k: Track; wide: boolean }) {
         width: wide ? 300 : undefined, flexGrow: wide ? 0 : 1,
       }]}
     >
-      <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "500" }} numberOfLines={2}>{k.task}</Text>
+      <Text style={{ color: t.txtPrimary, fontSize: 13, fontWeight: "500" }} numberOfLines={2}>{cardTitle(k.task)}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         {k.status ? <Chip text={STATUS_KEY[k.status] ? tr(STATUS_KEY[k.status]) : k.status.replace(/_/g, " ")} dot={statusColor(t, k.status)} /> : null}
         {k.client ? <Chip text={k.client} /> : null}

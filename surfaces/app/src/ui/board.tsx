@@ -22,6 +22,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "./billing";
 import { GanttView } from "./board_gantt";
 import { LiveThumb } from "./board_live";
+import { cardTitle } from "./card_title";
 import { Chip, Dot, Empty } from "./kit";
 import { isWeb, useResponsive } from "./responsive";
 import { useActionSheet } from "./action_sheet";
@@ -217,8 +218,8 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
 
   return (
     <Pressable
-      onPress={() => router.push(`/card/${k.id}`)}
-      onLongPress={() => onMove(k)}
+      onPress={() => { if (!justDragged()) router.push(`/card/${k.id}`); }}
+      onLongPress={() => { if (!justDragged()) onMove(k); }}
       style={[s.card, tint ? { backgroundColor: t.surface1 } : contentCardStyle(t), {
         borderColor: tint ? tint + "B3" : t.borderSubtle,
         borderWidth: tint ? 2 : 1,
@@ -262,7 +263,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
         <Text style={[s.branch, { color: t.txtTertiary }]} numberOfLines={1}>{k.branch || tr("board.noGit")}</Text>
         {k.turns > 0 ? <Text style={[s.branch, { color: t.txtTertiary }]}>{k.turns}t</Text> : null}
       </View>
-      <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{k.task}</Text>
+      <Text style={[s.task, { color: t.txtPrimary }]} numberOfLines={3}>{cardTitle(k.task)}</Text>
       {k.status === "running" ? <LiveThumb trackId={k.id} /> : null}
       {/* Last-reply preview: clamped by default, TAP to expand in place. The
           hard 2-line clamp with flattened newlines made long worker replies
@@ -337,7 +338,7 @@ function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void 
       {items.slice(0, 4).map((k) => (
         <Pressable key={k.id} onPress={() => router.push(`/card/${k.id}`)} style={[s.row, { gap: 8 }]}>
           <Dot color={statusColor(t, k.status)} />
-          <Text style={{ color: t.txtPrimary, fontSize: 12.5, flex: 1 }} numberOfLines={1}>{k.task}</Text>
+          <Text style={{ color: t.txtPrimary, fontSize: 12.5, flex: 1 }} numberOfLines={1}>{cardTitle(k.task)}</Text>
           {k.mode === "human" && k.lane === "backlog" ? (
             <Pressable onPress={() => onDone(k)} hitSlop={6}
               style={{ flexDirection: "row", alignItems: "center", gap: 3, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 1 }}>
@@ -484,6 +485,14 @@ function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) =>
 // new position). The columns are the active board's, so their number and their
 // stations are data now - nothing below may assume there are four of them.
 
+// The mouse-up that ends a drag also reaches the card's Pressable on web and
+// would open the card. Every drag start/end stamps this; the card ignores a
+// press (or long-press) within DRAG_PRESS_GUARD_MS of the stamp.
+let lastDragAt = 0;
+const DRAG_PRESS_GUARD_MS = 400;
+function markDrag() { lastDragAt = Date.now(); }
+function justDragged() { return Date.now() - lastDragAt < DRAG_PRESS_GUARD_MS; }
+
 type Frame = { x: number; w: number };
 type CardCenter = { col: string; cy: number };
 
@@ -507,13 +516,16 @@ function DraggableCard({
 
   const pan = Gesture.Pan()
     .activateAfterLongPress(200)
-    .onStart(() => { lifted.value = 1; })
+    .onStart(() => { lifted.value = 1; runOnJS(markDrag)(); })
     .onUpdate((e) => {
       tx.value = e.translationX; ty.value = e.translationY;
       runOnJS(onMoveTarget)(e.absoluteX, e.absoluteY, k.id);
     })
     .onEnd((e) => { runOnJS(onDropCard)(k.id, e.absoluteX, e.absoluteY); })
-    .onFinalize(() => { lifted.value = 0; tx.value = withTiming(0); ty.value = withTiming(0); });
+    .onFinalize(() => {
+      lifted.value = 0; tx.value = withTiming(0); ty.value = withTiming(0);
+      runOnJS(markDrag)();
+    });
 
   const aStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: lifted.value ? 1.03 : 1 }],
@@ -852,7 +864,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
 
   function onMove(k: Track) {
     sheet.show({
-      title: k.task,
+      title: cardTitle(k.task),
       message: tr("board.moveTo"),
       options: moveTargets.filter((c) => c.station !== cardStation(k)).map((c) => ({
         label: "→ " + columnLabel(c, label),
@@ -956,7 +968,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
                 <Ionicons name={on ? "checkbox" : "square-outline"} size={18}
                           color={on ? t.human : t.txtPlaceholder} />
                 <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>
-                  {k.id} · {k.task}
+                  {k.id} · {cardTitle(k.task)}
                 </Text>
               </Pressable>
             );
