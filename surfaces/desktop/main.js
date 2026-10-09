@@ -428,11 +428,23 @@ function startDaemon(pyOverride) {
     // directly, which also removes the cmd.exe hop that was swallowing this
     // process's stdout/stderr (see resolvePython/realInterpreter above).
     const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(py.cmd);
+    // pythonw.exe, not python.exe: python.exe is a CONSOLE-subsystem binary, so
+    // windowsHide only hides the window Electron asks for - with Windows
+    // Terminal as the default terminal app (and with the Store python stub) the
+    // daemon's console still pops up as a visible tab ("python -m daemon.swarm
+    // serve", seen right after a restart on a fresh install). pythonw has no
+    // console at all; the daemon's stdout/stderr already go to daemon.out.log
+    // via `stdio`, and tray.py launches it the same way.
+    let daemonExe = py.cmd;
+    if (process.platform === "win32" && path.isAbsolute(py.cmd)) {
+      const pyw = path.join(path.dirname(py.cmd), "pythonw.exe");
+      if (/python(\d[\d.]*)?\.exe$/i.test(py.cmd) && fs.existsSync(pyw)) daemonExe = pyw;
+    }
     // daemon/ is a real Python package now (absolute spine/
     // cells.<id> imports) - launched as a module from the REPO
     // ROOT, not a bare script from inside daemon/ (daemon/debt.py
     // sys-path-trick-to-real-package-imports). swarm.py itself stays put.
-    daemon = spawn(py.cmd, [...py.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],
+    daemon = spawn(daemonExe, [...py.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],
       // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
       // (SINGLETON eviction, a competing supervisor) - no flush window needed.
       // cwd is daemonDir's PARENT (not the top-level `root` const) so a
