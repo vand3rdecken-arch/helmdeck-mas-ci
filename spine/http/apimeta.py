@@ -315,6 +315,16 @@ def _config_schema(s):
          "labelKey": "cfg.webUrl", "placeholder": "http://localhost:3300",
          "value": s.get("web_url") or "",
          "door": "system", "level": "advanced", "descKey": "cfg.webUrl.desc", "scope": "system"},
+        # Which speech model transcribes dictation (spine/media/stt.py reads
+        # settings.voice_stt_model on every _model() call, so a change applies to
+        # the next recording). Machine-scoped: the weights live on this box.
+        {"group": "machine", "groupKey": "hub.grp.machine",
+         "path": "voice_stt_model", "control": "single",
+         "labelKey": "cfg.sttModel", "options": ["parakeet", "small", "base", "tiny"],
+         "optionLabels": {"parakeet": "cfg.sttModel.parakeet", "small": "cfg.sttModel.small",
+                          "base": "cfg.sttModel.base", "tiny": "cfg.sttModel.tiny"},
+         "value": s.get("voice_stt_model") or "parakeet",
+         "door": "system", "level": "basic", "descKey": "cfg.sttModel.desc", "scope": "system"},
     ]
 
 

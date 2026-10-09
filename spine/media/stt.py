@@ -109,6 +109,12 @@ def transcribe_pcm16(pcm, lang=None):
     if not pcm:
         return ""
     x = np.frombuffer(pcm[:len(pcm) - (len(pcm) % 2)], dtype="<i2").astype(np.float32) / 32768.0
+    # A quiet speaker (phone at arm's length) peaks at a few hundred of 32768 and
+    # the recognizer then returns "". Lift to a normal level; measured 2026-10-09:
+    # speech from peak 63 decodes correctly this way, noise still decodes to "".
+    pk = float(np.abs(x).max()) if x.size else 0.0
+    if 0.0 < pk < 0.15:
+        x = x * min(0.25 / pk, 100.0)
     m = _model()
     with _DECODE:
         if _MODEL_NAME == "parakeet":

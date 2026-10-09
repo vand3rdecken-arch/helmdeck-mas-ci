@@ -98,6 +98,13 @@ export const screens: Dict = {
   "cfg.webUrl": { de: "Web-Oberfläche (URL)", en: "Web surface (URL)" },
   "cfg.webUrl.desc": { de: "Wohin dieser Daemon die alten Web-Pfade weiterleitet. Gilt nur für diese Maschine.",
                        en: "Where this daemon redirects the legacy web paths. This machine only." },
+  "cfg.sttModel": { de: "Diktier-Modell", en: "Dictation model" },
+  "cfg.sttModel.desc": { de: "Welches Sprachmodell dein Diktat umschreibt. Wirkt ab der nächsten Aufnahme; der erste Start lädt das Modell.",
+                         en: "Which speech model transcribes your dictation. Applies from the next recording; the first use loads the model." },
+  "cfg.sttModel.parakeet": { de: "Parakeet (schnell, genau, empfohlen)", en: "Parakeet (fast, accurate, recommended)" },
+  "cfg.sttModel.small": { de: "Whisper small (genauer, langsamer)", en: "Whisper small (more accurate, slower)" },
+  "cfg.sttModel.base": { de: "Whisper base (Ausweichmodell)", en: "Whisper base (fallback)" },
+  "cfg.sttModel.tiny": { de: "Whisper tiny (am schnellsten, ungenau)", en: "Whisper tiny (fastest, rough)" },
 
   // ---- harness (briefs, settings layers, spawn preview) --------------------
   "harness.section": { de: "Harness", en: "Harness" },

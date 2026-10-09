@@ -36,7 +36,14 @@ COMMIT_S = 15                       # hard limit: freeze everything at this much
 MIN_SEG_S = 3.0                     # a segment is at least this long before a pause may close it
 PAUSE_S = 0.4                       # near-silence this long counts as a pause
 PARTIAL_EVERY_S = 1.0               # min NEW audio between two partial decodes
-SILENCE_PEAK = 300                  # int16 peak below this = nothing was said
+#: int16 peak below this = nothing was said. 300 dropped quiet speakers (a phone
+#: held at arm's length peaks at 100-300) as "Nichts verstanden", intermittently.
+#: Measured 2026-10-09 with parakeet: noise up to peak 430 decodes to "" (no
+#: hallucination), and speech normalised from peak 63 still decodes right
+#: (stt.transcribe_pcm16 lifts quiet audio). Whisper fallbacks DO invent words
+#: on room noise, so they keep the old bar (WHISPER_SILENCE_PEAK).
+SILENCE_PEAK = 40
+WHISPER_SILENCE_PEAK = 300
 IDLE_S = 180                        # a stream untouched this long is dropped
 FINISH_WAIT_S = 10.0                # finish waits this long for a missing chunk
 MAX_CHUNK_BYTES = 512 * 1024
@@ -113,7 +120,14 @@ def _peak(pcm):
 
 
 def _silent(pcm):
-    return _peak(pcm) < SILENCE_PEAK
+    bar = SILENCE_PEAK
+    try:
+        from spine.media import stt
+        if stt._MODEL_NAME not in (None, "parakeet"):
+            bar = WHISPER_SILENCE_PEAK
+    except Exception:                    # noqa: BLE001 - the bar is a guess, never a failure
+        pass
+    return _peak(pcm) < bar
 
 
 class Stream:
