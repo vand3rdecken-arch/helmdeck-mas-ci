@@ -2762,6 +2762,11 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
     livebuf.set_field(live_key, "status", "OpenCode " + (cli_model or ""))
     prompt = (system + "\n\n" + turn) if system else turn
     sess = _sessions()
+    # OpenCode session ids ("ses_...") and claude --resume UUIDs are different
+    # namespaces: sharing the slot sent a claude UUID to /session/<uuid>/prompt_async
+    # (HTTP 500 "UnknownError", reproduced 2026-10-09) and would have overwritten
+    # the claude pointer with a "ses_" id. Own slot per engine, same doc.
+    skey = (skey or "") + "\x00opencode"
     base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", skey or "u"),
             "worktree": ROOT, "run_dir": run_dir,
             "dispatched_by": user,        # whose provider keys the OpenCode server gets
