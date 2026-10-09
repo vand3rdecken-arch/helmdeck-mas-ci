@@ -104,7 +104,7 @@ export default function NewCard() {
     if (!e || !Array.isArray(e.models)) {
       return (modelList ?? []).map((m) => (typeof m === "string" ? m : m.id));
     }
-    return e.models.map((m) => m.id);
+    return e.models.filter((m) => m.avail?.state !== "failed").map((m) => m.id);   // a model a real request proved dead is not offered
   })();
   // a model that does not run on the newly picked engine falls back to Auto
   useEffect(() => {

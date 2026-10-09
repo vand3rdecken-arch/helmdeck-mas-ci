@@ -373,13 +373,17 @@ def _engine_ready(name):
         return False
 
 
-def _allowed_ids():
-    ids = {m["id"] for m in list_models()}
+def _allowed_ids(account=None):
+    ids = {m["id"] for m in list_models(account)}
     if _engine_ready("opencode"):
         # an id some account's discovery returned (a DeepSeek model its key
         # connects) stays pickable for that account's next turn after a restart
         from spine.agent import opencode_models
         ids |= opencode_models.known_ids(lower=False)
+        if account:
+            # a model that a real request proved dead FOR THIS ACCOUNT is not
+            # pickable: a stale pick resolves to the default, not to a dead model
+            ids -= opencode_models.failed_ids(account)
     return ids
 
 
@@ -457,7 +461,7 @@ def pick_model(text, has_attach=False, signals=None, policy=None):
     return fits_window(p["auto_model"], ctx)
 
 
-def resolve_model(model, text, has_attach=False, signals=None, policy=None):
+def resolve_model(model, text, has_attach=False, signals=None, policy=None, account=None):
     """(cli_model_id_or_None, chosen). '' -> driver default (None). 'auto' ->
     signal-based pick. A known model id (manifest or settings.json) -> itself.
     Unknown -> default. Server-side whitelist: arbitrary ids from the client are
@@ -479,7 +483,7 @@ def resolve_model(model, text, has_attach=False, signals=None, policy=None):
         mid = pick_model(text, has_attach, signals, policy)
         return mid, mid
     model = _ALIAS.get(model, model)
-    if model and model in _allowed_ids():
+    if model and model in _allowed_ids(account):
         model = fits_window(model, ctx)
         return model, model
     return None, ""  # default: let the driver/session default decide

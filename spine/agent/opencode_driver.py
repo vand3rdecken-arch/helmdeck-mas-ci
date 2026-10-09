@@ -589,9 +589,25 @@ def _get_session(cfg, t):
         return s
 
 
+def _note(cfg, t, err):
+    """A real turn failed: the model's probe row learns from it (one writer,
+    opencode_models.record) - the picker hides a model that demonstrably cannot run."""
+    try:
+        from spine.agent import opencode_models
+        opencode_models.note_turn(t.get("dispatched_by") or "", cfg.get("model"), err)
+    except Exception:                                          # noqa: BLE001
+        pass
+
+
 def run(cfg, t, prompt):
     s = _get_session(cfg, t)
-    sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".")
+    try:
+        sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".")
+    except Exception as e:
+        _note(cfg, t, str(e))
+        raise
+    if meta.get("is_error"):
+        _note(cfg, t, meta.get("error") or "")
     return sid or t.get("session_id"), reply, meta
 
 

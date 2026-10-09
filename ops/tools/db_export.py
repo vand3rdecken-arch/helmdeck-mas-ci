@@ -39,7 +39,7 @@ _BLOB_COLS = ("data", "json", "value", "content")
 # user_secret: provider keys are DPAPI blobs that only open for this Windows account
 # on this machine - an export/takeout/restore carrying them would be a copy of a
 # secret that cannot even be used elsewhere. A restore means re-entering the key.
-_SKIP_TABLES = ("sqlite_sequence", "user_secret")
+_SKIP_TABLES = ("sqlite_sequence", "user_secret", "model_probe")  # model_probe: per-account probe cache, meaningless elsewhere
 # scope column per table: which column carries the account / the project
 _ACCOUNT_COL = {"boards": "owner", "user_config": "user", "memory": "account",
                 "chat": "account", "auth_sessions": "account", "devices": "account"}

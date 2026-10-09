@@ -46,7 +46,7 @@ export interface DaemonStatus {
 export interface DaemonRestart {
   ok: boolean; reason?: string; turns?: string[]; detail?: string; delay_s?: number; forced?: boolean;
 }
-import type { Track, LaneMove, Metrics, EngineEntry, ProvidersView, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
+import type { Track, LaneMove, Metrics, EngineEntry, ProvidersView, ModelsProbeView, ModelAvail, Me, Profile, Board, BoardColumn, Usage, UsageWindow,
   PendingQuestion, SignMeaning, SignSubject, Signature, SignBatchItem, SignBatchResult,
   GxpState } from "./types";
 import type { VoiceClip } from "./voice";
@@ -1000,6 +1000,12 @@ export const api = {
   testProvider: (provider: string) =>
     req<ProvidersView & { ok: boolean; status: string; reason: string; model: string; ms: number; error?: string }>(
       "POST", "/me/providers/test", { provider }),
+  // Which OpenCode models REALLY run for my account: starts the sequential
+  // background probe (answers at once; results arrive via the event stream).
+  // `model` re-tests just that one.
+  probeModels: (model?: string) =>
+    req<ModelsProbeView & { error?: string }>("POST", "/me/models/probe", model ? { model } : {}),
+  modelsProbe: () => req<ModelsProbeView>("GET", "/me/models/probe"),
   // MY OWN boards (accounts-boards-prd phase 2), on the same self-scoped PUT
   // for the same reason as the profile above. Create vs. update is decided by
   // `board.id`, not by the verb: omit it and the daemon MINTS one (so no
@@ -1272,7 +1278,7 @@ export const api = {
   // The daemon guarantees a non-empty list (manifest fallback), so an empty or
   // non-array answer is a transport artifact - throw so react-query retries
   // instead of caching a picker that only shows "Auto".
-  models: () => req<{ id: string; label?: string; desc?: string }[]>("GET", "/models").then((m) => {
+  models: () => req<{ id: string; label?: string; desc?: string; avail?: ModelAvail }[]>("GET", "/models").then((m) => {
     if (!Array.isArray(m) || m.length === 0) throw new TransportError("empty /models");
     return m;
   }),
