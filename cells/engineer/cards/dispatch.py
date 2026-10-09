@@ -1392,12 +1392,11 @@ def _accept_machine(t, lane, actor, log, note=""):
     # ActionLog note ("-> verschoben nach Done von <actor>", written at the
     # top of _move_lane) and the board's own Done column remain the record of
     # the acceptance itself.
-    from spine.turn.outcomes import excerpt as _excerpt
+    # 2026-10-09: the raw worker reply no longer rides along - the owner gets
+    # Henry's own account (his `note`), not the worker's report pasted in.
     _note = (note or "").strip()
-    _reply = _excerpt(t.get("last_reply"))
-    _parts = [p for p in (_note, _reply) if p]
-    if _parts:
-        _say_card(t, "\n\n".join(_parts))
+    if _note:
+        _say_card(t, _note)
     from spine.comms import notify
     notify.card_event(t, "done")
     return t

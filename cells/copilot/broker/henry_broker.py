@@ -260,7 +260,7 @@ _STAGE1_TAIL = (
     ' "card": "karten-id oder leer",\n'
     ' "lane": "bei move: review|done",\n'
     ' "kind": "bei ship: none|ota|native",\n'
-    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; bei move: DEINE Antwort an den Owner in 2-3 klaren Saetzen (was ist erledigt, was passiert als Naechstes, was braucht er von mir - nur wenn wirklich noetig), nie den Worker-Bericht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
     ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
     ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
     ' "why": "ein satz begruendung"}') % (NEED_MAX, NEED_ROUNDS)
@@ -276,7 +276,7 @@ _HANDS_TAIL = (
     ' "card": "karten-id oder leer",\n'
     ' "lane": "bei move: review|done",\n'
     ' "kind": "bei ship: none|ota|native",\n'
-    ' "text": "bei did: was du getan hast; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "text": "bei did: was du getan hast; bei move: deine Antwort an den Owner in 2-3 klaren Saetzen (erledigt / als Naechstes / was er tun muss), nie den Worker-Bericht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
     ' "why": "ein satz begruendung"}')
 
 
@@ -756,24 +756,22 @@ def _decide(esc):
     # of those lines EVER carries what the worker actually said, only that
     # something landed - and REVIEW gets no push AT ALL today (verified:
     # lanemachine's review tail and _accept_machine's review branch are both
-    # chat-only). So `move` now reports back too, WITH the worker's own
-    # reply excerpt riding along - push only for review (filling a real gap,
-    # not doubling one), chat always - EXCEPT a machine/direct card's DONE,
-    # which stays dispatch._accept_machine's own job (it already gets the
-    # note/reply there - see move_lane's `note` param) so the two don't both
-    # print the same reply for the same event.
+    # chat-only). So `move` now reports back too, carrying HENRY's own account
+    # (text; the worker's raw reply is NOT pasted in, 2026-10-09) - push only
+    # for review (filling a real gap, not doubling one), chat always - EXCEPT
+    # a machine/direct card's DONE, which stays dispatch._accept_machine's own
+    # job (it gets the same note - see move_lane's `note` param) so the two
+    # don't both print the same line for the same event.
     if _reports:
         # FULL text - the 180-char cut that used to live here was a PUSH budget
         # (owner report 2026-08-28: Henry's chat messages "end mid-word"). Since
         # 52033b6 this same string is also the board/card CHAT message, and a
         # chat has no length budget: _notify_owner truncates for FCM alone.
         _label = action + ((" " + kind) if action == "ship" and kind else "")
+        # The owner reads HENRY's words (text = what was delivered, what
+        # happens next), never the worker's raw reply pasted in - the worker
+        # writes for Henry, Henry writes for the owner (2026-10-09).
         _body = text or why
-        if action == "move":
-            from spine.turn.outcomes import excerpt
-            _reply = excerpt((_find_track(card) or {}).get("last_reply"))
-            if _reply:
-                _body = (_body + "\n\n" + _reply) if _body else _reply
         _notify_owner("Henry (%s): %s%s - %s" % (
             esc["kind"], _label, (" -> " + lane) if action == "move" else "",
             _body), None if action == "did" else _find_track(card),

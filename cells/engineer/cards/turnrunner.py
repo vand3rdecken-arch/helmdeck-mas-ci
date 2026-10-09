@@ -554,10 +554,16 @@ def _emit_delivered_parked(t, reason, cleaned, meta=None):
       - the literal DELIVERED had to sit in the reply's first 200 chars - a
         worker opening with "I fixed the cause, ..." never escalated;
     Now: is_delivered(t) on working, deduped against an open escalation for
-    the card AND a fresh decision (Henry judged an earlier turn of this card
-    within the last 15 min - a re-emit per steer is noise, same reasoning as
-    escalations.decided_recently for turn-burn). A parked card whose reply
-    is "keep waiting" reaches Henry too - his brief allows ignore/notify."""
+    the card only. There used to be a second guard here, "Henry decided this
+    card within 15 min -> the next turn is noise" (borrowed from turn-burn).
+    Wrong for this kind: a turn that ends needs_you AFTER Henry's steer/reopen
+    IS the answer to his decision, and the window swallowed exactly the fast
+    ones - measured 2026-10-08: 193748 (steer 22:18, turns 22:23/22:25) and
+    212340 (reopen 22:17, turn 22:18) never reached Henry again and sat in
+    working until the owner dragged them; 4 more steer->silence cases since
+    09-29. The escalation fires once per finished turn, so there is no
+    duplicate to suppress. A parked card whose reply is "keep waiting"
+    reaches Henry too - his brief allows ignore/notify."""
     try:
         if reason != "needs_you" or not t or t.get("lane") != "working":
             return
@@ -567,8 +573,6 @@ def _emit_delivered_parked(t, reason, cleaned, meta=None):
         if any(e.get("kind") == "delivered-parked" and e.get("card") == t["id"]
                for e in escalations.list_open()):
             return                      # already reported, Henry hasn't judged yet
-        if escalations.decided_recently("delivered-parked", t["id"], 15 * 60):
-            return                      # judged minutes ago - the next turn is not news
         escalations.emit("delivered-parked", card=t["id"],
                          detail="Worker meldet fertig, Karte parkt in working: %s"
                                 % (t.get("task") or "")[:140] + _evidence_lines(t, meta))

@@ -72,9 +72,12 @@ def cards_text():
     return [m.get("text") or "" for m in msgs]
 
 
-# The worker's own words - distinctive enough that finding them proves the
-# REAL reply travelled, not a generic template line.
+# The worker's own words - distinctive enough that finding them (or not) proves
+# whether the raw reply travelled.
 REPLY = "DELIVERED: Autostart-Task fuer den Emulator angelegt und verifiziert (xk291f)."
+
+# Henry's own account for the owner - the worker's raw REPLY must NOT be pasted.
+HENRY_SAYS = "Der Autostart fuer den Emulator laeuft jetzt. Als Naechstes brauchst du nichts zu tun."
 
 CARD_ID = "c-move-done"
 run_dir = os.path.join(runs.REC, CARD_ID)
@@ -85,7 +88,7 @@ db.track_put({"id": CARD_ID, "task": "Autostart-Task", "status": "needs_you",
               "repo": SANDBOX, "last_reply": REPLY})
 
 decision = {"action": "move", "card": CARD_ID, "lane": "done",
-            "text": "", "why": "auf dem Rechner erledigt"}
+            "text": HENRY_SAYS, "why": "auf dem Rechner erledigt"}
 
 
 class _Esc:
@@ -125,9 +128,11 @@ t = db.track_get(CARD_ID)
 check((t or {}).get("lane") == "done", "the card actually landed on done")
 
 texts = cards_text()
-check(any(REPLY in tx for tx in texts),
-      "the worker's own last reply reached the owner's board chat - "
-      "this is RED on the pre-fix code (move/accept wrote no reply anywhere)")
+check(any(HENRY_SAYS in tx for tx in texts),
+      "the owner's board chat carries Henry's own account of the move")
+check(not any(REPLY in tx for tx in texts),
+      "the worker's raw reply is NOT pasted into the owner's chat "
+      "(owner 2026-10-09: Henry decides and answers, the report is not forwarded)")
 
 print()
 if _fails:
