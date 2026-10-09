@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -12,9 +12,9 @@ import type { RoomMessage } from "@/data/types";
 import { useT } from "@/i18n";
 import { can } from "@/kernel";
 import { useTheme } from "@/theme";
-import { Composer, type Recipient } from "@/ui/card_composer";
-import { Transcript, type TStep } from "@/ui/card_transcript";
-import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
+import type { Recipient } from "@/ui/card_composer";
+import type { TStep } from "@/ui/card_transcript";
+import { ChatSurface } from "@/ui/chat_surface";
 import { Empty, ScreenHeader } from "@/ui/kit";
 import { RoomProjects } from "@/ui/room_projects";
 import { useResponsive } from "@/ui/responsive";
@@ -50,21 +50,12 @@ export default function RoomScreen() {
   const members = room?.members ?? [];
   const admin = can(me, "rooms.manage");
 
-  // keyboard: same manual spacer as chat.tsx (works on both platforms, no native lib)
-  const [kb, setKb] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
   // announce this room as the screen being read, so a push for it does not buzz
   // over it (data/push_present.ts decideChatPush)
   useEffect(() => {
     usePresence.getState().setFocusedCard("room:" + roomId);
     return () => usePresence.getState().setFocusedCard(null);
   }, [roomId]);
-
-  const scroll = useRef<ChatScrollHandle>(null);
 
   const [err, setErr] = useState("");
   const [info, setInfo] = useState(false);
@@ -82,7 +73,6 @@ export default function RoomScreen() {
     const v = body.trim();
     if (!v) return;
     setErr("");
-    scroll.current?.toBottom();
     post.mutate(o.to ? "@" + o.to + " " + v : v);
   };
 
@@ -208,19 +198,9 @@ export default function RoomScreen() {
         </View>
       ) : null}
 
-      <View style={{ flex: 1 }}>
-        <ChatScroll ref={scroll} label={tr("chat.latest")}
-          contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: wide ? 760 : undefined, alignSelf: "center" }}>
-          {steps.length === 0 && !isLoading
-            ? <Empty text={tr("rooms.noMessages")} />
-            : <Transcript me={me?.name} steps={steps} onJump={(y) => scroll.current?.toY(y)} />}
-        </ChatScroll>
-        {err ? <Text style={{ color: t.danger, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 }}>{err}</Text> : null}
-        <Composer onSend={(txt, o) => send(txt, o)} models={["auto"]}
-          placeholder={tr("rooms.placeholder")} draftKey={"room:" + roomId} recipients={recipients}
-          bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
-        {kb > 0 ? <View style={{ height: kb }} /> : null}
-      </View>
+      <ChatSurface steps={steps} me={me?.name} loading={isLoading} empty={<Empty text={tr("rooms.noMessages")} />}
+        onSend={(txt, o) => send(txt, o)} placeholder={tr("rooms.placeholder")} draftKey={"room:" + roomId}
+        recipients={recipients} error={err} minimal />
     </View>
   );
 }

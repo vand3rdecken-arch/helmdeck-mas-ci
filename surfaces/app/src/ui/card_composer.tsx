@@ -49,7 +49,7 @@ const THINK: { id: string; key: string }[] = [
 // cycle, slash-command affordance. Wires into api.steer(id, text, {model,thinking,mode}).
 export function Composer({
   onSend, busy, onStop, models, modeOptions, slashCommands, placeholder, seed, bottomInset = 0, draftKey,
-  recipients, defaultTo, contextChip, onClearContext, onSteerLive, quote, onClearQuote,
+  recipients, defaultTo, contextChip, onClearContext, onSteerLive, quote, onClearQuote, minimal,
 }: {
   onSend: (text: string, opts: SteerOpts) => void | Promise<void>;
   /** Typed while busy: try to fold the message into the RUNNING turn first
@@ -89,6 +89,10 @@ export function Composer({
    *  with its x. The SENDER attaches it to the send - this only shows it. */
   quote?: ReplyRef | null;
   onClearQuote?: () => void;
+  /** No model / thinking / mode / attachment controls: for a thread whose answerer
+   *  takes none of them (a team room, a restricted account's private Henry). The
+   *  rest of the composer - input, mic, send, @ popover - is the same. */
+  minimal?: boolean;
 }) {
   const t = useTheme();
   const tr = useT();
@@ -442,7 +446,7 @@ export function Composer({
       ) : null}
 
       {/* control bar */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
+      {minimal ? null : <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
         contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
         <Pressable onPress={() => setPicker(true)} style={toolBtn(model !== "auto")}>
           <Ionicons name="sparkles-outline" size={13} color={model !== "auto" ? t.accent : t.txtSecondary} />
@@ -474,10 +478,10 @@ export function Composer({
             {atts.length ? `${atts.length}/${MAX_FILES}` : tr("composer.attach")}
           </Text>
         </Pressable>
-      </ScrollView>
+      </ScrollView>}
 
       {/* attachment chips */}
-      {atts.length ? (
+      {atts.length && !minimal ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
           contentContainerStyle={{ gap: 6, paddingHorizontal: 8, paddingTop: 8, alignItems: "center" }}>
           {atts.map((a, i) => (
