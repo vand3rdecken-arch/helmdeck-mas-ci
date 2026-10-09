@@ -63,6 +63,19 @@ def _view(t, user):
     return _summary(t) if auth.owns_card(user, t) else auth.shared_view(t)
 
 
+# The board shows open cards plus done cards completed within this window; older
+# done cards answer on ?archived=1 (the app's board.tsx mirrors the number).
+DONE_WINDOW_DAYS = 14
+
+
+def _old_done(t):
+    """A done card whose completion (done_at, set by the accept mutators) is past
+    the board window. A done card with no done_at stays in: age unknown."""
+    import time
+    cutoff = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - DONE_WINDOW_DAYS * 86400))
+    return t.get("lane") == "done" and bool(t.get("done_at")) and t["done_at"] < cutoff
+
+
 def tracks_list_get(self, user):
     from urllib.parse import parse_qs, urlparse
     from cells.engineer.cards import sessions
@@ -73,9 +86,10 @@ def tracks_list_get(self, user):
     # research card - see lanemachine.request_ship_decision's docstring.
     q = parse_qs(urlparse(self.path).query, keep_blank_values=True)   # `?cookie=` = first pull
     if "cookie" not in q:                     # legacy full list (old apps, tools)
-        arch = q.get("archived", [""])[0] == "1"   # the Archive filter's own list
+        arch = q.get("archived", [""])[0] == "1"   # the Archive filter's own list: archived + done past the window
         ts = [sessions.present(t) for t in sessions.list_tracks()
-              if _visible(t, user) and (not arch or t.get("archived"))]
+              if _visible(t, user)
+              and ((t.get("archived") or _old_done(t)) if arch else not _old_done(t))]
         return self._send(200, json.dumps([_view(t, user) for t in ts]))
     # PULL, Replicache-style (rocicorp/mono packages/replicache/src/puller.ts
     # PullResponseOKV1 + patch-operation.ts): the client sends the opaque
@@ -91,14 +105,18 @@ def tracks_list_get(self, user):
     v, ids = db.tracks_changed_since(0 if full else since)
     rows = sessions.list_tracks() if full else [db.track_get(i) for i in ids]
     patch = [{"op": "clear"}] if full else []
+    # Count of done cards the board window leaves out, sent on a baseline only
+    # (the incremental path never loads the whole list); the app keeps the last.
+    older = ({"older_done": sum(1 for t in rows if _visible(t, user) and not t.get("archived") and _old_done(t))}
+             if full else {})
     for i, t in zip(ids if not full else [None] * len(rows), rows):
         if t is None:
             patch.append({"op": "del", "key": i})
-        elif _visible(t, user) and not t.get("archived"):
+        elif _visible(t, user) and not t.get("archived") and not _old_done(t):
             patch.append({"op": "put", "key": t["id"], "value": _view(sessions.present(t), user)})
         else:
             patch.append({"op": "del", "key": t["id"]})
-    return self._send(200, json.dumps({"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch}))
+    return self._send(200, json.dumps({"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch, **older}))
 
 
 def tracks_get(self, user, tid):

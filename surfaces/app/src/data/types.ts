@@ -85,6 +85,9 @@ export interface Track {
    *  divides by this - hardcoded 200k showed 97% on a 1M card really at 23%. */
   ctx_window?: number;
   created: string; updated: string;
+  /** When the card was accepted (daemon-stamped, local time). Absent on a card
+   *  whose done event could not be found. */
+  done_at?: string;
   mode?: string; process?: string; process_title?: string;
   /** 1-based step index within `process`, set at card creation. Read this, do
    *  NOT parse the branch name - branches carry a card-id tail now. */

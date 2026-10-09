@@ -17,9 +17,12 @@ export type PatchOp =
   | { op: "put"; key: string; value: Track }
   | { op: "del"; key: string }
   | { op: "clear" };
-export interface PullResponse { cookie: string; patch: PatchOp[] }
+/** `older_done`: how many done cards the server holds back (past its window).
+ *  Sent on a full baseline only; the client keeps the last value. */
+export interface PullResponse { cookie: string; patch: PatchOp[]; older_done?: number }
 
 export const TRACKS_KEY = ["tracks"] as const;
+export const OLDER_KEY = ["tracksOlder"] as const;
 const COOKIE_KEY = ["tracksCookie"] as const;
 
 export async function syncTracks(
@@ -39,5 +42,6 @@ export async function syncTracks(
     else byId.set(p.key, p.value);
   }
   qc.setQueryData(COOKIE_KEY, r.cookie);
+  if (typeof r.older_done === "number") qc.setQueryData(OLDER_KEY, r.older_done);
   return [...byId.values()].sort((a, b) => (a.id < b.id ? 1 : -1));   // daemon order: id DESC
 }

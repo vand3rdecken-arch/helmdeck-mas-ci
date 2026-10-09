@@ -88,6 +88,14 @@ export const board: Dict = {
   "board.scope.all": { de: "Alle", en: "All" },
   "board.scope.archived": { de: "Archiv", en: "Archive" },
 
+  // ---- done column window + quick filters (board overview, stage 1) ---------
+  "board.done.today": { de: "Heute", en: "Today" },
+  "board.done.week": { de: "Diese Woche", en: "This week" },
+  "board.done.older": { de: "Älter", en: "Older" },
+  "board.done.hidden": { de: "Archiviert", en: "Archived" },
+  "board.done.olderLink": { de: "{n} ältere", en: "{n} older" },
+  "board.doneAt": { de: "Fertig · {when}", en: "Done · {when}" },
+
   // ---- layout toggle --------------------------------------------------------
   "board.layout.board": { de: "Board", en: "Board" },
   "board.layout.timeline": { de: "Timeline", en: "Timeline" },

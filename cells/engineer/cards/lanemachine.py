@@ -1104,6 +1104,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
 
         def _settle(tt):
             tt["lane"] = "done"
+            tt.setdefault("done_at", time.strftime("%Y-%m-%d %H:%M:%S"))
             tt.pop("gate_report", None); tt.pop("merge_report", None)
         return _mutate(tid, _settle) or t
     if t.get("machine") and lane in ("review", "done"):
@@ -1359,6 +1360,7 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
             tt.pop("merge_report", None); tt.pop("gate_report", None)
             tt["merge_kind"] = kind
             tt["status"] = "accepted"; tt["mode"] = mode
+            tt["done_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _record_outcome(tt)
         t = _mutate(tid, _accepted) or t
         # Owner decree 2026-09-01: the deploy hook does NOT fire here anymore.
@@ -1413,6 +1415,8 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
 
     def _land(tt):
         tt["lane"] = lane
+        if lane != "done":
+            tt.pop("done_at", None)      # reopened: the next accept stamps afresh
         if lane == "backlog":
             tt["status"] = "queued"
             for k in ("autopilot_dispatched", "autopilot_accepted",
