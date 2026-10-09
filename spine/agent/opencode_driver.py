@@ -159,8 +159,16 @@ class _OpenCodeClient:
         data = json.dumps(body or {}).encode("utf-8")
         req = urllib.request.Request(self.base_url + path, data=data, method="POST",
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+        except urllib.error.HTTPError as e:
+            # "HTTP Error 500" alone hides WHY; the server's body says it
+            try:
+                detail = e.read().decode("utf-8", "replace")[:300]
+            except Exception:                                  # noqa: BLE001
+                detail = ""
+            raise RuntimeError("%s %s" % (e, detail)) from e
         return json.loads(raw) if raw else {}
 
     def create_session(self, directory, timeout=10.0):
