@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -12,7 +12,7 @@ import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { TStep } from "@/ui/card_transcript";
 import { ChatSurface } from "@/ui/chat_surface";
-import { Empty, ScreenHeader } from "@/ui/kit";
+import { ScreenHeader } from "@/ui/kit";
 import { useResponsive } from "@/ui/responsive";
 
 const WAIT_MS = 3 * 60 * 1000;      // a message without an answer stops reading as "answering" after this
@@ -62,9 +62,9 @@ export default function PrivateHenryScreen() {
       <ScreenHeader title={tr("henry.title")} onBack={() => router.back()} />
       <ChatSurface steps={steps} me={me?.name} loading={isLoading} minimal
         empty={(
-          <View style={{ paddingTop: 24, alignItems: "center", gap: 10 }}>
+          <View style={{ paddingTop: 56, paddingHorizontal: 24, alignItems: "center", gap: 12 }}>
             <Ionicons name="sparkles" size={30} color={t.ai} />
-            <Empty text={tr("henry.empty")} />
+            <Text style={{ color: t.txtTertiary, fontSize: 13, lineHeight: 19, textAlign: "center" }}>{tr("henry.empty")}</Text>
           </View>
         )}
         onSend={(txt) => { const v = txt.trim(); if (v) { setErr(""); post.mutate(v); } }}
