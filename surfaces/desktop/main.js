@@ -305,8 +305,40 @@ function realInterpreter(cmd, args) {
     const r = spawnSync(cmd, [...args, "-c", "import sys; print(sys.executable)"],
       { windowsHide: true, encoding: "utf8" });
     const p = (r.stdout || "").trim();
-    return p && require("fs").existsSync(p) ? p : null;
+    return p && fileThere(p) ? p : null;
   } catch { return null; }
+}
+
+// lstat, not existsSync: the Microsoft Store Python's sys.executable is an App
+// Execution Alias (a reparse point under %LOCALAPPDATA%\Microsoft\WindowsApps)
+// that CreateProcess runs fine but a following stat can refuse - existsSync
+// then says "missing" and we fell back to a bare name + cmd.exe.
+function fileThere(p) {
+  try { require("fs").lstatSync(p); return true; } catch { return false; }
+}
+
+// The exe the daemon is spawned with, whoever chose the Python. startDaemon has
+// TWO callers: the normal boot (resolvePython, already absolute) and the
+// first-run setup flow (setup.js findPython), which hands over a bare `python`,
+// a `py -3.12` launcher or a QUOTED absolute path. Any of those meant shell:true
+// -> cmd.exe -> a visible console tab titled "python -m daemon.swarm serve" on a
+// fresh install, even after the pythonw change. So: unquote, resolve launchers
+// and bare names through to the real interpreter, then prefer pythonw.exe
+// (no console subsystem at all) beside it.
+function daemonInterpreter(py) {
+  let cmd = py.cmd, args = py.args;
+  if (process.platform !== "win32") return { cmd, args };
+  const unq = cmd.replace(/^"(.*)"$/, "$1");
+  if (path.isAbsolute(unq) && !/(^|[\\/])py\.exe$/i.test(unq)) cmd = unq;
+  else {
+    const real = realInterpreter(unq, args);
+    if (real) { cmd = real; args = []; }
+  }
+  if (path.isAbsolute(cmd) && /python(\d[\d.]*)?\.exe$/i.test(cmd)) {
+    const pyw = path.join(path.dirname(cmd), "pythonw.exe");
+    if (fileThere(pyw)) cmd = pyw;
+  }
+  return { cmd, args };
 }
 
 // Best-effort logging. In a packaged GUI app stdout may be a closed/broken
@@ -427,24 +459,20 @@ function startDaemon(pyOverride) {
     // couldn't resolve the real interpreter) - a real absolute exe path spawns
     // directly, which also removes the cmd.exe hop that was swallowing this
     // process's stdout/stderr (see resolvePython/realInterpreter above).
-    const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(py.cmd);
     // pythonw.exe, not python.exe: python.exe is a CONSOLE-subsystem binary, so
     // windowsHide only hides the window Electron asks for - with Windows
-    // Terminal as the default terminal app (and with the Store python stub) the
-    // daemon's console still pops up as a visible tab ("python -m daemon.swarm
-    // serve", seen right after a restart on a fresh install). pythonw has no
-    // console at all; the daemon's stdout/stderr already go to daemon.out.log
-    // via `stdio`, and tray.py launches it the same way.
-    let daemonExe = py.cmd;
-    if (process.platform === "win32" && path.isAbsolute(py.cmd)) {
-      const pyw = path.join(path.dirname(py.cmd), "pythonw.exe");
-      if (/python(\d[\d.]*)?\.exe$/i.test(py.cmd) && fs.existsSync(pyw)) daemonExe = pyw;
-    }
+    // Terminal as the default terminal app the daemon's console still pops up
+    // as a visible tab. pythonw has no console at all; the daemon's
+    // stdout/stderr already go to daemon.out.log via `stdio`, and tray.py
+    // launches it the same way. See daemonInterpreter for the setup-flow path.
+    const exe = daemonInterpreter(py);
+    const daemonNeedsShell = process.platform === "win32" && !path.isAbsolute(exe.cmd);
+    if (daemonNeedsShell) log("daemon", "no absolute interpreter for " + py.cmd + " - starting via shell\n");
     // daemon/ is a real Python package now (absolute spine/
     // cells.<id> imports) - launched as a module from the REPO
     // ROOT, not a bare script from inside daemon/ (daemon/debt.py
     // sys-path-trick-to-real-package-imports). swarm.py itself stays put.
-    daemon = spawn(daemonExe, [...py.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],
+    daemon = spawn(exe.cmd, [...exe.args, "-m", "daemon.swarm", "serve", String(DAEMON_PORT)],
       // PYTHONUNBUFFERED: a written line survives even an abrupt taskkill /F
       // (SINGLETON eviction, a competing supervisor) - no flush window needed.
       // cwd is daemonDir's PARENT (not the top-level `root` const) so a
