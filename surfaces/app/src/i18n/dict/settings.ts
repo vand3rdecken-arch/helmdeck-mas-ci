@@ -99,6 +99,7 @@ export const settings: Dict = {
   "takeout.verifyBadTitle": { de: "Archiv beschädigt", en: "Archive damaged" },
   "takeout.notIncluded": { de: "NICHT im Archiv, von Hand mitnehmen", en: "NOT in the archive, carry by hand" },
   "daemon.restart.busyTitle": { de: "Karten laufen noch", en: "Cards still running" },
+  "daemon.restart.busyAsk": { de: "Trotzdem neu starten? Die Sessions bleiben, laufende Arbeit wird abgebrochen.", en: "Restart anyway? Sessions survive, running work is cut off." },
   "daemon.restart.busyBody": { de: "{n} Karte(n) sind mitten im Turn. Trotzdem neu starten? Die Turns werden abgebrochen, die Sessions bleiben.", en: "{n} card(s) are mid-turn. Restart anyway? The turns are cut off, the sessions survive." },
   "daemon.restart.failedTitle": { de: "Neustart nicht ausgelöst", en: "Restart not triggered" },
   "hub.door.system.sub": { de: "Geschäft, Nutzung, Updates", en: "Business, usage, updates" },

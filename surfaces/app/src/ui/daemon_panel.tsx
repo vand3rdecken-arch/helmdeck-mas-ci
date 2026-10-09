@@ -60,7 +60,10 @@ export function DaemonPanel() {
         // still run - the same "this kills running work" confirm, same force.
         if (r.reason === "turn_active" || r.reason === "background_active") {
           const go = await confirmAsync(tr("daemon.restart.busyTitle"),
-            tr("daemon.restart.busyBody", { n: r.turns?.length ?? live }));
+            // the daemon's own detail names WHAT would be killed (turn vs background task)
+            `${r.detail || tr("daemon.restart.busyBody", { n: r.turns?.length ?? live })}
+
+${tr("daemon.restart.busyAsk")}`);
           if (go) return fire(true);
         } else {
           Alert.alert(tr("daemon.restart.failedTitle"), r.detail || r.reason || "?");
