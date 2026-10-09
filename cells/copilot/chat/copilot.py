@@ -1537,7 +1537,8 @@ def _schedule_compact(user, immediate=False):
     the 3-minute lull. The lull is measured from the last turn, so it expired
     exactly while the owner read the note and typed the answer, and that
     message queued behind the compaction ("Verlauf wird gerade verdichtet").
-    After an OWNER turn the lull stays: he answers within a minute or two.
+    Owner turns compact at once too (2026-10-10); only the judge path keeps
+    the lull, so an escalation chain is not blocked between steps.
 
     Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
@@ -3842,8 +3843,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
 
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
-    # harness_note = a machine-initiated turn (nobody waits on it): compact now
-    _schedule_compact(user, immediate=bool(harness_note))  # background + single-flight, never blocks this reply
+    # Compact RIGHT AFTER the turn, owner turn or not (owner 2026-10-10): the
+    # 3-minute lull only moved the collision into the owner's reading time.
+    _schedule_compact(user, immediate=True)  # background + single-flight, never blocks this reply
     # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
     # measured): standalone it rewrote the session at 60k, dropped the warm
     # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
