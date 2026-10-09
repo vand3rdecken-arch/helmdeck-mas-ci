@@ -114,7 +114,7 @@ export default function RoomScreen() {
   const steps: TStep[] = messages.map((x): TStep => {
     if (x.byKind === "system") {
       return x.card
-        ? { role: "assistant", kind: "card", card: x.card, label: x.text, text: x.text, ts: x.ts, seq: x.seq }
+        ? { role: "assistant", kind: "card", card: x.card, label: x.by + " " + x.text, text: x.by + " " + x.text, ts: x.ts, seq: x.seq }
         : { role: "assistant", kind: "note", text: x.by + " " + x.text, ts: x.ts, seq: x.seq };
     }
     if (x.byKind === "henry") {

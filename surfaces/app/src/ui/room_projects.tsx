@@ -19,6 +19,8 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
   const router = useRouter();
   const qc = useQueryClient();
   const [open, setOpen] = useState<string | null>(null);
+  // collapsed by default: the folder list is a side shelf, the conversation is the screen
+  const [shelf, setShelf] = useState(false);
   const { data } = useQuery({ queryKey: ["projectsShared"], queryFn: api.projectsShared, retry: false });
   const projects = Array.isArray(data) ? data : [];
   const others = members.filter((m) => m !== me);
@@ -32,10 +34,15 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
   return (
     <View style={{ marginHorizontal: 12, marginBottom: 8, borderRadius: 14, borderWidth: 1,
       borderColor: t.glassBorder, backgroundColor: t.surface1, maxHeight: 260 }}>
-      <Text style={{ color: t.txtTertiary, fontSize: 11, letterSpacing: 0.6, paddingHorizontal: 12, paddingTop: 10 }}>
-        {tr("rooms.projects").toUpperCase()}
-      </Text>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 8, gap: 4 }}>
+      <Pressable onPress={() => setShelf(!shelf)} accessibilityRole="button"
+        style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9 }}>
+        <Ionicons name="folder-outline" size={14} color={t.txtTertiary} />
+        <Text style={{ color: t.txtTertiary, fontSize: 11, letterSpacing: 0.6, flex: 1 }}>
+          {tr("rooms.projects").toUpperCase() + (projects.length ? " · " + projects.length : "")}
+        </Text>
+        <Ionicons name={shelf ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} />
+      </Pressable>
+      {shelf ? <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 8, paddingTop: 0, gap: 4 }}>
         {projects.length === 0 ? (
           <Text style={{ color: t.txtTertiary, fontSize: 12.5, padding: 6 }}>
             {tr(owner ? "rooms.projectsEmptyOwner" : "rooms.projectsEmpty")}
@@ -50,7 +57,7 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
                 style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 9 }}>
                 <Ionicons name="folder-outline" size={16} color={t.accent} />
                 <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}>{p.name}</Text>
-                <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("rooms.projectCards", { n: p.card_count })}</Text>
+                <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{p.card_count === 1 ? tr("rooms.projectCard1") : tr("rooms.projectCards", { n: p.card_count })}</Text>
                 {owner ? (
                   <Pressable accessibilityLabel={tr("rooms.projectShare")} disabled={share.isPending || others.length === 0}
                     onPress={() => share.mutate({ id: p.id, on: !sharedAll })}
@@ -74,7 +81,7 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
                       onPress={() => router.push({ pathname: "/card/[id]", params: { id: c.id } } as never)}
                       style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 6 }}>
                       <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 13, flex: 1 }}>{c.task}</Text>
-                      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{c.lane ?? c.status ?? ""}</Text>
+                      <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{c.lane ? tr(("lane." + c.lane) as never) : c.status ?? ""}</Text>
                       <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} />
                     </Pressable>
                   ))}
@@ -84,7 +91,7 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
             </View>
           );
         })}
-      </ScrollView>
+      </ScrollView> : null}
     </View>
   );
 }

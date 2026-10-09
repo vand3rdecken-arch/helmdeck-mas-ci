@@ -38,6 +38,7 @@ export const rooms: Dict = {
   "rooms.projects": { de: "Projekte", en: "Projects" },
   "rooms.projectsEmpty": { de: "Noch kein Projekt mit dir geteilt.", en: "No project shared with you yet." },
   "rooms.projectsEmptyOwner": { de: "Noch keine Projekte vorhanden.", en: "No projects yet." },
+  "rooms.projectCard1": { de: "1 Karte", en: "1 card" },
   "rooms.projectCards": { de: "{n} Karten", en: "{n} cards" },
   "rooms.projectNoCards": { de: "Noch keine Karten.", en: "No cards yet." },
   "rooms.projectShare": { de: "Mit dem Raum teilen", en: "Share with the room" },
