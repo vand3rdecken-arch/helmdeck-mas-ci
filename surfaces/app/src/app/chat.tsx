@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, AppState, Keyboard, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Animated, AppState, Platform, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { create } from "zustand";
 
@@ -17,11 +17,12 @@ import { useModels } from "@/data/use_models";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { BackgroundTasks } from "@/ui/card_background";
-import { Composer, type Recipient } from "@/ui/card_composer";
+import type { Recipient } from "@/ui/card_composer";
 import { QuestionPanel } from "@/ui/card_question";
-import { Transcript, type TStep } from "@/ui/card_transcript";
+import type { TStep } from "@/ui/card_transcript";
 import { foldCompaction, type CompactionEvent, type CompactionFields } from "@/ui/compaction_marker";
-import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
+import type { ChatScrollHandle } from "@/ui/chat_scroll";
+import { ChatSurface } from "@/ui/chat_surface";
 import { ThreadList } from "@/ui/chat_threads";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import * as outbox from "@/data/outbox";
@@ -456,15 +457,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
   // positioned the pill against a wrapper that also held the composer stack, so
   // the composer swallowed every tap on it (owner report 2026-08-31).
   const scroll = useRef<ChatScrollHandle>(null);
-  // Edge-to-edge (Expo SDK 57) makes Android ignore adjustResize, so the composer
-  // hides behind the keyboard. Measure the keyboard height and lift the content
-  // manually (a height:kb spacer) - works on both platforms without a native lib.
-  const [kb, setKb] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
   // turn token: each send captures the current id; Stop bumps it so a late reply
   // that arrives after cancel is discarded instead of appended.
   const turn = useRef(0);
@@ -991,20 +983,8 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
     );
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top,
-      ...(wide ? { borderLeftWidth: 1, borderColor: t.glassBorder } : null) }}>
-      {header}
-      <View style={{ flex: 1 }}>
-        <ChatScroll ref={scroll} label={tr("chat.latest")}
-          contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: colMax, alignSelf: "center" }}>
-          {msgs.length === 0 && !showWelcome && !(busy && stream.trim())
-            ? <Empty text={tr("chat.empty")} />
-            : <Transcript me={me?.name} ctxWindow={stats?.ctx_window}
-                onReply={(st) => setReplyTo({ text: (st.text || st.label || "").trim().slice(0, 300),
-                  by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })}
-                onJump={(y) => scroll.current?.toY(y)}
-                steps={(() => {
+  // The rows the shared transcript draws: the persisted log + the live turn.
+  const surfaceSteps: TStep[] = (() => {
                 const s = foldCompaction(msgs.map((m) => withLive(toStep(m, me?.name, tr))));
                 // STATIC, local-only greeting (no daemon call, no turn, no
                 // cost) - never persisted, so it renders again every time
@@ -1031,73 +1011,70 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
                 }
                 else if (!busy && held) s.push({ role: "assistant", kind: "text", text: held.text, by: "Henry", byKind: "henry" });
                 return s;
-              })()} />}
-          {busy && !stream.trim() ? <ThinkingIndicator since={liveSince} preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
-        </ChatScroll>
+              })();
 
-        <View style={{ width: "100%", maxWidth: colMax, alignSelf: "center" }}>
-          {/* Context meter — the SAME component the card chat renders (see
-              ui/context_meter.tsx), fed by the PM session's own evidence: the
-              daemon keeps the last call's context fill + a window derived from
-              the model id (never a blind 200k). Like the card it updates per
-              finished turn, because that is when the runtime reports usage. */}
-          {/* Tap -> the account's measured usage windows (Paseo parity). The
-              old "PM session · N turns · ~X % of plan" line is gone: it summed
-              the session's whole lifetime against ONE week's allowance
-              (read 625% - owner 2026-09-26) - a number nobody can act on.
-              "Can we push?" is the weekly window + its pace. */}
-          <ContextMeter tokens={stats?.ctx_tokens} window={stats?.ctx_window}
-            details={me?.role === "owner" ? <UsageWindows /> : undefined}
-            style={{ paddingHorizontal: 14, paddingTop: 6 }} />
-          {/* The SAME QuestionPanel the card screen pins above its composer -
-              not a second one built for this surface. Both kinds of question
-              render through it (see openChatQuestion); only the DOOR differs, so
-              the board chat gets real option buttons either way and there is no
-              second answer path - or second chat UI - to keep in sync. */}
-          {openQ?.question ? (
-            <QuestionPanel question={openQ.question}
-              onSubmit={openQ.card
-                // a WORKER's question: settle it on the card, which resumes the
-                // session it parked - the owner's words belong to that worker.
-                ? (answers, rid) => api.answer(openQ.card as string, answers, rid)
-                // HENRY's own: the choice becomes the owner's next message.
-                : (answers, rid) => sendAnswer(openQ.question as PendingQuestion, answers, rid)}
-              // ...and the promise made to the owner has to match the door.
-              hint={openQ.card ? undefined : tr("card.q.hintChat")}
-              onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
-          ) : null}
-          {/* Henry's follow-ups in flight (owner report 2026-09-12: "er sagt er
-              macht was, aber ich sehe nichts") - the SAME line a card shows for
-              its background tasks, fed by /chat/history's derived descriptors. */}
-          <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
-          <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
-          <Composer onSend={(txt, o) => send(txt, withReply(o))} onSteerLive={(txt, o) => steerLive(txt, withReply(o))}
-            quote={replyTo} onClearQuote={() => setReplyTo(null)}
-            busy={busy} onStop={stop} models={models ?? ["auto"]}
-            // Mode row (owner request 2026-09-12, screenshot of Claude Code's
-            // picker: Model / Thinking / Mode): Henry's permission mode, same
-            // three options and labels as a card's composer, current mode
-            // first. The pick rides in the send body (`mode`) and copilot.chat
-            // writes it to the one knob before spawning - card parity.
-            modeOptions={henryModes}
-            placeholder={tr("chat.placeholder")} draftKey="board-copilot"
-            // The routing target, made VISIBLE and switchable rather than
-            // inferred. The decree allows "the next message, when it clearly
-            // answers the card question" - a chip the owner can see and change
-            // is what makes that "clearly": he is never guessing where his
-            // words went, and a remark meant for Henry is one tap away.
-            recipients={cardRecipients} defaultTo={replyTarget}
-            // WHAT this message is about, when the chat was opened from a
-            // settings row. Stays attached across messages (the VS Code
-            // "Attach Context" behaviour the design cites) and is dropped with
-            // the chip's own x - never silently, because a chip that vanishes
-            // on its own is a chip the owner stops trusting.
-            contextChip={chatCtx?.label}
-            onClearContext={chatCtx ? () => useCopilotPanel.getState().clearContext() : undefined}
-            bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
-        </View>
-        {kb > 0 ? <View style={{ height: kb }} /> : tabClear ? <View style={{ height: tabClear }} /> : null}
-      </View>
+  return (
+    <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: wide ? 0 : insets.top,
+      ...(wide ? { borderLeftWidth: 1, borderColor: t.glassBorder } : null) }}>
+      {header}
+      <ChatSurface scrollRef={scroll} steps={surfaceSteps} me={me?.name} ctxWindow={stats?.ctx_window}
+        colMax={colMax} tabClear={tabClear}
+        isEmpty={msgs.length === 0 && !showWelcome && !(busy && stream.trim())}
+        empty={<Empty text={tr("chat.empty")} />}
+        onReply={(st) => setReplyTo({ text: (st.text || st.label || "").trim().slice(0, 300),
+          by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })}
+        afterTranscript={busy && !stream.trim()
+          ? <ThinkingIndicator since={liveSince} preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
+        aboveComposer={(
+          <>
+            {/* Context meter - the SAME component the card chat renders (see
+                ui/context_meter.tsx), fed by the PM session's own evidence: the
+                daemon keeps the last call's context fill + a window derived from
+                the model id (never a blind 200k). Like the card it updates per
+                finished turn, because that is when the runtime reports usage.
+                Tap -> the account's measured usage windows (Paseo parity). */}
+            <ContextMeter tokens={stats?.ctx_tokens} window={stats?.ctx_window}
+              details={me?.role === "owner" ? <UsageWindows /> : undefined}
+              style={{ paddingHorizontal: 14, paddingTop: 6 }} />
+            {/* The SAME QuestionPanel the card screen pins above its composer -
+                both kinds of question render through it (see openChatQuestion);
+                only the DOOR differs, so there is no second answer path. */}
+            {openQ?.question ? (
+              <QuestionPanel question={openQ.question}
+                onSubmit={openQ.card
+                  // a WORKER's question: settle it on the card, which resumes the
+                  // session it parked - the owner's words belong to that worker.
+                  ? (answers, rid) => api.answer(openQ.card as string, answers, rid)
+                  // HENRY's own: the choice becomes the owner's next message.
+                  : (answers, rid) => sendAnswer(openQ.question as PendingQuestion, answers, rid)}
+                // ...and the promise made to the owner has to match the door.
+                hint={openQ.card ? undefined : tr("card.q.hintChat")}
+                onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
+            ) : null}
+            {/* Henry's follow-ups in flight (owner report 2026-09-12) - the SAME
+                line a card shows for its background tasks. */}
+            <BackgroundTasks tasks={data?.followups ?? {}} variant="henry" />
+            <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
+          </>
+        )}
+        onSend={(txt, o) => send(txt, withReply(o))}
+        busy={busy} onStop={stop} models={models ?? ["auto"]}
+        placeholder={tr("chat.placeholder")} draftKey="board-copilot"
+        recipients={cardRecipients}
+        composer={{
+          onSteerLive: (txt, o) => steerLive(txt, withReply(o)),
+          quote: replyTo, onClearQuote: () => setReplyTo(null),
+          // Mode row (owner request 2026-09-12): Henry's permission mode, same
+          // options and labels as a card's composer, current mode first. The
+          // pick rides in the send body (`mode`) - card parity.
+          modeOptions: henryModes,
+          // The routing target, made VISIBLE and switchable rather than inferred.
+          defaultTo: replyTarget,
+          // WHAT this message is about, when the chat was opened from a settings
+          // row; dropped only with the chip's own x - never silently.
+          contextChip: chatCtx?.label,
+          onClearContext: chatCtx ? () => useCopilotPanel.getState().clearContext() : undefined,
+        }} />
     </View>
   );
 }
