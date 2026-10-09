@@ -2292,6 +2292,19 @@ def _m20(c):
         PRIMARY KEY(user, provider))""")
 
 
+@_migration(21, "model-probe")
+def _m21(c):
+    """What a REAL request proved about one OpenCode model for one ACCOUNT
+    (spine/agent/opencode_models.py has the why: the CLI lists models it
+    cannot run). Own table, keyed on the account NAME like user_secret; no
+    secret in it, but not exported either (it is a cache of a probe, valid only
+    for that account's keys/region)."""
+    c.execute("""CREATE TABLE IF NOT EXISTS model_probe(
+        user TEXT NOT NULL, model_id TEXT NOT NULL, status TEXT NOT NULL,
+        reason TEXT NOT NULL DEFAULT '', ms INTEGER NOT NULL DEFAULT 0,
+        tested_at REAL NOT NULL, PRIMARY KEY(user, model_id))""")
+
+
 def chat_grant_put(g):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO chat_grants(id,account,grantee,created,expires,revoked) "

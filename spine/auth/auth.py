@@ -470,6 +470,12 @@ def delete_user(name, actor=None):
         usersecrets.drop_user(name)
     except Exception:
         pass
+    # ...and what was probed with those keys (same name-keyed reuse hazard)
+    try:
+        from spine.agent import opencode_models
+        opencode_models.drop_user(name)
+    except Exception:
+        pass
     # ...and their personal boards, for exactly the same reason: `boards.owner`
     # is the account NAME too (accounts-boards-prd phase 2). The shared default
     # board has owner="" and is never touched here - it outlives its creator,

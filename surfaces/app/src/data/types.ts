@@ -214,8 +214,21 @@ export interface EngineEntry {
   config: { exe?: string; env?: Record<string, string>; enabled?: boolean };
   /** the models THIS engine can run - engine and model are one catalog.
    *  Absent on a daemon from before 2026-10-08; [] = the engine picks its own. */
-  models?: { id: string; label?: string; desc?: string }[];
+  models?: { id: string; label?: string; desc?: string; avail?: ModelAvail }[];
 }
+/** What a REAL request proved about one OpenCode model for MY account
+ *  (spine/agent/opencode_models.py). Absent on Claude models (plan-billed) and
+ *  on a daemon from before 2026-10-09. */
+export interface ModelAvail {
+  state: "ok" | "failed" | "untested" | "testing";
+  /** failed only: ok | auth | country | missing | timeout | error */
+  status?: string;
+  reason?: string;
+  ms?: number;
+  at?: number;
+}
+/** GET /me/models/probe - progress of the background probe ("3/9"). */
+export interface ModelsProbeView { running: boolean; done: number; total: number; started?: boolean }
 /** One provider key of MY account (GET /me/providers). The key itself is never
  *  in any response - only whether it is set, its last 4 characters and the
  *  outcome of the last real test. */

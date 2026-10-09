@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/theme";
 import { api, type ReplyRef, type SteerOpts } from "@/data/client";
 import { applyCleanup, undoCleanup } from "@/data/dictation_clean";
@@ -13,6 +13,7 @@ import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
 import { useDictation } from "@/data/use_dictation";
 import { DictationBar } from "@/ui/dictation_bar";
 import { useT } from "@/i18n";
+import type { ModelAvail } from "@/data/types";
 
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string; desc?: string }
@@ -57,7 +58,7 @@ export function Composer({
   onSteerLive?: (text: string, opts: SteerOpts) => Promise<boolean>;
   busy?: boolean;
   onStop?: () => void;
-  models: (string | { id: string; label?: string; desc?: string })[];
+  models: (string | { id: string; label?: string; desc?: string; avail?: ModelAvail })[];
   modeOptions?: ModeOption[];
   slashCommands?: SlashCommand[];
   placeholder?: string;
@@ -116,9 +117,19 @@ export function Composer({
   // second chat engine). A daemon without `models` on /engines (or no engine
   // with a catalog) falls back to the flat list the surface passed in.
   const { data: engineData } = useQuery({ queryKey: ["engines"], queryFn: () => api.engines(), staleTime: 60_000 });
+  // Which OpenCode models REALLY run (a real request per model, spine/agent/
+  // opencode_models.py): the `avail` on each model. The probe runs on the
+  // daemon in the background; its progress and every result arrive through the
+  // event stream's invalidation - no polling here.
+  const qc = useQueryClient();
+  const { data: probe } = useQuery({ queryKey: ["modelsProbe"], queryFn: () => api.modelsProbe(), staleTime: 30_000, enabled: picker });
+  const [showDead, setShowDead] = useState(false);
+  function probeModels(id?: string) {
+    void api.probeModels(id).then((v) => { qc.setQueryData(["modelsProbe"], v); void qc.invalidateQueries({ queryKey: ["engines"] }); }).catch(() => {});
+  }
   const modelGroups = useMemo(() => {
     const seen = new Set<string>();
-    const out: { id: string; label: string; ready: boolean; models: { id: string; label?: string; desc?: string }[] }[] = [];
+    const out: { id: string; label: string; ready: boolean; models: { id: string; label?: string; desc?: string; avail?: ModelAvail }[] }[] = [];
     for (const e of engineData?.engines ?? []) {
       if (!e.enabled || !e.models?.length || seen.has(e.type)) continue;
       seen.add(e.type);
@@ -625,7 +636,13 @@ export function Composer({
             <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>{tr("composer.model")}</Text>
             <ScrollView>
               {(() => {
-                const row = (id: string, label: string, desc: string, off = false) => (
+                const retest = (id: string) => (
+                  <Pressable onPress={() => probeModels(id)} hitSlop={8} accessibilityLabel={tr("models.retest")}>
+                    <Ionicons name="refresh-outline" size={16} color={t.txtTertiary} />
+                  </Pressable>
+                );
+                const reasonOf = (a: ModelAvail) => tr("models.reason." + (["country", "auth", "missing", "timeout"].includes(a.status ?? "") ? a.status : "error"));
+                const row = (id: string, label: string, desc: string, off = false, avail?: ModelAvail) => (
                   <Pressable key={id} disabled={off} onPress={() => { pickModel(id); setPicker(false); }}
                     style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11,
                       borderTopWidth: 1, borderTopColor: t.borderSubtle, opacity: off ? 0.45 : 1 }}>
@@ -634,24 +651,74 @@ export function Composer({
                       <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{label}</Text>
                       {desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{desc}</Text> : null}
                     </View>
+                    {avail?.state === "untested" ? (
+                      <>
+                        <Text style={{ color: t.txtTertiary, fontSize: 11, fontStyle: "italic" }}>{tr("models.untested")}</Text>
+                        {retest(id)}
+                      </>
+                    ) : null}
+                    {avail?.state === "testing" ? (
+                      <>
+                        <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("models.testing")}</Text>
+                        <ActivityIndicator size="small" color={t.accent} />
+                      </>
+                    ) : null}
                   </Pressable>
                 );
+                // a model a real request proved dead is NOT a row of the list: it
+                // sits in a collapsed group with the reason, never selectable
+                const deadGroup = (g: { id: string; models: { id: string; label?: string; avail?: ModelAvail }[] }) => {
+                  if (g.models.length === 0) return [];
+                  return [
+                    <Pressable key={"dead-" + g.id} onPress={() => setShowDead((v) => !v)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+                      <Ionicons name={showDead ? "chevron-down" : "chevron-forward"} size={14} color={t.txtTertiary} />
+                      <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "600" }}>{tr("models.unavailable", { n: g.models.length })}</Text>
+                    </Pressable>,
+                    ...(showDead ? g.models.map((m) => (
+                      <View key={m.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 9, paddingLeft: 32, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: t.txtTertiary, fontSize: 13 }}>{m.label || m.id}</Text>
+                          <Text style={{ color: t.danger, fontSize: 11.5 }}>{m.avail ? reasonOf(m.avail) : ""}</Text>
+                        </View>
+                        {retest(m.id)}
+                      </View>
+                    )) : []),
+                  ];
+                };
                 const auto = row("auto", tr("composer.modelAuto"), "");
                 if (modelGroups.length === 0) {
                   // /models returns objects {id,label,desc}; older/custom setups may
                   // return plain id strings. Normalise both so we never render an
                   // object as a React child (that crashed the whole app -> black).
-                  return [auto, ...models.map((raw) => {
+                  return [auto, ...models.filter((raw) => typeof raw === "string" || raw.avail?.state !== "failed").map((raw) => {
                     const id = typeof raw === "string" ? raw : raw.id;
-                    return row(id, typeof raw === "string" ? raw : (raw.label || raw.id), typeof raw === "string" ? "" : (raw.desc || ""));
+                    return row(id, typeof raw === "string" ? raw : (raw.label || raw.id), typeof raw === "string" ? "" : (raw.desc || ""), false,
+                      typeof raw === "string" ? undefined : raw.avail);
                   })];
                 }
-                return [auto, ...modelGroups.flatMap((g) => [
-                  <Text key={"h-" + g.id} style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 }}>
-                    {g.label}{g.ready ? "" : " · " + tr("new.engineMissing")}
-                  </Text>,
-                  ...g.models.map((m) => row(m.id, m.label || m.id, m.desc || "", !g.ready)),
-                ])];
+                return [auto, ...modelGroups.flatMap((g) => {
+                  const probed = g.models.some((m) => !!m.avail);
+                  const dead = g.models.filter((m) => m.avail?.state === "failed");
+                  return [
+                    <View key={"h-" + g.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, gap: 8 }}>
+                      <Text style={{ flex: 1, color: t.txtTertiary, fontSize: 11, fontWeight: "700" }}>
+                        {g.label}{g.ready ? "" : " · " + tr("new.engineMissing")}
+                      </Text>
+                      {probed && g.ready ? (
+                        <Pressable disabled={!!probe?.running} onPress={() => probeModels()} hitSlop={6}
+                          style={{ flexDirection: "row", alignItems: "center", gap: 5, opacity: probe?.running ? 0.7 : 1 }}>
+                          {probe?.running ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="pulse-outline" size={14} color={t.accent} />}
+                          <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>
+                            {probe?.running ? tr("models.checking", { done: probe.done, total: probe.total }) : tr("models.check")}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>,
+                    ...g.models.filter((m) => m.avail?.state !== "failed").map((m) => row(m.id, m.label || m.id, m.desc || "", !g.ready, m.avail)),
+                    ...deadGroup({ id: g.id, models: dead }),
+                  ];
+                })];
               })()}
             </ScrollView>
           </View>

@@ -519,7 +519,7 @@ def prewarm(user, spoken=True, force=False):
             # next real turn switches away from.
             cli_model, _ = turnopts.resolve_model(
                 model or _model_prefs().get(_skey(user)) or "auto", "", False,
-                signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")})
+                signals={"ctx_tokens": (_stats().get(user) or {}).get("ctx_tokens")}, account=user)
             base = harness.brief("board-copilot")
             lock = _turn_lock(user)
             if not lock.acquire(blocking=False):
@@ -2911,7 +2911,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _pick = _model_prefs().get(skey) or "auto"
     cli_model, _ = turnopts.resolve_model(_pick, message, bool(paths),
                                           signals={"ctx_tokens": _st.get("ctx_tokens")},
-                                          policy=_chat_routing_policy(card))
+                                          policy=_chat_routing_policy(card), account=user)
     if cli_model and model_source != "voice":
         _save_model_pref(skey, cli_model)
     # The composer's Mode row (2026-09-12): a picked mode is the owner's

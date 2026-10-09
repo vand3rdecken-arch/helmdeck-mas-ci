@@ -31,6 +31,17 @@ export const composer: Dict = {
 
   // model picker
   "composer.model": { de: "MODELL", en: "MODEL" },
+  "models.untested": { de: "ungetestet", en: "untested" },
+  "models.testing": { de: "prüfe…", en: "testing…" },
+  "models.check": { de: "Modelle prüfen", en: "Check models" },
+  "models.checking": { de: "Prüfe {done}/{total}", en: "Checking {done}/{total}" },
+  "models.retest": { de: "Erneut prüfen", en: "Test again" },
+  "models.unavailable": { de: "Nicht verfügbar ({n})", en: "Unavailable ({n})" },
+  "models.reason.country": { de: "in deinem Land nicht verfügbar", en: "not available in your country" },
+  "models.reason.auth": { de: "Key abgelehnt", en: "key refused" },
+  "models.reason.missing": { de: "CLI kennt das Modell nicht", en: "the CLI does not know this model" },
+  "models.reason.timeout": { de: "keine Antwort in der Zeit", en: "no answer in time" },
+  "models.reason.error": { de: "Fehler beim Test", en: "test failed" },
   "composer.modelAutoShort": { de: "Auto", en: "Auto" },
   "composer.modelAuto": { de: "Auto (nach Aufgabe wählen)", en: "Auto (route by task)" },
 

@@ -380,7 +380,35 @@ def me_providers_delete(self, user, _q):
     return self._send(200, json.dumps(dict(_providers_view(user), ok=True)))
 
 
+def _models_probe_view(user):
+    from spine.agent import opencode_models
+    return dict(opencode_models.progress(user["name"]), ok=True)
+
+
+def me_models_probe_post(self, user, body):
+    """Which OpenCode models REALLY run for MY account? Starts the sequential
+    background probe (opencode_models.probe_all) and answers at once - one real
+    request per model takes 11-80s, far past any transport bound (same shape as
+    /me/providers/test). Body: {} = all models, {"model": id} = re-test one,
+    {"only_untested": true}. Results land on model_probe and bump the version,
+    the app reloads from its event stream. Any role may probe its OWN account
+    (a client has no keys but the free tier is probeable)."""
+    from spine.agent import opencode_models
+    account = user["name"]
+    mid = str(body.get("model") or "")
+    if mid and mid not in {m["id"] for m in opencode_models.catalog(account)}:
+        return self._send(400, json.dumps({"error": "unknown model"}))
+    started = opencode_models.probe_all(account, only_untested=bool(body.get("only_untested")),
+                                        models=[mid] if mid else None)
+    return self._send(200, json.dumps(dict(_models_probe_view(user), started=started)))
+
+
+def me_models_probe_get(self, user):
+    return self._send(200, json.dumps(_models_probe_view(user)))
+
+
 GET_ROUTES = {
+    "/me/models/probe": me_models_probe_get,
     "/processes": processes_get,
     "/process_templates": process_templates_get,
     "/me": me_get,
@@ -397,6 +425,7 @@ POST_ROUTES = {
     "/voice/dictation/cancel": voice_dictation_cancel_post,
     "/voice/dictation/clean": voice_dictation_clean_post,
     "/me/providers/test": me_providers_test_post,
+    "/me/models/probe": me_models_probe_post,
 }
 PUT_ROUTES = {
     "/me/config": me_config_put,

@@ -22,6 +22,21 @@ hand list is only the seed for a box where the CLI is missing or silent.
   test(account, provider, model)  ONE real minimal request through the CLI, so
                      "key set" becomes "key works": the CLI lists models for a
                      dummy key too, only a request proves it.
+
+  MODEL PROBES (owner 2026-10-09: "ich will sehen, welche Modelle wirklich
+  verfuegbar sind"): the CLI also lists models that cannot run (country block,
+  deprecated ids). test() per MODEL, remembered per account:
+
+  home: its OWN table `model_probe` (ledger 21), because a probe is per
+    ACCOUNT x MODEL (keys and region differ per account) and expires - not
+    `user_config` (view prefs, exported), not `runtime_doc` (global, survives
+    an account delete), not `user_secret` (one row per PROVIDER, holds keys).
+
+  ONE writer: record(). Callers: probe_model (the button / probe_all thread) and
+  note_turn (a REAL turn that failed - event time, no polling). Readers derive
+  `avail` {state ok|failed|untested|testing, reason, ms, at}: a result older
+  than OK_TTL / FAIL_TTL reads as untested again (a constant, not a setting).
+  The `testing` state is the in-process marker of probe_all's thread.
 """
 import os
 import re
@@ -116,8 +131,11 @@ def discover(account=""):
 
 
 def catalog(account=""):
+    """discover() or the seed, each model carrying `avail` (what a real request
+    proved for THIS account - see the probe section below)."""
     from spine.agent import turnopts
-    return discover(account) or [dict(m) for m in turnopts.OPENCODE_MODELS]
+    models = discover(account) or [dict(m) for m in turnopts.OPENCODE_MODELS]
+    return annotate(account, models)
 
 
 def _remember(models):
@@ -215,3 +233,137 @@ def test(account, provider, model=""):
     status, reason = classify(rc, out, timed_out)
     return {"ok": status == "ok", "status": status, "reason": reason, "model": model,
             "ms": int((time.time() - t0) * 1000)}
+
+
+# -- per-model probes ----------------------------------------------------------
+
+OK_TTL = 6 * 3600.0          # a proven model is trusted this long
+FAIL_TTL = 30 * 60.0         # a failure is re-offered for a retry sooner (keys get fixed, regions change)
+_REASONS = {"country": "not available in your country", "auth": "the key was refused",
+            "missing": "the CLI does not know this model", "timeout": "no answer in time"}
+_run_lock = threading.Lock()
+_running = {}                # account -> {"done": n, "total": m, "current": model_id}
+
+
+def _rows(account):
+    from spine.storage import db
+    return {r[0]: r for r in db.conn().execute(
+        "SELECT model_id,status,reason,ms,tested_at FROM model_probe WHERE user=?", (account or "",)).fetchall()}
+
+
+def _avail(row, now, testing=False):
+    if testing:
+        return {"state": "testing"}
+    if row:
+        ok = row[1] == "ok"
+        if now - row[4] < (OK_TTL if ok else FAIL_TTL):
+            a = {"state": "ok" if ok else "failed", "ms": row[3], "at": row[4]}
+            if not ok:
+                a["status"], a["reason"] = row[1], row[2]
+            return a
+    return {"state": "untested"}
+
+
+def avail_map(account, ids=None):
+    """{model_id: avail} for this account (all probed ones, or `ids`)."""
+    now = time.time()
+    rows = _rows(account)
+    cur = (_running.get(account or "") or {}).get("current")
+    return {mid: _avail(rows.get(mid), now, testing=(mid == cur))
+            for mid in (ids if ids is not None else rows)}
+
+
+def annotate(account, models):
+    amap = avail_map(account, [m["id"] for m in models])
+    for m in models:
+        m["avail"] = dict(amap[m["id"]])
+    return models
+
+
+def failed_ids(account):
+    return {m for m, a in avail_map(account).items() if a["state"] == "failed"}
+
+
+def record(account, model_id, result):
+    """THE one writer of model_probe. `result` is test()'s shape. bump(): the
+    app learns of it from the daemon's event stream and reloads."""
+    from spine.storage import db
+    status = str(result.get("status") or "error")[:16]
+    reason = str(result.get("reason") or _REASONS.get(status, ""))[:200]
+    with db.conn() as c:
+        c.execute("INSERT OR REPLACE INTO model_probe(user,model_id,status,reason,ms,tested_at) VALUES(?,?,?,?,?,?)",
+                  (account or "", str(model_id)[:200], status, reason, int(result.get("ms") or 0), time.time()))
+    db.bump()
+
+
+def drop_user(account):
+    """Called from auth.delete_user: rows key on the NAME."""
+    from spine.storage import db
+    with db.conn() as c:
+        return c.execute("DELETE FROM model_probe WHERE user=?", (account or "",)).rowcount
+
+
+def probe_model(account, model_id):
+    """ONE real request on this model (sequential through _cli_lock), persisted.
+    Never raises. Returns the avail dict."""
+    provider = model_id.split("/", 1)[0]
+    try:
+        res = test(account, provider, model_id)
+    except Exception as e:                                       # noqa: BLE001
+        res = {"ok": False, "status": "error", "reason": str(e)[:160], "model": model_id, "ms": 0}
+    record(account, model_id, res)
+    return avail_map(account, [model_id])[model_id]
+
+
+def progress(account):
+    """{"running", "done", "total"} for the UI's "3/9"."""
+    with _run_lock:
+        p = _running.get(account or "")
+        return {"running": True, "done": p["done"], "total": p["total"]} if p else \
+            {"running": False, "done": 0, "total": 0}
+
+
+def probe_all(account, only_untested=False, models=None):
+    """Start a SEQUENTIAL background probe of this account's OpenCode models.
+    False if one already runs for the account (idempotent button) or there is
+    nothing to probe. The request thread (bound to 8s/20s) returns at once;
+    every finished model bumps the version via record()."""
+    account = account or ""
+    ids = list(models) if models else [m["id"] for m in (discover(account) or [])]
+    if only_untested:
+        cur = avail_map(account, ids)
+        ids = [i for i in ids if cur[i]["state"] == "untested"]
+    if not ids:
+        return False
+    with _run_lock:
+        if account in _running:
+            return False
+        _running[account] = {"done": 0, "total": len(ids), "current": ""}
+
+    def _run():
+        from spine.storage import db
+        try:
+            for mid in ids:
+                with _run_lock:
+                    _running[account]["current"] = mid
+                db.bump()
+                probe_model(account, mid)
+                with _run_lock:
+                    _running[account]["done"] += 1
+        finally:
+            with _run_lock:
+                _running.pop(account, None)
+            db.bump()
+    threading.Thread(target=_run, daemon=True, name="model-probe").start()
+    return True
+
+
+def note_turn(account, model_id, error_text):
+    """EVENT TIME: a real turn on `model_id` failed. If the error classifies as
+    a verdict about the MODEL (country / auth / missing) it lands on the same
+    row the button writes; a transient error proves nothing and writes nothing."""
+    if not model_id or "/" not in str(model_id):
+        return
+    status, reason = classify(1, error_text or "")
+    if status in ("country", "auth", "missing"):
+        record(account, model_id, {"status": status, "reason": reason, "ms": 0})
