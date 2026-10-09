@@ -89,12 +89,52 @@ def repo_template_post(self, user, body):
         return self._send(400, json.dumps({"error": str(e)}, ensure_ascii=False))
 
 
+def projects_shared_get(self, user):
+    """Project folders for the room: what THIS account may see of them. An
+    account that is not the owner gets only the projects shared with it, each
+    with its cards as the whitelisted summary (auth.shared_view) - no repo
+    path, no billing. The owner gets every project with its share list, so the
+    room can offer the toggle. Cards are read from the record at request time."""
+    from spine.auth import auth
+    from spine.ops import projects
+    from spine.storage import db
+    owner = user.get("role") == "owner"
+    mine = projects.list_projects() if owner else projects.shared_with(user["name"])
+    tracks = db.tracks_all() or []
+    out = []
+    for p in mine:
+        key = projects.repo_key(p.get("repo"))
+        cards = [t for t in tracks if key and projects.repo_key(t.get("repo")) == key
+                 and not t.get("archived") and not t.get("board_hidden")]
+        cards.sort(key=lambda t: t.get("updated") or t.get("created") or "", reverse=True)
+        out.append({"id": p["id"], "name": p["name"],
+                    "geteilt_mit": list(p.get("geteilt_mit") or []),
+                    "cards": [auth.shared_view(t) for t in cards[:60]],
+                    "card_count": len(cards)})
+    out.sort(key=lambda x: x["name"].lower())
+    return self._send(200, json.dumps(out, ensure_ascii=False))
+
+
+def projects_share_post(self, user, body):
+    from spine.ops import projects
+    try:
+        p = projects.share(body.get("id", ""), add=body.get("add") or [],
+                           remove=body.get("remove") or [], actor=user["name"])
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    if p is None:
+        return self._send(404, json.dumps({"error": "unknown project"}))
+    return self._send(200, json.dumps({"id": p["id"], "geteilt_mit": p.get("geteilt_mit") or []}))
+
+
 GET_ROUTES = {
     "/projects": projects_list_get,
+    "/projects/shared": projects_shared_get,
     "/repo/templates": repo_templates_get,
 }
 POST_ROUTES = {
     "/projects": projects_new_post,
+    "/projects/share": projects_share_post,
     "/repo/template": repo_template_post,
 }
 GET_CAPS = {
@@ -103,6 +143,7 @@ GET_CAPS = {
 }
 POST_CAPS = {
     "/projects": "projects.manage",
+    "/projects/share": "projects.manage",
     "/repo/template": "projects.manage",
 }
 # projects_update_post/projects_delete_post (/projects/<id>/update,

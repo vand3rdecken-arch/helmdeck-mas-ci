@@ -100,11 +100,15 @@ def build_prompt(room, history, author, text, rows):
     win = ("nur die letzten %d von %d Nachrichten, aelteste zuerst; Aelteres steht hier nicht"
            % (HISTORY_LINES, len(history)) if len(history) > HISTORY_LINES
            else "aelteste zuerst; alle %d Nachrichten" % len(history))
+    others = [m for m in room["members"] if m != author]
     return ("RAUM: %s\nMITGLIEDER: %s%s\n\nVERLAUF (%s):\n%s\n\n"
             "NEUE NACHRICHT von %s, die dich mit @henry anspricht:\n%s\n\n"
+            "Der Fragende heisst genau \"%s\" (ein Kontoname, keine Rolle)%s. "
             "Antworte %s direkt."
             % (room["name"], ", ".join(room["members"]), memory_block(rows), win,
-               "\n".join(lines) or "(noch leer)", author, text, author))
+               "\n".join(lines) or "(noch leer)", author, text, author,
+               "; die anderen Mitglieder (%s) haben NICHT gefragt" % ", ".join(others) if others else "",
+               author))
 
 
 def _argv():
@@ -152,6 +156,35 @@ def run_claude(system, prompt, timeout=TIMEOUT):
     return (raw.get("result") or "").strip(), raw
 
 
+def _is_owner(author):
+    """The role is read from the account record at the moment of the turn - the
+    one fact that decides which Henry answers (never a flag on the message)."""
+    from spine.auth import auth
+    return any(u["name"] == author and u["role"] == "owner" for u in auth.list_users())
+
+
+def _owner_turn(room, author, text):
+    """The OWNER asks in a room: the normal Henry answers - his own persistent
+    session, tools, memory and board - and the reply is posted into the room.
+    (A non-owner NEVER gets here: chat() runs on the owner's session and brief.)
+    The audience note rides in the turn text, not extra_system, so it cannot
+    stick in the persistent transcript like a device overlay; the reply is
+    readable by every member, which the note says."""
+    from cells.copilot.chat import copilot
+    others = [m for m in room["members"] if m != author]
+    note = ("[Raum \"%s\" - deine Antwort wird dort gepostet und von %s mitgelesen. "
+            "Antworte wie sonst, aber gib nichts Privates, keine Zugangsdaten und "
+            "nichts aus anderen Chats preis, das diese Person nicht sehen soll.]\n\n"
+            % (room["name"], ", ".join(others) or "niemandem sonst"))
+    try:
+        out = copilot.chat(author, note + text, role="owner", announce=False)
+    except Exception as e:                                       # noqa: BLE001
+        return rooms.post(room["id"], "Henry", "Ich konnte gerade nicht antworten (%s)."
+                          % str(e)[:120], by_kind="henry", extra={"to": author, "error": True})
+    reply = ((out or {}).get("reply") or "").strip() or "(keine Antwort)"
+    return rooms.post(room["id"], "Henry", reply, by_kind="henry", extra={"to": author})
+
+
 def _lock_for(rid):
     with _guard:
         return _locks.setdefault(rid, threading.Lock())
@@ -173,6 +206,8 @@ def answer(rid, author, text, runner=None):
             room = rooms.get(rid)
             if not room:
                 return None
+            if runner is None and _is_owner(author):
+                return _owner_turn(room, author, text)
             viewer = copilot_memory.room_viewer(rid)
             rows = copilot_memory.all_notes(viewer)
             prompt = build_prompt(room, rooms.history(rid, author), author, text, rows)

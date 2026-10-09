@@ -13,6 +13,7 @@ import { useT } from "@/i18n";
 import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import { Empty, ScreenHeader } from "@/ui/kit";
+import { RoomProjects } from "@/ui/room_projects";
 import { useResponsive } from "@/ui/responsive";
 
 const MENTION = /(@[A-Za-z0-9_.-]+)/g;
@@ -156,6 +157,8 @@ export default function RoomScreen() {
         <Text numberOfLines={1} style={{ color: t.txtTertiary, fontSize: 12, flex: 1 }}>{members.join(", ")}</Text>
         <Ionicons name={info ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} />
       </Pressable>
+
+      <RoomProjects members={members} me={me?.name} owner={me?.role === "owner"} />
 
       {info ? (
         <View style={{ marginHorizontal: 12, marginBottom: 8, padding: 12, gap: 10, borderRadius: 14, borderWidth: 1,

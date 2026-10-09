@@ -165,7 +165,23 @@ def sees_card(user, track):
     nothing else - transcript, recordings, steering and Henry's card chat
     stay behind owns_card (see shared_view)."""
     return bool(owns_card(user, track) or (
-        track and user.get("name") in (track.get("geteilt_mit") or [])))
+        track and (user.get("name") in (track.get("geteilt_mit") or [])
+                   or _in_shared_project(user, track))))
+
+
+def _in_shared_project(user, track):
+    """Is this card in a project (repo) that was shared with `user`? Read from
+    the project record at request time (projects.share is its one writer); a
+    problem reading it means "not shared", never a crash of the caller."""
+    name = user.get("name")
+    if not name or not track.get("repo"):
+        return False
+    try:
+        from spine.ops import projects
+        p = projects.for_repo(track["repo"])
+    except Exception:                                            # noqa: BLE001
+        return False
+    return bool(p and name in (p.get("geteilt_mit") or []))
 
 
 # What a card SHARED with someone (not theirs) shows them. A whitelist, not a

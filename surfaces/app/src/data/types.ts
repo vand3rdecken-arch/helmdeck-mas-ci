@@ -446,6 +446,13 @@ export interface RoomDetail {
 }
 export interface RoomAccount { name: string; role: string }
 
+// A project folder as THIS account may see it (GET /projects/shared): the cards
+// are the daemon's whitelisted summary, never the full record.
+export interface SharedProject {
+  id: string; name: string; geteilt_mit: string[]; card_count: number;
+  cards: { id: string; task: string; lane?: string; status?: string; last_reply?: string }[];
+}
+
 // A line of a restricted role's PRIVATE Henry conversation (the `chat` table).
 export interface PrivateHenryEntry {
   seq?: number; role: "user" | "assistant"; text: string; by?: string;

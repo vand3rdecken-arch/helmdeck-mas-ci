@@ -151,6 +151,45 @@ def update_project(pid, patch, actor="owner"):
     return p
 
 
+def share(pid, add=(), remove=(), actor="owner"):
+    """Share a project (its folder of cards) with other accounts, or take the
+    share back. THE one writer of the project's `geteilt_mit` - the same field
+    and meaning a card carries (sessions.share): a recorded list of account
+    names, read at every request by auth.sees_card and the /projects/shared
+    route, never copied onto the cards. It grants the SUMMARY view only (title, status and
+    result of each card, auth.shared_view) - never the repo path, transcript,
+    steering or Henry's card chat. Unknown accounts are refused; returns the
+    project, or None for an unknown one."""
+    from spine.auth import auth
+    p = db.project_get(pid)
+    if not p:
+        return None
+    known = {u["name"] for u in auth.list_users()}
+    bad = [n for n in add if n not in known]
+    if bad:
+        raise ValueError("unknown account: %s" % ", ".join(bad))
+    cur = list(p.get("geteilt_mit") or [])
+    for n in add:
+        if n not in cur:
+            cur.append(n)
+    for n in remove:
+        if n in cur:
+            cur.remove(n)
+    if cur == (p.get("geteilt_mit") or []):
+        return p
+    p["geteilt_mit"] = cur
+    p["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    db.project_put(p)
+    _audit("project_shared", p.get("repo") or "", actor, project=pid,
+           add=list(add), remove=list(remove))
+    return p
+
+
+def shared_with(account):
+    """The projects shared with `account` - derived from the records."""
+    return [p for p in db.projects_all() if account in (p.get("geteilt_mit") or [])]
+
+
 def cards_on_repo(repo, include_archived=False):
     """[(id, archived)] for every card pointing at this repo. The reason a
     delete has to look: a live card's repo gets SIGHTED again on the next
