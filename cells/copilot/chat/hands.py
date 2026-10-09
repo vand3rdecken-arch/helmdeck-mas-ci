@@ -125,13 +125,16 @@ def running_ids():
         return [k for k, t in _tasks.items() if t["status"] == "running"]
 
 
-def spawn(user, task, skey, card=None, why="", kind="hands"):
+def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, room=None):
     """Start the hands process for `task` and return its id immediately.
 
     kind="agent" (owner 2026-09-25 "wie Paseo - Thread oder Subprocess"): the
     same one-shot child for READING / research / checks, without the machine
     tools and without the desktop queue - it starts at once and runs beside
-    other agents. Why a daemon process and not Henry's CLI Agent tool
+    other agents. `room` (+ `brief_text`, the system brief used instead of
+    delegate.md): the OWNER's @henry in a team room - the same one-shot child,
+    but its end lands as Henry's message IN THAT ROOM (see _land_room) and never
+    in the owner's chat transcript, so it runs beside his main chat. Why a daemon process and not Henry's CLI Agent tool
     (MEASURED 2026-09-25 against the real CLI, stream-json): a soft interrupt
     of Henry's turn - which is how a new owner message now takes over - STOPS
     every CLI background agent of his process ("task_notification stopped").
@@ -149,7 +152,7 @@ def spawn(user, task, skey, card=None, why="", kind="hands"):
     scratch = os.path.join(DAEMON_ROOT, "state", "hands", hid)
     os.makedirs(scratch, exist_ok=True)
     title = (task or "").strip().splitlines()[0][:90] if (task or "").strip() else hid
-    brief = harness.brief("delegate" if agent else "hands") + "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
+    brief = (brief_text if brief_text is not None else harness.brief("delegate" if agent else "hands")) + "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
     argv = [copilot.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", copilot.henry_pmode(),
             "--append-system-prompt-file", copilot._brief_file(brief)]
@@ -167,7 +170,7 @@ def spawn(user, task, skey, card=None, why="", kind="hands"):
         ahead = 0 if agent else len(_queue) + (1 if _active else 0)
         _tasks[hid] = {"title": title, "status": "running", "since": time.time(), "updated": time.time(),
                        "detail": task.strip()[:600], "pid": None, "user": user, "skey": skey, "card": card,
-                       "kind": kind, "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
+                       "kind": kind, "room": room, "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
                        "result": ("wartet: %d Hände-Lauf(e) davor (ein Desktop, ein Browser)" % ahead) if ahead else ""}
         if not agent:
             _queue.append(hid)
@@ -382,6 +385,30 @@ def _summary(result):
 TILE_RESULT_MAX = 8000
 
 
+def _land_room(t, hid, status, result, steps):
+    """An owner @henry run in a room ends HERE: the answer is Henry's message in
+    that room (rooms.post, the one writer), addressed to whoever asked. Nothing
+    reaches the owner's chat transcript, his pending actions or a push of the
+    main chat - the room's own message path does the notifying."""
+    from cells.copilot.chat import rooms
+    from spine.storage import events
+    room, asker = t["room"]["id"], t["room"]["to"]
+    events.emit("hands", "-", action=status, id=hid, actor=t.get("user"), steps=steps,
+                result=result.strip()[:300], room=room)
+    if status == "completed":
+        text = result.strip() or "(keine Antwort)"
+        extra = {"to": asker}
+    elif status == "canceled":
+        text, extra = "Henry wurde gestoppt, bevor er antworten konnte.", {"to": asker, "error": True}
+    else:
+        text = "Ich konnte gerade nicht antworten (%s)." % (result.strip().splitlines() or ["?"])[0][:140]
+        extra = {"to": asker, "error": True}
+    try:
+        rooms.post(room, "Henry", text[:rooms.TEXT_MAX], by_kind="henry", extra=extra)
+    except Exception as e:                               # noqa: BLE001
+        print("hands: room post failed - %s" % str(e)[:160], flush=True)
+
+
 def _clip_tile(text):
     """The run tile's copy of the result: cut at TILE_RESULT_MAX, and SAY so
     (the tile is what the owner and Henry reread later)."""
@@ -400,6 +427,8 @@ def _land(hid, status, result, steps):
         return
     _persist(hid)                      # the tile's final state, before anyone reads it
     user, skey, card, title = t.get("user"), t.get("skey"), t.get("card"), t.get("title")
+    if t.get("room"):
+        return _land_room(t, hid, status, result, steps)
     # Henry gets the WHOLE report (owner 2026-09-15: the 700-char cut fed him
     # a DM-failure report ending mid-sentence at "The TASK block didn'", so
     # he never saw the passcode/permission lines and invented a still-open

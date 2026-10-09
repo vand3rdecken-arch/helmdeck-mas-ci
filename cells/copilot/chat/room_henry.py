@@ -163,26 +163,52 @@ def _is_owner(author):
     return any(u["name"] == author and u["role"] == "owner" for u in auth.list_users())
 
 
-def _owner_turn(room, author, text):
-    """The OWNER asks in a room: the normal Henry answers - his own persistent
-    session, tools, memory and board - and the reply is posted into the room.
-    (A non-owner NEVER gets here: chat() runs on the owner's session and brief.)
-    The audience note rides in the turn text, not extra_system, so it cannot
-    stick in the persistent transcript like a device overlay; the reply is
-    readable by every member, which the note says."""
-    from cells.copilot.chat import copilot
-    others = [m for m in room["members"] if m != author]
-    note = ("[Raum \"%s\" - deine Antwort wird dort gepostet und von %s mitgelesen. "
-            "Antworte wie sonst, aber gib nichts Privates, keine Zugangsdaten und "
-            "nichts aus anderen Chats preis, das diese Person nicht sehen soll.]\n\n"
-            % (room["name"], ", ".join(others) or "niemandem sonst"))
+OWNER_BRIEF = os.path.join(os.path.dirname(_HERE), "harness", "agents", "room-henry-owner.md")
+
+
+def owner_brief():
     try:
-        out = copilot.chat(author, note + text, role="owner", announce=False)
+        with open(OWNER_BRIEF, encoding="utf-8") as f:
+            return f.read().strip() or _FALLBACK_BRIEF
+    except OSError:
+        return _FALLBACK_BRIEF
+
+
+def _shared_projects_block(room, author):
+    """The project folders shared with this room's other members - the work the
+    owner wants to show them. Derived from the project records at the moment of
+    the turn; the owner's agent may read these folders."""
+    from spine.ops import projects
+    others = {m for m in room["members"] if m != author}
+    rows = [p for p in projects.list_projects()
+            if p.get("repo") and others & set(p.get("geteilt_mit") or [])]
+    if not rows:
+        return ""
+    return ("\n\nMIT DEM RAUM GETEILTE PROJEKTE (du darfst diese Ordner lesen):\n"
+            + "\n".join("- %s: %s" % (p["name"], p["repo"]) for p in rows))
+
+
+def _owner_turn(room, author, text):
+    """The OWNER asks in a room. His own Henry answers, as ITS OWN RUN beside his
+    main chat (hands.spawn kind="agent": a one-shot child with his tools, no
+    session, no shared per-user chat state), so a room question neither waits for
+    nor interrupts what he is doing in the chat. The answer is posted into the
+    room when the run ends (hands._land_room). He is read-only here: no cards,
+    no files, no settings - a request for action comes back as a sentence.
+    A non-owner never gets here (this runs on the owner's tools)."""
+    from cells.copilot.chat import hands
+    viewer = copilot_memory.room_viewer(room["id"])
+    rows = copilot_memory.all_notes(viewer)
+    task = (build_prompt(room, rooms.history(room["id"], author), author, text, rows)
+            + _shared_projects_block(room, author))
+    try:
+        hands.spawn(author, task, skey=author, kind="agent", brief_text=owner_brief(),
+                    room={"id": room["id"], "to": author},
+                    why="@henry im Raum %s" % room["name"])
     except Exception as e:                                       # noqa: BLE001
         return rooms.post(room["id"], "Henry", "Ich konnte gerade nicht antworten (%s)."
                           % str(e)[:120], by_kind="henry", extra={"to": author, "error": True})
-    reply = ((out or {}).get("reply") or "").strip() or "(keine Antwort)"
-    return rooms.post(room["id"], "Henry", reply, by_kind="henry", extra={"to": author})
+    return None
 
 
 def _lock_for(rid):
@@ -196,6 +222,7 @@ def answer(rid, author, text, runner=None):
     reply (or an honest failure note) and returns the stored message, or None
     when the queue is full. `runner(system, prompt) -> (text, raw)` is the seam
     the tests use; production uses run_claude."""
+    owner_turn = runner is None and _is_owner(author)   # a test seam runner always wins
     runner = runner or run_claude
     with _guard:
         if _waiting.get(rid, 0) >= MAX_QUEUED:
@@ -206,7 +233,7 @@ def answer(rid, author, text, runner=None):
             room = rooms.get(rid)
             if not room:
                 return None
-            if runner is None and _is_owner(author):
+            if owner_turn:
                 return _owner_turn(room, author, text)
             viewer = copilot_memory.room_viewer(rid)
             rows = copilot_memory.all_notes(viewer)

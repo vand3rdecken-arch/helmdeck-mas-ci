@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Keyboard, Pressable, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "@/data/client";
@@ -12,11 +12,13 @@ import type { RoomMessage } from "@/data/types";
 import { useT } from "@/i18n";
 import { can } from "@/kernel";
 import { useTheme } from "@/theme";
+import { Composer, type Recipient } from "@/ui/card_composer";
+import { Transcript, type TStep } from "@/ui/card_transcript";
+import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
 import { Empty, ScreenHeader } from "@/ui/kit";
 import { RoomProjects } from "@/ui/room_projects";
 import { useResponsive } from "@/ui/responsive";
 
-const MENTION = /(@[A-Za-z0-9_.-]+)/g;
 const HENRY_WAIT_MS = 3 * 60 * 1000;     // a pending @henry stops reading as "answering" after this
 
 // One team room (backlog/team-rooms-member, stages 3-6). Everyone in the room
@@ -24,6 +26,10 @@ const HENRY_WAIT_MS = 3 * 60 * 1000;     // a pending @henry stops reading as "a
 // only that wakes him), @name addresses a member. Opening the room advances
 // MY read cursor server-side (GET /rooms/messages), so there is nothing to
 // "mark read" from here.
+//
+// The conversation is drawn by the Henry chat's own Transcript and Composer
+// (owner 2026-10-09: "UI/UX gleich") - a room is one more thread kind, never a
+// second chat UI. Only the roster (members + Henry as recipients) differs.
 export default function RoomScreen() {
   const t = useTheme();
   const tr = useT();
@@ -58,11 +64,8 @@ export default function RoomScreen() {
     return () => usePresence.getState().setFocusedCard(null);
   }, [roomId]);
 
-  const scroller = useRef<ScrollView>(null);
-  useEffect(() => { const h = setTimeout(() => scroller.current?.scrollToEnd({ animated: true }), 60); return () => clearTimeout(h); },
-    [messages.length]);
+  const scroll = useRef<ChatScrollHandle>(null);
 
-  const [text, setText] = useState("");
   const [err, setErr] = useState("");
   const [info, setInfo] = useState(false);
   const post = useMutation({
@@ -71,23 +74,17 @@ export default function RoomScreen() {
       void qc.invalidateQueries({ queryKey: ["room", roomId] });
       void qc.invalidateQueries({ queryKey: ["rooms"] });
     },
-    onError: (e: Error, body) => { setText(body); setErr(tr("rooms.sendFailed", { msg: e.message })); },
+    onError: (e: Error) => setErr(tr("rooms.sendFailed", { msg: e.message })),
   });
-  const send = () => {
-    const body = text.trim();
-    if (!body || post.isPending) return;
-    setErr(""); setText("");
-    post.mutate(body);
+  // The composer is the Henry chat's own: a recipient picked in its @ popover
+  // becomes the @name the daemon reads - @henry is what wakes Henry.
+  const send = (body: string, o: { to?: string }) => {
+    const v = body.trim();
+    if (!v) return;
+    setErr("");
+    scroll.current?.toBottom();
+    post.mutate(o.to ? "@" + o.to + " " + v : v);
   };
-
-  // @-suggestions: members + henry, filtered by what is typed after the last @
-  const m = /(?:^|\s)@([A-Za-z0-9_.-]*)$/.exec(text);
-  const suggestions = useMemo(() => {
-    if (!m) return [] as string[];
-    const q = m[1].toLowerCase();
-    return ["henry", ...members.filter((x) => x !== me?.name)].filter((x) => x.toLowerCase().startsWith(q));
-  }, [m?.[1], members.join(","), me?.name]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const pick = (name: string) => setText(text.replace(/@([A-Za-z0-9_.-]*)$/, "@" + name + " "));
 
   // Henry is "answering" while the last @henry has no Henry message after it
   const pendingHenry = useMemo(() => {
@@ -107,21 +104,28 @@ export default function RoomScreen() {
     let h = 0; for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
     return palette[h % palette.length];
   };
+  const recipients: Recipient[] = [
+    { id: "henry", label: "henry", color: t.ai, icon: "sparkles", hint: tr("rooms.henry") },
+    ...members.filter((x) => x !== me?.name).map((x): Recipient => ({ id: x, label: x, color: colorOf(x), icon: "person-outline" })),
+  ];
 
-  // A mention is drawn in the accent colour - except inside MY OWN bubble, which
-  // IS the accent colour (it vanished there: found in the screenshot review), so
-  // there it is bold and underlined in the bubble's own text colour.
-  const renderText = (s: string, color: string, own = false) => (
-    <Text selectable style={{ color, fontSize: 14.5, lineHeight: 20 }}>
-      {s.split(MENTION).map((part, i) => {
-        const hit = part.startsWith("@") && (part.slice(1).toLowerCase() === "henry" || members.some((x) => x.toLowerCase() === part.slice(1).toLowerCase()));
-        if (!hit) return part;
-        return own
-          ? <Text key={i} style={{ fontWeight: "800", textDecorationLine: "underline" }}>{part}</Text>
-          : <Text key={i} style={{ fontWeight: "700", color: t.accent }}>{part}</Text>;
-      })}
-    </Text>
-  );
+  // The room's messages as the Henry chat's own transcript steps: one row
+  // model, one renderer.
+  const steps: TStep[] = messages.map((x): TStep => {
+    if (x.byKind === "system") {
+      return x.card
+        ? { role: "assistant", kind: "card", card: x.card, label: x.text, text: x.text, ts: x.ts, seq: x.seq }
+        : { role: "assistant", kind: "note", text: x.by + " " + x.text, ts: x.ts, seq: x.seq };
+    }
+    if (x.byKind === "henry") {
+      return { role: "assistant", kind: x.error ? "error" : "text", text: x.text, ts: x.ts, seq: x.seq,
+               by: "Henry", byKind: "henry", to: x.to };
+    }
+    return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "human" };
+  });
+  if (pendingHenry) {
+    steps.push({ role: "assistant", kind: "text", text: tr("rooms.henryWorking"), streaming: true, by: "Henry", byKind: "henry" });
+  }
 
   // members panel + card filing
   const [task, setTask] = useState("");
@@ -204,80 +208,19 @@ export default function RoomScreen() {
         </View>
       ) : null}
 
-      <ScrollView ref={scroller} style={{ flex: 1 }} keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8,
-          width: "100%", maxWidth: wide ? 760 : undefined, alignSelf: "center" }}>
-        {messages.length === 0 && !isLoading ? <Empty text={tr("rooms.noMessages")} /> : null}
-        {messages.map((x) => {
-          if (x.byKind === "system") {
-            return (
-              <Pressable key={x.seq} disabled={!x.card}
-                onPress={() => x.card && router.push({ pathname: "/card/[id]", params: { id: x.card } } as never)}
-                style={{ alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "92%",
-                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: t.surface2 }}>
-                <Ionicons name="document-text-outline" size={14} color={t.accent} />
-                <Text numberOfLines={2} style={{ color: t.txtSecondary, fontSize: 12.5, flexShrink: 1 }}>{x.by} {x.text}</Text>
-                {x.card ? <Ionicons name="chevron-forward" size={13} color={t.txtTertiary} /> : null}
-              </Pressable>
-            );
-          }
-          const mine = x.byKind === "human" && x.by === me?.name;
-          const henry = x.byKind === "henry";
-          const bg = mine ? t.accent : henry ? (x.error ? t.warn + "30" : t.ai + "26") : t.surface2;
-          return (
-            <View key={x.seq} style={{ alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "86%", gap: 3 }}>
-              {!mine ? (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 4 }}>
-                  {henry ? <Ionicons name="sparkles" size={12} color={t.ai} /> : null}
-                  <Text style={{ color: henry ? t.ai : colorOf(x.by), fontSize: 12, fontWeight: "700" }}>
-                    {henry ? tr("rooms.henry") : x.by}
-                  </Text>
-                  {henry && x.to ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("rooms.henryTo", { name: x.to })}</Text> : null}
-                  <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{x.ts ?? ""}</Text>
-                </View>
-              ) : null}
-              <View style={{ backgroundColor: bg, borderRadius: 16, borderTopRightRadius: mine ? 4 : 16,
-                borderTopLeftRadius: mine ? 16 : 4, paddingHorizontal: 12, paddingVertical: 8 }}>
-                {renderText(x.text, mine ? "#fff" : t.txtPrimary, mine)}
-              </View>
-            </View>
-          );
-        })}
-        {pendingHenry ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 4 }}>
-            <Ionicons name="sparkles" size={12} color={t.ai} />
-            <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("rooms.henryWorking")}</Text>
-          </View>
-        ) : null}
-      </ScrollView>
-
-      {suggestions.length > 0 ? (
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 12, paddingBottom: 6 }}>
-          {suggestions.map((s) => (
-            <Pressable key={s} onPress={() => pick(s)} style={{ flexDirection: "row", alignItems: "center", gap: 4,
-              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1,
-              borderColor: s === "henry" ? t.ai : t.accent + "88", backgroundColor: t.surface1 }}>
-              {s === "henry" ? <Ionicons name="sparkles" size={12} color={t.ai} /> : null}
-              <Text style={{ color: t.txtPrimary, fontSize: 12.5 }}>@{s}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-      {err ? <Text style={{ color: t.danger, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 }}>{err}</Text> : null}
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, paddingHorizontal: 12,
-        paddingTop: 8, paddingBottom: kb > 0 ? insets.bottom + 10 : insets.bottom + 8,
-        borderTopWidth: 1, borderTopColor: t.glassBorder, backgroundColor: t.surface1 }}>
-        <TextInput value={text} onChangeText={setText} placeholder={tr("rooms.placeholder")} multiline
-          placeholderTextColor={t.txtPlaceholder}
-          style={{ flex: 1, maxHeight: 120, color: t.txtPrimary, fontSize: 15, backgroundColor: t.surface2, borderRadius: 18,
-            paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9 }} />
-        <Pressable onPress={send} disabled={!text.trim() || post.isPending} accessibilityLabel={tr("rooms.send")}
-          style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center",
-            backgroundColor: text.trim() ? t.accent : t.surface2 }}>
-          <Ionicons name="send" size={17} color={text.trim() ? "#fff" : t.txtTertiary} />
-        </Pressable>
+      <View style={{ flex: 1 }}>
+        <ChatScroll ref={scroll} label={tr("chat.latest")}
+          contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: wide ? 760 : undefined, alignSelf: "center" }}>
+          {steps.length === 0 && !isLoading
+            ? <Empty text={tr("rooms.noMessages")} />
+            : <Transcript me={me?.name} steps={steps} onJump={(y) => scroll.current?.toY(y)} />}
+        </ChatScroll>
+        {err ? <Text style={{ color: t.danger, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 }}>{err}</Text> : null}
+        <Composer onSend={(txt, o) => send(txt, o)} models={["auto"]}
+          placeholder={tr("rooms.placeholder")} draftKey={"room:" + roomId} recipients={recipients}
+          bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
+        {kb > 0 ? <View style={{ height: kb }} /> : null}
       </View>
-      {kb > 0 ? <View style={{ height: kb }} /> : null}
     </View>
   );
 }
