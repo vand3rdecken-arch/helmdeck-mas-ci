@@ -1479,6 +1479,9 @@ def _await_lull_and_lock(user, lull=180):
 # could silently lift it to the 800k overflow the day a 1M voice model is
 # configured: the exact 2026-08-30 shape (615k session, 83M input tokens over
 # 98 turns, nothing watching).
+# Agent turns compact this far BELOW the mark (~5 owner turns at ~3k growth each),
+# so the owner's own message does not cross the line (owner 2026-10-10).
+COMPACT_NEAR_MARGIN = 15_000
 COMPACT_COST_LINE = 100_000   # 50% of the 200k window - Gemini CLI's default (owner 2026-10-07)
 
 # What the compaction summary must keep - a SCHEMA, not prose (OpenHands:
@@ -1531,14 +1534,18 @@ def _compact_row(user, cid, event, **fields):
     return cid
 
 
-def _schedule_compact(user, immediate=False):
+def _schedule_compact(user, agent=False, immediate=False):
     """immediate=True (turns nobody is waiting on: a card note, a hands result,
     a background-agent wake - owner 2026-10-09): start at once instead of after
     the 3-minute lull. The lull is measured from the last turn, so it expired
     exactly while the owner read the note and typed the answer, and that
     message queued behind the compaction ("Verlauf wird gerade verdichtet").
-    Owner turns compact at once too (2026-10-10); only the judge path keeps
-    the lull, so an escalation chain is not blocked between steps.
+    agent=True (owner 2026-10-10): the turn was an AGENT turn. Those compact
+    already COMPACT_NEAR_MARGIN below the mark, so by the time the owner types
+    the session is small and HIS message never has to trigger a compaction.
+    An owner turn compacts only at the overflow ceiling (0.8 * window), the
+    safety net. The judge keeps the lull (immediate=False) so an escalation
+    chain is not blocked between steps.
 
     Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
@@ -1561,6 +1568,11 @@ def _schedule_compact(user, immediate=False):
     # background worker would re-fire on every reply forever. _maybe_compact's
     # own "did it really shrink" check catches a CLI that ignores /compact; this
     # catches a compaction that works but doesn't reach the mark.
+    if agent:
+        mark -= COMPACT_NEAR_MARGIN
+    else:
+        mark = max(mark, int(0.8 * max(int(st.get("ctx_window") or 0),
+                                       sessions._CTX_WINDOW)))
     if ctx < mark or user in _compacting:
         return
     if int(st.get("turns") or 0) <= int(st.get("compacted_at_turn") or -1):
@@ -2228,7 +2240,7 @@ def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=
         # produced a verdict must never fail on its own housekeeping.
         try:
             _last_turn_at[skey] = _last_touch_at[skey] = time.time()
-            _schedule_compact(user)
+            _schedule_compact(user, agent=True)
         except Exception as _ce:                             # noqa: BLE001
             print("copilot.judge: compaction scheduling failed -", str(_ce)[:200])
 
@@ -3843,9 +3855,9 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
 
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
-    # Compact RIGHT AFTER the turn, owner turn or not (owner 2026-10-10): the
-    # 3-minute lull only moved the collision into the owner's reading time.
-    _schedule_compact(user, immediate=True)  # background + single-flight, never blocks this reply
+    # agent turn (harness_note): compact near the mark, at once; owner turn:
+    # only at the overflow ceiling (see _schedule_compact)
+    _schedule_compact(user, agent=bool(harness_note), immediate=bool(harness_note))  # background + single-flight, never blocks this reply
     # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
     # measured): standalone it rewrote the session at 60k, dropped the warm
     # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
