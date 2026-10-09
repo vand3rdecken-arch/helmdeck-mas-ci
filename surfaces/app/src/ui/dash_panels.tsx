@@ -751,9 +751,14 @@ function UsageRow({ w }: { w: UsageWindow }) {
       </View>
       <View style={{ marginVertical: 5 }}><Meter pct={pct} color={col} /></View>
       <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("dash.usage.reset", { when: fmtWhen(w.resetsAt) })}</Text>
-      {warn ? (
-        <Text style={{ color: t.warn, fontSize: 11.5, marginTop: 3 }}>
-          {tr("dash.usage.pace", { proj: Math.round(pacing?.projected_pct ?? 0), when: fmtWhen(pacing?.exhaust_at ?? null) })}
+      {/* The projection is always shown (the old dashboard did): where the
+          current pace lands at reset, and WHEN the limit runs out if it would
+          before the reset. Amber only when the daemon's own flag says so. */}
+      {pacing?.projected_pct != null ? (
+        <Text style={{ color: warn ? t.warn : t.txtSecondary, fontSize: 11.5, marginTop: 3 }}>
+          {pacing.exhaust_before_reset
+            ? tr("dash.usage.pace", { proj: Math.round(pacing.projected_pct), when: fmtWhen(pacing.exhaust_at) })
+            : tr("dash.usage.paceOk", { proj: Math.round(pacing.projected_pct) })}
         </Text>
       ) : null}
     </View>

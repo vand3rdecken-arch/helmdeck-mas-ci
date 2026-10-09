@@ -277,6 +277,10 @@ export const board: Dict = {
     de: "⚠ Bei diesem Tempo ~{proj}% zum Reset — Limit ~{when} erschöpft, vor dem Reset.",
     en: "⚠ At this pace ~{proj}% by reset — limit exhausted ~{when}, before it resets.",
   },
+  "dash.usage.paceOk": {
+    de: "Bei diesem Tempo ~{proj}% zum Reset — reicht bis dahin.",
+    en: "At this pace ~{proj}% by reset — lasts until then.",
+  },
   "dash.capacity.title": {
     de: "Kapazität — mehr Arbeit annehmen oder automatisieren?",
     en: "Capacity — take more work, or automate?",

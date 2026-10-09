@@ -21,7 +21,7 @@ import { Chip, Empty, KVRow, Panel, SectionLabel } from "@/ui/kit";
 import { SharedCardView } from "@/ui/shared_card";
 import { CardAccessPanel } from "@/ui/card_access";
 import { fmtPlanPct, fmtTok, planLabel, useAiFlat } from "@/ui/billing";
-import { cur } from "@/ui/dash_panels";
+import { cur, UsageWindows } from "@/ui/dash_panels";
 import { Composer, type Recipient } from "@/ui/card_composer";
 import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
@@ -379,6 +379,8 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
   const tr = useT();
   const qc = useQueryClient();
   const running = k.status === "running";
+  // plan usage is the OWNER's account meter (same gate as the Henry chat)
+  const meRole = useQuery({ queryKey: ["me"], queryFn: api.me }).data?.role;
   // Team-chat roster: an unaddressed message goes to the Worker while the
   // card has an active/live session, else to Henry (steering a backlog card
   // still auto-dispatches it - the @mention chip is what makes the choice
@@ -631,7 +633,8 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
           and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
           Shared with the board/PM chat - see ui/context_meter.tsx. */}
       <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
-        <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window} />
+        <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window}
+          details={meRole === "owner" ? <UsageWindows /> : undefined} />
       </View>
 
       <UnsentStrip scope={`card:${k.id}`} onRetry={(m) => handleSend(m.text, m.opts, m.id)} />
