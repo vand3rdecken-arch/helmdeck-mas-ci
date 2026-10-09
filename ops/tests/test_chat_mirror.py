@@ -122,105 +122,17 @@ check((e.get("question") or {}).get("id") == "q-1",
 check("Welchen Weg" in (e.get("text") or ""),
       "the text is the question itself, not 'a card needs you'")
 
-# -- 2. a turn END becomes a result entry carrying the card's own reply -------
-reset()
-notify.card_event(card(last_reply="Fertig: der Mirror haengt an card_event."),
-                  "needs_you")
-cs = cards()
-check(len(cs) == 1 and cs[0].get("kind") == card_mirror.KIND_RESULT,
-      "a turn end writes a RESULT (Ergebnis) entry")
-check("der Mirror haengt" in (cs[0].get("text") or ""),
-      "the result carries the card's OWN closing words, not a generic 'done'")
-
-# a turn that ended with nothing to say must not print an empty bubble
-reset()
-notify.card_event(card(last_reply="   "), "needs_you")
-check(not cards(), "a turn end with no reply text writes NOTHING (no empty bubble)")
-# ...and must not have BURNED the dedup key doing it. Claiming the key before
-# knowing there is anything to print would swallow the next real message under
-# that key as a repeat of one that was never written.
-notify.card_event(card(last_reply="jetzt habe ich doch etwas zu sagen"), "needs_you")
-check(len(cards()) == 1,
-      "a silent transition does not consume the dedup key - the next real "
-      "message under the same key still prints")
-
-# a reply is DISTILLED for the chat, not mirrored whole any more (owner
-# correction 2026-09-14, reworking the 2026-08-30 decision this block used to
-# pin - see the module docstring for both turns of that story). The property
-# 2026-08-30 actually protected - an answer given IN THIS CHAT must never be
-# LOST - still holds: it is the STORED last_reply that is authoritative (the
-# card's own thread reads THAT, via the Threads rework's timeline, not this
-# mirror's text), and this function only ever READS the track, never writes
-# it - so a long or technical reply is still fully there, just not re-typed
-# whole into the inbox line.
-reset()
-t_long = card(last_reply="wort " * 400)
-notify.card_event(t_long, "needs_you")
-cs = cards()
-txt = cs[0]["text"] if cs else ""
-check(txt != t_long["last_reply"].strip(),
-      "an over-long result is no longer mirrored whole")
-check(card_mirror.POINTER in txt,
-      "...and the shortened line always names where the rest lives")
-check(t_long["last_reply"] == "wort " * 400,
-      "the mirror never mutates the track's own stored reply - the full "
-      "answer a question got in this chat is still exactly there")
-check(not hasattr(card_mirror, "RESULT_MAX"),
-      "no revived bare length-cap constant - the distillation goes through "
-      "spine.turn.outcomes.extract_outcome, not a cap of this module's own")
-
-# the concrete owner complaint (screenshot 2026-09-14): a raw DELIVERED line
-# with an inline file path and the standard hand-off boilerplate is exactly
-# the shape the inbox must no longer show.
-reset()
-technical_reply = ("DELIVERED - surfaces/app/src/app/(tabs)/settings.tsx: "
-                   "folded Abmelden into the owner's own member row.\n\n"
-                   "Ready for Review - move the card to Review; accepting it deploys.")
-notify.card_event(card(last_reply=technical_reply), "needs_you")
-txt = cards()[0]["text"] if cards() else ""
-check("settings.tsx" not in txt and "DELIVERED" not in txt,
-      "the file path and the DELIVERED anchor are stripped from the inbox line")
-check("Ready for Review" not in txt,
-      "so is the hand-off boilerplate - the owner already knows accepting deploys")
-check("folded Abmelden" in txt, "the actual plain-language result survives")
-
-# the owner complaint that reopened this (screenshot 2026-09-15 07:37): a
-# reply that puts its plain-language RESULT first and a DELIVERED recap with
-# backtick-wrapped paths/hashes after it used to print the recap instead - and
-# mangled, because stripping a backtick-wrapped path/hash left the empty
-# backticks behind. Two defects, one reply: the mirror must pick the LEDE
-# ("did it work"), not extract_outcome's technical tail, and whatever it
-# prints must never carry a stray "``".
-reset()
-half_reply = ("I cut the per-message snapshot roughly in half by collapsing "
-             "done processes to a count and done steps to an n/m counter. "
-             "This takes effect after a daemon restart.\n\n"
-             "DELIVERED: commit `fef0d1d1` on main, touching "
-             "`cells/copilot/chat/copilot.py`, `spine/registry/behavior.py` "
-             "and the new test file. Nothing else changed on the machine.")
-notify.card_event(card(last_reply=half_reply), "needs_you")
-txt = cards()[0]["text"] if cards() else ""
-check("``" not in txt, "a stripped code span leaves no empty-backtick scar")
-check("roughly in half" in txt and "daemon restart" in txt,
-      "the RESULT sentence (what the owner needs) is the one that survives")
-check("fef0d1d1" not in txt and "copilot.py" not in txt and "DELIVERED" not in txt,
-      "the technical DELIVERED recap - written for Henry's planning "
-      "snapshot, not the owner - does not ride along with it")
-
-# a reply whose only usable text sits AFTER a DELIVERED tail that itself
-# turns broken once decluttered (e.g. a lede-free reply) must still fall
-# back to something, not go silent - _declutter drops the wrecked sentence,
-# extract_outcome's remaining sentence still says something.
-reset()
-tail_only = ("DELIVERED: commit `abc1234` on main, touching `a/b/c.py`, "
-            "`d/e/f.py` and the new test file. Nothing else changed on the "
-            "machine.")
-notify.card_event(card(last_reply=tail_only), "needs_you")
-txt = cards()[0]["text"] if cards() else ""
-check("``" not in txt, "still no empty-backtick scar when only the tail exists")
-check("Nothing else changed on the machine" in txt,
-      "the one sentence that survives decluttering is printed, not dropped "
-      "along with its broken neighbour")
+# -- 2. a turn END is NOT mirrored: Henry answers, the worker report stays his --
+# (owner 2026-10-09, screenshot: a cut-off "Result" bubble beside Henry's own
+# answer). The worker's reply goes to Henry via delivered-parked; he decides and
+# writes the owner-facing text. A card that needs the OWNER arrives as question.
+for reply in ("Fertig: der Mirror haengt an card_event.", "   ",
+              "DELIVERED - surfaces/app/x.tsx: folded Abmelden. Ready for Review"):
+    reset()
+    notify.card_event(card(last_reply=reply), "needs_you")
+    check(not cards(), "a turn end writes NO chat entry (%r...)" % reply[:18])
+check(card_mirror.mirror(card(last_reply="x"), "needs_you") is False,
+      "mirror() itself declines needs_you - not just notify")
 
 # -- 3. THE CORE PROPERTY: suppressed push, written inbox ---------------------
 for decision, why in (("silent", "the owner is looking at that very card"),
@@ -276,7 +188,7 @@ check(not cards(), "a card waiting on its OWN task is not the owner's move")
 # -- 6. the watch keeps them, with label parts and wrist-sized options --------
 reset()
 notify.card_event(card(question=ask_block("q-w")), "question")
-notify.card_event(card(tid="c-2", last_reply="Ergebnis fuer die Uhr"), "needs_you")
+notify.card_event(card(tid="c-2", question=ask_block("q-w2")), "question")
 
 from spine.http.routes import routes_wear
 
@@ -490,35 +402,25 @@ check(any(m.get("card") == "ghost" and m.get("kind") == card_mirror.KIND_CLOSED 
       "but a card-bound CLOSED entry is folded in, so the next history poll "
       "releases the ghost target instead of dead-ending on every send")
 
-# -- 10. accepting a card prints its own DONE line WITH the worker's reply ---
-# Owner correction 2026-09-14 18:40: for a machine/direct card, needs_you's
-# KIND_RESULT (the card's own result) used to be followed by a separate
-# dispatch._accept_machine "abgenommen und geschlossen (Maschinen-Aufgabe)"
-# board-chat line at Done, with no content of its own - two messages for one
-# completed unit of work, and a bare template does not carry news at least.
-# Reversed 2026-09-18 (owner: "warum muss ich nochmal fragen") - Done is often
-# the FIRST time anyone but the worker sees this card again (an unattended
-# accept, hours after needs_you), so it now DOES add a second line, but a
-# content-bearing one (the worker's own reply, via outcomes.excerpt), not the
-# needs_you distillation reprinted; still exactly one line for this event, not
-# a duplicate of needs_you's. Exercised here through the REAL
-# move_lane/_accept_machine path, not a stub, so a real double-print would
-# still be caught.
+# -- 10. accepting a card never pastes the worker's reply; Henry's note speaks --
+# 2026-10-09 (reverses 2026-09-18): the owner gets HENRY's account (the `note`
+# his move carries), not the worker's report re-printed. Real move_lane path.
 reset()
 MACH = card(tid="c-mach", machine=True, run_dir=SANDBOX, repo=SANDBOX,
            branch=sessions.MACHINE_BRANCH, worktree=SANDBOX,
            last_reply="DELIVERED: Autostart-Task angelegt.")
 _db.track_put(MACH)
 notify.card_event(MACH, "needs_you")
-check(len(cards()) == 1, "needs_you still writes its one RESULT line")
-out = sessions.move_lane("c-mach", "done", actor="owner")
+check(not cards(), "needs_you writes no RESULT line any more")
+out = sessions.move_lane("c-mach", "done", actor="henry",
+                         note="Der Autostart laeuft jetzt, du musst nichts tun.")
 check(out.get("status") == "accepted" and out.get("lane") == "done",
       "the accept itself still goes through")
-check(len(cards()) == 2,
-      "...and Done adds exactly ONE more line - the worker's own reply, not a "
-      "reprint of needs_you's distillation")
-check("Autostart-Task angelegt" in (cards()[-1].get("text") or ""),
-      "...and that line actually carries the worker's own words")
+txts = [c.get("text") or "" for c in cards()]
+check(any("Der Autostart laeuft jetzt" in x for x in txts),
+      "Henry's own account reaches the owner's chat")
+check(not any("Autostart-Task angelegt" in x for x in txts),
+      "the worker's raw reply is NOT pasted")
 
 print()
 if _fails:

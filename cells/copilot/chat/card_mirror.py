@@ -22,7 +22,8 @@ be the reconstruction CLAUDE.md's no-monkey-patches law forbids.
 
 WHAT THIS OWNS, and what it deliberately does not
 -------------------------------------------------
-Only `question` -> Frage and `needs_you` -> Ergebnis. The terminal lane
+Only `question` -> Frage (since 2026-10-09 `needs_you` -> Ergebnis is gone:
+Henry reads the worker's report and answers the owner himself). The terminal lane
 outcomes (`done`, `bounced`) already speak in the board chat through
 lanemachine._say_card, and have since the lane-visibility fix; mirroring them
 here as well would print every accept and every red gate TWICE. `_say_card`
@@ -58,7 +59,14 @@ KIND_CLOSED = "closed"         # the card is GONE (deleted/archived) - nothing b
 
 # notify reason -> mirror kind. Absent reasons are not mirrored at all (see the
 # module docstring for why `done`/`bounced`/`background` are not here).
-REASONS = {"question": KIND_QUESTION, "needs_you": KIND_RESULT}
+#
+# `needs_you` (a turn handed work back) is NOT here since 2026-10-09: the
+# worker's closing words, even distilled by code, reached the owner as a cut-off
+# "Result" bubble ("... Submission . ...") BESIDE Henry's own answer - the
+# worker report is written for Henry, and delivered-parked hands it to him; he
+# decides and answers in his own words (broker move/steer/notify_owner text).
+# A card that needs the OWNER still arrives as a `question`.
+REASONS = {"question": KIND_QUESTION}
 
 # A card's closing reply is mirrored as a PLAIN-LANGUAGE DISTILLATION, not the
 # raw text - reworked 2026-09-14 (owner correction 18:40) from the whole-reply
