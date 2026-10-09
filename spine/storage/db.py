@@ -548,9 +548,51 @@ def _migrate():
 
 # -- tracks --------------------------------------------------------------
 
-def tracks_all():
+# The board is read far more often than it is written: every sweep loop, every
+# dashboard hit and every relay poll used to json.loads ALL cards (584 rows,
+# 4.4 MB, ~73 ms with the GIL held - 60% of the daemon's CPU in a py-spy
+# profile, 2026-10-09). Same shape as events_all: the cache is keyed by a
+# generation that is advanced at EVENT TIME by the ONE set of writers below
+# (track_put / track_delete / tracks_replace, after their commit), and handed
+# out as marshal copies so a caller that mutates its result (every _mutate
+# does) can never poison another's view. The index is derived in the same
+# pass, so "which cards are running" needs no copy at all.
+# Only this process's writers advance the generation: an offline tool writing
+# the db directly (ops/tools/repair_mojibake.py) is seen after a daemon restart.
+_tracks_gen = 0
+_tracks_cache = (None, b"", {})      # (gen at fill, marshal.dumps(list), {id: (status, waiting_on)})
+_tracks_lock = threading.Lock()
+
+def _tracks_touched():
+    global _tracks_gen
+    with _tracks_lock:
+        _tracks_gen += 1
+
+def _tracks_fill():
+    global _tracks_cache
+    with _tracks_lock:
+        gen = _tracks_gen
+        cached_gen, blob, index = _tracks_cache
+    if cached_gen == gen:
+        return blob, index
     rows = conn().execute("SELECT data FROM tracks ORDER BY id DESC").fetchall()
-    return [json.loads(r[0]) for r in rows]
+    out = [json.loads(r[0]) for r in rows]
+    index = {t["id"]: (t.get("status"), t.get("waiting_on")) for t in out}
+    blob = marshal.dumps(out)
+    with _tracks_lock:
+        # A write that landed during the scan advanced the generation: do not
+        # file the (possibly older) snapshot under the newer key.
+        if _tracks_gen == gen:
+            _tracks_cache = (gen, blob, index)
+    return blob, index
+
+def tracks_all():
+    return marshal.loads(_tracks_fill()[0])
+
+def tracks_index():
+    """{card id: (status, waiting_on)} - for loops that only need to know WHICH
+    cards matter (the idle sweeper), without a copy of every card."""
+    return dict(_tracks_fill()[1])
 
 def track_get(tid):
     r = conn().execute("SELECT data FROM tracks WHERE id=?", (tid,)).fetchone()
@@ -560,11 +602,13 @@ def track_put(t):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO tracks(id,data) VALUES(?,?)",
                   (t["id"], json.dumps(t)))
+    _tracks_touched()
     bump(t["id"])
 
 def track_delete(tid):
     with conn() as c:
         c.execute("DELETE FROM tracks WHERE id=?", (tid,))
+    _tracks_touched()
     bump(tid)
 
 def tracks_replace(tracks):
@@ -574,6 +618,7 @@ def tracks_replace(tracks):
         for t in tracks:
             c.execute("INSERT INTO tracks(id,data) VALUES(?,?)",
                       (t["id"], json.dumps(t)))
+    _tracks_touched()
     for i in old + [t["id"] for t in tracks]:
         bump(i)
 
@@ -1953,8 +1998,27 @@ def devices_replace(rows):
                       (r["id"], r.get("owner") or r.get("user") or "", json.dumps(r, ensure_ascii=False)))
 
 
+# auth.resolve runs on EVERY request and re-parsed the whole users table each
+# time (~9% of daemon samples). users_replace is the one writer, so it advances
+# the generation after its commit; copies are marshal'd for the same reason as
+# the track cache.
+_users_gen = 0
+_users_cache = (None, b"")
+_users_lock = threading.Lock()
+
 def users_all():
-    return _rows_all("users")
+    global _users_cache
+    with _users_lock:
+        gen = _users_gen
+        cached_gen, blob = _users_cache
+    if cached_gen == gen:
+        return marshal.loads(blob)
+    rows = _rows_all("users")
+    blob = marshal.dumps(rows)
+    with _users_lock:
+        if _users_gen == gen:
+            _users_cache = (gen, blob)
+    return rows
 
 
 def users_replace(rows):
@@ -1967,6 +2031,9 @@ def users_replace(rows):
         for r in rows:
             c.execute("INSERT INTO users(name,data) VALUES(?,?)",
                       (r["name"], json.dumps(r, ensure_ascii=False)))
+    global _users_gen
+    with _users_lock:
+        _users_gen += 1
 
 
 @_migration(11, "events-db-first")

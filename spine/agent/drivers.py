@@ -334,9 +334,9 @@ def _running_cards():
         outlives the 5-minute idle TTL, so without this the feature would kill
         its own subject - the session stays until the task is done."""
     try:
-        from cells.engineer.cards import sessions
-        return {t.get("id") for t in sessions._load()
-                if t.get("status") == "running" or t.get("waiting_on") == "background"}
+        from spine.storage import db
+        return {tid for tid, (status, waiting_on) in db.tracks_index().items()
+                if status == "running" or waiting_on == "background"}
     except Exception:
         return set()
 
