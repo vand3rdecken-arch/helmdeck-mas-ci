@@ -254,6 +254,13 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
     dk = sorted(x["key"] for x in decide)
     new = dict(lat)
     new["seen_done"] = list(ps["done"])
+    # a process born empty carries its own moment too: it was filed to START
+    # work, so it must not wait for the next day slot (measured 2026-10-10:
+    # two processes filed at 09:53 sat empty, nothing ran until 14:00)
+    if not ps["steps"] and not is_goal and not lat.get("empty_seen"):
+        out.append("empty: noch keine Schritte - leg die ersten Karten an (direct_task / "
+                   "machine_task mit diesem Prozess)")
+        new["empty_seen"] = True
     # slot-bound: the day's rhythm, never a random hour
     if slot:
         _key, idx, prev = slot
@@ -272,10 +279,6 @@ def reasons_for(p, ps, lat, now, decide, is_goal=False, slot=None, stale=None):
         d = ps["days_left"]
         if idx == 0 and d is not None and 0 <= d <= DEADLINE_NEAR_DAYS:
             out.append("deadline: noch %d Tage" % d)
-        if not ps["steps"] and not is_goal and not lat.get("empty_seen"):
-            out.append("empty: noch keine Schritte - leg die ersten Karten an (direct_task / "
-                       "machine_task mit diesem Prozess)")
-            new["empty_seen"] = True
         if dk and set(dk) - set(lat.get("decide_seen") or []):
             out.append("decide: " + "; ".join(x["label"] for x in decide[:3])
                        + (" (+%d weitere)" % (len(decide) - 3) if len(decide) > 3 else "")

@@ -971,8 +971,15 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             if ct and not isinstance(ct, list):
                 processes.attach_card(p["id"], ct["id"], actor=actor)
                 joined.append(ct["id"])
-        return "process %s filed - agent is proposing steps%s" % (
-            p["id"], (" - Karten drin: " + ", ".join(joined)) if joined else "")
+        # No proposer exists any more (processes.create): an empty process
+        # only runs once YOU file its first card. The old line here said an
+        # agent was proposing steps, and Henry believed it and stopped (owner
+        # 2026-10-10: "startet Prozesse, aber keine Karten").
+        if joined:
+            return "process %s filed - Karten drin: %s" % (p["id"], ", ".join(joined))
+        return ("process %s filed, still EMPTY - nobody proposes steps. File its first "
+                "card now (machine_task / direct_task with \"process\": \"%s\")"
+                % (p["id"], p["id"]))
     if kind == "accept_steps":
         frag = (a.get("process") or "").lower()
         ps = [p for p in processes.list_processes()
