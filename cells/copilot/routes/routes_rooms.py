@@ -65,6 +65,17 @@ def rooms_messages_get(self, user):
     return self._send(200, json.dumps({"room": rooms.get(rid), "messages": msgs}))
 
 
+def rooms_live_get(self, user):
+    """What Henry is doing in this room right now (text / thinking / status /
+    tool steps / running), the room's twin of /chat/live. Members only; the
+    app polls it only while a @henry is pending."""
+    rid = (_q(self).get("room") or [""])[0]
+    if not rooms.is_member(rid, user["name"]):
+        return self._send(404, json.dumps({"error": "unknown room"}))
+    from cells.copilot.chat import room_henry
+    return self._send(200, json.dumps(room_henry.live(rid)))
+
+
 def rooms_new_post(self, user, body):
     try:
         room = rooms.create(body.get("name", ""), user["name"], body.get("members") or [])
@@ -151,6 +162,7 @@ def rooms_read_post(self, user, body):
 GET_ROUTES = {
     "/rooms": rooms_get,
     "/rooms/messages": rooms_messages_get,
+    "/rooms/live": rooms_live_get,
     "/rooms/accounts": rooms_accounts_get,
 }
 GET_CAPS = {

@@ -120,6 +120,16 @@ def _step(hid, tool_use=None, tool_result=None):
                     s["status"] = "failed" if tool_result.get("is_error") else "completed"
 
 
+def _room_steps(hid, room_id):
+    """Mirror an owner run's tool steps into its room's live feed."""
+    if not room_id:
+        return
+    with _lock:
+        steps = [dict(s) for s in (_tasks.get(hid) or {}).get("steps", [])]
+    from cells.copilot.chat import room_henry
+    room_henry.live_steps(room_id, steps)
+
+
 def running_ids():
     with _lock:
         return [k for k, t in _tasks.items() if t["status"] == "running"]
@@ -156,6 +166,8 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
     argv = [copilot.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", copilot.henry_pmode(),
             "--append-system-prompt-file", copilot._brief_file(brief)]
+    if room:                      # the room watches this run type (room_henry.live)
+        argv.insert(argv.index("--verbose") + 1, "--include-partial-messages")
     argv += harness.cli_args("machine-worker")
     # an agent needs no PC/browser: lean like Henry (no MCP servers, fast start)
     argv += copilot._lean_mcp_args() if agent else _mcp_config_arg({"allowed_tools": MCP_GRANTS}, capper=True)
@@ -294,6 +306,9 @@ def _pump(hid, p):
     last = time.time()
     result, is_error, steps = "", False, 0
     watchdog = {"stop": False}
+    with _lock:
+        room_id = ((_tasks.get(hid) or {}).get("room") or {}).get("id")
+    parts, think = [], []          # an owner run in a room streams into room_henry.live
 
     def _watch():
         while not watchdog["stop"]:
@@ -323,10 +338,15 @@ def _pump(hid, p):
                         if hid in _tasks:
                             _tasks[hid]["result"] = "%d Schritte, zuletzt %s" % (steps, b.get("name"))
                             _tasks[hid]["updated"] = time.time()
+                    _room_steps(hid, room_id)
         elif ev.get("type") == "user":
             for b in ((ev.get("message") or {}).get("content") or []):
                 if isinstance(b, dict) and b.get("type") == "tool_result":
                     _step(hid, tool_result=b)
+                    _room_steps(hid, room_id)
+        elif ev.get("type") == "stream_event" and room_id:
+            from cells.copilot.chat import room_henry
+            room_henry.live_event(room_id, ev, parts, think)
         elif ev.get("type") == "result":
             result = str(ev.get("result") or "")
             is_error = bool(ev.get("is_error"))
@@ -407,6 +427,8 @@ def _land_room(t, hid, status, result, steps):
         rooms.post(room, "Henry", text[:rooms.TEXT_MAX], by_kind="henry", extra=extra)
     except Exception as e:                               # noqa: BLE001
         print("hands: room post failed - %s" % str(e)[:160], flush=True)
+    from cells.copilot.chat import room_henry
+    room_henry.live_end(room)          # after the post: the answer is in the record first
 
 
 def _clip_tile(text):

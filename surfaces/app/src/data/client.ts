@@ -953,6 +953,12 @@ export const api = {
   rooms: () => req<import("./types").RoomSummary[]>("GET", "/rooms"),
   roomMessages: (room: string, after = 0) =>
     req<import("./types").RoomDetail>("GET", `/rooms/messages?room=${encodeURIComponent(room)}${after ? `&after=${after}` : ""}`),
+  /** What Henry is doing in this room right now - the room's twin of chatLive
+   *  (same fields; steps carry no `at`). Polled only while a @henry is pending. */
+  roomLive: (room: string) =>
+    req<{ text: string; thinking?: string; status?: string; running: boolean; since?: number | null;
+      steps?: { id?: string; tool: string; label: string; text?: string; status: "running" | "completed" | "failed"; ta?: number }[];
+    }>("GET", `/rooms/live?room=${encodeURIComponent(room)}`),
   roomPost: (room: string, text: string) =>
     req<import("./types").RoomMessage>("POST", "/rooms/post", { room, text }),
   roomNew: (name: string, members: string[]) =>

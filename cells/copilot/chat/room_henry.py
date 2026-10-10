@@ -32,6 +32,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 
 from cells.copilot.chat import rooms, copilot_memory
 
@@ -49,6 +50,8 @@ _FALLBACK_BRIEF = ("Du bist Henry in einem Team-Raum. Antworte nur der Person, d
 
 _locks = {}
 _waiting = {}
+_live_n = {}                    # rid -> Henry turns accepted and not yet ended
+_live_since = {}                # rid -> epoch the room's busy spell began
 _guard = threading.Lock()
 
 
@@ -126,27 +129,157 @@ def _empty_cwd():
     return d
 
 
-def run_claude(system, prompt, timeout=TIMEOUT):
-    """The ONE place this module spawns the CLI: (reply text, raw json).
+def live_key(rid):
+    """livebuf key for a room's in-flight Henry turn (same shape as the board
+    chat's copilot._live_key: partial / thinking / status / steps)."""
+    return "room:" + rid
+
+
+def live_begin(rid):
+    """A Henry turn for this room is accepted (queued or running). The count is
+    the room's `running` signal, observed - never a stored flag."""
+    with _guard:
+        _live_n[rid] = _live_n.get(rid, 0) + 1
+        _live_since.setdefault(rid, time.time())
+
+
+def live_turn(rid):
+    """A queued turn gets the lock: its fields start empty, not on the last
+    answer's text."""
+    from spine.agent import livebuf
+    livebuf.clear(live_key(rid))
+
+
+def live_end(rid):
+    from spine.agent import livebuf
+    with _guard:
+        n = max(0, _live_n.get(rid, 0) - 1)
+        _live_n[rid] = n
+        if n:
+            return
+        _live_since.pop(rid, None)
+    livebuf.clear(live_key(rid))
+
+
+def live_prose(text):
+    """What the room may watch typing: the reply without a half-typed
+    <memory-save> block (that is bookkeeping, never prose)."""
+    i = (text or "").lower().find("<memory-")
+    return (text if i < 0 else text[:i]).strip()
+
+
+def live_text(rid, parts):
+    from spine.agent import livebuf
+    livebuf.set_partial(live_key(rid), live_prose("".join(parts)))
+
+
+def live_event(rid, ev, parts, think):
+    """Fold one stream-json event of a room turn into the live buffer. The
+    same events copilot.chat() folds for the board chat, minus the tools (a
+    room turn has none unless it is the owner's run - see live_steps)."""
+    from spine.agent import livebuf
+    key = live_key(rid)
+    if ev.get("type") != "stream_event":
+        return
+    e = ev.get("event") or {}
+    t = e.get("type")
+    if t == "message_start":
+        livebuf.set_field(key, "status", "Anfrage läuft")
+    elif t == "content_block_start":
+        bt = (e.get("content_block") or {}).get("type") or ""
+        livebuf.set_field(key, "status", "überlegt" if bt == "thinking" else "" if bt == "text" else
+                          livebuf.get_field(key, "status", ""))
+    elif t == "content_block_delta":
+        dl = e.get("delta") or {}
+        if dl.get("type") == "text_delta":
+            parts.append(dl.get("text", ""))
+            live_text(rid, parts)
+        elif dl.get("type") == "thinking_delta":
+            think.append(dl.get("thinking", ""))
+            livebuf.set_field(key, "thinking", "".join(think)[-600:])
+
+
+def live_steps(rid, steps):
+    """The owner's run in a room: its tool steps, in the chat's live-step shape."""
+    from spine.agent import livebuf
+    livebuf.set_field(live_key(rid), "steps", json.dumps([
+        {"id": s.get("id", ""), "tool": s.get("tool") or s.get("label") or "tool",
+         "label": s.get("label") or "tool", "text": s.get("text") or "",
+         "status": s.get("status") or "running", "ta": s.get("ta")} for s in steps[-12:]]))
+
+
+def live(rid):
+    """GET /rooms/live: what Henry is doing in this room right now."""
+    from spine.agent import livebuf
+    key = live_key(rid)
+    try:
+        steps = json.loads(livebuf.get_field(key, "steps", "[]") or "[]")
+    except ValueError:
+        steps = []
+    with _guard:
+        running = _live_n.get(rid, 0) > 0
+        since = _live_since.get(rid) if running else None
+    return {"text": livebuf.get_field(key, "partial", ""),
+            "thinking": livebuf.get_field(key, "thinking", ""),
+            "status": livebuf.get_field(key, "status", ""),
+            "steps": steps if isinstance(steps, list) else [],
+            "running": running, "since": since}
+
+
+def run_claude(system, prompt, timeout=TIMEOUT, live=None):
+    """The ONE place this module spawns the CLI: (reply text, raw result event).
     stdin carries the turn; the brief goes as a FILE (Windows' command-line cap,
-    see copilot._brief_file)."""
+    see copilot._brief_file). stream-json, so room `live` (a room id) can watch
+    the reply and the reasoning arrive; the result event is the same dict the
+    old one-shot json output was."""
     from cells.copilot.chat import copilot
     from spine.agent import drivers
     from spine.agent.spawnenv import tool_path
     argv = _argv() + ["--system-prompt-file", copilot._brief_file(system)]
+    i = argv.index("json")                       # _argv's "--output-format json"
+    argv[i:i + 1] = ["stream-json", "--verbose", "--include-partial-messages"]
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=_empty_cwd(), stdin=subprocess.PIPE,
                          env=tool_path(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    try:
-        out, err = p.communicate(input=prompt, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    errbuf = []
+    threading.Thread(target=lambda: errbuf.append(p.stderr.read() or ""), daemon=True).start()
+    timed_out = []
+
+    def _kill():
+        timed_out.append(1)
         p.kill()
-        p.communicate()
-        raise
-    if not (out or "").strip():
-        raise RuntimeError("no model output: " + (err or "").strip()[:200])
-    raw = json.loads(out)
+    timer = threading.Timer(timeout, _kill)
+    timer.start()
+    raw, parts, think = None, [], []
+    try:
+        try:
+            p.stdin.write(prompt)
+            p.stdin.close()
+        except OSError:
+            pass
+        for line in p.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("type") == "result":
+                raw = ev
+            elif live:
+                live_event(live, ev, parts, think)
+        p.wait()
+    finally:
+        timer.cancel()
+        if p.poll() is None:
+            p.kill()
+    if timed_out:
+        raise subprocess.TimeoutExpired(argv, timeout)
+    if raw is None:
+        time.sleep(0.05)                          # let the stderr reader land
+        raise RuntimeError("no model output: " + ("".join(errbuf) or "").strip()[:200])
     try:                                   # the plan calibration's share of it
         from spine.turn import econ
         econ.record_spend("room", list((raw.get("modelUsage") or {}).keys()),
@@ -223,18 +356,23 @@ def answer(rid, author, text, runner=None):
     when the queue is full. `runner(system, prompt) -> (text, raw)` is the seam
     the tests use; production uses run_claude."""
     owner_turn = runner is None and _is_owner(author)   # a test seam runner always wins
-    runner = runner or run_claude
+    runner = runner or (lambda s, p: run_claude(s, p, live=rid))
     with _guard:
         if _waiting.get(rid, 0) >= MAX_QUEUED:
             return None
         _waiting[rid] = _waiting.get(rid, 0) + 1
+    live_begin(rid)
+    handed_off = False         # the owner's run ends the live spell itself (hands._land_room)
     try:
         with _lock_for(rid):
             room = rooms.get(rid)
             if not room:
                 return None
+            live_turn(rid)
             if owner_turn:
-                return _owner_turn(room, author, text)
+                posted = _owner_turn(room, author, text)
+                handed_off = posted is None
+                return posted
             viewer = copilot_memory.room_viewer(rid)
             rows = copilot_memory.all_notes(viewer)
             prompt = build_prompt(room, rooms.history(rid, author), author, text, rows)
@@ -254,6 +392,8 @@ def answer(rid, author, text, runner=None):
     finally:
         with _guard:
             _waiting[rid] = max(0, _waiting.get(rid, 1) - 1)
+        if not handed_off:
+            live_end(rid)
 
 
 def maybe_answer(msg, background=True, runner=None):

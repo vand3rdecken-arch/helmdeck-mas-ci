@@ -17,6 +17,7 @@ import type { TStep } from "@/ui/card_transcript";
 import { ChatSurface } from "@/ui/chat_surface";
 import { Empty, ScreenHeader } from "@/ui/kit";
 import { RoomProjects } from "@/ui/room_projects";
+import { ThinkingIndicator } from "@/ui/thinking_indicator";
 import { useResponsive } from "@/ui/responsive";
 
 const HENRY_WAIT_MS = 3 * 60 * 1000;     // a pending @henry stops reading as "answering" after this
@@ -89,6 +90,32 @@ export default function RoomScreen() {
     return false;
   }, [messages]);
 
+  // Henry's turn OBSERVED, like the board chat's /chat/live: the daemon says
+  // what he is doing (reasoning, prose so far, tool steps) and whether he still
+  // runs. Polled only while a turn is pending or running, never otherwise.
+  type Live = Awaited<ReturnType<typeof api.roomLive>>;
+  const [live, setLive] = useState<Live | null>(null);
+  const busy = pendingHenry || !!live?.running;
+  useEffect(() => {
+    if (!busy || !roomId) { setLive(null); return; }
+    let alive = true, to: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const r = await api.roomLive(roomId);
+        if (alive && r) {
+          setLive((prev) => {
+            // the turn just ended: the answer is in the record, fetch it now
+            if (prev?.running && !r.running) void qc.invalidateQueries({ queryKey: ["room", roomId] });
+            return r;
+          });
+        }
+      } catch { /* keep polling */ }
+      if (alive) to = setTimeout(poll, 500);
+    };
+    poll();
+    return () => { alive = false; clearTimeout(to); };
+  }, [busy, roomId, qc]);
+
   const palette = [t.accent2, t.ok, t.warn, t.human, t.ai];
   const colorOf = (who: string) => {
     let h = 0; for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -113,8 +140,15 @@ export default function RoomScreen() {
     }
     return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "human" };
   });
-  if (pendingHenry) {
-    steps.push({ role: "assistant", kind: "text", text: tr("rooms.henryWorking"), streaming: true, by: "Henry", byKind: "henry" });
+  // The live turn, drawn with the SAME rows the board chat uses: tool rows, then
+  // the prose as it types (streaming bubble). Before any prose, the thinking row.
+  const liveText = (live?.text ?? "").trim();
+  if (busy && live) {
+    for (const st of live.steps ?? []) {
+      steps.push({ role: "assistant", kind: "tool", tool: st.tool, label: st.label, text: st.text, ta: st.ta,
+        status: st.status, running: st.status === "running", by: "Henry", byKind: "henry" });
+    }
+    if (liveText) steps.push({ role: "assistant", kind: "text", text: live.text, streaming: true, by: "Henry", byKind: "henry" });
   }
 
   // members panel + card filing
@@ -200,7 +234,9 @@ export default function RoomScreen() {
 
       <ChatSurface steps={steps} me={me?.name} loading={isLoading} empty={<Empty text={tr("rooms.noMessages")} />}
         onSend={(txt, o) => send(txt, o)} placeholder={tr("rooms.placeholder")} draftKey={"room:" + roomId}
-        recipients={recipients} error={err} minimal />
+        recipients={recipients} error={err} minimal
+        afterTranscript={busy && !liveText
+          ? <ThinkingIndicator since={live?.since} preview={(live?.thinking ?? "").trim() || (live?.steps?.length ? "" : live?.status)} /> : null} />
     </View>
   );
 }
