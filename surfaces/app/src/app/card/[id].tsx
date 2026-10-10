@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, Keyboard, Pressable,
+  ActivityIndicator, Alert, Pressable,
   ScrollView, Text, TextInput, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,7 +27,8 @@ import { BackgroundTasks } from "@/ui/card_background";
 import { ContextMeter } from "@/ui/context_meter";
 import { QuestionPanel } from "@/ui/card_question";
 import { Transcript, type TStep } from "@/ui/card_transcript";
-import { ChatScroll, type ChatScrollHandle } from "@/ui/chat_scroll";
+import type { ChatScrollHandle } from "@/ui/chat_scroll";
+import { ChatSurface } from "@/ui/chat_surface";
 import { UnsentStrip } from "@/ui/outbox_strip";
 import { SignOff } from "@/ui/sign_off";
 import { useActionSheet } from "@/ui/action_sheet";
@@ -424,15 +425,6 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
   // ui/chat_scroll.tsx - shared with the board chat, so "follow the newest
   // message" and the "↓ Neueste" pill have ONE implementation to be right in.
   const scrollRef = useRef<ChatScrollHandle>(null);
-  // edge-to-edge (SDK 57) breaks Android adjustResize -> lift the composer above
-  // the keyboard by measuring its height (same fix as the board chat).
-  const [kb, setKb] = useState(0);
-  useEffect(() => {
-    const show = Keyboard.addListener("keyboardDidShow", (e) => setKb(e.endCoordinates.height));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKb(0));
-    return () => { show.remove(); hide.remove(); };
-  }, []);
-
   // drop an optimistic echo once the real feed carries that same user text.
   // Dedup by TEXT ALONE breaks on a repeated message (e.g. "continue" sent
   // twice): the moment the feed refetches, the OLD occurrence already matches
@@ -557,92 +549,89 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
     }
   }
 
+  // The conversation body is the SAME ChatSurface every Henry thread draws; the
+  // card only supplies its rows and what is particular to a card (what it waits
+  // on, its background tasks, its meter) through the slots.
   return (
-    <View style={{ flex: 1, paddingBottom: kb }}>
-      <View style={{ flex: 1 }}>
-        <ChatScroll ref={scrollRef} label={tr("card.chat.latest")}
-          contentContainerStyle={{ padding: 12, paddingBottom: 20 }}>
-          {steps.length === 0 ? (
-            // Loading != empty (chat-load-latency phase A.1): the transcript
-            // fetch is still in flight for up to a few seconds on a cold
-            // cache/slow relay, and rendering "noch keine Nachrichten" during
-            // that window is a LIE - it read as the card having no history at
-            // all, not as still loading.
-            loading ? <ActivityIndicator color={t.accent} style={{ marginTop: 24 }} /> :
-              <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />
-          ) :
-            <Transcript steps={steps} ctxWindow={k.ctx_window} onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })} />}
-        </ChatScroll>
-      </View>
+    <ChatSurface scrollRef={scrollRef} steps={steps} ctxWindow={k.ctx_window} colMax={null} bottomInset={bottomInset}
+      onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })}
+      isEmpty={steps.length === 0}
+      // Loading != empty (chat-load-latency phase A.1): the transcript fetch is
+      // still in flight for up to a few seconds on a cold cache/slow relay, and
+      // rendering "noch keine Nachrichten" during that window is a LIE.
+      empty={loading ? <ActivityIndicator color={t.accent} style={{ marginTop: 24 }} />
+        : <Empty text={k.turns > 0 ? tr("card.chat.historyLost", { n: k.turns }) : tr("card.chat.noMessages")} />}
+      aboveComposer={(
+        <>
+          {/* What the parked card is waiting on. Two distinct cases:
+                - a typed question  -> real option buttons; answering CONTINUES the
+                  same session (Phase 2.4), so it replaces the generic cue entirely
+                - a background task -> not your move at all; the compact task line
+                  below carries that (Paseo parity: ONE line, not pill + list) -
+                  the pill stays only for pre-registry cards with no bg_tasks
+              The plain "your move, steering resumes" cue was dropped (owner
+              feedback): it's redundant with the status badge above and the
+              background-tasks line below, and just added clutter. */}
+          {!running && !streaming && k.question ? (
+            <QuestionPanel question={k.question}
+              // the card door: settles the question AND resumes the parked session
+              onSubmit={(answers, rid) => api.answer(k.id, answers, rid)}
+              onAnswered={async () => {
+                // the answer starts a turn: pull the card (status->running, question
+                // cleared) and the feed so the panel gives way to the live turn.
+                await qc.invalidateQueries({ queryKey: ["tracks"] });
+                await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
+              }} />
+          ) : !running && !streaming && (k.status === "needs_you" || k.status === "bounced")
+              && k.waiting_on === "background"
+              && !(k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
+            <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
+                backgroundColor: t.ai + "1A", borderColor: t.ai + "66", borderWidth: 1, borderRadius: 10,
+                paddingHorizontal: 12, paddingVertical: 7 }}>
+                <Ionicons name="hourglass-outline" size={14} color={t.ai} />
+                <Text style={{ color: t.txtSecondary, fontSize: 12 }}>
+                  {tr("card.chat.awaitingBackground", { n: k.background?.n ?? 1 })}
+                </Text>
+              </View>
+            </View>
+          ) : null}
 
-      {/* What the parked card is waiting on. Two distinct cases:
-            - a typed question  -> real option buttons; answering CONTINUES the
-              same session (Phase 2.4), so it replaces the generic cue entirely
-            - a background task -> not your move at all; the compact task line
-              below carries that (Paseo parity: ONE line, not pill + list) -
-              the pill stays only for pre-registry cards with no bg_tasks
-          The plain "your move, steering resumes" cue was dropped (owner
-          feedback): it's redundant with the status badge above and the
-          background-tasks line below, and just added clutter. */}
-      {!running && !streaming && k.question ? (
-        <QuestionPanel question={k.question}
-          // the card door: settles the question AND resumes the parked session
-          onSubmit={(answers, rid) => api.answer(k.id, answers, rid)}
-          onAnswered={async () => {
-            // the answer starts a turn: pull the card (status->running, question
-            // cleared) and the feed so the panel gives way to the live turn.
-            await qc.invalidateQueries({ queryKey: ["tracks"] });
-            await qc.invalidateQueries({ queryKey: ["transcript", k.id] });
-          }} />
-      ) : !running && !streaming && (k.status === "needs_you" || k.status === "bounced")
-          && k.waiting_on === "background"
-          && !(k.bg_tasks && Object.keys(k.bg_tasks).length > 0) ? (
-        <View style={{ paddingHorizontal: 12, paddingTop: 8, alignItems: "center" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 7,
-            backgroundColor: t.ai + "1A", borderColor: t.ai + "66", borderWidth: 1, borderRadius: 10,
-            paddingHorizontal: 12, paddingVertical: 7 }}>
-            <Ionicons name="hourglass-outline" size={14} color={t.ai} />
-            <Text style={{ color: t.txtSecondary, fontSize: 12 }}>
-              {tr("card.chat.awaitingBackground", { n: k.background?.n ?? 1 })}
-            </Text>
+          {/* Background tasks as ONE compact expandable line (Paseo SubagentsTrack):
+              shown whenever the card has task descriptors, so finished/canceled
+              ones stay inspectable inside the expansion - and it carries the
+              "waiting, not your move" state itself when the card is parked on
+              them, replacing a second blocker pill. */}
+          {k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
+            <BackgroundTasks tasks={k.bg_tasks} waiting={k.waiting_on === "background"} />
+          ) : null}
+
+          {/* The pre-output cue only. Once Henry's prose starts arriving it streams
+              into the transcript as a normal bubble (see the steps memo), so this
+              row stands down instead of sitting under a reply that is already
+              being written. */}
+          {henryBusy && !henryStream.trim() ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
+              <ActivityIndicator size="small" color={t.accent2} />
+              <Text style={{ color: t.accent2, fontSize: 11.5 }}>{tr("card.chat.henryThinking")}</Text>
+            </View>
+          ) : null}
+
+          {/* Context meter (Paseo-parity): the worker's window fills over a long card
+              and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
+              Shared with the board/PM chat - see ui/context_meter.tsx. */}
+          <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
+            <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window}
+              details={meRole === "owner" ? <UsageWindows /> : undefined} />
           </View>
-        </View>
-      ) : null}
 
-      {/* Background tasks as ONE compact expandable line (Paseo SubagentsTrack):
-          shown whenever the card has task descriptors, so finished/canceled
-          ones stay inspectable inside the expansion - and it carries the
-          "waiting, not your move" state itself when the card is parked on
-          them, replacing a second blocker pill. */}
-      {k.bg_tasks && Object.keys(k.bg_tasks).length > 0 ? (
-        <BackgroundTasks tasks={k.bg_tasks} waiting={k.waiting_on === "background"} />
-      ) : null}
-
-      {/* The pre-output cue only. Once Henry's prose starts arriving it streams
-          into the transcript as a normal bubble (see the steps memo), so this
-          row stands down instead of sitting under a reply that is already
-          being written. */}
-      {henryBusy && !henryStream.trim() ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 6 }}>
-          <ActivityIndicator size="small" color={t.accent2} />
-          <Text style={{ color: t.accent2, fontSize: 11.5 }}>{tr("card.chat.henryThinking")}</Text>
-        </View>
-      ) : null}
-
-      {/* Context meter (Paseo-parity): the worker's window fills over a long card
-          and it just STOPS with "Kontext ist am Ende" - now you SEE it coming.
-          Shared with the board/PM chat - see ui/context_meter.tsx. */}
-      <View style={{ paddingHorizontal: 12, paddingTop: 8 }}>
-        <ContextMeter tokens={k.ctx_tokens} window={k.ctx_window}
-          details={meRole === "owner" ? <UsageWindows /> : undefined} />
-      </View>
-
-      <UnsentStrip scope={`card:${k.id}`} onRetry={(m) => handleSend(m.text, m.opts, m.id)} />
-      <Composer onSend={handleSend} busy={running} onStop={onStop} models={models} modeOptions={modeOptions}
-        slashCommands={slashCommands(tr)} seed={seed} bottomInset={kb > 0 ? bottomInset + 10 : bottomInset} draftKey={`card:${k.id}`}
-        recipients={recipients} defaultTo={defaultTo}
-        placeholder={tr(k.session_id ? "card.chat.phWorkerLive" : "card.chat.phWorkerIdle")} />
-    </View>
+          <UnsentStrip scope={`card:${k.id}`} onRetry={(m) => handleSend(m.text, m.opts, m.id)} />
+        </>
+      )}
+      onSend={handleSend} busy={running} onStop={onStop} models={models} draftKey={`card:${k.id}`}
+      recipients={recipients}
+      composer={{ modeOptions, slashCommands: slashCommands(tr), seed, defaultTo }}
+      placeholder={tr(k.session_id ? "card.chat.phWorkerLive" : "card.chat.phWorkerIdle")} />
   );
 }
 

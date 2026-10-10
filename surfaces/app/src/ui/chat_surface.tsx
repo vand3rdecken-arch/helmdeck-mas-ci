@@ -54,8 +54,12 @@ export interface ChatSurfaceProps {
   /** Transcript extras */
   ctxWindow?: number;
   onReply?: React.ComponentProps<typeof Transcript>["onReply"];
-  /** widest the column grows on a wide window (default 760) */
-  colMax?: number;
+  /** widest the column grows on a wide window (default 760); null = never capped (the card pane) */
+  colMax?: number | null;
+  /** the screen's own bottom inset when it is not the plain safe-area one */
+  bottomInset?: number;
+  /** a user row's "rewind": put its text back into the composer */
+  onRewind?: React.ComponentProps<typeof Transcript>["onRewind"];
   /** space reserved under the composer for a floating tab bar */
   tabClear?: number;
   /** the screen may hold the scroll handle (pin to newest after its own send) */
@@ -63,15 +67,15 @@ export interface ChatSurfaceProps {
 }
 
 export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeholder, draftKey, recipients, error,
-  top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, onReply, colMax, tabClear,
-  scrollRef }: ChatSurfaceProps) {
+  top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, onReply, onRewind, colMax, tabClear,
+  bottomInset, scrollRef }: ChatSurfaceProps) {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
   const { wide } = useResponsive();
   const own = useRef<ChatScrollHandle>(null);
   const scroll = scrollRef ?? own;
-  const col = colMax ?? (wide ? 760 : undefined);
+  const col = colMax === null ? undefined : (colMax ?? (wide ? 760 : undefined));
 
   // manual keyboard spacer (Android edge-to-edge ignores adjustResize): works on
   // both platforms without a native lib
@@ -91,7 +95,7 @@ export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeh
           contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: col, alignSelf: "center" }}>
           {nothing
             ? (empty ?? <Empty text={tr("chat.empty")} />)
-            : <Transcript me={me} steps={steps} ctxWindow={ctxWindow} onReply={onReply}
+            : <Transcript me={me} steps={steps} ctxWindow={ctxWindow} onReply={onReply} onRewind={onRewind}
                 onJump={(y) => scroll.current?.toY(y)} />}
           {afterTranscript}
         </ChatScroll>
@@ -100,7 +104,7 @@ export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeh
           {error ? <Text style={{ color: t.danger, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 }}>{error}</Text> : null}
           <Composer {...composer} onSend={(txt, o) => { scroll.current?.toBottom(); return onSend(txt, o); }} models={models ?? ["auto"]} minimal={minimal} busy={busy} onStop={onStop}
             placeholder={placeholder} draftKey={draftKey} recipients={recipients}
-            bottomInset={kb > 0 ? insets.bottom + 10 : insets.bottom + 8} />
+            bottomInset={kb > 0 ? (bottomInset ?? insets.bottom) + 10 : (bottomInset ?? insets.bottom + 8)} />
         </View>
         {kb > 0 ? <View style={{ height: kb }} /> : tabClear ? <View style={{ height: tabClear }} /> : null}
       </View>
