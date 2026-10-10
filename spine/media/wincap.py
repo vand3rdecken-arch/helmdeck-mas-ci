@@ -62,8 +62,24 @@ def _write_pids(pids):
         pass
 
 
+def enabled():
+    """Workspace policy `screen_capture` (events.settings, owner-only, default
+    on). Off = no ffmpeg is ever spawned: each recorder is a gdigrab+libx264
+    process, and four at once were measured eating ~0.9 GB on a box with
+    0.7 GB free (2026-10-10). Read per call, so flipping it needs no restart."""
+    try:
+        from spine.storage import events
+        return events.settings().get("screen_capture", True) is not False
+    except Exception:                  # noqa: BLE001 - unreadable policy = default
+        return True
+
+
 def start(run_dir, fps=8):
-    """Start capturing the whole desktop. Returns the Popen; stop with stop()."""
+    """Start capturing the whole desktop. Returns the Popen (stop with stop()),
+    or None when `screen_capture` is off - every caller already treats a
+    missing recorder as "no recording"."""
+    if not enabled():
+        return None
     mp4 = os.path.join(run_dir, "screen.mp4")
     live = os.path.join(run_dir, "live.jpg")
     cmd = [_ffmpeg(), "-y", "-loglevel", "error",

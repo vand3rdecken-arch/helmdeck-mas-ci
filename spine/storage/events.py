@@ -28,6 +28,9 @@ SET = os.path.join(ROOT, "settings.json")
 RELAY_FEED = os.path.join(ROOT, "relay_feed.json")
 
 DEFAULTS = {
+    # screen recordings (wincap/ffmpeg) on cards, browser runs and teach mode;
+    # off saves a gdigrab+libx264 process per run. See spine/media/wincap.py.
+    "screen_capture": True,
     # capacity: what a sustainable day looks like, self-declared. Touches consume it.
     "capacity": {"wip_limit": 6, "touch_budget_day": 30,
                  "tariff": {"steer": 1, "review": 1, "bounce": 3}},
