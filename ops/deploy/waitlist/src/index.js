@@ -1590,17 +1590,39 @@ PostHog project, and the exact retention period under the PostHog tier in use.</
 
 const IMPRESSUM_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>HelmDeck: Kontakt / Contact</title>
+<title>HelmDeck: Impressum / Legal notice</title>
 <style>${LEGAL_STYLE}</style>
-<h1>Kontakt</h1>
+<h1>Impressum</h1>
 <p class=muted><a href="#en">English version below</a></p>
+
+<h2>Angaben gemäß § 5 DDG</h2>
 <p>Tien Duy Vo<br>
-E-Mail: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+*** 6<br>
+*** Frankfurt am Main<br>
+Deutschland</p>
+
+<h2>Kontakt</h2>
+<p>E-Mail: <a href="mailto:support@helmdeck.de">support@helmdeck.de</a></p>
+
+<h2>Verantwortlich für den Inhalt</h2>
+<p>Tien Duy Vo, Anschrift wie oben.</p>
+
 <p>HelmDeck ist ein privates Hobby- und Research-Projekt von Tien Duy Vo.</p>
 <hr>
-<h1 id=en>Contact</h1>
+<h1 id=en>Legal notice</h1>
+
+<h2>Provider identification under section 5 DDG</h2>
 <p>Tien Duy Vo<br>
-Email: <a href="mailto:tienduyvo@googlemail.com">tienduyvo@googlemail.com</a></p>
+*** 6<br>
+*** Frankfurt am Main<br>
+Germany</p>
+
+<h2>Contact</h2>
+<p>Email: <a href="mailto:support@helmdeck.de">support@helmdeck.de</a></p>
+
+<h2>Responsible for the content</h2>
+<p>Tien Duy Vo, address as above.</p>
+
 <p>HelmDeck is a private hobby and research project by Tien Duy Vo.</p>
 </html>`;
 

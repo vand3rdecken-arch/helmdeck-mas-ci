@@ -425,8 +425,12 @@ helmdeck.de gilt die <a href="/datenschutz">Datenschutzerklärung von
 HelmDeck</a>.</p>
 
 <h2>Verantwortlich</h2>
-<p>Tien Duy Vo, Kontakt
-<a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a>.</p>
+<p>Tien Duy Vo<br>
+*** 6<br>
+*** Frankfurt am Main<br>
+Deutschland<br>
+Kontakt <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a></p>
+<p class=muted>Anbieterkennzeichnung: <a href="/impressum">Impressum</a></p>
 
 <h2>Wo die App läuft</h2>
 <p>Label-Doktor ist eine Atlassian Forge App. Sie läuft vollständig in der
@@ -488,8 +492,12 @@ Sie die App deinstallieren.</p>
 see the <a href="/privacy">HelmDeck privacy policy</a>.</p>
 
 <h2>Controller</h2>
-<p>Tien Duy Vo, contact
-<a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a>.</p>
+<p>Tien Duy Vo<br>
+*** 6<br>
+*** Frankfurt am Main<br>
+Germany<br>
+Contact <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a></p>
+<p class=muted>Legal notice: <a href="/imprint">Imprint</a></p>
 
 <h2>Where the app runs</h2>
 <p>Label-Doktor is an Atlassian Forge app. It runs entirely in Atlassian's Forge
