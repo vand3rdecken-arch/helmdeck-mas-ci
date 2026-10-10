@@ -962,6 +962,9 @@ export const api = {
   roomCard: (room: string, task: string) =>
     req<{ id: string; geteilt_mit: string[] }>("POST", "/rooms/card", { room, task }),
   projectsShared: () => req<import("./types").SharedProject[]>("GET", "/projects/shared"),
+  projectBrowse: (path: string) =>
+    req<{ path: string; parent: string; dirs: string[]; drives: string[]; error?: string; truncated?: boolean }>(
+      "GET", `/projects/browse?path=${encodeURIComponent(path)}`),
   projectFolder: (path: string, name: string) =>
     req<{ id: string; name: string }>("POST", "/projects/folder", { path, name }),
   projectShare: (id: string, add: string[], remove: string[]) =>

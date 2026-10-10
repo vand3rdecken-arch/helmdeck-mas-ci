@@ -143,6 +143,38 @@ r = Post()
 routes_projects.projects_folder_post(r, OWNER, {"path": os.path.join(SANDBOX, "gibts-nicht")})
 check(r.sent[0] == 400, "6. a missing folder is refused")
 
+# 7. the folder picker's read: sub-folder NAMES only, no files, no hidden, parent given
+root = os.path.join(SANDBOX, "browse")
+for d in ("Immobilien", "aktien", ".versteckt"):
+    os.makedirs(os.path.join(root, d))
+open(os.path.join(root, "datei.txt"), "w").close()
+
+
+class Get(object):
+    def __init__(self, path):
+        self.path = "/projects/browse?path=" + root_q(path)
+        self.sent = None
+
+    def _send(self, status, body, *a):
+        self.sent = (status, json.loads(body))
+
+
+def root_q(p):
+    from urllib.parse import quote
+    return quote(p)
+
+
+g = Get(root)
+routes_projects.projects_browse_get(g, OWNER)
+check(g.sent[1]["dirs"] == ["aktien", "Immobilien"], "7. browse lists folders only, sorted, no files, no hidden")
+check(g.sent[1]["parent"] == SANDBOX, "7. browse names the parent folder")
+g = Get(os.path.join(root, "gibts-nicht"))
+routes_projects.projects_browse_get(g, OWNER)
+check(g.sent[1].get("error") and g.sent[1]["dirs"] == [], "7. a missing folder answers an error, not a crash")
+check(routes_projects.POST_CAPS.get("/projects/folder") == "projects.manage"
+      and routes_projects.GET_CAPS.get("/projects/browse") == "projects.manage",
+      "7. browsing and registering a folder need projects.manage (owner)")
+
 print()
 print("FAILED: %d" % len(_fails) if _fails else "ALL PASS")
 sys.exit(1 if _fails else 0)

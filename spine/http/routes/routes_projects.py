@@ -143,8 +143,47 @@ def projects_folder_post(self, user, body):
     return self._send(200, json.dumps({"id": p["id"], "name": p["name"]}, ensure_ascii=False))
 
 
+BROWSE_MAX = 400
+
+
+def _drives():
+    import os
+    return [d for d in ("%s:\\" % c for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ") if os.path.isdir(d)]
+
+
+def projects_browse_get(self, user):
+    """The folder picker's one read: the sub-FOLDERS of `path` on this machine
+    (names only - never files, never contents), its parent, and the drive roots
+    on Windows. Empty path = the owner's home. Hidden/system names are skipped.
+    Capability projects.manage (owner): the same account that already has the
+    machine tools; a guest never reaches the filesystem through it."""
+    import os
+    from urllib.parse import parse_qs, urlparse
+    q = parse_qs(urlparse(self.path).query)
+    raw = (q.get("path") or [""])[0].strip()
+    path = os.path.abspath(raw) if raw else os.path.expanduser("~")
+    out = {"path": path, "parent": "", "dirs": [], "drives": _drives() if os.name == "nt" else []}
+    parent = os.path.dirname(path.rstrip(os.sep + "/"))
+    if parent and parent != path.rstrip(os.sep + "/"):
+        out["parent"] = parent
+    if not os.path.isdir(path):
+        out["error"] = "Ordner nicht gefunden"
+        return self._send(200, json.dumps(out, ensure_ascii=False))
+    try:
+        names = [n for n in os.listdir(path)
+                 if not n.startswith((".", "$")) and os.path.isdir(os.path.join(path, n))]
+    except OSError as e:
+        out["error"] = "Kein Zugriff: %s" % str(e)[:80]
+        return self._send(200, json.dumps(out, ensure_ascii=False))
+    names.sort(key=str.lower)
+    out["dirs"] = names[:BROWSE_MAX]
+    out["truncated"] = len(names) > BROWSE_MAX
+    return self._send(200, json.dumps(out, ensure_ascii=False))
+
+
 GET_ROUTES = {
     "/projects": projects_list_get,
+    "/projects/browse": projects_browse_get,
     "/projects/shared": projects_shared_get,
     "/repo/templates": repo_templates_get,
 }
@@ -157,6 +196,7 @@ POST_ROUTES = {
 GET_CAPS = {
     "/projects": "projects.view",
     "/repo/templates": "projects.view",
+    "/projects/browse": "projects.manage",
 }
 POST_CAPS = {
     "/projects": "projects.manage",

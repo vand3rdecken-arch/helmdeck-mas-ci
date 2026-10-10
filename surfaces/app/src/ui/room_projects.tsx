@@ -6,6 +6,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
+import { MachineFolderPicker, folderName } from "@/ui/machine_folder_picker";
 import { useTheme } from "@/theme";
 
 // The project folders of a room (GET /projects/shared). A member sees the
@@ -31,6 +32,7 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
   const [path, setPath] = useState("");
   const [fname, setFname] = useState("");
   const [addErr, setAddErr] = useState("");
+  const [picking, setPicking] = useState(false);
   const addFolder = useMutation({
     mutationFn: () => api.projectFolder(path.trim(), fname.trim()),
     onSuccess: () => {
@@ -111,9 +113,15 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
         {owner ? (
           adding ? (
             <View style={{ gap: 8, padding: 8 }}>
-              <TextInput value={path} onChangeText={setPath} placeholder={tr("rooms.folderPath")} autoCapitalize="none" autoCorrect={false}
-                placeholderTextColor={t.txtPlaceholder}
-                style={{ color: t.txtPrimary, fontSize: 14, borderBottomWidth: 1, borderBottomColor: t.borderSubtle, paddingVertical: 6 }} />
+              <Pressable onPress={() => setPicking(true)}
+                style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 }}>
+                <Ionicons name="folder-open-outline" size={18} color={t.accent} />
+                <Text numberOfLines={2} style={{ color: path ? t.txtPrimary : t.accent, fontSize: 14, flex: 1 }}>
+                  {path || tr("rooms.pickTitle")}
+                </Text>
+              </Pressable>
+              <MachineFolderPicker visible={picking} onClose={() => setPicking(false)}
+                onPick={(picked: string) => { setPath(picked); setPicking(false); if (!fname.trim()) setFname(folderName(picked)); }} />
               <TextInput value={fname} onChangeText={setFname} placeholder={tr("rooms.folderName")} maxLength={60}
                 placeholderTextColor={t.txtPlaceholder}
                 style={{ color: t.txtPrimary, fontSize: 14, borderBottomWidth: 1, borderBottomColor: t.borderSubtle, paddingVertical: 6 }} />
