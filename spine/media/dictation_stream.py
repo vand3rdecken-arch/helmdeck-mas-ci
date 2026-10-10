@@ -92,21 +92,21 @@ def _warm_quietly():
         pass
 
 
-def _default_cleanup_warm():
+def _default_cleanup_warm(owner=None):
     from spine.media import dictation_cleanup
-    dictation_cleanup.prewarm()
+    dictation_cleanup.prewarm(owner)
 
 
 #: Boot the cleanup model process too, so the cleaned text swaps in within a
 #: second of the recording ending instead of after a 4-11 s process start. It is
-#: a no-op when cleanup is switched off; tests replace it (they must not spawn a
+#: a no-op when the account switched polish off; tests replace it (they must not spawn a
 #: real model process).
 cleanup_warm = _default_cleanup_warm
 
 
-def _cleanup_warm_quietly():
+def _cleanup_warm_quietly(owner=None):
     try:
-        cleanup_warm()
+        cleanup_warm(owner)
     except Exception:                    # noqa: BLE001 - a warm-up is a bonus
         pass
 
@@ -171,7 +171,7 @@ def start(owner, did, fmt=PCM_FORMAT):
             mine.remove(oldest)
         _STREAMS[(owner, did)] = Stream(owner, did)
     threading.Thread(target=_warm_quietly, daemon=True, name="dictation-warm").start()
-    threading.Thread(target=_cleanup_warm_quietly, daemon=True, name="dictation-cleanup-warm").start()
+    threading.Thread(target=_cleanup_warm_quietly, args=(owner,), daemon=True, name="dictation-cleanup-warm").start()
     return {"id": did, "ack": -1}
 
 

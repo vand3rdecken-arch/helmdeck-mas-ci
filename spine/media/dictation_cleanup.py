@@ -152,7 +152,7 @@ def vocab():
     return out
 
 
-def argv(warm=False):
+def argv(warm=False, model=None):
     """The exact command line. Pinned by test: every flag here is a measured cost
     lever. `warm=True` is the persistent form (stream-json in AND out; the dictation
     arrives as one JSON line per turn instead of on a closed stdin)."""
@@ -161,7 +161,7 @@ def argv(warm=False):
     if not os.path.exists(empty):
         with open(empty, "w", encoding="utf-8") as f:
             f.write('{"mcpServers":{}}')
-    a = [drivers.CLAUDE, "-p", "--model", MODEL, "--output-format", "json",
+    a = [drivers.CLAUDE, "-p", "--model", model or MODEL, "--output-format", "json",
          "--tools", "", "--no-session-persistence", "--disable-slash-commands",
          "--setting-sources", "",
          "--strict-mcp-config", "--mcp-config", empty,
@@ -183,14 +183,14 @@ def _user_message(text, context=""):
     return "Bereinige dieses Diktat, gib nur den Text zurueck.\n%s<diktat>%s</diktat>" % (ctx, text)
 
 
-def _run_oneshot(text, context=""):
+def _run_oneshot(text, context="", model=None):
     """ONE model call in a fresh process (4-11 s, almost all of it process boot).
     Kept as the switch-off path of the warm worker (settings.dictation_cleanup_warm
     = false). The dictation goes in on stdin, never in argv."""
     env = dict(os.environ)
     env.update(ENV_EXTRA)
     with _SLOTS:
-        p = subprocess.Popen(argv(), cwd=tempfile.gettempdir(), stdin=subprocess.PIPE,
+        p = subprocess.Popen(argv(model=model), cwd=tempfile.gettempdir(), stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                              encoding="utf-8", errors="replace", env=env,
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -238,7 +238,8 @@ spawn_fn = _spawn_popen
 
 
 class _Warm:
-    def __init__(self):
+    def __init__(self, model=None):
+        self.model = model or MODEL           # one warm process per model: the model is fixed at spawn
         self.lock = threading.Lock()          # one request at a time; also guards spawn/kill
         self.p = None
         self.q = None
@@ -264,7 +265,7 @@ class _Warm:
         self._kill()
         env = dict(os.environ)
         env.update(ENV_EXTRA)
-        p = spawn_fn(argv(warm=True), env)
+        p = spawn_fn(argv(warm=True, model=self.model), env)
         q = queue.Queue()
 
         def pump():
@@ -356,25 +357,34 @@ class _Warm:
 
 
 _WARM = _Warm()
+_WARMS = {MODEL: _WARM}      # model id -> its warm process (the account may pick another)
 
 
-def _run(text, context=""):
+def _warm_for(model):
+    m = model or MODEL
+    if m not in _WARMS:
+        _WARMS[m] = _Warm(m)
+    return _WARMS[m]
+
+
+def _run(text, context="", model=None):
     """The default runner: the warm process, or a one-shot when switched off."""
     try:
         warm = settings_fn().get("dictation_cleanup_warm", True) is not False
     except Exception:                                        # noqa: BLE001
         warm = True
-    return _WARM.ask(text, context) if warm else _run_oneshot(text, context)
+    return _warm_for(model).ask(text, context) if warm else _run_oneshot(text, context, model)
 
 
-def prewarm():
-    """Called when a dictation STARTS: the process is booted by the time the
-    recording ends. A no-op when cleanup is switched off. Never raises."""
+def prewarm(user=None):
+    """Called when a dictation STARTS: the process of the account's model is booted
+    by the time the recording ends. A no-op when the account switched polish off.
+    Never raises."""
     try:
-        s = settings_fn()
-        if s.get("dictation_cleanup", True) is False or s.get("dictation_cleanup_warm", True) is False:
+        on, model = account(user)
+        if not on or settings_fn().get("dictation_cleanup_warm", True) is False:
             return
-        _WARM.prewarm()
+        _warm_for(model).prewarm()
     except Exception:                                        # noqa: BLE001 - a warm-up is a bonus
         pass
 
@@ -405,9 +415,31 @@ def _accept(src, out):
     return None
 
 
+def _polish_profile(user):
+    from spine.storage import userconfig
+    if not user:                                            # no account (a bare call): the shipped default
+        return dict(userconfig.POLISH_DEFAULT)
+    return userconfig.resolve(user).get("polish") or {}
+
+
+profile_fn = _polish_profile
+
+
+def account(user):
+    """(on, model id) for this account - the ONE place the switch and the model
+    live (profile key `polish`), for our own dictation AND for keyboard text."""
+    try:
+        from spine.storage import userconfig
+        p = profile_fn(user) or {}
+        return bool(p.get("on")), userconfig.POLISH_MODELS.get(p.get("model") or "haiku")
+    except Exception:                                        # noqa: BLE001 - unreadable profile = off
+        return False, None
+
+
 def clean(text, user=None):
     """-> {"text", "changed", "skipped", "ms"}. Never raises; on any doubt the
-    original text comes back with `skipped` naming why."""
+    original text comes back with `skipped` naming why. The account's own
+    switch and model decide (profile key `polish`)."""
     t0 = time.time()
     src = (text or "").strip()
 
@@ -415,17 +447,15 @@ def clean(text, user=None):
         return {"text": out, "changed": out != src, "skipped": skipped,
                 "ms": int((time.time() - t0) * 1000)}
 
-    try:
-        if settings_fn().get("dictation_cleanup", True) is False:
-            return done(src, "off")
-    except Exception:                                        # noqa: BLE001 - unreadable settings = default on
-        pass
+    on, model = account(user)
+    if not on:
+        return done(src, "off")
     if len(src.split()) < MIN_WORDS:
         return done(src, "short")
     if len(src) > MAX_CHARS:
         return done(src, "long")
     try:
-        r = runner(src, context_block(user))
+        r = runner(src, context_block(user), model=model)
     except Exception as e:                                   # noqa: BLE001
         return done(src, "error: %s" % str(e)[:120])
     try:

@@ -85,7 +85,8 @@ def test_fresh_device_hydrates():
     workspace(policy={"lang": "de"}, appearance={"backdrop": "mesh"})
     userconfig.write("dave", {"appearance": {"backdrop": "ember"}}, actor="dave")
     fresh = userconfig.resolve("dave")
-    check(fresh == {"lang": "de", "appearance": {"backdrop": "ember"}},
+    check(fresh == {"lang": "de", "appearance": {"backdrop": "ember"},
+                    "polish": {"on": True, "model": "haiku"}},
           "a fresh device resolves the account's stored appearance over the "
           "workspace defaults")
     check(userconfig.stored("dave") == {"appearance": {"backdrop": "ember"}},

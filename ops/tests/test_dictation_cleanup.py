@@ -44,7 +44,7 @@ REPLY = {"result": "", "usage": {"input_tokens": 9}, "cost": 0.0006, "models": [
 CTX_SEEN = []
 
 
-def fake_runner(text, context=""):
+def fake_runner(text, context="", model=None):
     CALLS.append(text)
     CTX_SEEN.append(context)
     if isinstance(REPLY.get("raise"), Exception):
@@ -54,11 +54,13 @@ def fake_runner(text, context=""):
 
 dc.runner = fake_runner
 dc.settings_fn = lambda: SETTINGS
+PROFILE = {"on": True, "model": "haiku"}      # the account's `polish` row (the ONE switch + model)
+dc.profile_fn = lambda user: PROFILE
 dc.spend_fn = lambda models, usage, cost: SPENT.append((models, usage, cost))
 
 
 def reset(result="", **extra):
-    CALLS.clear(); SPENT.clear(); SETTINGS.clear(); CTX_SEEN.clear()
+    CALLS.clear(); SPENT.clear(); SETTINGS.clear(); CTX_SEEN.clear(); PROFILE.update({"on": True, "model": "haiku"})
     REPLY.clear()
     REPLY.update({"result": result, "usage": {"input_tokens": 9}, "cost": 0.0006, "models": ["claude-haiku-4-5"]})
     REPLY.update(extra)
@@ -128,9 +130,9 @@ check(r["changed"] and "<" not in r["text"], "echoed <diktat> tags are stripped:
 reset("x")
 r = dc.clean("ok danke")
 check(r["skipped"] == "short" and not CALLS and not SPENT, "short input: no model, no spend")
-SETTINGS["dictation_cleanup"] = False
+PROFILE["on"] = False
 r = dc.clean(SRC)
-check(r["skipped"] == "off" and not CALLS and not SPENT, "switched off in settings: no model, no spend")
+check(r["skipped"] == "off" and not CALLS and not SPENT, "switched off in the profile: no model, no spend")
 reset("x")
 r = dc.clean("wort " * 2000)
 check(r["skipped"] == "long" and not CALLS, "an over-long text is not sent")
@@ -298,14 +300,40 @@ check(not W.alive(), "close() ends the process")
 
 # prewarm respects the switches; the default runner honours the one-shot switch
 fresh_worker()
-dc.settings_fn = lambda: {"dictation_cleanup": False}
-dc.prewarm()
+PROFILE["on"] = False
+dc.prewarm("u")
 check(not W.alive() and not SPAWNS, "prewarm does nothing when cleanup is switched off")
+PROFILE["on"] = True
 dc.settings_fn = lambda: {"dictation_cleanup_warm": False}
-dc.prewarm()
+dc.prewarm("u")
 check(not W.alive() and not SPAWNS, "prewarm does nothing when the warm process is switched off")
 dc.settings_fn = lambda: SETTINGS
 W.close()
+
+# ONE setting for both paths: the account's `polish` row decides switch AND model
+print("\npolish (shared by our own dictation and keyboard text)")
+from spine.storage import userconfig                            # noqa: E402
+MODELS = []
+def model_runner(text, context="", model=None):
+    MODELS.append(model)
+    return {"result": "Starte den Build fuer iOS bitte", "usage": None, "cost": 0.0, "models": []}
+dc.runner = model_runner
+SRC2 = "aeh starte den Bild fuer iOS bitte"
+reset(); PROFILE.update({"on": False, "model": "haiku"})
+check(dc.clean(SRC2, "u")["skipped"] == "off" and not MODELS, "account switch off -> no model call")
+PROFILE.update({"on": True, "model": "sonnet"})
+r = dc.clean(SRC2, "u")
+check(r["changed"] and MODELS == [userconfig.POLISH_MODELS["sonnet"]], "the account's model is passed to the runner")
+SETTINGS.update({"dictation_cleanup": False})
+check(dc.clean(SRC2, "u")["changed"], "the old workspace switch no longer matters")
+check(userconfig.POLISH_DEFAULT["on"] is True, "polish is ON by default (own dictation always was)")
+check(userconfig.validate({"polish": {"on": True, "model": "opus"}})[1] is not None, "validator refuses a model outside the closed list")
+check(userconfig.validate({"polish": {"on": True, "model": "haiku", "x": 1}})[1] is not None, "validator refuses unknown sub-keys")
+check(userconfig.validate({"polish": {"on": True, "model": "sonnet"}})[1] is None, "validator accepts haiku/sonnet")
+w = dc._warm_for(userconfig.POLISH_MODELS["sonnet"])
+check(w is not dc._WARM and w.model == "claude-sonnet-5-5" and dc._warm_for(None) is dc._WARM, "one warm process per model")
+a2 = dc.argv(model="claude-sonnet-5-5")
+check("claude-sonnet-5-5" in a2 and dc.MODEL not in a2, "argv takes the model")
 
 print("\n%d failure(s)" % len(FAILS) if FAILS else "\nall passed")
 sys.exit(1 if FAILS else 0)

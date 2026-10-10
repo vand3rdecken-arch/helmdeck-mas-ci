@@ -74,7 +74,7 @@ WARMS = []
 CLEAN_WARMS = []
 ds.decoder = fake_decoder
 ds.warm = lambda: WARMS.append(1)
-ds.cleanup_warm = lambda: CLEAN_WARMS.append(1)      # never spawn a real model process from a test
+ds.cleanup_warm = lambda owner=None: CLEAN_WARMS.append(1)      # never spawn a real model process from a test
 ds.PARTIAL_EVERY_S = 0.0           # decode on every chunk so partials are testable
 
 

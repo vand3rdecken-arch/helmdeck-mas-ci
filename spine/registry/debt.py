@@ -5828,6 +5828,24 @@ DEBT = [
         "since": "2026-10-08",
         "order": 90,
     },
+    {
+        "id": "chat-polish-burst-heuristic",
+        "title": "Chat polish guesses 'this was voice input' from a burst of characters in one change",
+        "status": "open",
+        "what": "A device keyboard's mic gives no 'dictation ended' event, so the composer "
+                "(ui/card_composer.tsx, POLISH_BURST / POLISH_QUIET_MS) treats a single "
+                "onChangeText that adds >= 8 characters followed by 1.5 s of quiet as voice "
+                "or paste and asks the daemon to polish (profile key `polish`). It is an "
+                "inference from the text, not an observation of the keyboard.",
+        "why_it_bites": "A keyboard that streams voice text in small increments (< 8 chars) "
+                        "is never polished; a pasted paragraph is polished though nobody "
+                        "spoke. Both are harmless (undo, or simply no polish) but wrong.",
+        "trigger": "an owner report that voice text was not polished, or a paste got rewritten",
+        "fix": "A native input-method signal (Android SpeechRecognizer/Gboard voice flag) or a "
+               "user-visible 'Glaetten' tap for the cases the heuristic misses.",
+        "since": "2026-10-10",
+        "order": 91,
+    },
 ]
 
 def list_debt():

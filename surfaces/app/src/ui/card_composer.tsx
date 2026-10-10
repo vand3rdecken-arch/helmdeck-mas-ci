@@ -13,7 +13,10 @@ import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
 import { useDictation } from "@/data/use_dictation";
 import { DictationBar } from "@/ui/dictation_bar";
 import { useT } from "@/i18n";
-import type { ModelAvail } from "@/data/types";
+import type { Me, ModelAvail } from "@/data/types";
+
+const POLISH_BURST = 8;          // chars added in ONE change that mean "voice or paste, not typing"
+const POLISH_QUIET_MS = 1500;    // quiet after the burst before the model is asked
 
 export interface SlashCommand { name: string; hint: string; insert: string }
 export interface ModeOption { id: string; label: string; desc?: string }
@@ -214,19 +217,53 @@ export function Composer({
   const lastClean = useRef<{ raw: string; cleaned: string } | null>(null);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // The daemon applies the ACCOUNT's polish switch and model (profile key `polish`).
+  const cleanBusy = useRef(false);
   async function cleanDictation(raw: string) {
     setClean("working");
+    cleanBusy.current = true;
     try {
       const r = await api.dictationClean(raw);
       const next = r.changed ? applyCleanup(textRef.current, raw, r.text) : null;
       if (!alive.current) return;
       if (next !== null) {
         setText(next);
+        polished.current = next;                        // the swap itself is never re-polished
         lastClean.current = { raw, cleaned: r.text };
         setClean("done");
       } else setClean("idle");
     } catch { if (alive.current) setClean("idle"); }    // an old daemon or a dead link: the raw text stands
+    finally { cleanBusy.current = false; }
   }
+
+  // POLISH (profile key `polish`, Settings > General): text that arrives through the
+  // device's OWN keyboard dictation (Gboard etc.) is tidied by a small model, with the
+  // chat as context. A keyboard mic gives no "dictation ended" signal, so the trigger
+  // is derived from the text itself: a single change that ADDS a burst of characters
+  // (voice input and paste do, typing never does) followed by 1.5 s of quiet. Typing
+  // never triggers it, so a typist pausing mid-thought is never rewritten under the
+  // fingers. The swap goes through the same refuse-if-edited rule as dictation cleanup.
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60_000 });
+  const polishOn = !!me?.profile?.polish?.on;
+  const burst = useRef(false);
+  const polished = useRef("");
+  function onType(v: string) {
+    if (v.length - textRef.current.length >= POLISH_BURST) burst.current = true;
+    setText(v);
+  }
+  useEffect(() => {
+    if (!text.trim()) { burst.current = false; return; }
+    if (!polishOn || !burst.current) return;
+    const id = setTimeout(() => {
+      const cur = textRef.current;
+      if (cur !== text || cur === polished.current || cleanBusy.current) return;
+      if (cur.trim().startsWith("/") || cur.trim().split(/\s+/).length < 4) return;
+      burst.current = false;
+      polished.current = cur;
+      void cleanDictation(cur);
+    }, POLISH_QUIET_MS);
+    return () => clearTimeout(id);
+  }, [text, polishOn]);   // eslint-disable-line react-hooks/exhaustive-deps
   function undoClean() {
     const lc = lastClean.current;
     lastClean.current = null;
@@ -238,6 +275,9 @@ export function Composer({
       const cur = textRef.current;
       setText(cur && !/\s$/.test(cur) ? `${cur} ${txt}` : cur + txt);
       lastClean.current = null;
+      // Our own dictation has its own cleanup below: the keyboard-polish must never
+      // run on top of it (one model pass per text, never two).
+      burst.current = false;
       if (send) fire(); else void cleanDictation(txt);
     },
     onEmpty: () => { setNote(tr("dictation.empty")); setTimeout(() => setNote(""), 2500); },
@@ -565,7 +605,7 @@ export function Composer({
           could not end the recording). */}
       <View style={{ flexDirection: "row", padding: 8, gap: 8, alignItems: "flex-end" }}>
         {dictating ? <DictationBar d={dict} inline /> : (
-        <TextInput ref={inputRef} value={text} onChangeText={setText} multiline
+        <TextInput ref={inputRef} value={text} onChangeText={onType} multiline
           // Web/desktop: Enter sends, Shift+Enter is a newline (IME composing excluded).
           onKeyPress={isWeb ? (e: any) => {
             const ne = e.nativeEvent;

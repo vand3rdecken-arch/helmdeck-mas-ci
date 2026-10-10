@@ -64,9 +64,27 @@ def _valid_appearance(v):
     return v.get("backdrop", "mesh") in BACKDROPS
 
 
+#: the closed model list of the spoken-text polish (profile key `polish`, our own dictation AND keyboard text). The CLI
+#: runs on the OWNER's plan, so an account may pick between these two and nothing
+#: dearer - the validator below is what stops a `client` from choosing Opus.
+POLISH_MODELS = {"haiku": "claude-haiku-4-5", "sonnet": "claude-sonnet-5-5"}
+#: ON by default: our own dictation always had cleanup on, so unifying the two
+#: settings must not switch it off for anybody.
+POLISH_DEFAULT = {"on": True, "model": "haiku"}
+
+
+def _valid_polish(v):
+    # {on: bool, model: haiku|sonnet}. Unknown sub-keys are rejected (same
+    # reasoning as appearance above).
+    if not isinstance(v, dict) or set(v) - {"on", "model"}:
+        return False
+    return isinstance(v.get("on", False), bool) and v.get("model", "haiku") in POLISH_MODELS
+
+
 KEYS = {
     "lang": _valid_lang,
     "appearance": _valid_appearance,
+    "polish": _valid_polish,
 }
 
 
@@ -80,6 +98,7 @@ def defaults():
     return {
         "lang": pol.get("lang", "de"),
         "appearance": s.get("appearance") or {"backdrop": "mesh"},
+        "polish": dict(POLISH_DEFAULT),
     }
 
 

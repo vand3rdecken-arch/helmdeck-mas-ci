@@ -346,6 +346,7 @@ def _profile_schema(profile):
     from spine.storage import userconfig
     p = profile or {}
     app = p.get("appearance") or {}
+    pol = p.get("polish") or {}
     return [
         {"group": "profile", "groupKey": "profile.section",
          "path": "lang", "control": "single",
@@ -358,4 +359,14 @@ def _profile_schema(profile):
          "labelKey": "settings.policy.backdrop", "options": list(userconfig.BACKDROPS),
          "value": app.get("backdrop") or "mesh",
          "door": "general", "level": "basic", "descKey": "cfg.backdrop.desc", "scope": "profile"},
+        {"group": "polish", "groupKey": "polish.section",
+         "path": "polish.on", "control": "toggle",
+         "labelKey": "cfg.polish.on", "value": bool(pol.get("on")),
+         "door": "general", "level": "basic", "descKey": "cfg.polish.on.desc", "scope": "profile"},
+        {"group": "polish", "groupKey": "polish.section",
+         "path": "polish.model", "control": "single",
+         "labelKey": "cfg.polish.model", "options": list(userconfig.POLISH_MODELS),
+         "optionLabels": {"haiku": "cfg.polish.haiku", "sonnet": "cfg.polish.sonnet"},
+         "value": pol.get("model") or "haiku",
+         "door": "general", "level": "basic", "descKey": "cfg.polish.model.desc", "scope": "profile"},
     ]
