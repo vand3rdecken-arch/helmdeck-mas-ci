@@ -1,7 +1,7 @@
 {
   "configVersion": 0,
   "apple": {
-    "version": "1.0.52",
+    "version": "1.0.53",
     "copyright": "2026 Tien Duy Vo",
     "categories": [
       "PRODUCTIVITY"
@@ -54,7 +54,7 @@
           "Produktivität",
           "Workflow"
         ],
-        "releaseNotes": "Erster App-Store-Release von HelmDeck.",
+        "releaseNotes": "Behebt einen Absturz direkt beim Start. HelmDeck öffnet wieder zuverlässig.",
         "promoText": "Der Agent gehört an den Schreibtisch. Du nicht. Ziel, Budget, Termin setzen, Agenten arbeiten auf deinem PC, Entscheidungen erreichen dein Team auf dem Handy.",
         "marketingUrl": "https://helmdeck.de",
         "supportUrl": "https://helmdeck.de",
@@ -77,7 +77,7 @@
           "workflow",
           "mobile"
         ],
-        "releaseNotes": "Initial App Store release of HelmDeck.",
+        "releaseNotes": "Fixes a crash on launch. HelmDeck opens reliably again.",
         "promoText": "The agent belongs at the desk. You don't. Set goal, budget and deadline, agents work on your own PC, decisions reach your team on the phone.",
         "marketingUrl": "https://helmdeck.de",
         "supportUrl": "https://helmdeck.de",
