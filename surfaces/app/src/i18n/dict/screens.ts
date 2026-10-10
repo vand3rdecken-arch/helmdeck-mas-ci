@@ -87,6 +87,8 @@ export const screens: Dict = {
   "cfg.polish.model.desc": { de: "Gilt für beide Wege. Haiku ist schnell und günstig, Sonnet versteht Kontext besser.",
                              en: "Applies to both. Haiku is fast and cheap, Sonnet understands context better." },
   "cfg.polish.haiku": { de: "Haiku", en: "Haiku" },
+  "cfg.polish.haiku.desc": { de: "Schnell und günstig", en: "Fast and cheap" },
+  "cfg.polish.sonnet.desc": { de: "Versteht Kontext besser, etwas langsamer", en: "Understands context better, a bit slower" },
   "cfg.polish.sonnet": { de: "Sonnet", en: "Sonnet" },
   "cfg.defaultRepo.desc": { de: "In welches Repo eine neue Karte geht, wenn keins genannt ist.",
                             en: "Which repo a new card lands in when none is named." },

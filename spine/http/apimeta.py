@@ -367,6 +367,8 @@ def _profile_schema(profile):
          "path": "polish.model", "control": "single",
          "labelKey": "cfg.polish.model", "options": list(userconfig.POLISH_MODELS),
          "optionLabels": {"haiku": "cfg.polish.haiku", "sonnet": "cfg.polish.sonnet"},
+         "optionDescs": {"haiku": "cfg.polish.haiku.desc", "sonnet": "cfg.polish.sonnet.desc"},
+         "picker": "model",
          "value": pol.get("model") or "haiku",
          "door": "general", "level": "basic", "descKey": "cfg.polish.model.desc", "scope": "profile"},
     ]

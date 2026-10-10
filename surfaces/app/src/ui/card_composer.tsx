@@ -12,6 +12,7 @@ import {
 import { loadDraft, loadOpts, saveDraft, saveOpts } from "@/data/drafts";
 import { useDictation } from "@/data/use_dictation";
 import { DictationBar } from "@/ui/dictation_bar";
+import { ModelRow, ModelSheet } from "@/ui/model_sheet";
 import { useT } from "@/i18n";
 import type { Me, ModelAvail } from "@/data/types";
 
@@ -678,101 +679,89 @@ export function Composer({
         </Pressable>
       </Modal>
 
-      {/* model picker modal */}
-      <Modal visible={picker} transparent animationType="fade" onRequestClose={() => setPicker(false)}>
-        <Pressable onPress={() => setPicker(false)} style={{ flex: 1, backgroundColor: t.backdrop, justifyContent: "center", padding: 24 }}>
-          <View style={{ backgroundColor: t.surface1, borderRadius: 14, borderWidth: 1, borderColor: t.glassBorder, maxHeight: "70%", overflow: "hidden" }}>
-            <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "700", padding: 12 }}>{tr("composer.model")}</Text>
-            <ScrollView>
-              {(() => {
-                const retest = (id: string) => (
-                  <Pressable onPress={() => probeModels(id)} hitSlop={8} accessibilityLabel={tr("models.retest")}>
-                    <Ionicons name="refresh-outline" size={16} color={t.txtTertiary} />
-                  </Pressable>
-                );
-                const reasonOf = (a: ModelAvail) => tr("models.reason." + (["country", "auth", "missing", "timeout"].includes(a.status ?? "") ? a.status : "error"));
-                const row = (id: string, label: string, desc: string, off = false, avail?: ModelAvail) => (
-                  <Pressable key={id} disabled={off} onPress={() => { pickModel(id); setPicker(false); }}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 11,
-                      borderTopWidth: 1, borderTopColor: t.borderSubtle, opacity: off ? 0.45 : 1 }}>
-                    <Ionicons name={id === model ? "radio-button-on" : "radio-button-off"} size={16} color={id === model ? t.accent : t.txtTertiary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: t.txtPrimary, fontSize: 14 }}>{label}</Text>
-                      {desc ? <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{desc}</Text> : null}
-                    </View>
-                    {avail?.state === "untested" ? (
-                      <>
-                        <Text style={{ color: t.txtTertiary, fontSize: 11, fontStyle: "italic" }}>{tr("models.untested")}</Text>
-                        {retest(id)}
-                      </>
-                    ) : null}
-                    {avail?.state === "testing" ? (
-                      <>
-                        <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("models.testing")}</Text>
-                        <ActivityIndicator size="small" color={t.accent} />
-                      </>
-                    ) : null}
-                  </Pressable>
-                );
-                // a model a real request proved dead is NOT a row of the list: it
-                // sits in a collapsed group with the reason, never selectable
-                const deadGroup = (g: { id: string; models: { id: string; label?: string; avail?: ModelAvail }[] }) => {
-                  if (g.models.length === 0) return [];
-                  return [
-                    <Pressable key={"dead-" + g.id} onPress={() => setShowDead((v) => !v)}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
-                      <Ionicons name={showDead ? "chevron-down" : "chevron-forward"} size={14} color={t.txtTertiary} />
-                      <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "600" }}>{tr("models.unavailable", { n: g.models.length })}</Text>
-                    </Pressable>,
-                    ...(showDead ? g.models.map((m) => (
-                      <View key={m.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 9, paddingLeft: 32, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ color: t.txtTertiary, fontSize: 13 }}>{m.label || m.id}</Text>
-                          <Text style={{ color: t.danger, fontSize: 11.5 }}>{m.avail ? reasonOf(m.avail) : ""}</Text>
-                        </View>
-                        {retest(m.id)}
-                      </View>
-                    )) : []),
-                  ];
-                };
-                const auto = row("auto", tr("composer.modelAuto"), "");
-                if (modelGroups.length === 0) {
-                  // /models returns objects {id,label,desc}; older/custom setups may
-                  // return plain id strings. Normalise both so we never render an
-                  // object as a React child (that crashed the whole app -> black).
-                  return [auto, ...models.filter((raw) => typeof raw === "string" || raw.avail?.state !== "failed").map((raw) => {
-                    const id = typeof raw === "string" ? raw : raw.id;
-                    return row(id, typeof raw === "string" ? raw : (raw.label || raw.id), typeof raw === "string" ? "" : (raw.desc || ""), false,
-                      typeof raw === "string" ? undefined : raw.avail);
-                  })];
-                }
-                return [auto, ...modelGroups.flatMap((g) => {
-                  const probed = g.models.some((m) => !!m.avail);
-                  const dead = g.models.filter((m) => m.avail?.state === "failed");
-                  return [
-                    <View key={"h-" + g.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, gap: 8 }}>
-                      <Text style={{ flex: 1, color: t.txtTertiary, fontSize: 11, fontWeight: "700" }}>
-                        {g.label}{g.ready ? "" : " · " + tr("new.engineMissing")}
-                      </Text>
-                      {probed && g.ready ? (
-                        <Pressable disabled={!!probe?.running} onPress={() => probeModels()} hitSlop={6}
-                          style={{ flexDirection: "row", alignItems: "center", gap: 5, opacity: probe?.running ? 0.7 : 1 }}>
-                          {probe?.running ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="pulse-outline" size={14} color={t.accent} />}
-                          <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>
-                            {probe?.running ? tr("models.checking", { done: probe.done, total: probe.total }) : tr("models.check")}
-                          </Text>
-                        </Pressable>
-                      ) : null}
-                    </View>,
-                    ...g.models.filter((m) => m.avail?.state !== "failed").map((m) => row(m.id, m.label || m.id, m.desc || "", !g.ready, m.avail)),
-                    ...deadGroup({ id: g.id, models: dead }),
-                  ];
-                })];
-              })()}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
+      {/* model picker: the shared sheet (ui/model_sheet.tsx), also used by Settings */}
+      <ModelSheet visible={picker} onClose={() => setPicker(false)} title={tr("composer.model")}>
+      {(() => {
+        const retest = (id: string) => (
+          <Pressable onPress={() => probeModels(id)} hitSlop={8} accessibilityLabel={tr("models.retest")}>
+            <Ionicons name="refresh-outline" size={16} color={t.txtTertiary} />
+          </Pressable>
+        );
+        const reasonOf = (a: ModelAvail) => tr("models.reason." + (["country", "auth", "missing", "timeout"].includes(a.status ?? "") ? a.status : "error"));
+        const row = (id: string, label: string, desc: string, off = false, avail?: ModelAvail) => (
+          <ModelRow key={id} label={label} desc={desc} selected={id === model} disabled={off}
+            onPress={() => { pickModel(id); setPicker(false); }}
+            trailing={<>
+              {avail?.state === "untested" ? (
+                <>
+                  <Text style={{ color: t.txtTertiary, fontSize: 11, fontStyle: "italic" }}>{tr("models.untested")}</Text>
+                  {retest(id)}
+                </>
+              ) : null}
+              {avail?.state === "testing" ? (
+                <>
+                  <Text style={{ color: t.txtTertiary, fontSize: 11 }}>{tr("models.testing")}</Text>
+                  <ActivityIndicator size="small" color={t.accent} />
+                </>
+              ) : null}
+            </>} />
+        );
+        // a model a real request proved dead is NOT a row of the list: it
+        // sits in a collapsed group with the reason, never selectable
+        const deadGroup = (g: { id: string; models: { id: string; label?: string; avail?: ModelAvail }[] }) => {
+          if (g.models.length === 0) return [];
+          return [
+            <Pressable key={"dead-" + g.id} onPress={() => setShowDead((v) => !v)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+              <Ionicons name={showDead ? "chevron-down" : "chevron-forward"} size={14} color={t.txtTertiary} />
+              <Text style={{ color: t.txtTertiary, fontSize: 12, fontWeight: "600" }}>{tr("models.unavailable", { n: g.models.length })}</Text>
+            </Pressable>,
+            ...(showDead ? g.models.map((m) => (
+              <View key={m.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 9, paddingLeft: 32, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: t.txtTertiary, fontSize: 13 }}>{m.label || m.id}</Text>
+                  <Text style={{ color: t.danger, fontSize: 11.5 }}>{m.avail ? reasonOf(m.avail) : ""}</Text>
+                </View>
+                {retest(m.id)}
+              </View>
+            )) : []),
+          ];
+        };
+        const auto = row("auto", tr("composer.modelAuto"), "");
+        if (modelGroups.length === 0) {
+          // /models returns objects {id,label,desc}; older/custom setups may
+          // return plain id strings. Normalise both so we never render an
+          // object as a React child (that crashed the whole app -> black).
+          return [auto, ...models.filter((raw) => typeof raw === "string" || raw.avail?.state !== "failed").map((raw) => {
+            const id = typeof raw === "string" ? raw : raw.id;
+            return row(id, typeof raw === "string" ? raw : (raw.label || raw.id), typeof raw === "string" ? "" : (raw.desc || ""), false,
+              typeof raw === "string" ? undefined : raw.avail);
+          })];
+        }
+        return [auto, ...modelGroups.flatMap((g) => {
+          const probed = g.models.some((m) => !!m.avail);
+          const dead = g.models.filter((m) => m.avail?.state === "failed");
+          return [
+            <View key={"h-" + g.id} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, gap: 8 }}>
+              <Text style={{ flex: 1, color: t.txtTertiary, fontSize: 11, fontWeight: "700" }}>
+                {g.label}{g.ready ? "" : " · " + tr("new.engineMissing")}
+              </Text>
+              {probed && g.ready ? (
+                <Pressable disabled={!!probe?.running} onPress={() => probeModels()} hitSlop={6}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 5, opacity: probe?.running ? 0.7 : 1 }}>
+                  {probe?.running ? <ActivityIndicator size="small" color={t.accent} /> : <Ionicons name="pulse-outline" size={14} color={t.accent} />}
+                  <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>
+                    {probe?.running ? tr("models.checking", { done: probe.done, total: probe.total }) : tr("models.check")}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>,
+            ...g.models.filter((m) => m.avail?.state !== "failed").map((m) => row(m.id, m.label || m.id, m.desc || "", !g.ready, m.avail)),
+            ...deadGroup({ id: g.id, models: dead }),
+          ];
+        })];
+      })()}
+      </ModelSheet>
 
       {/* permission-mode sheet - same shape as the model picker so the two
           read as one system: caption, one row per option, radio, a line on

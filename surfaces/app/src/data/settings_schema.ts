@@ -52,6 +52,10 @@ export interface ConfigItem {
   /** {optionValue: i18n key} - lets an option read "Deutsch" without the
    *  client having to know what "de" means. */
   optionLabels?: Record<string, string>;
+  /** "model": render a `single` as the chat's model chip + sheet (ui/model_sheet.tsx)
+   *  instead of pills. optionDescs = {optionValue: i18n key} for the sheet's second line. */
+  picker?: "model";
+  optionDescs?: Record<string, string>;
   keys?: string[];
   placeholder?: string;
 }

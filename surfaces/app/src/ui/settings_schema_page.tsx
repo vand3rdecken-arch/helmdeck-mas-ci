@@ -12,6 +12,7 @@ import { can } from "@/kernel";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Panel, SectionLabel } from "@/ui/kit";
+import { ModelChip, ModelRow, ModelSheet } from "@/ui/model_sheet";
 import { Btn, Caption, ChipPick, fieldStyle, FormGrid, Hint, Toggle } from "@/ui/settings_sections";
 import { useResponsive } from "@/ui/responsive";
 
@@ -66,6 +67,30 @@ export function ScopeBadge({ scope }: { scope: string | undefined }) {
   );
 }
 
+/** A `single` knob that names a MODEL: the same chip and sheet the chat composer
+ *  uses (ui/model_sheet.tsx), not a second look for the same choice. */
+function ModelPickRow({ it, value, onChange, tr, label, desc }: {
+  it: ConfigItem; value: unknown; onChange: (v: unknown) => void;
+  tr: (k: string) => string; label: string; desc: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const name = (v: string) => (it.optionLabels?.[v] ? tr(it.optionLabels[v]) : v);
+  const cur = String(value ?? "");
+  return (
+    <View>
+      <Caption text={label} />
+      <ModelChip label={name(cur)} active onPress={() => setOpen(true)} />
+      {desc ? <Hint text={desc} /> : null}
+      <ModelSheet visible={open} onClose={() => setOpen(false)} title={label}>
+        {(it.options ?? []).map((o) => (
+          <ModelRow key={o} label={name(o)} desc={it.optionDescs?.[o] ? tr(it.optionDescs[o]) : ""}
+            selected={o === cur} onPress={() => { onChange(o); setOpen(false); }} />
+        ))}
+      </ModelSheet>
+    </View>
+  );
+}
+
 // Module scope, not component body - see automation.tsx's original incident
 // note: a component function redeclared every render loses text-input focus
 // after one keystroke, because React treats it as a brand new component type.
@@ -92,6 +117,8 @@ function Control({ it, value, onChange, t, tr, field, wide }: {
         {desc ? <Hint text={desc} /> : null}
       </View>
     );
+  if (it.control === "single" && it.picker === "model")
+    return <ModelPickRow it={it} value={value} onChange={onChange} tr={tr} label={label} desc={desc} />;
   if (it.control === "single")
     return (
       <View>
