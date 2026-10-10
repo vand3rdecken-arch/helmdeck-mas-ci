@@ -133,7 +133,7 @@ export default function RoomScreen() {
     onError: (e: Error) => setNote(e.message),
   });
 
-  if (isError || (!isLoading && !room)) {
+  if (!room && (isError || !isLoading)) {
     return (
       <View style={{ flex: 1, backgroundColor: t.canvas, paddingTop: insets.top }}>
         <ScreenHeader title={tr("nav.rooms")} onBack={() => router.back()} />
