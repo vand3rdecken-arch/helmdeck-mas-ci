@@ -43,6 +43,11 @@ export const rooms: Dict = {
   "rooms.projectNoCards": { de: "Noch keine Karten.", en: "No cards yet." },
   "rooms.projectShare": { de: "Mit dem Raum teilen", en: "Share with the room" },
   "rooms.projectShared": { de: "Geteilt", en: "Shared" },
+  "rooms.folderAdd": { de: "Ordner hinzufügen", en: "Add a folder" },
+  "rooms.folderPath": { de: "Ordner auf dem PC, z. B. C:/Users/Tien/Immobilien", en: "Folder on the PC, e.g. C:/Users/Tien/Immobilien" },
+  "rooms.folderName": { de: "Name (optional)", en: "Name (optional)" },
+  "rooms.folderSave": { de: "Hinzufügen", en: "Add" },
+  "rooms.projectsOnlyOne": { de: "Teile nur, was die anderen sehen sollen: ein Projekt zeigt alle seine Karten.", en: "Share only what the others should see: a project shows all its cards." },
   "rooms.projectHint": { de: "Mitglieder sehen Titel, Status und Ergebnis der Karten, nicht mehr.", en: "Members see title, status and result of the cards, nothing more." },
 
   "card.access.title": { de: "Zugriff", en: "Access" },

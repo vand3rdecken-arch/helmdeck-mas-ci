@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
@@ -24,6 +24,21 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
   const { data } = useQuery({ queryKey: ["projectsShared"], queryFn: api.projectsShared, retry: false });
   const projects = Array.isArray(data) ? data : [];
   const others = members.filter((m) => m !== me);
+
+  // register a folder on the PC as a project (owner): the door a folder like
+  // "Immobilien" needs before it can be shown to anyone
+  const [adding, setAdding] = useState(false);
+  const [path, setPath] = useState("");
+  const [fname, setFname] = useState("");
+  const [addErr, setAddErr] = useState("");
+  const addFolder = useMutation({
+    mutationFn: () => api.projectFolder(path.trim(), fname.trim()),
+    onSuccess: () => {
+      setPath(""); setFname(""); setAddErr(""); setAdding(false);
+      void qc.invalidateQueries({ queryKey: ["projectsShared"] });
+    },
+    onError: (e: Error) => setAddErr(e.message),
+  });
 
   const share = useMutation({
     mutationFn: (v: { id: string; on: boolean }) =>
@@ -56,8 +71,10 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
               <Pressable onPress={() => setOpen(isOpen ? null : p.id)}
                 style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 9 }}>
                 <Ionicons name="folder-outline" size={16} color={t.accent} />
-                <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}>{p.name}</Text>
-                <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{p.card_count === 1 ? tr("rooms.projectCard1") : tr("rooms.projectCards", { n: p.card_count })}</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600" }}>{p.name}</Text>
+                  <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{p.card_count === 1 ? tr("rooms.projectCard1") : tr("rooms.projectCards", { n: p.card_count })}</Text>
+                </View>
                 {owner ? (
                   <Pressable accessibilityLabel={tr("rooms.projectShare")} disabled={share.isPending || others.length === 0}
                     onPress={() => share.mutate({ id: p.id, on: !sharedAll })}
@@ -91,6 +108,31 @@ export function RoomProjects({ members, me, owner }: { members: string[]; me?: s
             </View>
           );
         })}
+        {owner ? (
+          adding ? (
+            <View style={{ gap: 8, padding: 8 }}>
+              <TextInput value={path} onChangeText={setPath} placeholder={tr("rooms.folderPath")} autoCapitalize="none" autoCorrect={false}
+                placeholderTextColor={t.txtPlaceholder}
+                style={{ color: t.txtPrimary, fontSize: 14, borderBottomWidth: 1, borderBottomColor: t.borderSubtle, paddingVertical: 6 }} />
+              <TextInput value={fname} onChangeText={setFname} placeholder={tr("rooms.folderName")} maxLength={60}
+                placeholderTextColor={t.txtPlaceholder}
+                style={{ color: t.txtPrimary, fontSize: 14, borderBottomWidth: 1, borderBottomColor: t.borderSubtle, paddingVertical: 6 }} />
+              {addErr ? <Text style={{ color: t.danger, fontSize: 12 }}>{addErr}</Text> : null}
+              <Pressable disabled={!path.trim() || addFolder.isPending} onPress={() => addFolder.mutate()}
+                style={{ alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10,
+                  backgroundColor: path.trim() ? t.accent : t.surface2 }}>
+                <Text style={{ color: path.trim() ? "#fff" : t.txtTertiary, fontWeight: "600", fontSize: 12.5 }}>{tr("rooms.folderSave")}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={() => setAdding(true)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, padding: 8 }}>
+              <Ionicons name="add" size={15} color={t.accent} />
+              <Text style={{ color: t.accent, fontSize: 13 }}>{tr("rooms.folderAdd")}</Text>
+            </Pressable>
+          )
+        ) : null}
+        {owner && projects.length > 0 ? <Text style={{ color: t.txtTertiary, fontSize: 11.5, paddingHorizontal: 8, paddingBottom: 4 }}>{tr("rooms.projectsOnlyOne")}</Text> : null}
       </ScrollView> : null}
     </View>
   );

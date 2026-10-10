@@ -122,6 +122,27 @@ check({p["name"] for p in own} == {"Immobilien", "Privat"}, "5. the owner sees e
 check([p["geteilt_mit"] for p in own if p["name"] == "Privat"] == [["***"]],
       "5. the owner's list carries the share list")
 
+# 6. a folder becomes a project through the one door (sight_repo), and only if it exists
+class Post(object):
+    def __init__(self):
+        self.sent = None
+
+    def _send(self, status, body, *a):
+        self.sent = (status, json.loads(body))
+
+
+folder = os.path.join(SANDBOX, "Aktien")
+os.makedirs(folder)
+r = Post()
+routes_projects.projects_folder_post(r, OWNER, {"path": folder, "name": "Aktien"})
+check(r.sent[0] == 200 and r.sent[1]["name"] == "Aktien", "6. an existing folder is registered as a project")
+r = Post()
+routes_projects.projects_folder_post(r, OWNER, {"path": folder, "name": "Zweitname"})
+check(r.sent[0] == 200 and r.sent[1]["name"] == "Aktien", "6. the same folder again returns the existing project")
+r = Post()
+routes_projects.projects_folder_post(r, OWNER, {"path": os.path.join(SANDBOX, "gibts-nicht")})
+check(r.sent[0] == 400, "6. a missing folder is refused")
+
 print()
 print("FAILED: %d" % len(_fails) if _fails else "ALL PASS")
 sys.exit(1 if _fails else 0)

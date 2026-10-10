@@ -127,6 +127,22 @@ def projects_share_post(self, user, body):
     return self._send(200, json.dumps({"id": p["id"], "geteilt_mit": p.get("geteilt_mit") or []}))
 
 
+def projects_folder_post(self, user, body):
+    """Register a FOLDER on this machine as a project (the way a repo becomes
+    known: projects.sight_repo, THE door in). The room panel offers it so a
+    folder like "Immobilien" can be shown to someone without filing a card
+    first. The folder must exist; a name is optional (default: its folder name)."""
+    import os
+    from spine.ops import projects
+    path = projects.norm_repo(body.get("path") or "")
+    if not path or not os.path.isdir(path):
+        return self._send(400, json.dumps({"error": "Ordner nicht gefunden: %s" % (body.get("path") or "")},
+                                          ensure_ascii=False))
+    name = (body.get("name") or "").strip()[:60]
+    p = projects.sight_repo(path, actor=user["name"], name=name)
+    return self._send(200, json.dumps({"id": p["id"], "name": p["name"]}, ensure_ascii=False))
+
+
 GET_ROUTES = {
     "/projects": projects_list_get,
     "/projects/shared": projects_shared_get,
@@ -135,6 +151,7 @@ GET_ROUTES = {
 POST_ROUTES = {
     "/projects": projects_new_post,
     "/projects/share": projects_share_post,
+    "/projects/folder": projects_folder_post,
     "/repo/template": repo_template_post,
 }
 GET_CAPS = {
@@ -144,6 +161,7 @@ GET_CAPS = {
 POST_CAPS = {
     "/projects": "projects.manage",
     "/projects/share": "projects.manage",
+    "/projects/folder": "projects.manage",
     "/repo/template": "projects.manage",
 }
 # projects_update_post/projects_delete_post (/projects/<id>/update,
