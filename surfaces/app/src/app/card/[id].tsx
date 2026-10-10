@@ -553,7 +553,7 @@ function Chat({ k, feed, loading, onSend, onStop, models, modeOptions, seed, set
   // card only supplies its rows and what is particular to a card (what it waits
   // on, its background tasks, its meter) through the slots.
   return (
-    <ChatSurface scrollRef={scrollRef} steps={steps} ctxWindow={k.ctx_window} colMax={null} bottomInset={bottomInset}
+    <ChatSurface scrollRef={scrollRef} steps={steps} ctxWindow={k.ctx_window} colMax={null} scrollPad={20} bottomInset={bottomInset}
       onRewind={(txt) => setSeed({ text: txt, key: seed.key + 1 })}
       isEmpty={steps.length === 0}
       // Loading != empty (chat-load-latency phase A.1): the transcript fetch is

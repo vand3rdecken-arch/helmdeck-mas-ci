@@ -56,6 +56,8 @@ export interface ChatSurfaceProps {
   onReply?: React.ComponentProps<typeof Transcript>["onReply"];
   /** widest the column grows on a wide window (default 760); null = never capped (the card pane) */
   colMax?: number | null;
+  /** room under the last message (default 24; the card pane keeps its 20) */
+  scrollPad?: number;
   /** the screen's own bottom inset when it is not the plain safe-area one */
   bottomInset?: number;
   /** a user row's "rewind": put its text back into the composer */
@@ -68,7 +70,7 @@ export interface ChatSurfaceProps {
 
 export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeholder, draftKey, recipients, error,
   top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, onReply, onRewind, colMax, tabClear,
-  bottomInset, scrollRef }: ChatSurfaceProps) {
+  bottomInset, scrollPad, scrollRef }: ChatSurfaceProps) {
   const t = useTheme();
   const tr = useT();
   const insets = useSafeAreaInsets();
@@ -92,7 +94,7 @@ export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeh
       {top}
       <View style={{ flex: 1 }}>
         <ChatScroll ref={scroll} label={tr("chat.latest")}
-          contentContainerStyle={{ padding: 12, paddingBottom: 24, width: "100%", maxWidth: col, alignSelf: "center" }}>
+          contentContainerStyle={{ padding: 12, paddingBottom: scrollPad ?? 24, width: "100%", maxWidth: col, alignSelf: "center" }}>
           {nothing
             ? (empty ?? <Empty text={tr("chat.empty")} />)
             : <Transcript me={me} steps={steps} ctxWindow={ctxWindow} onReply={onReply} onRewind={onRewind}
