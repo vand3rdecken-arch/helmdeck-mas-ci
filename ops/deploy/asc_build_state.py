@@ -10,6 +10,12 @@ the artifact - so read it from Apple rather than declaring success at upload.
 
   py -3.12 ops/deploy/asc_build_state.py            # one look
   py -3.12 ops/deploy/asc_build_state.py --wait     # poll until Apple stops PROCESSING
+  py -3.12 ops/deploy/asc_build_state.py --wait --expect 14   # ... for THAT build
+
+`--wait` alone judges whatever Apple currently lists. Right after an upload
+that list is still the PREVIOUS builds, all long since VALID, so the poll ends
+green without the new binary ever existing (measured 2026-10-10, build 14).
+Name the build number you just uploaded and the verdict is about that build.
 
 Reads ASC_* from .env, mints a fresh ES256 JWT per request (they expire in
 minutes), and prints the processing state per build. Exit 0 = VALID,
@@ -102,6 +108,7 @@ def show(rows):
 
 if __name__ == "__main__":
     wait = "--wait" in sys.argv
+    expect = sys.argv[sys.argv.index("--expect") + 1] if "--expect" in sys.argv else None
     deadline = time.time() + 1500        # ~25 min; Apple quotes 5-10
     while True:
         try:
@@ -128,6 +135,12 @@ if __name__ == "__main__":
             print("RESULT=UPLOAD_FAILED")
             sys.exit(1)
         states = [r["state"] for r in rows]
+        if expect:
+            # Judge the build we uploaded, not the list Apple happens to show.
+            # An absent build leaves states empty, which keeps the poll going.
+            states = [r["state"] for r in rows if (r["version"] or "") == expect]
+            if not states:
+                print("waiting: build %s has not surfaced at Apple yet" % expect)
         if not wait:
             break
         if states and "PROCESSING" not in states:
