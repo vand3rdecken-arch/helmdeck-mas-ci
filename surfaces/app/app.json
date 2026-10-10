@@ -2,12 +2,11 @@
   "expo": {
     "name": "HelmDeck",
     "slug": "helmdeck",
-    "version": "1.0.52",
+    "version": "1.0.53",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "helmdeck",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -32,7 +31,7 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 95,
+      "versionCode": 96,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
@@ -109,7 +108,9 @@
           "microphonePermission": "HelmDeck nutzt das Mikrofon nur, wenn du eine Nachricht an deine Agenten diktierst.",
           "speechRecognitionPermission": "HelmDeck wandelt deine diktierte Nachricht per Spracherkennung in Text um."
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
