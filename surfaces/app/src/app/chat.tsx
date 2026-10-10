@@ -573,16 +573,24 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
   // answer a question that is already settled - the stale-flag class this repo
   // keeps out (CLAUDE.md: derived, not stored).
   const openQ = useMemo(() => openChatQuestion(msgs, tracksForWelcome), [msgs, tracksForWelcome]);
-  const cardRecipients = useMemo<Recipient[]>(() => openQ?.card ? [
+  // The WORKER's card, only when the WORKER is the one asking (`cls:"card"`).
+  // A Henry question can carry `card` too - he answered while the owner looked
+  // at that card - but it is still HENRY's: its door is POST /chat `answer_to`,
+  // and /tracks/<id>/answer would 409 "no pending question" because the card
+  // never asked anything (owner report 2026-10-10 11:41, every tap "failed").
+  // Keying the door off `card` alone conflated "bound to a card" with "asked by
+  // the card"; the class is the asker.
+  const workerCard = openQ?.cls === "card" ? openQ.card : undefined;
+  const cardRecipients = useMemo<Recipient[]>(() => workerCard ? [
     { id: "henry", label: tr("transcript.boardAgent"), color: t.accent2,
       icon: "sparkles-outline", hint: tr("card.chat.mentionHenry") },
-    { id: `card:${openQ.card}`, label: openQ.cardName || openQ.card, color: t.accent,
+    { id: `card:${workerCard}`, label: openQ?.cardName || workerCard, color: t.accent,
       icon: "construct-outline", hint: tr("card.chat.mentionWorker") },
-  ] : [], [openQ, tr, t]);
+  ] : [], [openQ, workerCard, tr, t]);
   // undefined, not "henry", when nothing is waiting: the Composer hides the
   // whole recipient affordance on a single-target surface, which is what the
   // board chat has always been and must stay when no card is asking.
-  const replyTarget = openQ?.card ? `card:${openQ.card}` : undefined;
+  const replyTarget = workerCard ? `card:${workerCard}` : undefined;
 
   // Auto-pin to newest lives in ChatScroll now, driven by the scroll view's own
   // content-size/layout signals rather than by `msgs.length` - the count does
@@ -985,14 +993,14 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
                 only the DOOR differs, so there is no second answer path. */}
             {openQ?.question ? (
               <QuestionPanel question={openQ.question}
-                onSubmit={openQ.card
+                onSubmit={workerCard
                   // a WORKER's question: settle it on the card, which resumes the
                   // session it parked - the owner's words belong to that worker.
-                  ? (answers, rid) => api.answer(openQ.card as string, answers, rid)
+                  ? (answers, rid) => api.answer(workerCard, answers, rid)
                   // HENRY's own: the choice becomes the owner's next message.
                   : (answers, rid) => sendAnswer(openQ.question as PendingQuestion, answers, rid)}
                 // ...and the promise made to the owner has to match the door.
-                hint={openQ.card ? undefined : tr("card.q.hintChat")}
+                hint={workerCard ? undefined : tr("card.q.hintChat")}
                 onAnswered={() => qc.invalidateQueries({ queryKey: ["chatHistory"] })} />
             ) : null}
             {/* Henry's follow-ups in flight (owner report 2026-09-12) - the SAME
