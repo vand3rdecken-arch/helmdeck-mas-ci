@@ -258,9 +258,10 @@ _STAGE1_TAIL = (
     '{"action": "need|hands|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
     ' "data": "bei need: die Liste",\n'
     ' "card": "karten-id oder leer",\n'
-    ' "lane": "bei move: review|done",\n'
+    ' "lane": "bei move: review|done (done weckt den Prozess der Karte fuer den naechsten Schritt; review ist fuer Ergebnisse, die nur der Owner beurteilen kann)",\n'
     ' "kind": "bei ship: none|ota|native",\n'
-    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; bei move: DEINE Antwort an den Owner in 2-3 klaren Saetzen (was ist erledigt, was passiert als Naechstes, was braucht er von mir - nur wenn wirklich noetig), nie den Worker-Bericht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; bei move: DEINE Antwort an den Owner, kurz und alltagssprachlich, auf dem Handy lesbar: was ist erledigt, und bei lane review was er pruefen oder entscheiden soll (review ist seine Abnahme); Pfade, Hashes und Testzahlen helfen ihm dort nicht; den Worker-Bericht nicht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "ask": "bei move nach review, wenn der Owner etwas entscheiden soll: 2-4 kurze Antwort-Buttons als Liste, z.B. [Abnehmen, Nacharbeit, Auf echtem Jira testen]; sonst weglassen",\n'
     ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
     ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
     ' "why": "ein satz begruendung"}') % (NEED_MAX, NEED_ROUNDS)
@@ -274,9 +275,9 @@ _HANDS_TAIL = (
     "Antworte am ENDE NUR mit diesem JSON:\n"
     '{"action": "did|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|ignore",\n'
     ' "card": "karten-id oder leer",\n'
-    ' "lane": "bei move: review|done",\n'
+    ' "lane": "bei move: review|done (done weckt den Prozess der Karte fuer den naechsten Schritt; review ist fuer Ergebnisse, die nur der Owner beurteilen kann)",\n'
     ' "kind": "bei ship: none|ota|native",\n'
-    ' "text": "bei did: was du getan hast; bei move: deine Antwort an den Owner in 2-3 klaren Saetzen (erledigt / als Naechstes / was er tun muss), nie den Worker-Bericht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "text": "bei did: was du getan hast; bei move: deine Antwort an den Owner, kurz und alltagssprachlich (erledigt / bei review was er pruefen oder entscheiden soll), den Worker-Bericht nicht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
     ' "why": "ein satz begruendung"}')
 
 
@@ -772,11 +773,40 @@ def _decide(esc):
         # happens next), never the worker's raw reply pasted in - the worker
         # writes for Henry, Henry writes for the owner (2026-10-09).
         _body = text or why
-        _notify_owner("Henry (%s): %s%s - %s" % (
-            esc["kind"], _label, (" -> " + lane) if action == "move" else "",
-            _body), None if action == "did" else _find_track(card),
-            push=(action != "move" or lane == "review"))
+        # A `move` is the ONE message the owner gets for a finished card
+        # (dispatch._accept_machine no longer adds a canned line beside it),
+        # so it is Henry's words ONLY - the "Henry (kind): move -> review -"
+        # prefix is log vocabulary and read as a wall of text (owner
+        # 2026-10-10). Other verbs keep the prefix: they are not the card's
+        # hand-over.
+        _line = _body if action == "move" else "Henry (%s): %s%s - %s" % (
+            esc["kind"], _label, "", _body)
+        # An open owner decision on a review hand-over is a QUESTION WITH
+        # BUTTONS, not more prose (owner 2026-10-10: explain plainly, ask what
+        # is open, do not bury the ask in a wall of text). One chat line: the
+        # explanation IS the question's text.
+        _opts = _ask_options(d) if (action == "move" and lane == "review") else []
+        if _opts:
+            from cells.copilot.planning import pm_comm
+            if _find_track(card):
+                _audit(card, _line)
+            if pm_comm._ask_owner(_line, _opts, card=card):
+                return True
+        _notify_owner(_line, None if action == "did" else _find_track(card),
+                      push=(action != "move" or lane == "review"))
     return True
+
+
+def _ask_options(d):
+    """The 2-4 tap answers Henry named for the owner's open decision on a
+    review hand-over (`ask`: ["Abnehmen", ...]); [] = nothing is open."""
+    raw = d.get("ask")
+    if isinstance(raw, dict):
+        raw = raw.get("options")
+    if not isinstance(raw, list):
+        return []
+    out = [{"label": str(o).strip()[:40]} for o in raw if str(o).strip()]
+    return out[:4] if len(out) >= 2 else []
 
 
 def _denial_line(x):

@@ -1344,7 +1344,10 @@ def _accept_machine(t, lane, actor, log, note=""):
             tt["review_report"] = ("Maschinen-Aufgabe - kein Branch, kein Merge. Pruefe das "
                                    "Ergebnis auf dem Rechner und nimm die Karte ab.")
         t = _mutate(t["id"], _submit) or t
-        _say_card(t, _i18n.t("say.machineReview"))
+        if actor != "henry":
+            # Henry's move carries his own report to the owner (henry_broker
+            # report-back); a canned line beside it was the double wall of text.
+            _say_card(t, _i18n.t("say.machineReview"))
         return dict(t, review_preview=True, merge_kind="machine")
     events.emit("touch", t["id"], touch="review", actor=actor)
     te = [e for e in events.read_events() if e.get("track") == t["id"]]
