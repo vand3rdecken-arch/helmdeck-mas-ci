@@ -5846,6 +5846,24 @@ DEBT = [
         "since": "2026-10-10",
         "order": 91,
     },
+    {
+        "id": "dup-title-identity-heuristic",
+        "title": "Duplicate-card check tells 'different app' from 'twin' by quoted names and a Private Project folder in the title",
+        "status": "open",
+        "what": "pm.duplicate_titles() compares card titles by word overlap; pm._same_card "
+                "now vetoes a pair when each title names something the other lacks "
+                "(a quoted product name, or the folder after 'Private Project/'). It is "
+                "an inference from title text, not an observation of what the cards build.",
+        "why_it_bites": "Two cards of one template whose titles name no quoted app and no "
+                        "folder (Lesenachweis vs Seiten-Review, 2026-10-11 11:43) are still "
+                        "flagged as twins; a twin re-filed with a different quoted name is "
+                        "missed. Both only cost one suggestion tap, never an automatic action.",
+        "trigger": "an owner report of a wrong 'Zwei Karten sehen fast identisch aus' or a missed twin",
+        "fix": "Compare what the cards own (their target folder/project id, set when filed) "
+               "instead of title text.",
+        "since": "2026-10-11",
+        "order": 92,
+    },
 ]
 
 def list_debt():

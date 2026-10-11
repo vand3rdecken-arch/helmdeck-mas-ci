@@ -537,6 +537,29 @@ def _suggestion_due(sig):
 
 
 
+_Q_NAME = re.compile(r"['„\"‘]([^'“\"’]{3,60})['“\"’]")
+_Q_FOLDER = re.compile(r"private project/([\w-]{4,})")
+
+
+def _identity(title):
+    """The NAMES a title carries: quoted product names and the project folder it
+    points at (filenames and card ids in a body are noise, not identity). Two long titles from one template (\"Neue Forge-Einzelapp 'X' ... Vorlagen:
+    ...\") share nearly every word and differ only here."""
+    t = (title or "").casefold()
+    return {m.strip() for m in _Q_NAME.findall(t)} | set(_Q_FOLDER.findall(t))
+
+
+def _same_card(a, b):
+    """_same_question on titles, except that two cards each naming something
+    and EACH naming something the other lacks are different work built from
+    one template, whatever their word overlap says (2026-10-11: Forge-app
+    series). A re-filed twin names the same things, so it has nothing of its own."""
+    ia, ib = _identity(a), _identity(b)
+    if ia - ib and ib - ia:
+        return False
+    return _same_question(a, b)
+
+
 def duplicate_titles():
     """PURE CODE, zero model cost: two ACTIVE cards whose titles are near-
     identical (same content-word set, via the same Jaccard machinery
@@ -553,7 +576,7 @@ def duplicate_titles():
     pairs = []
     for i, a in enumerate(tracks):
         for b in tracks[i + 1:]:
-            if _same_question(a["task"], b["task"]):
+            if _same_card(a["task"], b["task"]):
                 pairs.append((a, b))
     return pairs
 
