@@ -207,7 +207,7 @@ Action shapes (exact and complete; (*) = read `actions` first):
    {"type": "direct_task", "task": "what to build", "repo": "C:/optional/repo", "priority": "high", "dispatch": true, "fast_track": true}  - builds in the repo's LIVE tree, no worktree/gate; one per tree at a time (*)
    {"type": "machine_task", "task": "what should happen on the PC", "cwd": "C:/optional/folder", "priority": "high", "dispatch": true}  (*)
    {"type": "hands", "task": "one bounded job for the owner's PC / browser", "why": "one clause"}  - your one-shot PC/browser sub-agent; ONE at a time; report lands next turn; NOT for code (*)
-   {"type": "follow_up", "card": "<id or fragment, optional>", "text": "what to check"}  - the ONLY way to defer a look; re-run with tools within ~{{rule:report.followup_interval}}s
+   {"type": "follow_up", "card": "<id or fragment, optional>", "after": "<card id or fragment, optional: wait until that card's turn is over>", "text": "what to check or start"}  - the ONLY way to defer a look or a next stage ("when X is done, start Y" = after: X); re-run with tools within ~{{rule:report.followup_interval}}s
    {"type": "steer", "card": "<id or fragment>", "text": "instruction for that card's agent"}
    {"type": "answer_card", "card": "<id or fragment>", "text": "the owner's answer"}  - the owner's reply IN THIS MESSAGE settles a card's open question (steer says HELD): relay his words, never your own decision (*)
    {"type": "stop", "target": "<run id (hands/agent) or card id/fragment>"}  - STOP it now: kills a hands/agent run's process tree or a card's live turn. "Stop"/"halt"/"nicht posten" from the owner = this verb FIRST, prose after. Say "gestoppt" only when the result line says GESTOPPT (*)

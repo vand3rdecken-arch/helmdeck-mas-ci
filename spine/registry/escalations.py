@@ -33,7 +33,7 @@ def _append(rec):
 DETAIL_MAX = 4000
 
 
-def emit(kind, card=None, detail="", process=None):
+def emit(kind, card=None, detail="", process=None, after=None):
     """Reporting seam for ANY cell: record the exception, note it on the card,
     never decide anything here. `process` names the process an escalation is
     about (process_drive) - a RECORD the broker acts on, never parsed back out
@@ -48,6 +48,10 @@ def emit(kind, card=None, detail="", process=None):
            "detail": text}
     if process:
         rec["process"] = process
+    if after:
+        # a follow-up that must not run BEFORE this card's turn is over - a
+        # RECORD the broker folds at tick time (henry_broker._followup_waits)
+        rec["after"] = after
     _append(rec)
     try:
         from spine.storage import events

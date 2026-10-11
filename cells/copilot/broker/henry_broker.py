@@ -1274,6 +1274,29 @@ def _run_followup(esc):
             _followups_inflight.discard(esc["id"])
 
 
+_AFTER_MAX_WAIT_S = 6 * 3600
+
+
+def _followup_waits(e):
+    """True while a follow-up's `after` card still has a turn alive (queued or
+    running). 2026-10-11 12:36: Henry filed "when the pages card is done, start
+    three apps" - the broker took it up at once, found nothing to do, and gave
+    up after two attempts; nothing ever started the next stage until the owner
+    typed "Ok" 1.5h later. A conditional promise needs a condition the harness
+    can see: derived from the runtime (drivers.turn_inflight), never a stored
+    flag, and bounded so a card that never settles cannot park it forever."""
+    after = e.get("after")
+    if not after:
+        return False
+    if time.time() - _ts_epoch(e.get("ts")) > _AFTER_MAX_WAIT_S:
+        return False
+    try:
+        from spine.agent import drivers
+        return bool(drivers.turn_inflight(after))
+    except Exception:                                          # noqa: BLE001
+        return False
+
+
 def _dispatch_pass(open_escs):
     """One while-loop tick's worth of work, split by kind (owner complaint
     2026-09-10: a henry-followup escalation opened at 12:38:47 got its first
@@ -1299,7 +1322,8 @@ def _dispatch_pass(open_escs):
     Returns the list of Threads started (empty if none) - callers that need
     to wait for a pass to finish (tests) can join() them; the live loop does
     not."""
-    followups = [e for e in open_escs if e["kind"] == _FOLLOWUP_KIND]
+    followups = [e for e in open_escs
+                 if e["kind"] == _FOLLOWUP_KIND and not _followup_waits(e)]
     others = [e for e in open_escs if e["kind"] != _FOLLOWUP_KIND]
     started = []
     for esc in followups:

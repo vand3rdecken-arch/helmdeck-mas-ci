@@ -846,7 +846,14 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         card = a.get("card")
         ct = _find_card(card) if card else None
         card_id = ct["id"] if ct and not isinstance(ct, list) else None
-        escalations.emit("henry-followup", card=card_id, detail=text)
+        after = None
+        if a.get("after"):
+            at = _find_card(a["after"])
+            after = at["id"] if at and not isinstance(at, list) else None
+            if not after:
+                return ("follow_up: Karte '%s' fuer \"after\" nicht eindeutig gefunden - "
+                        "nichts notiert." % a["after"])
+        escalations.emit("henry-followup", card=card_id, detail=text, after=after)
         # NOT a fixed-time promise (owner report 2026-09-10: a follow-up sat
         # queued behind a ~5min ship-decision judgement, so "within 90s" was
         # already false the moment something slow was ahead of it in the
@@ -857,6 +864,9 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         # Owner 2026-09-25 22:21 "Was ist das": the line read like a log.
         # Say WHAT happens, in words the owner uses; the status lives in the
         # Sub-Agenten line (followups).
+        if after:
+            return ("Henry setzt das fort, sobald Karte %s fertig ist: %s (Stand: Zeile "
+                    "„Sub-Agenten“ über dem Eingabefeld)" % (after, text[:120]))
         return "Henry prüft im Hintergrund nach: %s (Stand: Zeile „Sub-Agenten“ über dem Eingabefeld)" % text[:120]
     if kind == "resolve_blocker":
         # Unblock a card whose merge is blocked by an uncommitted (dirty) tree in
