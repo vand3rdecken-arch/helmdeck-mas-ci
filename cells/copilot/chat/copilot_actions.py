@@ -308,6 +308,22 @@ def _note_overrides(repo, patch, actor):
         print("copilot: noting overrides for %s failed: %s" % (repo, e), flush=True)
 
 
+def _start_in_background(t, actor):
+    """Start a freshly filed card WITHOUT waiting for its first turn.
+
+    move_lane("working") runs the card's first turn inline - minutes. Called
+    straight from an action it held this whole action list: "start three cards
+    in parallel" started them one by one, each when the previous first turn
+    ended, and Henry's next turn saw one card and refiled the other three as
+    twins (2026-10-10 16:27-16:38, measured: every filing came in the second
+    the previous card's first turn ended). The card EXISTS the moment it is
+    filed; only its turn runs on its own thread, like steer."""
+    from spine.ops import bgthread
+    from cells.engineer.cards import sessions
+    bgthread.spawn("track:start:" + t["id"], lambda: sessions.move_lane(
+        t["id"], "working", actor=actor))
+
+
 def _tag(a, t):
     """Remember on the ACTION which card it produced/touched. The result is a
     sentence (Henry reads it next turn); the chat needs the id to draw a tile
@@ -540,12 +556,13 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         try:
             t = sessions.new_machine_task(
                 a.get("cwd") or os.path.expanduser("~"), task, actor=actor,
-                priority=a.get("priority", "medium"),
-                dispatch=a.get("dispatch", True) is not False)
+                priority=a.get("priority", "medium"), dispatch=False)
         except RuntimeError as e:
             return _start_failed("machine_task", e)
         _tag(a, t)
         _mark_goal(a, t)
+        if a.get("dispatch", True) is not False:
+            _start_in_background(t, actor)
         return ("Maschinen-Aufgabe gestartet (%s, Ordner %s) - der Agent arbeitet auf dem "
                 "Rechner, du siehst alles auf der Karte." % (t["id"], t.get("worktree")))
     if kind == "direct_task":
@@ -571,18 +588,15 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             t = sessions.new_direct_task(
                 repo, task, actor=actor,
                 priority=a.get("priority", "medium"),
-                dispatch=a.get("dispatch", True) is not False,
+                dispatch=False,
                 fast_track=a.get("fast_track") is True)
         except RuntimeError as e:
             return _start_failed("direct_task", e)
         _tag(a, t)
         _mark_goal(a, t)
         _file_links(a, t, actor)
-        t = sessions._find(sessions._load(), t["id"]) or t
-        if t.get("isolated_from"):
-            return ("Karte %s gestartet - der Live-Baum ist gerade von %s belegt, "
-                    "darum im eigenen Worktree (Branch %s); landet danach im Baum."
-                    % (t["id"], t["isolated_from"], t.get("branch")))
+        if a.get("dispatch", True) is not False:
+            _start_in_background(t, actor)
         return ("Direkt-Build gestartet (%s%s) - der Agent arbeitet OHNE Worktree direkt "
                 "im Baum %s. Kein Gate, kein Merge: was er ändert, ist sofort da."
                 % (t["id"], ", fast-track" if t.get("fast_track") else "",
