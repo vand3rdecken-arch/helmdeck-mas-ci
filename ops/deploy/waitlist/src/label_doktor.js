@@ -1,4 +1,4 @@
-// Public pages for the Jira app "Label-Doktor", served under /apps/label-doktor/.
+// Public pages for the Jira app "Label-Doktor", served under /label-doktor/.
 //
 // Why here: the Atlassian Marketplace requires a paid app to point at public
 // support, documentation, privacy and terms pages on the vendor's own domain.
@@ -20,11 +20,11 @@ margin-top:32px}h3{font-size:16px}a{color:#6CB2EC}hr{border:0;border-top:1px sol
 margin:40px 0}.muted{color:#959A9D}code{background:#1A1C1D;padding:1px 5px;border-radius:3px}
 ul{padding-left:22px}li{margin:4px 0}`;
 
-const NAV = `<p class=muted><a href="/apps/label-doktor/">Label-Doktor</a> &middot;
-<a href="/apps/label-doktor/docs">Doku / Docs</a> &middot;
-<a href="/apps/label-doktor/support">Support</a> &middot;
-<a href="/apps/label-doktor/privacy">Datenschutz / Privacy</a> &middot;
-<a href="/apps/label-doktor/terms">Nutzungsbedingungen / Terms</a></p>`;
+const NAV = `<p class=muted><a href="/label-doktor/">Label-Doktor</a> &middot;
+<a href="/label-doktor/docs">Doku / Docs</a> &middot;
+<a href="/label-doktor/support">Support</a> &middot;
+<a href="/label-doktor/privacy">Datenschutz / Privacy</a> &middot;
+<a href="/label-doktor/terms">Nutzungsbedingungen / Terms</a></p>`;
 
 const STAND = "Stand: 10. Oktober 2026, App-Version 2.0.0.";
 const ASOF = "Last updated: 10 October 2026, app version 2.0.0.";
@@ -53,12 +53,12 @@ Infrastruktur von Atlassian und schickt keine Daten an eigene Server.</p>
 
 <h2>Seiten</h2>
 <ul>
-<li><a href="/apps/label-doktor/docs">Dokumentation</a>: Installation, Scan,
+<li><a href="/label-doktor/docs">Dokumentation</a>: Installation, Scan,
 Vorschau, Zusammenführen, Rückgängig, KI, Einstellungen, Berechtigungen.</li>
-<li><a href="/apps/label-doktor/support">Support</a>: wie Sie Hilfe bekommen.</li>
-<li><a href="/apps/label-doktor/privacy">Datenschutz</a>: welche Daten die App
+<li><a href="/label-doktor/support">Support</a>: wie Sie Hilfe bekommen.</li>
+<li><a href="/label-doktor/privacy">Datenschutz</a>: welche Daten die App
 verarbeitet und wie lange.</li>
-<li><a href="/apps/label-doktor/terms">Nutzungsbedingungen</a>.</li>
+<li><a href="/label-doktor/terms">Nutzungsbedingungen</a>.</li>
 </ul>
 
 <h2>Kontakt</h2>
@@ -78,12 +78,12 @@ entirely on Atlassian infrastructure and sends no data to any server of our own.
 
 <h2>Pages</h2>
 <ul>
-<li><a href="/apps/label-doktor/docs">Documentation</a>: install, scan, preview,
+<li><a href="/label-doktor/docs">Documentation</a>: install, scan, preview,
 merge, undo, AI, settings, permissions.</li>
-<li><a href="/apps/label-doktor/support">Support</a>: how to get help.</li>
-<li><a href="/apps/label-doktor/privacy">Privacy</a>: what the app processes and
+<li><a href="/label-doktor/support">Support</a>: how to get help.</li>
+<li><a href="/label-doktor/privacy">Privacy</a>: what the app processes and
 for how long.</li>
-<li><a href="/apps/label-doktor/terms">Terms of use</a>.</li>
+<li><a href="/label-doktor/terms">Terms of use</a>.</li>
 </ul>
 
 <h2>Contact</h2>
@@ -180,10 +180,10 @@ Protokoll im Speicher der App innerhalb von Atlassian ablegen.</li>
 </ul>
 
 <h2>7. Datenschutz</h2>
-<p>Siehe <a href="/apps/label-doktor/privacy">Datenschutzseite</a>.</p>
+<p>Siehe <a href="/label-doktor/privacy">Datenschutzseite</a>.</p>
 
 <h2>8. Nutzungsbedingungen</h2>
-<p>Siehe <a href="/apps/label-doktor/terms">Nutzungsbedingungen</a>.</p>
+<p>Siehe <a href="/label-doktor/terms">Nutzungsbedingungen</a>.</p>
 
 <h2>9. Fehlersuche</h2>
 <ul>
@@ -294,10 +294,10 @@ storage inside Atlassian.</li>
 </ul>
 
 <h2>7. Privacy</h2>
-<p>See the <a href="/apps/label-doktor/privacy">privacy page</a>.</p>
+<p>See the <a href="/label-doktor/privacy">privacy page</a>.</p>
 
 <h2>8. Terms</h2>
-<p>See the <a href="/apps/label-doktor/terms">terms of use</a>.</p>
+<p>See the <a href="/label-doktor/terms">terms of use</a>.</p>
 
 <h2>9. Troubleshooting</h2>
 <ul>
@@ -342,7 +342,7 @@ ist ein Ziel und keine zugesicherte Reaktionszeit. Label-Doktor wird von einer
 Einzelperson entwickelt und betreut.</p>
 
 <h2>Bevor Sie schreiben</h2>
-<p>Die <a href="/apps/label-doktor/docs">Dokumentation</a> beantwortet die
+<p>Die <a href="/label-doktor/docs">Dokumentation</a> beantwortet die
 häufigen Fälle, besonders Abschnitt 9, Fehlersuche.</p>
 
 <h2>Was in die Nachricht gehört</h2>
@@ -385,7 +385,7 @@ target and not a guaranteed response time. Label-Doktor is built and maintained
 by one person.</p>
 
 <h2>Before you write</h2>
-<p>The <a href="/apps/label-doktor/docs">documentation</a> covers the common
+<p>The <a href="/label-doktor/docs">documentation</a> covers the common
 cases, in particular section 9, troubleshooting.</p>
 
 <h2>What to put in the message</h2>
@@ -591,14 +591,14 @@ Atlassian Plattform ab.</p>
 
 <h2>5. Support</h2>
 <p>Support per E-Mail, Einzelheiten auf der
-<a href="/apps/label-doktor/support">Supportseite</a>.</p>
+<a href="/label-doktor/support">Supportseite</a>.</p>
 
 <h2>6. Änderungen</h2>
 <p>Funktionsumfang und diese Seite können sich mit neuen Versionen der App
 ändern. Das Datum oben nennt den Stand.</p>
 
 <h2>7. Datenschutz</h2>
-<p>Siehe <a href="/apps/label-doktor/privacy">Datenschutzseite</a>.</p>
+<p>Siehe <a href="/label-doktor/privacy">Datenschutzseite</a>.</p>
 
 <hr>
 <h1 id=en>Label-Doktor, terms of use</h1>
@@ -636,23 +636,23 @@ Atlassian platform.</p>
 
 <h2>5. Support</h2>
 <p>Support by email, details on the
-<a href="/apps/label-doktor/support">support page</a>.</p>
+<a href="/label-doktor/support">support page</a>.</p>
 
 <h2>6. Changes</h2>
 <p>The scope of the app and this page can change with new versions of the app.
 The date above states the current version.</p>
 
 <h2>7. Privacy</h2>
-<p>See the <a href="/apps/label-doktor/privacy">privacy page</a>.</p>
+<p>See the <a href="/label-doktor/privacy">privacy page</a>.</p>
 `);
 
 // One entry per public URL. index.js looks the pathname up here, so adding a
 // page is one constant plus one line.
 export const LABEL_DOKTOR_PAGES = {
-  "/apps/label-doktor": INDEX_HTML,
-  "/apps/label-doktor/": INDEX_HTML,
-  "/apps/label-doktor/docs": DOCS_HTML,
-  "/apps/label-doktor/support": SUPPORT_HTML,
-  "/apps/label-doktor/privacy": PRIVACY_HTML,
-  "/apps/label-doktor/terms": TERMS_HTML,
+  "/label-doktor": INDEX_HTML,
+  "/label-doktor/": INDEX_HTML,
+  "/label-doktor/docs": DOCS_HTML,
+  "/label-doktor/support": SUPPORT_HTML,
+  "/label-doktor/privacy": PRIVACY_HTML,
+  "/label-doktor/terms": TERMS_HTML,
 };

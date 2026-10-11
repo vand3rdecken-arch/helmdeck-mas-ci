@@ -6,11 +6,12 @@
  *                      Watch/Glasses waitlist (DE default, EN toggle; no-JS fallback via query params)
  *   GET  /datenschutz  full DE/EN privacy policy (also /privacy)
  *   GET  /impressum    DE/EN legal notice, Paragraph 5 DDG (also /imprint)
- *   GET  /apps/label-doktor/{,docs,support,privacy,terms}
+ *   GET  /label-doktor/{,docs,support,privacy,terms}
  *                      DE/EN public pages for the Jira app, required by the
  *                      Atlassian Marketplace (see label_doktor.js)
- *   GET  /apps/{lesenachweis,seiten-review,ticket-merge}/{,docs,support,privacy,terms}
+ *   GET  /{lesenachweis,seiten-review,ticket-merge}/{,docs,support,privacy,terms}
  *                      same for three more apps (see app_pages.js)
+ *   GET  /apps/<product>/...  301 to /<product>/... (old Marketplace-draft links)
  *   POST /api/join    store an address in KV (idempotent per email)
  *   GET  /export.csv  owner-only CSV export (?token=... or Bearer, secret EXPORT_TOKEN)
  *   GET  /icon.svg    brand mark (also used as favicon)
@@ -1862,6 +1863,11 @@ export default {
     if ((p === "/datenschutz" || p === "/privacy") && req.method === "GET") return html(DATENSCHUTZ_HTML);
     if ((p === "/impressum" || p === "/imprint") && req.method === "GET") return html(IMPRESSUM_HTML);
     // Public pages the Atlassian Marketplace requires a paid app to point at.
+    // Old /apps/<product>/... URLs (already in the Marketplace draft) move permanently.
+    const oldApp = /^\/apps\/(label-doktor|lesenachweis|seiten-review|ticket-merge)(\/.*)?$/.exec(p);
+    if (oldApp && (req.method === "GET" || req.method === "HEAD")) {
+      return Response.redirect(url.origin + "/" + oldApp[1] + (oldApp[2] || "/"), 301);
+    }
     if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(LABEL_DOKTOR_PAGES[p]);
     if (req.method === "GET" && APP_PAGES[p]) return html(APP_PAGES[p]);
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);

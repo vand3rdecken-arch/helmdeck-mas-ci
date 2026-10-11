@@ -1,5 +1,5 @@
 // Public pages for three more Atlassian Marketplace apps, served under
-// /apps/lesenachweis/, /apps/seiten-review/ and /apps/ticket-merge/. Same shape
+// /lesenachweis/, /seiten-review/ and /ticket-merge/. Same shape
 // as label_doktor.js: one HTML string per page, no <script>, no analytics, no
 // noindex (the live Label-Doktor pages carry none either).
 //
@@ -17,11 +17,11 @@ td,th{border:1px solid #222425;padding:6px 10px;vertical-align:top;text-align:le
 blockquote{margin:16px 0;padding:4px 16px;border-left:3px solid #222425;color:#959A9D}`;
 
 function page(slug, name, title, body) {
-  const nav = `<p class=muted><a href="/apps/${slug}/">${name}</a> &middot;
-<a href="/apps/${slug}/docs">Doku / Docs</a> &middot;
-<a href="/apps/${slug}/support">Support</a> &middot;
-<a href="/apps/${slug}/privacy">Datenschutz / Privacy</a> &middot;
-<a href="/apps/${slug}/terms">Nutzungsbedingungen / Terms</a></p>`;
+  const nav = `<p class=muted><a href="/${slug}/">${name}</a> &middot;
+<a href="/${slug}/docs">Doku / Docs</a> &middot;
+<a href="/${slug}/support">Support</a> &middot;
+<a href="/${slug}/privacy">Datenschutz / Privacy</a> &middot;
+<a href="/${slug}/terms">Nutzungsbedingungen / Terms</a></p>`;
   return `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>${title}</title>
@@ -88,7 +88,7 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <li>No e-mail reminders. The app does not prove compliance with NIS2 or ISO 27001; it records confirmations.</li>
 </ul>
 <h3>11. Privacy, deletion, troubleshooting</h3>
-<p>See the <a href="/apps/lesenachweis/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/apps/lesenachweis/support">Support</a>.</p>
+<p>See the <a href="/lesenachweis/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/lesenachweis/support">Support</a>.</p>
 
 <h2>Deutsch</h2>
 <h3>1. Was die App tut</h3>
@@ -117,7 +117,7 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <li>Keine E-Mail-Erinnerungen. Die App belegt keine Konformität mit NIS2 oder ISO 27001; sie hält Bestätigungen fest.</li>
 </ul>
 <h3>11. Datenschutz, Löschung, Fehlersuche</h3>
-<p>Siehe <a href="/apps/lesenachweis/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/apps/lesenachweis/support">Support</a>.</p>
+<p>Siehe <a href="/lesenachweis/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/lesenachweis/support">Support</a>.</p>
 <hr><p class=muted>Tien Duy Vo, *** 6, *** Frankfurt am Main, Deutschland, support@helmdeck.de. Siehe <a href="/impressum">Impressum</a></p>
 `);
 
@@ -132,7 +132,7 @@ const LESENACHWEIS_SUPPORT = page("lesenachweis", "Lesenachweis", "Support, Lese
 <tr><td>Free tier (up to 10 users)</td><td>Documentation only; no response time promised.</td></tr>
 </table>
 <p>Security issues: security@helmdeck.de. Data processing agreement on request: privacy@helmdeck.de.</p>
-<p>First read the <a href="/apps/lesenachweis/docs">documentation</a>, especially "Known limits".</p>
+<p>First read the <a href="/lesenachweis/docs">documentation</a>, especially "Known limits".</p>
 <h2>Deutsch</h2>
 <p>E-Mail: support@helmdeck.de</p>
 <p>Bitte angeben: Name deiner Confluence-Seite, was du geklickt hast, was du erwartet hast und was passiert ist, Sprache deines Profils. Bitte keine Seiteninhalte oder personenbezogenen Daten senden.</p>
@@ -181,7 +181,7 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <h2>11. Sicherheit</h2>
 <p>Anmeldung und Hosting liefert Atlassian Forge. Die App fragt nur die oben genannten Berechtigungen ab. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an security@helmdeck.de.</p>
 <h2>12. Änderungen</h2>
-<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <a href="https://helmdeck.de/apps/lesenachweis/privacy">https://helmdeck.de/apps/lesenachweis/privacy</a>.</p>
+<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <a href="https://helmdeck.de/lesenachweis/privacy">https://helmdeck.de/lesenachweis/privacy</a>.</p>
 <h1>English</h1>
 <h2>1. Who is responsible</h2>
 <p><code>Project Kaiser</code>, *** 6, *** Frankfurt am Main, Germany, e-mail privacy@helmdeck.de. The provider is a natural person, not a company.</p>
@@ -214,7 +214,7 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <h2>11. Security</h2>
 <p>Authentication and hosting are provided by Atlassian Forge. The app asks only for the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: security@helmdeck.de.</p>
 <h2>12. Changes</h2>
-<p>We may update this policy. The current version is at <a href="https://helmdeck.de/apps/lesenachweis/privacy">https://helmdeck.de/apps/lesenachweis/privacy</a>.</p>
+<p>We may update this policy. The current version is at <a href="https://helmdeck.de/lesenachweis/privacy">https://helmdeck.de/lesenachweis/privacy</a>.</p>
 `);
 
 const LESENACHWEIS_TERMS = page("lesenachweis", "Lesenachweis", "AGB / Terms, Lesenachweis", `
@@ -245,13 +245,13 @@ const LESENACHWEIS_TERMS = page("lesenachweis", "Lesenachweis", "AGB / Terms, Le
 <p><code>[[LAWYER: review the limitation of liability under German law. Liability for intent, gross negligence, injury to life, body or health and for essential contractual duties cannot be excluded. Do not use any proposed wording unreviewed.]]</code></p>
 <p>The app is provided "as is" to the extent permitted by law.</p>
 <h3>3.6 Support</h3>
-<p>Support via <a href="https://helmdeck.de/apps/lesenachweis/support">https://helmdeck.de/apps/lesenachweis/support</a>. Target response for paying customers: two business days, no guaranteed availability. For the free tier (1-10 users): documentation only, no response time promised. <code></code></p>
+<p>Support via <a href="https://helmdeck.de/lesenachweis/support">https://helmdeck.de/lesenachweis/support</a>. Target response for paying customers: two business days, no guaranteed availability. For the free tier (1-10 users): documentation only, no response time promised. <code></code></p>
 <h3>3.7 Term and termination</h3>
 <p>Subscription as per the Atlassian Marketplace. After uninstall the app processes nothing further.</p>
 <h3>3.8 Governing law and venue</h3>
 <p><code>[[LAWYER: governing law, venue, consumer protection rules.]]</code></p>
 <h3>3.9 Changes</h3>
-<p>The provider may update these terms for future versions. Material changes are announced at <a href="https://helmdeck.de/apps/lesenachweis/terms">https://helmdeck.de/apps/lesenachweis/terms</a>.</p>
+<p>The provider may update these terms for future versions. Material changes are announced at <a href="https://helmdeck.de/lesenachweis/terms">https://helmdeck.de/lesenachweis/terms</a>.</p>
 <h3>3.10 Contact / legal notice</h3>
 <p><code>[[Impressum is required for a public page: name, postal address, e-mail. As a private person the home address becomes public; see OWNER-CHECKLISTE.]]</code></p>
 <h1>Deutsch (Kurzfassung der Ergänzungen, nicht rechtsverbindlich)</h1>
@@ -299,10 +299,10 @@ const TICKET_MERGE_INDEX = page("ticket-merge", "Ticket Merge", "Ticket Merge, T
 <p><strong>Deutsch:</strong> Doppelte Jira-Tickets zusammenführen: Kommentare, Anhänge und Links wandern ins Haupt-Ticket, das Duplikat wird geschlossen, Rückgängig 30 Tage lang. Kostenlos bis 10 Nutzer.</p>
 <p>Jira Service Management features are not yet verified on a JSM site. / Funktionen für Jira Service Management sind auf einer JSM-Site noch nicht überprüft.</p>
 <ul>
-<li><a href="/apps/ticket-merge/docs">Documentation / Dokumentation</a></li>
-<li><a href="/apps/ticket-merge/support">Support</a></li>
-<li><a href="/apps/ticket-merge/privacy">Privacy / Datenschutz</a></li>
-<li><a href="/apps/ticket-merge/terms">Terms / AGB</a></li>
+<li><a href="/ticket-merge/docs">Documentation / Dokumentation</a></li>
+<li><a href="/ticket-merge/support">Support</a></li>
+<li><a href="/ticket-merge/privacy">Privacy / Datenschutz</a></li>
+<li><a href="/ticket-merge/terms">Terms / AGB</a></li>
 </ul>
 `);
 
@@ -457,7 +457,7 @@ Do <strong>not</strong> send passwords, API tokens or customer data.</li>
 <p>Business days, German or English. Response target: two business days, Monday to Friday (a target, not a guaranteed response time). Free tier (up to 10 users): the same.</p>
 <h3>Before you write</h3>
 <ul>
-<li>Read the <a href="/apps/ticket-merge/docs">documentation</a>, especially &quot;Partly done&quot; and &quot;Undo&quot;.</li>
+<li>Read the <a href="/ticket-merge/docs">documentation</a>, especially &quot;Partly done&quot; and &quot;Undo&quot;.</li>
 <li>If a merge is &quot;Partly done&quot;, wait a few minutes: the app retries by itself. Use <strong>Undo</strong> to go back.</li>
 <li>A customer got an email you did not want? Sent emails cannot be taken back; undo restores tickets only.</li>
 <li>&quot;Merge&quot; shows &quot;license is not active&quot;? Ask a site admin to check the subscription in the Atlassian Marketplace. Preview and undo still work.</li>
@@ -481,7 +481,7 @@ Sende <strong>keine</strong> Passwörter, API-Tokens oder Kundendaten.</li>
 <p>Werktage, Deutsch oder Englisch. Reaktionsziel: Antwort innerhalb von zwei Werktagen (Montag bis Freitag), keine zugesicherte Reaktionszeit. Kostenlose Stufe (bis 10 Nutzer): dasselbe.</p>
 <h3>Bevor du schreibst</h3>
 <ul>
-<li>Lies die <a href="/apps/ticket-merge/docs">Dokumentation</a>, besonders &quot;Teilweise erledigt&quot; und &quot;Rückgängig&quot;.</li>
+<li>Lies die <a href="/ticket-merge/docs">Dokumentation</a>, besonders &quot;Teilweise erledigt&quot; und &quot;Rückgängig&quot;.</li>
 <li>Ist ein Merge &quot;Teilweise erledigt&quot;, warte ein paar Minuten: die App versucht es selbst erneut. Mit <strong>Rückgängig</strong> gehst du zurück.</li>
 <li>Ein Kunde hat eine unerwünschte E-Mail bekommen? Gesendete E-Mails lassen sich nicht zurückholen; Rückgängig stellt nur Tickets wieder her.</li>
 <li>&quot;Merge&quot; meldet &quot;Lizenz nicht aktiv&quot;? Bitte einen Site-Admin, das Abonnement im Atlassian Marketplace zu prüfen. Vorschau und Rückgängig funktionieren weiter.</li>
@@ -682,22 +682,22 @@ Sie sind für Sicherungen Ihrer Jira-Daten verantwortlich. Testen Sie die App vo
 `);
 
 export const APP_PAGES = {
-  "/apps/lesenachweis": LESENACHWEIS_INDEX,
-  "/apps/lesenachweis/": LESENACHWEIS_INDEX,
-  "/apps/lesenachweis/docs": LESENACHWEIS_DOCS,
-  "/apps/lesenachweis/support": LESENACHWEIS_SUPPORT,
-  "/apps/lesenachweis/privacy": LESENACHWEIS_PRIVACY,
-  "/apps/lesenachweis/terms": LESENACHWEIS_TERMS,
-  "/apps/seiten-review": SEITEN_REVIEW_INDEX,
-  "/apps/seiten-review/": SEITEN_REVIEW_INDEX,
-  "/apps/seiten-review/docs": SEITEN_REVIEW_DOCS,
-  "/apps/seiten-review/support": SEITEN_REVIEW_SUPPORT,
-  "/apps/seiten-review/privacy": SEITEN_REVIEW_PRIVACY,
-  "/apps/seiten-review/terms": SEITEN_REVIEW_TERMS,
-  "/apps/ticket-merge": TICKET_MERGE_INDEX,
-  "/apps/ticket-merge/": TICKET_MERGE_INDEX,
-  "/apps/ticket-merge/docs": TICKET_MERGE_DOCS,
-  "/apps/ticket-merge/support": TICKET_MERGE_SUPPORT,
-  "/apps/ticket-merge/privacy": TICKET_MERGE_PRIVACY,
-  "/apps/ticket-merge/terms": TICKET_MERGE_TERMS,
+  "/lesenachweis": LESENACHWEIS_INDEX,
+  "/lesenachweis/": LESENACHWEIS_INDEX,
+  "/lesenachweis/docs": LESENACHWEIS_DOCS,
+  "/lesenachweis/support": LESENACHWEIS_SUPPORT,
+  "/lesenachweis/privacy": LESENACHWEIS_PRIVACY,
+  "/lesenachweis/terms": LESENACHWEIS_TERMS,
+  "/seiten-review": SEITEN_REVIEW_INDEX,
+  "/seiten-review/": SEITEN_REVIEW_INDEX,
+  "/seiten-review/docs": SEITEN_REVIEW_DOCS,
+  "/seiten-review/support": SEITEN_REVIEW_SUPPORT,
+  "/seiten-review/privacy": SEITEN_REVIEW_PRIVACY,
+  "/seiten-review/terms": SEITEN_REVIEW_TERMS,
+  "/ticket-merge": TICKET_MERGE_INDEX,
+  "/ticket-merge/": TICKET_MERGE_INDEX,
+  "/ticket-merge/docs": TICKET_MERGE_DOCS,
+  "/ticket-merge/support": TICKET_MERGE_SUPPORT,
+  "/ticket-merge/privacy": TICKET_MERGE_PRIVACY,
+  "/ticket-merge/terms": TICKET_MERGE_TERMS,
 };
