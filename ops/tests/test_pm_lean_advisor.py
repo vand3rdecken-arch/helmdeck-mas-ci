@@ -92,6 +92,19 @@ ids = sorted(tuple(sorted([a["id"], b["id"]])) for a, b in pairs)
 check(ids == [("c1", "c2")], "only the genuine near-duplicate pair is found (%r)" % (ids,))
 check(not any(("c3" in p) for p in ids), "a merely-related title (Voice-Modus) is NOT flagged")
 
+print("\n[3b] one template, different named apps: NOT a duplicate; a re-filed twin still is")
+_T = ("Neue Atlassian-Forge-Einzelapp '%s' (Jira) als eigener Ordner direkt neben den "
+      "bestehenden Apps. Vorlagen fuer Struktur und Stand: jira-label-doktor, "
+      "confluence-lesenachweis, jsm-ticket-merge im selben Verzeichnis, Forge-Manifest, Tests.")
+check(not pm._same_card(_T % "Vorgangs-Historie als Bericht", _T % "Delegierte Projektanlage"),
+      "two different quoted app names off one template are not flagged")
+check(pm._same_card(_T % "Delegierte Projektanlage", _T % "Delegierte Projektanlage"),
+      "the same app filed twice still is")
+_F = "Projekt X, Ordner C:/Users/u/Documents/Private Project/%s. Listing-Entwurf docs/listing.md DE und EN, Preis, Fragebogen."
+check(not pm._same_card(_F % "jsm-ticket-merge", _F % "confluence-seiten-review"),
+      "different project folders are not flagged")
+check(pm._same_card(_F % "jsm-ticket-merge", _F % "jsm-ticket-merge"), "same folder twice still is")
+
 print("\n[4] duplicate_check_async asks once per pair, then cools down")
 pm.duplicate_check_async()
 for _ in range(20):
