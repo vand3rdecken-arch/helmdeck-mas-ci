@@ -1337,8 +1337,68 @@ class _ClaudeSession:
             except Exception:
                 pass
 
+    def _adopt_unprompted_turn(self, ev):
+        """A turn the CLI started ITSELF: a background task reported after the
+        turn ended and the CLI continued on its own (measured 2026-10-11, card
+        20261011-183135-machine-2: notification 18:41:01, turn ended 18:41:05,
+        the CLI then ran five more minutes - tools, WebSearch, a Write - with
+        `_cur` None. Nothing folded the reply or the cost, the card stayed
+        `needs_you` with the old "not done yet" text, and the idle sweeper
+        tree-killed the process mid-turn because it looked idle).
+
+        Lifecycle is an observation: an assistant frame that belongs to no turn
+        we sent IS the evidence. Take the turn lock without waiting (a steer
+        holding it owns the session), open a turn state, and let ONE finisher
+        (_await_turn -> sessions.adopt_finish) settle it like any other turn.
+        Returns the new turn state, or None when this is not adoptable."""
+        if (ev.get("parent_tool_use_id") or self._drop_results > 0 or self._ctrl
+                or self.tid in _cancelled):
+            return None
+        if not self._turn_lock.acquire(blocking=False):
+            return None
+        cur = None
+        try:
+            if self._cur is None and self.run_dir:
+                from cells.engineer.cards import sessions
+                if sessions.adoptable(self.tid):
+                    from spine.ops.runs import run_id_of
+                    live_key = run_id_of(self.run_dir)
+                    livebuf.clear(live_key)
+                    cur = {"parts": [], "result": None, "session_id": self.session_id,
+                           "done": threading.Event(), "live_key": live_key,
+                           "last_flush": 0.0, "last_event": _time.time()}
+                    self._cur = cur
+                    self.last_used = _time.time()
+        except Exception:
+            cur = None
+        if cur is None:
+            self._turn_lock.release()
+            return None
+        threading.Thread(target=self._adopted_turn_main, args=(cur,), daemon=True).start()
+        return cur
+
+    def _adopted_turn_main(self, cur):
+        """Owns the adopted turn's lock until it is settled (released here, not
+        by the pump thread that took it)."""
+        from cells.engineer.cards import sessions
+        try:
+            sessions.adopt_begin(self.tid)
+            try:
+                sid, result, meta = self._await_turn(cur, self.run_dir, cur["live_key"])
+            except Exception as e:
+                sessions.adopt_failed(self.tid, e)
+                return
+            sessions.adopt_finish(self.tid, sid, result, meta)
+        except Exception as e:
+            print("adopted turn error for %s: %s" % (self.tid, e))
+        finally:
+            self.last_used = _time.time()
+            self._turn_lock.release()
+
     def _on_event(self, ev):
         cur = self._cur
+        if cur is None and ev.get("type") == "assistant":
+            cur = self._adopt_unprompted_turn(ev)
         if cur is not None:
             # Liveness heartbeat for the inactivity watchdog: ANY frame from the
             # CLI (a token, a tool_use, a tool_result, a control response) means
@@ -1573,6 +1633,13 @@ class _ClaudeSession:
                     timeline_store.append(run_dir, "s:" + uuid.uuid4().hex, step)
         except Exception:
             pass
+        return self._await_turn(cur, run_dir, live_key)
+
+    def _await_turn(self, cur, run_dir, live_key):
+        """Wait (bounded by SILENCE) for `cur`'s result frame and fold it into
+        (session_id, reply, meta). ONE owner for the end of a turn, shared by a
+        turn we SENT (_run_turn_locked) and one the CLI started by itself
+        (_adopt_unprompted_turn) - the two must never drift."""
         # INACTIVITY watchdog, not a wall-clock cap (Paseo bounds the TOOL, not
         # the turn). A fixed 1800s wall-clock killed long-but-PRODUCTIVE turns
         # mid-run ("killed during run" on a machine card doing gradle builds +

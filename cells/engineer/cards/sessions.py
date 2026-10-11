@@ -1049,6 +1049,13 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     if _steer_epoch_current(tid) != my_epoch and "cancelled" in (result or "").lower():
         log.log("turn", "Turn ersetzt", event="canceled")
         return t
+    return _land_finished_turn(tid, sid, result, meta, log)
+
+
+def _land_finished_turn(tid, sid, result, meta, log):
+    """The ONE end-of-turn landing for a turn that ran to its result: commit,
+    compaction check, push, fast-track/ship landing. Shared by steer() and by
+    adopt_finish() (a turn the CLI started by itself) so they cannot drift."""
     # ONE atomic end-of-turn commit: session rotation, turn count, reply/
     # question/waiting_on, status, economics - all under the mutation lock.
     t, reason = _finish_turn(tid, sid, result, meta, log)
@@ -1065,6 +1072,63 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     from spine.comms import notify
     notify.card_event(t, reason)
     return _after_turn_land(t, log)
+
+
+def adoptable(tid):
+    """May the driver adopt a turn the CLI started by itself on this card? Only
+    a parked, unquestioned card in an active lane: that is the exact state the
+    background-task wake-up leaves behind (the turn ended, the task then
+    finished and the CLI continued on its own)."""
+    t = _find(_load(), tid)
+    return bool(t and t.get("status") == "needs_you" and not t.get("question")
+                and t.get("lane") in ("working", "review"))
+
+
+def adopt_begin(tid):
+    """The CLI woke itself (a background task reported after the turn ended).
+    Observed from its own frames, not assumed: the card is running again."""
+    t = _find(_load(), tid)
+    if not t:
+        return
+    from spine.ops.actionlog import ActionLog
+    from spine.comms import notify
+    log = ActionLog(t["run_dir"])
+    log.log("note", "Hintergrund-Task hat gemeldet - der Worker macht von selbst weiter.")
+    log.log("turn", "Turn gestartet", event="started")
+    notify.clear_dedup(tid)
+
+    def _run(tt):
+        if tt.get("status") != "needs_you":
+            return False
+        tt["status"] = "running"
+    _mutate(tid, _run)
+
+
+def adopt_failed(tid, err):
+    """An adopted turn died or stalled: release the card like a failed steer."""
+    from spine.ops.actionlog import ActionLog
+    t = _find(_load(), tid)
+    if not t:
+        return
+
+    def _release(tt):
+        if tt.get("status") != "running":
+            return False
+        tt["status"] = "needs_you"
+    _mutate(tid, _release)
+    log = ActionLog(t["run_dir"])
+    log.log("note", "selbst gestarteter Turn ABGEBROCHEN (%s) - Karte freigegeben."
+            % str(err)[:160])
+    log.log("turn", "Turn fehlgeschlagen", event="failed", error=str(err)[:500])
+
+
+def adopt_finish(tid, sid, result, meta):
+    """Settle an adopted turn through the same landing as every other turn."""
+    from spine.ops.actionlog import ActionLog
+    t = _find(_load(), tid)
+    if not t:
+        return None
+    return _land_finished_turn(tid, sid, result, meta, ActionLog(t["run_dir"]))
 
 
 def _after_turn_land(t, log):

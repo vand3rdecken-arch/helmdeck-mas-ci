@@ -83,6 +83,24 @@ def main():
                   "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
                   "modelUsage": {"claude-fake": {}}, "session_id": SID})
             continue
+        if text == "__SELFWAKE__":
+            # A background task reports AFTER the turn ended and the CLI carries
+            # on by itself (measured 2026-10-11): the turn's result, then - with
+            # no user message in between - an assistant frame, a pause long
+            # enough for an idle sweep to look, and a SECOND result.
+            import time
+            emit({"type": "result", "subtype": "success", "result": "first",
+                  "total_cost_usd": 0.001, "usage": {"input_tokens": 1, "output_tokens": 1},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            time.sleep(1.0)
+            emit({"type": "assistant", "session_id": SID, "message": {"role": "assistant",
+                  "content": [{"type": "text", "text": "weiter"}],
+                  "usage": {"input_tokens": 3, "output_tokens": 1}}})
+            time.sleep(1.5)
+            emit({"type": "result", "subtype": "success", "result": "second",
+                  "total_cost_usd": 0.005, "usage": {"input_tokens": 3, "output_tokens": 2},
+                  "modelUsage": {"claude-fake": {}}, "session_id": SID})
+            continue
         if text.startswith("__NULLRESULT__"):
             # Resume-after-hard-kill artifact: the CLI first flushes the DEAD
             # prior turn's leftover result (empty, zero usage, no error), THEN
