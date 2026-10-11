@@ -9,6 +9,8 @@
  *   GET  /apps/label-doktor/{,docs,support,privacy,terms}
  *                      DE/EN public pages for the Jira app, required by the
  *                      Atlassian Marketplace (see label_doktor.js)
+ *   GET  /apps/{lesenachweis,seiten-review,ticket-merge}/{,docs,support,privacy,terms}
+ *                      same for three more apps (see app_pages.js)
  *   POST /api/join    store an address in KV (idempotent per email)
  *   GET  /export.csv  owner-only CSV export (?token=... or Bearer, secret EXPORT_TOKEN)
  *   GET  /icon.svg    brand mark (also used as favicon)
@@ -37,6 +39,7 @@
 
 import { ICON_SVG } from "./logo.js";
 import { LABEL_DOKTOR_PAGES } from "./label_doktor.js";
+import { APP_PAGES } from "./app_pages.js";
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@.]{2,24}$/;
 
@@ -1860,6 +1863,7 @@ export default {
     if ((p === "/impressum" || p === "/imprint") && req.method === "GET") return html(IMPRESSUM_HTML);
     // Public pages the Atlassian Marketplace requires a paid app to point at.
     if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(LABEL_DOKTOR_PAGES[p]);
+    if (req.method === "GET" && APP_PAGES[p]) return html(APP_PAGES[p]);
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);
     if (p === "/api/ev" && req.method === "POST") return handleEvent(req, env, ctx);
     if (p === "/export.csv" && req.method === "GET") return handleExport(req, env);
