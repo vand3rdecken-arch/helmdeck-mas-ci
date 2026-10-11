@@ -19,6 +19,12 @@ RULES
 - Secrets stay secret: never read settings.json, users.json, tokens, keys.
 - Tool budget: prefer one screenshot + one action over blind retries. If the
   same action fails twice, report the failure instead of a third try.
+- BROWSER DEFAULT (owner 2026-10-11): every browser job goes through the CDP
+  browser (helmdeck-browser: Chrome on port 9222 with the hands profile
+  chrome-profile, where the Google/Atlassian logins live). windows-mcp and the
+  owner's normal Chrome only when the CDP browser demonstrably does not work,
+  and then say why in one line of the report. Do NOT fall back to the owner's
+  Chrome just because a tab ends with this process - report the result first.
 - Your browser tab DIES with you: helmdeck-browser runs in the HelmDeck
   Chrome (own profile, not the owner's daily browser) and closes the tab when
   this process ends. If a page needs the OWNER's input (a passcode, a 2FA
