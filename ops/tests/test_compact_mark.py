@@ -80,5 +80,32 @@ ok(src.index("_save_memory(user, sid)") < src.index('p.stdin.write("/compact "')
 ok('"--permission-mode", henry_pmode()' in src,
    "the save turn runs with hands (acceptEdits), not in plan mode")
 
-print("\n%s (%d checks, %d failed)" % ("PASS" if not fails else "FAIL", 13, len(fails)))
+# 2026-10-11: an OWNER turn schedules at the cost line too. Commit a9a683bd
+# (10.10) had lifted owner turns to the 0.8*window overflow wall on the
+# assumption that agent turns compact first - measured the next day: a day
+# with ZERO agent turns and 78 owner turns climbed 8.5k -> 797k (13k per
+# turn re-read on every call) before the first compaction fired at 800k.
+# Owner turns keep the lull (immediate=False); agent turns sit 15k lower.
+import threading as _th                                           # noqa: E402
+_spawned = []
+_orig_thread, _orig_stats = _th.Thread, copilot._stats
+try:
+    _th.Thread = lambda *a, **k: _spawned.append(k.get("target")) or type(
+        "T", (), {"start": lambda self: None})()
+    copilot._stats = lambda: {"owner": {"ctx_tokens": 300_000, "ctx_window": 1_000_000, "turns": 10}}
+    copilot._compacting.discard("owner")
+    copilot._schedule_compact("owner", agent=False)
+    ok(len(_spawned) == 1,
+       "an owner turn at 300k of 1M (over the 100k line, under the 800k wall) schedules a compaction")
+    copilot._compacting.discard("owner")
+    copilot._stats = lambda: {"owner": {"ctx_tokens": 90_000, "ctx_window": 1_000_000, "turns": 10}}
+    copilot._schedule_compact("owner", agent=False)
+    ok(len(_spawned) == 1, "...and at 90k (under the line) it does not")
+    copilot._schedule_compact("owner", agent=True)
+    ok(len(_spawned) == 2, "an agent turn at 90k does (line minus COMPACT_NEAR_MARGIN)")
+finally:
+    _th.Thread, copilot._stats = _orig_thread, _orig_stats
+    copilot._compacting.discard("owner")
+
+print("\n%s (%d checks, %d failed)" % ("PASS" if not fails else "FAIL", 16, len(fails)))
 sys.exit(1 if fails else 0)

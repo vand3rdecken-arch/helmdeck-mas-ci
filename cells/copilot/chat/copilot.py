@@ -1479,8 +1479,9 @@ def _await_lull_and_lock(user, lull=180):
 # could silently lift it to the 800k overflow the day a 1M voice model is
 # configured: the exact 2026-08-30 shape (615k session, 83M input tokens over
 # 98 turns, nothing watching).
-# Agent turns compact this far BELOW the mark (~5 owner turns at ~3k growth each),
-# so the owner's own message does not cross the line (owner 2026-10-10).
+# Agent turns compact this far BELOW the mark so the owner's own message does
+# not cross the line (owner 2026-10-10). Measured 2026-10-11: an owner turn
+# grows the session ~13k (788k over 60 turns), not the ~3k once assumed.
 COMPACT_NEAR_MARGIN = 15_000
 COMPACT_COST_LINE = 100_000   # 50% of the 200k window - Gemini CLI's default (owner 2026-10-07)
 
@@ -1543,9 +1544,14 @@ def _schedule_compact(user, agent=False, immediate=False):
     agent=True (owner 2026-10-10): the turn was an AGENT turn. Those compact
     already COMPACT_NEAR_MARGIN below the mark, so by the time the owner types
     the session is small and HIS message never has to trigger a compaction.
-    An owner turn compacts only at the overflow ceiling (0.8 * window), the
-    safety net. The judge keeps the lull (immediate=False) so an escalation
-    chain is not blocked between steps.
+    An owner turn schedules at the cost line too, but behind the 3-minute lull
+    (immediate=False), so maintenance never lands in his reading time. It
+    used to schedule only at the overflow ceiling (0.8 * window) on the
+    assumption that agent turns would always get there first - measured
+    2026-10-11: a day with ZERO agent turns and 78 owner turns let the session
+    climb from 8.5k to 797k before anything compacted, 13k per turn re-read
+    on every call. The judge keeps the lull as well, so an escalation chain
+    is not blocked between steps.
 
     Compact in the BACKGROUND, off the request thread. The
     huggingface/speech-to-speech lesson (chat.py's single-flight compaction
@@ -1557,7 +1563,6 @@ def _schedule_compact(user, agent=False, immediate=False):
     per-user turn lock serializes with real turns so the external /compact
     cannot fork a session a concurrent question is advancing."""
     try:
-        from cells.engineer.cards import sessions
         st = _stats().get(user) or {}
         ctx = st.get("ctx_tokens") or 0
         mark, _why = _compact_mark(st)
@@ -1570,9 +1575,6 @@ def _schedule_compact(user, agent=False, immediate=False):
     # catches a compaction that works but doesn't reach the mark.
     if agent:
         mark -= COMPACT_NEAR_MARGIN
-    else:
-        mark = max(mark, int(0.8 * max(int(st.get("ctx_window") or 0),
-                                       sessions._CTX_WINDOW)))
     if ctx < mark or user in _compacting:
         return
     if int(st.get("turns") or 0) <= int(st.get("compacted_at_turn") or -1):
@@ -3856,7 +3858,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             from spine.http import server as _srv
             _srv._bg("chat:notify:" + str(user), _announce)
     # agent turn (harness_note): compact near the mark, at once; owner turn:
-    # only at the overflow ceiling (see _schedule_compact)
+    # at the mark, after the lull (see _schedule_compact)
     _schedule_compact(user, agent=bool(harness_note), immediate=bool(harness_note))  # background + single-flight, never blocks this reply
     # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
     # measured): standalone it rewrote the session at 60k, dropped the warm

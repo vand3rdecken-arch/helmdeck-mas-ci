@@ -232,7 +232,7 @@ else:
 #    chat() ever scheduled a compaction.
 sched = {"n": 0}
 _orig_sched, _orig_owner = c._schedule_compact, c.owner_name
-c._schedule_compact = lambda u: sched.__setitem__("n", sched["n"] + 1)
+c._schedule_compact = lambda u, **kw: sched.__setitem__("n", sched["n"] + 1)
 c.owner_name = lambda: "owner"
 c._save_sessions({"owner": "sess-a"})
 
