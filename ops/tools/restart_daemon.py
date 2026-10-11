@@ -96,6 +96,10 @@ def main():
     except OSError:
         pass
     flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0   # DETACHED_PROCESS | NEW_PROCESS_GROUP
+    # + CREATE_BREAKAWAY_FROM_JOB: Henry runs this tool inside his own kill-on-close job object
+    # (spine/agent/proctable.py adopt). The old daemon's death closes that job - a new daemon
+    # born INSIDE it would be killed with it, the very failure daemonctl's scheduled task avoids.
+    breakaway = 0x01000000 if os.name == "nt" else 0
     out = open(os.path.join(ROOT, "daemon", "restart_stdout.log"), "ab")
     err = open(os.path.join(ROOT, "daemon", "restart_stderr.log"), "ab")
     # --takeover: this tool IS the explicit restart verb, so it may depose the
@@ -109,8 +113,13 @@ def main():
     env = dict(os.environ)
     if a.force:
         env["HELMDECK_RESTART_GRACE"] = "0"
-    subprocess.Popen([sys.executable, "-m", "daemon.swarm", "serve", "--takeover"], cwd=ROOT,
-                     stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags, env=env)
+    argv = [sys.executable, "-m", "daemon.swarm", "serve", "--takeover"]
+    try:
+        subprocess.Popen(argv, cwd=ROOT, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                         creationflags=flags | breakaway, env=env)
+    except OSError:                       # a foreign job that forbids breakaway: start anyway
+        subprocess.Popen(argv, cwd=ROOT, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                         creationflags=flags, env=env)
     deadline = time.time() + 90
     while time.time() < deadline:
         time.sleep(3)

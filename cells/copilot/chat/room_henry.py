@@ -35,6 +35,7 @@ import threading
 import time
 
 from cells.copilot.chat import rooms, copilot_memory
+from spine.agent import proctable
 
 HISTORY_LINES = 30
 MEMORY_BUDGET = 6000            # chars of room notes handed over in full
@@ -242,13 +243,14 @@ def run_claude(system, prompt, timeout=TIMEOUT, live=None):
                          env=tool_path(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    proctable.own(p)
     errbuf = []
     threading.Thread(target=lambda: errbuf.append(p.stderr.read() or ""), daemon=True).start()
     timed_out = []
 
     def _kill():
         timed_out.append(1)
-        p.kill()
+        proctable.kill_owned(p)
     timer = threading.Timer(timeout, _kill)
     timer.start()
     raw, parts, think = None, [], []
@@ -274,7 +276,7 @@ def run_claude(system, prompt, timeout=TIMEOUT, live=None):
     finally:
         timer.cancel()
         if p.poll() is None:
-            p.kill()
+            proctable.kill_owned(p)
     if timed_out:
         raise subprocess.TimeoutExpired(argv, timeout)
     if raw is None:

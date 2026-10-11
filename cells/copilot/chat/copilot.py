@@ -24,6 +24,7 @@ from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the O
 from cells.copilot.chat import henry_bg  # Henry's own CLI background agents (chat bg line)
 from cells.copilot.chat import port as _port  # always-on stdout reader of the warm process
 from spine.agent.agentcli import CLAUDE  # single source - see its module docstring
+from spine.agent import proctable  # process ownership: own / kill_owned (job objects)
 from spine.ops import ask  # the <helmdeck-ask> grammar's ONE owner (parse/strip)
 
 
@@ -630,7 +631,7 @@ def _persist_drop(skey):
         ent = _persist.pop(skey, None)
     if ent:
         try:
-            ent["p"].kill()
+            proctable.kill_owned(ent["p"])
         except Exception:
             pass
         _ports_update(lambda cur: cur.pop(str(ent["p"].pid), None))
@@ -835,6 +836,7 @@ def _persist_get(skey, cli_model, sid, system):
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=_env,
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                          text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    proctable.own(p)
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     _ports_update(lambda cur: cur.__setitem__(str(p.pid), time.time()))
@@ -1738,6 +1740,7 @@ def _save_memory(user, sid):
         p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proctable.own(p)
         p.stdin.write(copilot_memory.SAVE_PROMPT); p.stdin.close()
         for _line in p.stdout:
             _line = _line.strip()
@@ -1829,6 +1832,7 @@ def _maybe_compact(user):
         from spine.agent.spawnenv import tool_path
         p = subprocess.Popen(cmd, cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=tool_path(),
                              stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proctable.own(p)
         p.stdin.write("/compact " + COMPACT_INSTRUCTIONS); p.stdin.close()
         for line in p.stdout:
             line = line.strip()
@@ -2110,12 +2114,13 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None, max_out
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    proctable.own(p)
     _judge_preempted.discard(user)
     _judge_proc[user] = p
     try:
         stdout, stderr = p.communicate(input=_judge_excerpt(user) + prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
-        p.kill()
+        proctable.kill_owned(p)
         p.communicate()
         raise
     finally:
@@ -2190,12 +2195,13 @@ def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=
                              stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        proctable.own(p)
         _judge_preempted.discard(user)
         _judge_proc[user] = p
         try:
             stdout, stderr = p.communicate(input=prompt, timeout=timeout)
         except subprocess.TimeoutExpired:
-            p.kill()          # a timed-out judgement must not linger as a zombie
+            proctable.kill_owned(p)          # a timed-out judgement must not linger as a zombie
             p.communicate()
             raise
         finally:
@@ -2713,7 +2719,7 @@ def cancel(user):
     p = _running.get(user)
     if p:
         try:
-            p.terminate()
+            proctable.kill_owned(p)
         except Exception:
             pass
     # a terminated process is no longer reusable - forget the warm handle so
@@ -3271,6 +3277,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             p = subprocess.Popen(drivers._cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=tool_path(),
                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                  text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            proctable.own(p)
     except Exception:
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
@@ -3301,13 +3308,13 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 if _beat["n"] == 0 and time.time() - _beat["t"] > 90:
                     _beat["hung"] = True
                     try:
-                        p.kill()
+                        proctable.kill_owned(p)
                     except Exception:
                         pass
                     return
                 if time.time() - _beat["t"] > 600:
                     try:
-                        p.kill()
+                        proctable.kill_owned(p)
                     except Exception:
                         pass
                     return

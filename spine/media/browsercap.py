@@ -169,9 +169,15 @@ def _spawn_orphan(argv):
     detached = 0x00000008 | 0x00000200          # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     launcher = [sys.executable, "-c",
                 "import subprocess,sys; subprocess.Popen(sys.argv[1:], creationflags=%d, close_fds=True)" % detached]
-    subprocess.run(launcher + list(argv), timeout=30, check=True,
-                   creationflags=detached | 0x08000000,          # + CREATE_NO_WINDOW
-                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # + CREATE_NO_WINDOW; + BREAKAWAY: this MCP server runs inside its worker's kill-on-close job
+    # object (proctable.adopt) and Chrome must outlive that worker exactly as it outlives
+    # taskkill /T - the launcher leaves the job, so Chrome (its child) is not in it either.
+    kw = dict(timeout=30, check=True,
+              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run(launcher + list(argv), creationflags=detached | 0x08000000 | 0x01000000, **kw)
+    except OSError:                       # a foreign job that forbids breakaway: start anyway
+        subprocess.run(launcher + list(argv), creationflags=detached | 0x08000000, **kw)
 
 
 def ensure_chrome(port=DEFAULT_PORT, profile=None, exe=None):

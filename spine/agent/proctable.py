@@ -75,6 +75,190 @@ def _descendants(pid):
     return out
 
 
+# -- process ownership: a Windows Job Object per spawn ------------------------
+# WHY. Windows has no reparenting and no process groups: the moment an
+# intermediate process dies, everything below it is unreachable by parent
+# links - taskkill /T, _descendants and reap_orphans all walk LIVE links only.
+# Measured 2026-10-11 on this box: a card's `npm install` (450 MB each, three
+# at once on a swapping 16 GB machine), two `opencode serve` (59 h), a bash
+# with ten children - all parents dead, all invisible to the harness. The
+# reproduction is 20 lines: worker -> middle -> grandchild, middle exits,
+# `taskkill /F /T worker` leaves the grandchild; closing a KILL_ON_JOB_CLOSE
+# job leaves nothing.
+#
+# So ownership is a FACT THE OS KEEPS, not a tree we reconstruct: every spawn
+# is assigned to its own job; children inherit the job whatever happens to
+# the processes in between. The job handle lives here (ONE owner); closing it
+# - or the daemon dying, which closes every handle - kills the whole family.
+#
+# BREAKAWAY_OK: a process may ESCAPE on purpose with CREATE_BREAKAWAY_FROM_JOB
+# (popen_breakaway below) - the persistent Chrome, ops/tools/detach.py jobs and
+# the restart helper must outlive the worker that started them.
+_jobs = {}                      # pid -> job handle
+_jobs_lock = threading.Lock()
+BREAKAWAY = 0x01000000          # CREATE_BREAKAWAY_FROM_JOB
+
+
+def _job_api():
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    k32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    k32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    k32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    k32.CloseHandle.argtypes = [wintypes.HANDLE]
+    return ctypes, wintypes, k32
+
+
+def adopt(pid):
+    """Put a FRESHLY spawned process (and so everything it will ever start) in
+    its own kill-on-close job. Returns True when owned. Never raises: a spawn
+    must not fail because ownership could not be taken - it degrades to the old
+    tree-kill, loudly (stdout = the daemon log)."""
+    if os.name != "nt" or not pid:
+        return False
+    try:
+        ctypes, wintypes, k32 = _job_api()
+
+        class _BASIC(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                        ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class _IO(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in
+                        ("ReadOps", "WriteOps", "OtherOps", "ReadBytes", "WriteBytes", "OtherBytes")]
+
+        class _EXT(ctypes.Structure):
+            _fields_ = [("Basic", _BASIC), ("Io", _IO), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemory", ctypes.c_size_t),
+                        ("PeakJobMemory", ctypes.c_size_t)]
+
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            raise OSError("CreateJobObjectW err %d" % ctypes.GetLastError())
+        info = _EXT()
+        info.Basic.LimitFlags = 0x2000 | 0x0800     # KILL_ON_JOB_CLOSE | BREAKAWAY_OK
+        if not k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            err = ctypes.GetLastError()
+            k32.CloseHandle(job)
+            raise OSError("SetInformationJobObject err %d" % err)
+        hp = k32.OpenProcess(0x0100 | 0x0001, False, int(pid))     # SET_QUOTA | TERMINATE
+        if not hp:
+            err = ctypes.GetLastError()
+            k32.CloseHandle(job)
+            raise OSError("OpenProcess err %d" % err)
+        try:
+            ok = k32.AssignProcessToJobObject(job, hp)
+            err = ctypes.GetLastError()
+        finally:
+            k32.CloseHandle(hp)
+        if not ok:
+            k32.CloseHandle(job)
+            raise OSError("AssignProcessToJobObject err %d" % err)
+        with _jobs_lock:
+            old = _jobs.pop(int(pid), None)             # a recycled pid: its old family is long gone
+            _jobs[int(pid)] = job
+        if old:
+            k32.TerminateJobObject(old, 1)
+            k32.CloseHandle(old)
+        threading.Thread(target=_close_when_root_exits, args=(int(pid), job),
+                         daemon=True, name="job-%d" % int(pid)).start()
+        return True
+    except Exception as e:                              # noqa: BLE001
+        print("proctable: job ownership failed for pid %s (%s) - falling back to tree-kill" % (pid, e))
+        return False
+
+
+def _close_when_root_exits(pid, job):
+    """The worker is the family's root: when IT ends - cleanly, by crash, or by
+    anyone's kill - nothing it started can report to it any more, so the family
+    goes too. One blocking wait on the process handle (event time, no polling).
+    This is the leak that used to run until the NEXT turn (or forever): a
+    worker dying on its own left its tool shells and MCP servers behind."""
+    try:
+        ctypes, wintypes, k32 = _job_api()
+        k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        hp = k32.OpenProcess(0x00100000, False, pid)             # SYNCHRONIZE
+        if not hp:
+            return
+        try:
+            k32.WaitForSingleObject(hp, 0xFFFFFFFF)               # INFINITE
+        finally:
+            k32.CloseHandle(hp)
+    except Exception:                                   # noqa: BLE001
+        return
+    close_job(pid, only=job)
+
+
+def close_job(pid, only=None):
+    """Kill everything the job owns (the worker, its tool shells, MCP servers,
+    npm, a leaked `opencode serve`...) and release the handle. True if a job
+    existed. Idempotent - safe on a pid that never had one. `only`: act just if
+    the registered job IS that handle (a recycled pid must not close a NEWER
+    worker's family)."""
+    if os.name != "nt":
+        return False
+    with _jobs_lock:
+        job = _jobs.get(int(pid))
+        if not job or (only is not None and job != only):
+            return False
+        del _jobs[int(pid)]
+    try:
+        _ctypes, _wintypes, k32 = _job_api()
+        k32.TerminateJobObject(job, 1)
+        k32.CloseHandle(job)
+    except Exception:                                   # noqa: BLE001
+        pass
+    return True
+
+
+def own(p):
+    """adopt() for a Popen the CALLER made - the spawn sites that do not go
+    through a driver's _record_pid (Henry's chat port, judge, PM, room Henry).
+    The caller keeps `subprocess.Popen` in its own module on purpose: the test
+    suite patches `<module>.subprocess` to stand in for the CLI, and a Popen
+    made in here would slip past that patch and start the real thing. Taking
+    ownership never decides whether the spawn works (getattr: a stand-in has
+    no pid)."""
+    adopt(getattr(p, "pid", None))
+    return p
+
+
+def kill_owned(p):
+    """Kill ONE spawned process AND its whole family (replaces bare p.kill() /
+    p.terminate(), which left every child behind)."""
+    close_job(getattr(p, "pid", 0) or 0)
+    try:
+        p.kill()
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def popen_breakaway(argv, **kw):
+    """Popen that LEAVES the caller's job (see BREAKAWAY_OK above) - for the few
+    processes that must outlive the worker that starts them. Outside any job the
+    flag is ignored; inside a foreign job that forbids breakaway CreateProcess
+    fails, and we retry without it rather than not start at all."""
+    flags = kw.pop("creationflags", 0)
+    if os.name != "nt":
+        return subprocess.Popen(argv, **kw)
+    try:
+        return subprocess.Popen(argv, creationflags=flags | BREAKAWAY, **kw)
+    except OSError:
+        return subprocess.Popen(argv, creationflags=flags, **kw)
+
+
 def _tree_kill(proc, grace=2.0):
     """Take the whole process tree down, escalating (Paseo tree-kill parity):
     polite signal -> grace -> force -> CONFIRM the descendants are gone. `proc`
@@ -163,6 +347,9 @@ def _write_pids(pids):
 
 
 def _record_pid(pid, spawn_time=None):
+    """The one seam every driver already calls right after Popen: record the pid
+    AND take ownership of its whole future family (adopt)."""
+    adopt(pid)
     with _pid_lock:
         pids = _read_pids()
         pids[str(pid)] = spawn_time
@@ -170,6 +357,10 @@ def _record_pid(pid, spawn_time=None):
 
 
 def _forget_pid(pid):
+    """The worker is finished (exited, or just killed): everything it still
+    owns goes with it - this is what ends the leak of a worker that dies on its
+    own and leaves its tool shells and MCP children behind."""
+    close_job(pid)
     with _pid_lock:
         pids = _read_pids()
         if pids.pop(str(pid), "absent") != "absent":

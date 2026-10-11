@@ -311,9 +311,15 @@ def _ask(prompt, model="", system="", hands=False, timeout=300):
         env = tool_path()
     cwd = _scratch_cwd() if hands else ROOT
     try:
+        from spine.agent import proctable
         p = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        stdout, stderr = p.communicate(input=prompt, timeout=timeout)
+        proctable.own(p)
+        try:
+            stdout, stderr = p.communicate(input=prompt, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proctable.kill_owned(p)          # a timed-out planner must not linger (no pid was recorded anywhere)
+            raise
     finally:
         if hands:
             import shutil

@@ -16,8 +16,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from spine.ops import procwatch  # noqa: E402
+from spine.agent.proctable import popen_breakaway  # noqa: E402
 
 DETACHED = 0x00000008 | 0x00000200 | 0x08000000   # DETACHED_PROCESS|NEW_PROCESS_GROUP|NO_WINDOW
+# The whole point of this tool is a job that OUTLIVES the worker that launched it, so it must
+# also leave that worker's kill-on-close job object (spine/agent/proctable.py popen_breakaway).
 
 
 def spool_dir():
@@ -50,7 +53,7 @@ def main(argv):
     os.makedirs(os.path.dirname(log), exist_ok=True)
     tag = "%s-%d" % (os.environ.get("HELMDECK_CARD", "manual"), os.getpid())
     exitfile = os.path.join(spool_dir(), tag + ".exit")
-    p = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--run", exitfile, log, "--"] + cmd,
+    p = popen_breakaway([sys.executable, os.path.abspath(__file__), "--run", exitfile, log, "--"] + cmd,
                          creationflags=DETACHED, close_fds=True, cwd=os.getcwd(),
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ct = procwatch.create_time(p.pid)
