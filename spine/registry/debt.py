@@ -5548,7 +5548,15 @@ DEBT = [
                         "turns are measured with turn_in_weighted.",
         "trigger": "a turn compacts and then re-reads what it had already read, or the "
                    "weighted ratio of long turns stays high after the cap.",
-        "fix": "Measure turn_in_weighted before and after on real long turns and tune "
+        "fix": "MEASURED 2026-10-12 (ops/tools/tool_result_share.py, 341 transcripts of "
+               "7 days, 45.5k messages, 7957M input tokens, compaction-aware): tool "
+               "results are only ~8.7 percent of the input, results older than 10 calls "
+               "~7.2 percent; only 13/7764 Bash, 31/1568 Read results exceed 20k chars "
+               "(median Bash 374, Read 2000). A per-result cap saves 1.15 percent at 6k "
+               "chars, 0.55 percent at 10k, 0.11 percent at 20k, so neither a cap nor "
+               "eviction is worth building now; the mass is assistant text, tool inputs "
+               "and the base prompt, not results. Re-measure before reopening. "
+               "Measure turn_in_weighted before and after on real long turns and tune "
                "`autocompact`. If summary loss or cost still bites: per-result eviction "
                "needs us to own the API loop (large rebuild: tools, permissions, MCP, "
                "resume, quota metering) or running such cards on the OpenCode driver. "
