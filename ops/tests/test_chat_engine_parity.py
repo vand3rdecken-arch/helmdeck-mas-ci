@@ -196,6 +196,89 @@ for engine in ("claude", "opencode"):
     check(not RAN, "%s: allow_actions=False runs nothing (ran %r)" % (engine, RAN))
     check("hands" in (out.get("refused") or []), "%s: the refusal names the dropped action (got %r)" % (engine, out.get("refused")))
 
+# ---- Stop and takeover on an OpenCode turn (debt opencode-turn-not-interruptible)
+print("opencode: Stop and takeover")
+import types
+
+_started = threading.Event()
+_gate = threading.Event()
+ABORTS = []
+RUN_COUNT = [0]
+
+
+def _blocking_oc_run(cfg, base, prompt):
+    """A turn that runs until opencode_driver.cancel() is called for ITS session."""
+    RUN_COUNT[0] += 1
+    _started.set()
+    _gate.wait(15)
+    if ABORTS and ABORTS[-1] == base["id"]:
+        return "ses_oc_1", "(turn cancelled by you)", {"usage": {}, "cost_usd": None, "canceled": True}
+    return "ses_oc_1", "fertig", {"cost_usd": 0.001}
+
+
+def _fake_cancel(tid):
+    ABORTS.append(tid)
+    _gate.set()
+    return True
+
+
+opencode_driver.run = _blocking_oc_run
+opencode_driver.cancel = _fake_cancel
+_real_fb = turnopts.fallback_model
+turnopts.fallback_model = lambda user: "opencode/fallback-model"      # a retry WOULD run if cancel were mistaken for a poor reply
+turnopts.engine_for = lambda mid: "opencode"
+
+
+def start_turn(text):
+    _started.clear(); _gate.clear(); del ABORTS[:]
+    box = {}
+    t = threading.Thread(target=lambda: box.update(out=copilot.chat(OWNER, text, role="owner")), daemon=True)
+    t.start()
+    _started.wait(10)
+    return t, box
+
+
+check(copilot.supersede(OWNER) is False, "supersede with no turn running is a no-op (False)")
+
+# Stop
+db.chat_clear(); RUN_COUNT[0] = 0
+t, box = start_turn("lang laufende frage")
+check(OWNER in copilot._running and copilot.live(OWNER).get("running"),
+      "a running OpenCode turn is registered in _running (live().running)")
+check(os.path.exists(os.path.join(SANDBOX, "state", "chat_turns.json"))
+      and OWNER in json.load(open(os.path.join(SANDBOX, "state", "chat_turns.json"))),
+      "restart_daemon's witness (chat_turns.json) lists the OpenCode turn")
+check(copilot.cancel(OWNER) is True, "cancel() reaches the running OpenCode turn")
+t.join(10)
+check(not t.is_alive() and (box.get("out") or {}).get("reply") == "(stopped)", "Stop ends the turn with '(stopped)' (got %r)" % (box.get("out"),))
+check(len(ABORTS) == 1 and ABORTS[0].startswith("henry-"), "the engine's own abort was called for Henry's session (got %r)" % ABORTS)
+check(RUN_COUNT[0] == 1, "a cancelled turn does NOT retry on the fallback model (runs: %d)" % RUN_COUNT[0])
+check(last_bot() is None, "a stopped turn persists no bot row (got %r)" % last_bot())
+check(OWNER not in copilot._running, "the turn is unregistered afterwards")
+_ct = os.path.join(SANDBOX, "state", "chat_turns.json")
+check(OWNER not in (json.load(open(_ct)) if os.path.exists(_ct) else {}), "the restart witness is cleared afterwards")
+
+# Takeover by a newer owner message
+db.chat_clear(); RUN_COUNT[0] = 0
+t, box = start_turn("erste frage")
+check(copilot.supersede(OWNER) is True, "supersede() interrupts the running OpenCode turn")
+t.join(10)
+out1 = box.get("out") or {}
+check(out1.get("superseded") is True and not out1.get("reply"), "the superseded turn ends quietly (got %r)" % (out1,))
+check(last_bot() is None, "no half answer is persisted")
+_pend = " ".join(copilot._pending_actions.get(copilot._skey(OWNER, None), []))
+check("UNTERBROCHEN" in _pend and "erste frage" in _pend,
+      "Henry's NEXT turn is told what was cut off (got %r)" % _pend[:80])
+check(RUN_COUNT[0] == 1, "no fallback retry on a takeover (runs: %d)" % RUN_COUNT[0])
+
+# a turn that FINISHED before the interrupt landed keeps its answer
+_gate.set()
+CURRENT["text"] = "fertig"
+opencode_driver.run = _fake_oc_run
+out2 = copilot.chat(OWNER, "zweite frage", role="owner")
+check(out2.get("reply") == "fertig" and last_bot() == "fertig", "the next turn runs normally behind it (got %r)" % (out2.get("reply"),))
+
+turnopts.fallback_model = _real_fb
 turnopts.engine_for = _real_engine_for
 print()
 if _fails:

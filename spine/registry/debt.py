@@ -242,26 +242,29 @@ DEBT = [
     {
         "id": "opencode-turn-not-interruptible",
         "order": -8,
-        "title": "an OpenCode Henry turn shares the END of a turn with claude, but not its running half",
+        "title": "an OpenCode Henry turn is stoppable and takeover-able, but not steerable or live-streamed",
         "status": "open",
-        "what": "copilot._conclude_turn is the one end of a Henry turn for every "
-                "engine (actions, memory sentinels, persistence, stats, push). "
-                "The RUNNING half is still per engine: _engine_opencode is a "
-                "blocking one-shot, so it is not registered in _running / "
-                "_inject / _superseded (no Stop, no steer-into-turn, no "
-                "takeover by a newer owner message), has no live preview or "
-                "idle watchdog, and the delta seams (_snap_seen / _ovl_seen) "
-                "are keyed by conversation, not by engine session, so they are "
-                "only advanced for the warm claude session.",
-        "why_it_bites": "Stop does nothing on a DeepSeek turn; switching the model "
-                        "mid-conversation can send a 'unchanged board' reference to "
-                        "a session that never saw the full snapshot.",
-        "trigger": "Owner presses Stop / sends a second message during an OpenCode "
-                   "turn, or alternates claude and OpenCode models in one chat.",
-        "fix": "Make the engine a small interface (run, cancel, inject, live "
-               "steps) behind turnopts.engine_for and key the seen-state by "
-               "(skey, engine slot); then _engine_opencode and the claude block "
-               "stop being two code paths.",
+        "what": "copilot._conclude_turn is the one END of a Henry turn and "
+                "copilot._EngineHandle is the one contract Stop (cancel()) and "
+                "takeover (supersede()) use for every engine; both are paid "
+                "(2026-10-12, test_chat_engine_parity). What stays per engine: "
+                "(1) try_inject - the steer-into-an-open-tool-window path only "
+                "exists for the claude stream (_inject), so a message sent "
+                "during an OpenCode turn queues instead of folding in; "
+                "(2) the live preview - opencode_driver never feeds livebuf, so "
+                "an OpenCode turn shows no streaming prose/tool steps in the "
+                "chat; (3) the delta seams (_snap_seen / _ovl_seen) are keyed by "
+                "conversation, not by engine session, and only advance for the "
+                "warm claude session.",
+        "why_it_bites": "A DeepSeek turn looks frozen until it ends; alternating "
+                        "claude and OpenCode models in one chat can send an "
+                        "'unchanged board' reference to a session that never saw "
+                        "the full snapshot.",
+        "trigger": "Owner watches a long OpenCode turn, or switches the model "
+                   "mid-conversation.",
+        "fix": "Grow _EngineHandle into the engine interface (run, interrupt, "
+               "inject, live steps) and key the seen-state by (skey, engine "
+               "slot); feed livebuf from the driver's SSE events.",
         "since": "2026-10-12",
     },
     {

@@ -2535,20 +2535,71 @@ def try_inject(user, message, client_msg_id=""):
 _superseded = {}
 
 
+class _EngineHandle:
+    """The engine-neutral stand-in for a claude Popen in `_running` (debt
+    opencode-turn-not-interruptible, paid 2026-10-12). A claude turn registers
+    its process; a turn whose engine owns the process itself (OpenCode: a
+    dedicated `opencode serve` per conversation) registers THIS: the one
+    contract chat()/cancel()/supersede() need - is it still running, and how
+    do I abort it. `abort` is set by the engine as soon as it knows its own
+    handle (OpenCode: opencode_driver.cancel(session tid)); until then Stop /
+    takeover only set the chat-level flags and the finished turn is dropped
+    by the same check a claude turn uses."""
+
+    def __init__(self):
+        self.abort = None
+        self.done = False
+        self.aborted = False
+
+    def poll(self):
+        return 0 if self.done else None
+
+    def interrupt(self):
+        """Soft: the turn ends, the engine's session lives on (takeover)."""
+        self.aborted = True
+        if self.abort:
+            try:
+                self.abort()
+            except Exception:                                # noqa: BLE001
+                pass
+
+    stop = interrupt        # Stop and takeover both end the turn; the chat-level
+                            # flag (_cancelled vs _superseded) says WHICH it was
+
+
+def _note_superseded(skey, message, live_steps):
+    """Tell Henry's NEXT turn what was cut off by a newer owner message. One
+    writer for both engines; it must land in _pending_actions BEFORE the turn
+    lock is released (the new message is already waiting on it)."""
+    _did = ", ".join(("%s %s" % (s.get("label") or s.get("tool") or "", s.get("text") or "")).strip()
+                     for s in (live_steps or [])[-6:]) or "noch keine Tools"
+    with _pending_lock:
+        _pending_actions.setdefault(skey, []).append(
+            "UNTERBROCHEN: dein vorheriger Turn zu '%s' wurde fuer die neue Owner-"
+            "Nachricht abgebrochen (zuletzt: %s). Beantworte ZUERST die neue "
+            "Nachricht. Ist die unterbrochene Arbeit noch noetig, gib sie ab "
+            "(agent / hands / direct_task) statt sie inline fortzusetzen."
+            % (message.strip()[:200], _did[:400]))
+
+
 def supersede(user):
     """Interrupt the user's running BOARD turn for a newer owner message.
     True = the interrupt went out (the caller now runs the new message as
     its own turn, which takes the lock the moment the old turn yields)."""
     with _inject_guard:
         st = _inject.get(user)
-        if not st or st["p"].poll() is not None:
-            return False
-        try:
-            st["p"].stdin.write(json.dumps({"type": "control_request",
-                                            "request_id": "sup-" + uuid.uuid4().hex[:12],
-                                            "request": {"subtype": "interrupt"}}) + chr(10))
-            st["p"].stdin.flush()
-        except Exception:                                    # noqa: BLE001
+        h = _running.get(user)
+        if st and st["p"].poll() is None:
+            try:
+                st["p"].stdin.write(json.dumps({"type": "control_request",
+                                                "request_id": "sup-" + uuid.uuid4().hex[:12],
+                                                "request": {"subtype": "interrupt"}}) + chr(10))
+                st["p"].stdin.flush()
+            except Exception:                                # noqa: BLE001
+                return False
+        elif isinstance(h, _EngineHandle) and h.poll() is None:
+            h.interrupt()                                    # an engine that owns its process
+        else:
             return False
         _superseded[user] = _turn_started.get(user)
     try:
@@ -2719,7 +2770,10 @@ def cancel(user):
     p = _running.get(user)
     if p:
         try:
-            proctable.kill_owned(p)
+            if isinstance(p, _EngineHandle):
+                p.stop()
+            else:
+                proctable.kill_owned(p)
         except Exception:
             pass
     # a terminated process is no longer reusable - forget the warm handle so
@@ -2776,7 +2830,7 @@ def build_argv(cli_model, sid, system):
     return argv, role_in_turn
 
 
-def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key):
+def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, handle=None):
     """ENGINE: one Henry turn on the OpenCode gateway (free models + DeepSeek
     fallback). `opencode/*` ids cannot run on the `claude` CLI, so this runs
     the turn through opencode_driver (a dedicated `opencode serve` per
@@ -2801,13 +2855,16 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key):
             "dispatched_by": user,        # whose provider keys the OpenCode server gets
             "session_id": prior}
     cfg = {"type": "opencode", "model": cli_model}
+    if handle is not None:
+        handle.abort = lambda: opencode_driver.cancel(base["id"])
     try:
         sid, reply, meta = opencode_driver.run(cfg, base, prompt)
     except Exception as e:                                     # noqa: BLE001
         reply = "OpenCode-Turn fehlgeschlagen: %s" % str(e)[:300]
         meta, sid = {"models": [cli_model]}, prior
     fb = turnopts.fallback_model(user)
-    if fb and turnopts.is_poor_reply(reply) and cli_model != fb:
+    canceled = bool((meta or {}).get("canceled"))
+    if fb and not canceled and turnopts.is_poor_reply(reply) and cli_model != fb:
         try:
             from spine.ops.actionlog import ActionLog as _AL
             _AL(run_dir).log("note", "Free-Modell antwortete leer - Fallback %s." % fb)
@@ -2820,7 +2877,7 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key):
         except Exception:                                      # noqa: BLE001
             pass
     cost = (meta or {}).get("cost_usd")
-    return {"txt": reply or "", "ctx_usage": {}, "sid": prior, "session_id": sid, "slot": slot,
+    return {"txt": reply or "", "canceled": canceled, "ctx_usage": {}, "sid": prior, "session_id": sid, "slot": slot,
             "result": {"usage": {}, "total_cost_usd": cost, "modelUsage": {cli_model: {}},
                        "session_id": sid},
             "sess": sess, "rotation_check": False, "warm": False, "live_steps": []}
@@ -3204,14 +3261,42 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     # on the Claude-Code warm process (which can only set_model to Claude ids).
     # NOTE: _lk is ALREADY held here (acquired above) - do not re-acquire.
     if turnopts.engine_for(cli_model) == "opencode":
+        # Registered exactly like a claude turn (the same satellites of
+        # _running, the same restart witness), so Stop, takeover by a newer
+        # owner message, the live "running" flag and restart_daemon's
+        # "is Henry mid-turn" check all see an OpenCode turn.
+        _h = _EngineHandle()
+        _running[user] = _h
+        _turn_started[user] = time.time()
+        _my_start = _turn_started[user]
+        _note_turn(user, True)
+        _running_card[user] = card or None
+        _sup_quiet = False
+        _eng = None
         try:
-            _eng = _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key)
+            _eng = _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, _h)
         finally:
+            _h.done = True
+            _running.pop(user, None)
+            _note_turn(user, False)
+            _running_card.pop(user, None)
+            if _superseded.get(user) == _my_start:
+                _superseded.pop(user, None)
+                # an aborted turn ends quietly (a half answer is not an answer);
+                # one that had already finished keeps its reply
+                if _h.aborted or (_eng or {}).get("canceled"):
+                    _sup_quiet = True
+                    _note_superseded(skey, message, _live_steps)
             try:
                 _lk.release()
             except Exception:                                  # noqa: BLE001
                 pass
             livebuf.clear(live_key)
+        if _sup_quiet:
+            return {"reply": "", "actions": [], "cost": None, "usage": None, "superseded": True}
+        if user in _cancelled:                 # Stop was pressed
+            _cancelled.discard(user)
+            return {"reply": "(stopped)", "actions": [], "cost": None, "usage": None}
         _eng["live_steps"] = _live_steps
         return _conclude_turn(_call, _eng)
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
@@ -3545,15 +3630,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             _answer = " ".join(_tail_blocks).strip() if len(_tail_blocks) < len(_blocks) else ""
             if (result or {}).get("is_error") or not (_answer or ("".join(parts).strip() and not _live_steps)):
                 _sup_quiet = True
-                _did = ", ".join(("%s %s" % (s.get("label") or s.get("tool") or "", s.get("text") or "")).strip()
-                                 for s in _live_steps[-6:]) or "noch keine Tools"
-                with _pending_lock:
-                    _pending_actions.setdefault(skey, []).append(
-                        "UNTERBROCHEN: dein vorheriger Turn zu '%s' wurde fuer die neue Owner-"
-                        "Nachricht abgebrochen (zuletzt: %s). Beantworte ZUERST die neue "
-                        "Nachricht. Ist die unterbrochene Arbeit noch noetig, gib sie ab "
-                        "(agent / hands / direct_task) statt sie inline fortzusetzen."
-                        % (message.strip()[:200], _did[:400]))
+                _note_superseded(skey, message, _live_steps)
         _lk.release()
         if voice_stream:
             # Flush BEFORE the live file is cleared: the last sentence of a reply
