@@ -66,7 +66,7 @@ USER = {"name": OWNER, "role": "owner"}
 # Never spawn a real model. argv_form_safe(False) takes the ONE-SHOT branch, so
 # there is no warm process and no watchdog thread to reason about.
 drivers.argv_form_safe = lambda exe: False
-copilot._schedule_compact = lambda user: None      # would spawn its own turn
+copilot._schedule_compact = lambda user, agent=False, immediate=False: None      # would spawn its own turn
 # The announce is backgrounded in production (FCM is a network call and the
 # owner's /chat request must not wait on it). Run it INLINE here - the same
 # stub the card-mirror test uses - so what is asserted is the decision, not a

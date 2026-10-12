@@ -240,6 +240,31 @@ DEBT = [
         "since": "2026-10-12",
     },
     {
+        "id": "opencode-turn-not-interruptible",
+        "order": -8,
+        "title": "an OpenCode Henry turn shares the END of a turn with claude, but not its running half",
+        "status": "open",
+        "what": "copilot._conclude_turn is the one end of a Henry turn for every "
+                "engine (actions, memory sentinels, persistence, stats, push). "
+                "The RUNNING half is still per engine: _engine_opencode is a "
+                "blocking one-shot, so it is not registered in _running / "
+                "_inject / _superseded (no Stop, no steer-into-turn, no "
+                "takeover by a newer owner message), has no live preview or "
+                "idle watchdog, and the delta seams (_snap_seen / _ovl_seen) "
+                "are keyed by conversation, not by engine session, so they are "
+                "only advanced for the warm claude session.",
+        "why_it_bites": "Stop does nothing on a DeepSeek turn; switching the model "
+                        "mid-conversation can send a 'unchanged board' reference to "
+                        "a session that never saw the full snapshot.",
+        "trigger": "Owner presses Stop / sends a second message during an OpenCode "
+                   "turn, or alternates claude and OpenCode models in one chat.",
+        "fix": "Make the engine a small interface (run, cancel, inject, live "
+               "steps) behind turnopts.engine_for and key the seen-state by "
+               "(skey, engine slot); then _engine_opencode and the claude block "
+               "stop being two code paths.",
+        "since": "2026-10-12",
+    },
+    {
         "id": "henry-card-session-uncompacted",
         "order": -9,
         "title": "only the BOARD Henry session is proactively compacted/pruned - card sessions are not",

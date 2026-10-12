@@ -41,7 +41,7 @@ from spine.comms import notify
 OWNER = "tien"
 auth.list_users = lambda: [{"name": OWNER, "role": "owner"}, {"name": "gast", "role": "operator"}]
 drivers.argv_form_safe = lambda exe: False
-copilot._schedule_compact = copilot._schedule_prune = lambda user: None
+copilot._schedule_compact = copilot._schedule_prune = lambda user, agent=False, immediate=False: None
 copilot._schedule_bg_continue = lambda *a, **k: None
 server._bg = lambda name, fn: fn()
 notify.push_fcm = lambda *a, **k: True

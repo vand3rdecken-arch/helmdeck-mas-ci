@@ -132,7 +132,7 @@ class _Sub:
 from spine.agent import drivers
 drivers.argv_form_safe = lambda exe: False
 copilot.subprocess = _Sub
-copilot._schedule_compact = copilot._schedule_prune = lambda user: None
+copilot._schedule_compact = copilot._schedule_prune = lambda user, agent=False, immediate=False: None
 import threading, time
 _threads_before = set(threading.enumerate())
 copilot.chat("tien", "mach eine Folgekarte und schau aufs Dashboard", role="owner", card=t2["id"])

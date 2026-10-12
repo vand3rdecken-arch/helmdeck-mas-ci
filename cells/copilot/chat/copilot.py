@@ -2776,15 +2776,15 @@ def build_argv(cli_model, sid, system):
     return argv, role_in_turn
 
 
-def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
-                       card, card_run_dir, client_msg_id="", announce=True):
-    """One Henry turn via the OpenCode gateway (free models + DeepSeek fallback).
-
-    Bypass for the Claude-Code persistent process: `opencode/*` ids cannot run
-    on the `claude` CLI. One-shot via opencode_driver (dedicated `opencode
-    serve` per conversation key), same return shape as chat(). Quality gate:
-    poor free reply retries ONCE on turnopts.fallback_model(user) - "" = no retry.
-    """
+def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key):
+    """ENGINE: one Henry turn on the OpenCode gateway (free models + DeepSeek
+    fallback). `opencode/*` ids cannot run on the `claude` CLI, so this runs
+    the turn through opencode_driver (a dedicated `opencode serve` per
+    conversation key) and returns an OUTCOME - the same shape the claude path
+    hands to _conclude_turn. It does nothing else: no parsing, no persistence,
+    no actions - that is _conclude_turn's, for both engines.
+    Quality gate: a poor free reply retries ONCE on turnopts.fallback_model(user)
+    - "" = no retry."""
     from spine.agent import livebuf, turnopts
     from spine.agent import opencode_driver
     livebuf.set_field(live_key, "status", "OpenCode " + (cli_model or ""))
@@ -2794,17 +2794,18 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
     # namespaces: sharing the slot sent a claude UUID to /session/<uuid>/prompt_async
     # (HTTP 500 "UnknownError", reproduced 2026-10-09) and would have overwritten
     # the claude pointer with a "ses_" id. Own slot per engine, same doc.
-    skey = (skey or "") + "\x00opencode"
-    base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", skey or "u"),
+    slot = (skey or "") + "\x00opencode"
+    prior = sess.get(slot)
+    base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", slot or "u"),
             "worktree": ROOT, "run_dir": run_dir,
             "dispatched_by": user,        # whose provider keys the OpenCode server gets
-            "session_id": sess.get(skey)}
+            "session_id": prior}
     cfg = {"type": "opencode", "model": cli_model}
     try:
         sid, reply, meta = opencode_driver.run(cfg, base, prompt)
     except Exception as e:                                     # noqa: BLE001
         reply = "OpenCode-Turn fehlgeschlagen: %s" % str(e)[:300]
-        meta, sid = {"models": [cli_model]}, sess.get(skey)
+        meta, sid = {"models": [cli_model]}, prior
     fb = turnopts.fallback_model(user)
     if fb and turnopts.is_poor_reply(reply) and cli_model != fb:
         try:
@@ -2818,52 +2819,11 @@ def _chat_via_opencode(user, skey, cli_model, system, turn, run_dir, live_key,
             cli_model = fb
         except Exception:                                      # noqa: BLE001
             pass
-    if sid:
-        try:
-            sess[skey] = sid
-            _save_sessions(sess)
-        except Exception:                                      # noqa: BLE001
-            pass
-    reply_prose, acts = _parse_reply_actions(reply or "")
-    usage = {"in": 0, "out": 0, "cost": (meta or {}).get("cost_usd")}
-    try:
-        _fold_stats(user, {"usage": {}, "total_cost_usd": (meta or {}).get("cost_usd"),
-                           "modelUsage": {cli_model: {}}}, {})
-    except Exception:                                          # noqa: BLE001
-        pass
-    if card_run_dir:
-        try:
-            from spine.agent import timeline_store as _ts
-            _ts.append(card_run_dir, "s:" + uuid.uuid4().hex,
-                {"role": "assistant", "kind": "text", "text": reply_prose,
-                 "by": "Henry", "byKind": "henry", "ts": time.strftime("%H:%M:%S"),
-                 "ta": time.time(), "usage": usage})
-        except Exception:                                      # noqa: BLE001
-            pass
-    else:
-        bot = {"cls": "bot", "text": reply_prose, "ts": time.strftime("%H:%M"), "usage": usage}
-        if client_msg_id:
-            bot["client_msg_id"] = client_msg_id
-        try:
-            _append_log(user, [bot])
-        except Exception:                                      # noqa: BLE001
-            pass
-        if announce:
-            try:
-                from spine.http import server as _srv
-                from spine.comms import notify as _notify
-                _said = reply_prose
-                _srv._bg("chat:notify:" + str(user),
-                         lambda: _notify.chat_reply(_said))
-            except Exception:                                  # noqa: BLE001
-                pass
-    try:
-        livebuf.clear(live_key)
-    except Exception:                                          # noqa: BLE001
-        pass
-    return {"reply": reply_prose, "actions": acts, "refused": [],
-            "cost": (meta or {}).get("cost_usd"), "usage": usage}
-
+    cost = (meta or {}).get("cost_usd")
+    return {"txt": reply or "", "ctx_usage": {}, "sid": prior, "session_id": sid, "slot": slot,
+            "result": {"usage": {}, "total_cost_usd": cost, "modelUsage": {cli_model: {}},
+                       "session_id": sid},
+            "sess": sess, "rotation_check": False, "warm": False, "live_steps": []}
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
@@ -3233,19 +3193,27 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 "des Owners):\n- " + "\n- ".join(_cap_item(r) for r in _late)
                 + "\n</harness-report>\n\n") + turn
     livebuf.set_field(live_key, "status", "bereitet den Turn vor")
+    _call = {"user": user, "skey": skey, "role": role, "message": message, "model": model,
+             "thinking": thinking, "card": card, "card_run_dir": card_run_dir,
+             "allow_actions": allow_actions, "extra_system": extra_system,
+             "voice_stream": voice_stream, "announce": announce, "overlay": overlay,
+             "client_msg_id": client_msg_id, "retried": _retried, "reply_to": reply_to,
+             "harness_note": harness_note, "mem_viewer": _mem_viewer, "snap_hash": _snap_hash,
+             "snap_when": _snap_when, "snap_lines": _snap_lines, "ovl_hash": _ovl_hash}
     # Free-model switching: `opencode/*` ids run on the OpenCode gateway, not
     # on the Claude-Code warm process (which can only set_model to Claude ids).
     # NOTE: _lk is ALREADY held here (acquired above) - do not re-acquire.
     if turnopts.engine_for(cli_model) == "opencode":
         try:
-            return _chat_via_opencode(user, skey, cli_model, system, turn, run_dir,
-                                      live_key, card, card_run_dir,
-                                      client_msg_id=client_msg_id, announce=announce)
+            _eng = _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key)
         finally:
             try:
                 _lk.release()
             except Exception:                                  # noqa: BLE001
                 pass
+            livebuf.clear(live_key)
+        _eng["live_steps"] = _live_steps
+        return _conclude_turn(_call, _eng)
     # PERSISTENT PORT when argv travels safely (the normal case since ea09780):
     # reuse the warm stream-json process - the 8-12s spawn is paid once, not
     # per turn (voice-speed decree). The cmd.exe-degraded box keeps the old
@@ -3634,6 +3602,43 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         if _beat.get("hung"):
             raise RuntimeError("copilot port hung (no event within 90s) - port dropped, please resend")
         raise RuntimeError("copilot produced no output (turn ended without a result)")
+    return _conclude_turn(_call, {
+        "txt": txt, "result": result, "ctx_usage": ctx_usage, "sid": sid, "session_id": session_id,
+        "slot": skey, "live_steps": _live_steps, "sess": sess, "rotation_check": True, "warm": True,
+        "resume_echo": resume_echo, "ctx_first": ctx_first})
+
+
+def _conclude_turn(c, e):
+    """THE ONE END OF A HENRY TURN, for every engine (owner decree 2026-10-12:
+    "warum Opencode anders als Claude - muss ich dann fuer alle verschiedene
+    Module pflegen. Das ist nicht akzeptabel").
+
+    An engine's whole job is to RUN the turn and hand back an outcome; what the
+    turn MEANS - memory sentinels, the session pointer, ```actions``` (hands,
+    cards, moves), the ask block, the filler guard, persistence, stats, the
+    push, compaction - happens here, once. The OpenCode path used to stop after
+    parse/log/notify, so a DeepSeek Henry answered "Haende gestartet" and
+    nothing ran, because the actions it parsed were returned and never executed.
+
+    c = the call: the chat() arguments + the per-turn context chat() derived.
+    e = the engine outcome: txt, result (CLI-result-shaped: usage,
+    total_cost_usd, session_id), ctx_usage, sid (pointer before), session_id
+    (pointer the engine reports), live_steps, slot (the session-pointer key of
+    THIS engine), rotation_check/warm (claude-only bookkeeping), resume_echo,
+    ctx_first."""
+    user, skey, role, message = c["user"], c["skey"], c["role"], c["message"]
+    model, thinking, card, card_run_dir = c["model"], c["thinking"], c["card"], c["card_run_dir"]
+    allow_actions, extra_system, voice_stream = c["allow_actions"], c["extra_system"], c["voice_stream"]
+    announce, overlay, client_msg_id = c["announce"], c["overlay"], c["client_msg_id"]
+    _retried, reply_to, harness_note = c["retried"], c["reply_to"], c["harness_note"]
+    _mem_viewer, _snap_hash, _snap_when = c["mem_viewer"], c["snap_hash"], c["snap_when"]
+    _snap_lines, _ovl_hash = c["snap_lines"], c["ovl_hash"]
+    txt, result, ctx_usage = e["txt"], e["result"], e["ctx_usage"]
+    sid, session_id, slot = e["sid"], e["session_id"], e["slot"]
+    _live_steps, sess = e["live_steps"], e["sess"]
+    rotation_check, warm = e["rotation_check"], e["warm"]
+    resume_echo, ctx_first = e.get("resume_echo", False), e.get("ctx_first", {})
+
     # SENTINEL MEMORY WRITES (henry-memory-db-authority phase 1) - ANY board
     # turn may end with <memory-save>/<memory-delete> blocks, not just the
     # dedicated pre-compaction save turn (copilot._save_memory runs the same
@@ -3665,7 +3670,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # chat "disappears" exactly like the pre-fix card bug. The pointer
         # only ever advances to a session that demonstrably holds THIS turn
         # (proven by the result read off it); the old head is kept, never lost.
-        if sid and sid_final != sid:
+        if rotation_check and sid and sid_final != sid:
             from cells.engineer.cards import sessions
             st = _stats().get(user) or {}
             meta = {"resumed_from": sid, "resume_echo": resume_echo, "ctx_first": ctx_first}
@@ -3681,7 +3686,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             chain.append(sid)
             st["session_chain"] = chain[-6:]           # bounded - last 6 prior sessions
             all_st = _stats(); all_st[user] = st; _save_stats(all_st)
-        sess[skey] = sid_final
+        sess[slot] = sid_final
         _save_sessions(sess)
     reply_prose, acts_parsed = _parse_reply_actions(txt)
     # AN ACTION JSON IN A SHELL COMMAND IS NOT AN ACTION (see _actions_in_shell):
@@ -3866,7 +3871,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             _srv._bg("chat:notify:" + str(user), _announce)
     # agent turn (harness_note): compact near the mark, at once; owner turn:
     # at the mark, after the lull (see _schedule_compact)
-    _schedule_compact(user, agent=bool(harness_note), immediate=bool(harness_note))  # background + single-flight, never blocks this reply
+    if warm:       # compaction works on the warm CLAUDE session's context
+        _schedule_compact(user, agent=bool(harness_note), immediate=bool(harness_note))  # background + single-flight, never blocks this reply
     # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
     # measured): standalone it rewrote the session at 60k, dropped the warm
     # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
@@ -3942,19 +3948,20 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # card it produced rides along - copilot_actions._tag - so the
                 # app draws a thread tile instead of a sentence)
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
-    # feed the keepalive: a real turn IS the freshest cache there is
-    _last_turn_at[skey] = _last_touch_at[skey] = time.time()
-    if _snap_hash:
-        # the model has now really SEEN this state - only from here on may an
-        # unchanged board collapse to the one-line reference / a changed one
-        # to a diff against these lines (CARD chats only - see the branch above)
-        _snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)
-    if _ovl_hash:
-        # keyed on (hash, session id) rather than a timestamp window: the
-        # model's own --resume already proves it saw this overlay as long as
-        # the session id is unchanged, and sid_final IS the id the NEXT turn
-        # resumes from - a compaction/detach/fresh-spawn changes it, which is
-        # exactly when a resend is needed, with no separate reset plumbing.
-        _ovl_seen[skey] = (_ovl_hash, sid_final or sid)
+    if warm:       # the keepalive and the delta-seams belong to the warm claude session
+        # feed the keepalive: a real turn IS the freshest cache there is
+        _last_turn_at[skey] = _last_touch_at[skey] = time.time()
+        if _snap_hash:
+            # the model has now really SEEN this state - only from here on may an
+            # unchanged board collapse to the one-line reference / a changed one
+            # to a diff against these lines (CARD chats only - see the branch above)
+            _snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)
+        if _ovl_hash:
+            # keyed on (hash, session id) rather than a timestamp window: the
+            # model's own --resume already proves it saw this overlay as long as
+            # the session id is unchanged, and sid_final IS the id the NEXT turn
+            # resumes from - a compaction/detach/fresh-spawn changes it, which is
+            # exactly when a resend is needed, with no separate reset plumbing.
+            _ovl_seen[skey] = (_ovl_hash, sid_final or sid)
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}

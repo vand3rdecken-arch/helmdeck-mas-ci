@@ -43,7 +43,7 @@ from spine.http import server
 OWNER = "tien"
 auth.list_users = lambda: [{"name": OWNER, "role": "owner"}]
 drivers.argv_form_safe = lambda exe: True          # the warm persistent-port path
-copilot._schedule_compact = lambda user: None
+copilot._schedule_compact = lambda user, agent=False, immediate=False: None
 copilot._schedule_prune = lambda user: None
 server._bg = lambda name, fn: fn()
 from spine.comms import notify
