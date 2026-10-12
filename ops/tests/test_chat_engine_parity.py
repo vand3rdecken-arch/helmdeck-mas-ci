@@ -299,6 +299,9 @@ def _streaming_oc_run(cfg, base, prompt):
     SNAP["tool_running"] = copilot.live(OWNER)
     sink({"kind": "tool", "id": "t1", "name": "bash", "input": {"command": "ls -la"}, "status": "completed",
           "output": "a b c"})
+    sink({"kind": "tool", "id": "t2", "name": "bash", "input": {}, "status": "running"})
+    sink({"kind": "tool", "id": "t2", "name": "bash", "input": {"command": "pwd"}, "status": "running"})
+    SNAP["late_input"] = copilot.live(OWNER)
     sink({"kind": "text", "id": "p2", "text": "Zweiter Teil"})
     SNAP["end"] = copilot.live(OWNER)
     return "ses_oc_1", "Erster Teil\n\nZweiter Teil", {"cost_usd": 0.001}
@@ -316,6 +319,8 @@ check(SNAP["tool_running"]["status"].startswith("Bash"), "the status line names 
 check(_st[0]["tool"] == "Bash" and _st[0]["label"] != "bash", "an OpenCode tool renders with the claude name and verb like a claude step (got %r/%r)" % (_st[0]["tool"], _st[0]["label"]))
 check(SNAP["end"]["steps"][0]["status"] == "completed" and SNAP["end"]["steps"][0].get("result") == "a b c",
       "the step closes with its result")
+check(SNAP["late_input"]["steps"][-1]["text"] == "pwd" and SNAP["late_input"]["steps"][-1]["status"] == "running",
+      "a call whose input arrives in a LATER frame gets its subject then (got %r)" % (SNAP["late_input"]["steps"][-1],))
 check(SNAP["end"]["text"] == "Erster Teil\n\nZweiter Teil", "text parts are joined in arrival order (got %r)" % SNAP["end"]["text"])
 check(copilot.live(OWNER)["text"] == "" and copilot.live(OWNER)["steps"] == [] and not copilot.live(OWNER)["running"],
       "the preview is gone when the turn ends (nothing leaks into the next turn)")

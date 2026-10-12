@@ -2900,6 +2900,12 @@ def _opencode_live_sink(live_key, steps, handle=None):
                             "status": "running", "ta": time.time(),
                             "at": len(_strip_actions_live("\n\n".join(texts.values())))}
                     steps.append(step)
+                if not step.get("text") and inp:
+                    # the first frame of a call arrives BEFORE its input is known
+                    # (measured: pending/running with {}); fill the subject in as
+                    # soon as a later frame carries it
+                    lbl, sub = _fmt._tool_label(tname, inp)
+                    step.update(label=lbl, text=(sub or "")[:160], detail=_fmt._tool_detail(tname, inp))
                 st = ev.get("status")
                 if st and st != "running":
                     step["status"] = "failed" if st == "failed" else "completed"
