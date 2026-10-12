@@ -2830,7 +2830,67 @@ def build_argv(cli_model, sid, system):
     return argv, role_in_turn
 
 
-def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, handle=None):
+# OpenCode names its tools in lower case with camelCase inputs; the app's tool
+# chips (and claude_transcript_fmt) speak the claude names. One small map so a
+# DeepSeek step renders as "Befehl · ls" like a claude one, not as raw "bash".
+_OC_TOOLS = {"bash": "Bash", "read": "Read", "write": "Write", "edit": "Edit", "grep": "Grep",
+             "glob": "Glob", "webfetch": "WebFetch", "task": "Task", "list": "LS", "patch": "Edit"}
+
+
+def _oc_tool(name, inp):
+    inp = dict(inp or {})
+    if "filePath" in inp and "file_path" not in inp:
+        inp["file_path"] = inp["filePath"]
+    return _OC_TOOLS.get((name or "").lower(), name or "tool"), inp
+
+
+def _opencode_live_sink(live_key, steps):
+    """The board chat's streaming preview for an OpenCode turn, folded from the
+    driver's own events AT EVENT TIME (opencode_driver._emit_live) into the
+    same livebuf fields the claude stream fills: `partial` (prose so far),
+    `thinking`, `status` and the transient tool `steps` (same shape as a
+    worker step, so the app draws one thing for both engines). `steps` is the
+    caller's list (chat()'s _live_steps), appended to in place."""
+    from spine.agent import livebuf, claude_transcript_fmt as _fmt
+    texts = {}                       # part id -> text so far, in arrival order
+    lock = threading.Lock()
+
+    def _publish_steps():
+        livebuf.set_field(live_key, "steps", json.dumps(steps[-12:]))
+
+    def sink(ev):
+        kind = ev.get("kind")
+        with lock:
+            if kind == "text":
+                texts[ev["id"]] = ev.get("text") or ""
+                livebuf.set_partial(live_key, "\n\n".join(t for t in texts.values() if t))
+                livebuf.set_field(live_key, "status", "")
+            elif kind == "thinking":
+                livebuf.set_field(live_key, "thinking", (ev.get("text") or "")[-600:])
+                livebuf.set_field(live_key, "status", "überlegt")
+            elif kind == "tool":
+                tname, inp = _oc_tool(ev.get("name"), ev.get("input") if isinstance(ev.get("input"), dict) else {})
+                step = next((s for s in steps if s.get("id") == ev.get("id")), None)
+                if step is None:
+                    lbl, sub = _fmt._tool_label(tname, inp)
+                    step = {"id": ev.get("id") or "", "tool": tname,
+                            "label": lbl, "text": (sub or "")[:160],
+                            "detail": _fmt._tool_detail(tname, inp),
+                            "status": "running", "ta": time.time(),
+                            "at": len(_strip_actions_live("\n\n".join(texts.values())))}
+                    steps.append(step)
+                st = ev.get("status")
+                if st and st != "running":
+                    step["status"] = "failed" if st == "failed" else "completed"
+                    step["result"] = str(ev.get("output") or ev.get("error") or "")[:4000]
+                else:
+                    livebuf.set_field(live_key, "status",
+                                      ("%s: %s" % (step.get("tool") or "tool", step.get("text") or ""))[:200])
+                _publish_steps()
+    return sink
+
+
+def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, handle=None, live_steps=None):
     """ENGINE: one Henry turn on the OpenCode gateway (free models + DeepSeek
     fallback). `opencode/*` ids cannot run on the `claude` CLI, so this runs
     the turn through opencode_driver (a dedicated `opencode serve` per
@@ -2854,6 +2914,8 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, han
             "worktree": ROOT, "run_dir": run_dir,
             "dispatched_by": user,        # whose provider keys the OpenCode server gets
             "session_id": prior}
+    steps = live_steps if live_steps is not None else []
+    base["live"] = _opencode_live_sink(live_key, steps)      # streaming preview, at event time
     cfg = {"type": "opencode", "model": cli_model}
     if handle is not None:
         handle.abort = lambda: opencode_driver.cancel(base["id"])
@@ -2880,7 +2942,7 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, han
     return {"txt": reply or "", "canceled": canceled, "ctx_usage": {}, "sid": prior, "session_id": sid, "slot": slot,
             "result": {"usage": {}, "total_cost_usd": cost, "modelUsage": {cli_model: {}},
                        "session_id": sid},
-            "sess": sess, "rotation_check": False, "warm": False, "live_steps": []}
+            "sess": sess, "rotation_check": False, "warm": False, "live_steps": steps}
 
 def chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
@@ -3274,7 +3336,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _sup_quiet = False
         _eng = None
         try:
-            _eng = _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, _h)
+            _eng = _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, _h,
+                                    live_steps=_live_steps)
         finally:
             _h.done = True
             _running.pop(user, None)

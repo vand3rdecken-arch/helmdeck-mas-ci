@@ -438,6 +438,18 @@ class _OpenCodeSession:
             if req_id:
                 self.client.permission_reply(req_id, self.worktree, "once")
 
+    def _emit_live(self, event):
+        """Hand a normalised event to this turn's live sink, AT EVENT TIME (the
+        board chat's streaming preview; a card does not pass one). Best-effort:
+        a preview must never break the turn."""
+        cur = self._cur
+        sink = cur.get("live") if cur else None
+        if sink:
+            try:
+                sink(event)
+            except Exception:
+                pass
+
     def _fold_part(self, props, is_delta):
         part = props.get("part") or props
         ptype = part.get("type")
@@ -461,12 +473,15 @@ class _OpenCodeSession:
                 timeline_store.append(self.run_dir, step,
                     {"role": role, "kind": "text", "text": text[:_TL_MAX_TEXT],
                      "ts": ts, "ta": ta})
+                if role == "assistant":
+                    self._emit_live({"kind": "text", "id": step, "text": text})
         elif ptype == "reasoning":
             text = (part.get("text") or "").strip()
             if text:
                 timeline_store.append(self.run_dir, step,
                     {"role": "assistant", "kind": "thinking", "text": text[:_TL_MAX_THINK],
                      "ts": ts, "ta": ta})
+                self._emit_live({"kind": "thinking", "id": step, "text": text})
         elif ptype == "tool":
             self._fold_tool(part, ts, ta, cur)
         elif ptype == "step-finish":
@@ -480,6 +495,8 @@ class _OpenCodeSession:
         state = part.get("state") or {}
         status = _normalize_tool_status(state.get("status"), state.get("error"),
                                         state.get("output"))
+        self._emit_live({"kind": "tool", "id": uid, "name": name, "input": state.get("input"),
+                         "status": status, "output": state.get("output"), "error": state.get("error")})
         if status == "running":
             if cur is not None:
                 cur.setdefault("running_tools", set()).add(uid)
@@ -512,21 +529,21 @@ class _OpenCodeSession:
         if cur is not None and isinstance(cost, (int, float)) and cost:
             cur["cost_usd"] = round(cur.get("cost_usd", 0.0) + float(cost), 6)
 
-    def run_turn(self, prompt, run_dir):
+    def run_turn(self, prompt, run_dir, live=None):
         with self._turn_lock:
             self.last_used = _time.time()
             try:
-                return self._run_turn_locked(prompt, run_dir)
+                return self._run_turn_locked(prompt, run_dir, live)
             finally:
                 self.last_used = _time.time()
 
-    def _run_turn_locked(self, prompt, run_dir):
+    def _run_turn_locked(self, prompt, run_dir, live=None):
         _cancelled.discard(self.tid)
         if not self.alive():
             self.kill()
             self._spawn()
         cur = {"status": None, "error": None, "cost_usd": 0.0, "running_tools": set(),
-               "done": threading.Event(), "last_event": _time.time()}
+               "done": threading.Event(), "last_event": _time.time(), "live": live}
         self._cur = cur
         try:
             text = _clean_text((prompt or "").strip())
@@ -602,7 +619,7 @@ def _note(cfg, t, err):
 def run(cfg, t, prompt):
     s = _get_session(cfg, t)
     try:
-        sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".")
+        sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".", live=t.get("live"))
     except Exception as e:
         _note(cfg, t, str(e))
         raise

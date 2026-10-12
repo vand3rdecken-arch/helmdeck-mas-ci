@@ -278,6 +278,64 @@ opencode_driver.run = _fake_oc_run
 out2 = copilot.chat(OWNER, "zweite frage", role="owner")
 check(out2.get("reply") == "fertig" and last_bot() == "fertig", "the next turn runs normally behind it (got %r)" % (out2.get("reply"),))
 
+# ---- the live preview: an OpenCode turn streams like a claude turn ------------
+print("opencode: live preview")
+SNAP = {}
+
+
+def _streaming_oc_run(cfg, base, prompt):
+    """Emits driver events through base['live'] and snapshots what the chat's
+    /chat/live feed (copilot.live) shows MID-TURN - the feed the app polls."""
+    sink = base["live"]
+    sink({"kind": "thinking", "id": "r1", "text": "ich pruefe den Server"})
+    SNAP["thinking"] = copilot.live(OWNER)
+    sink({"kind": "text", "id": "p1", "text": "Erster Teil"})
+    SNAP["text1"] = copilot.live(OWNER)
+    sink({"kind": "tool", "id": "t1", "name": "bash", "input": {"command": "ls -la"}, "status": "running"})
+    SNAP["tool_running"] = copilot.live(OWNER)
+    sink({"kind": "tool", "id": "t1", "name": "bash", "input": {"command": "ls -la"}, "status": "completed",
+          "output": "a b c"})
+    sink({"kind": "text", "id": "p2", "text": "Zweiter Teil"})
+    SNAP["end"] = copilot.live(OWNER)
+    return "ses_oc_1", "Erster Teil\n\nZweiter Teil", {"cost_usd": 0.001}
+
+
+opencode_driver.run = _streaming_oc_run
+db.chat_clear()
+copilot.chat(OWNER, "zeig mir live", role="owner")
+check("pruefe den Server" in SNAP["thinking"]["thinking"], "thinking reaches /chat/live mid-turn (got %r)" % SNAP["thinking"]["thinking"])
+check(SNAP["text1"]["text"] == "Erster Teil" and SNAP["text1"]["running"], "prose streams into the live feed while the turn runs")
+_st = SNAP["tool_running"]["steps"]
+check(len(_st) == 1 and _st[0]["status"] == "running" and "ls -la" in (_st[0].get("text") or ""),
+      "a running tool shows as a transient step with its subject (got %r)" % (_st,))
+check(SNAP["tool_running"]["status"].startswith("Bash"), "the status line names the running tool (got %r)" % SNAP["tool_running"]["status"])
+check(_st[0]["tool"] == "Bash" and _st[0]["label"] != "bash", "an OpenCode tool renders with the claude name and verb like a claude step (got %r/%r)" % (_st[0]["tool"], _st[0]["label"]))
+check(SNAP["end"]["steps"][0]["status"] == "completed" and SNAP["end"]["steps"][0].get("result") == "a b c",
+      "the step closes with its result")
+check(SNAP["end"]["text"] == "Erster Teil\n\nZweiter Teil", "text parts are joined in arrival order (got %r)" % SNAP["end"]["text"])
+check(copilot.live(OWNER)["text"] == "" and copilot.live(OWNER)["steps"] == [] and not copilot.live(OWNER)["running"],
+      "the preview is gone when the turn ends (nothing leaks into the next turn)")
+check(last_bot() == "Erster Teil\n\nZweiter Teil", "the persisted answer is unchanged by the preview (got %r)" % last_bot())
+
+# the DRIVER side: real _OpenCodeSession._fold_part/_fold_tool emit the events
+from spine.agent.opencode_driver import _OpenCodeSession
+_s = object.__new__(_OpenCodeSession)
+_s.tid, _s.run_dir, _s._msg_roles = "henry-test", tempfile.mkdtemp(prefix="hd-ocrd-"), {"m_user": "user", "m_asst": "assistant"}
+_ev = []
+_s._cur = {"live": _ev.append, "running_tools": set(), "done": threading.Event(), "last_event": 0}
+_s._fold_part({"part": {"id": "x1", "type": "text", "messageID": "m_asst", "text": "Hallo", "role": "assistant"}}, False)
+_s._fold_part({"part": {"id": "x2", "type": "text", "messageID": "m_user", "text": "frage"}}, False)
+_s._fold_part({"part": {"id": "x3", "type": "reasoning", "messageID": "m_asst", "text": "denke"}}, False)
+_s._fold_part({"part": {"id": "x4", "type": "tool", "messageID": "m_asst", "tool": "read",
+                        "state": {"status": "running", "input": {"filePath": "a.txt"}}}}, False)
+_kinds = [(e["kind"], e.get("status")) for e in _ev]
+check(("text", None) in _kinds and ("thinking", None) in _kinds and ("tool", "running") in _kinds,
+      "the driver emits text/thinking/tool events at event time (got %r)" % (_kinds,))
+check(not any(e.get("text") == "frage" for e in _ev), "the prompt's own echo (user role) is not previewed as the answer")
+_s._cur = {"live": None, "running_tools": set(), "done": threading.Event(), "last_event": 0}
+_s._fold_part({"part": {"id": "x5", "type": "text", "messageID": "m_asst", "text": "ohne sink", "role": "assistant"}}, False)
+check(True, "a turn without a sink (a card) is unaffected")
+
 turnopts.fallback_model = _real_fb
 turnopts.engine_for = _real_engine_for
 print()
