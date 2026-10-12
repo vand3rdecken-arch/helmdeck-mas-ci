@@ -441,10 +441,13 @@ export interface RoomMessage {
   byKind: "human" | "henry" | "system";
   date?: string; ts?: string;
   mentions?: string[]; to?: string; card?: string; error?: boolean;
+  reply_to?: { text: string; by?: string; seq?: number };
 }
 export interface RoomDetail {
   room: { id: string; name: string; members: string[]; created_by?: string; henry_on_mention?: boolean } | null;
   messages: RoomMessage[];
+  /** Henry's resumable session in this room (copilot_stats under the room's key) */
+  stats?: { turns: number; ctx_tokens?: number | null; ctx_window?: number | null; cost?: number; model?: string };
 }
 export interface RoomAccount { name: string; role: string }
 

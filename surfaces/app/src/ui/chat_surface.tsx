@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Keyboard, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { SteerOpts } from "@/data/client";
+import type { ReplyRef, SteerOpts } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { Composer, type Recipient } from "@/ui/card_composer";
@@ -53,7 +53,10 @@ export interface ChatSurfaceProps {
   composer?: Partial<Omit<ComposerProps, "onSend" | "placeholder" | "draftKey" | "models" | "busy" | "onStop" | "minimal" | "bottomInset" | "recipients">>;
   /** Transcript extras */
   ctxWindow?: number;
-  onReply?: React.ComponentProps<typeof Transcript>["onReply"];
+  /** messenger-style replies (swipe / arrow on a bubble -> quote bar -> `reply_to`
+   *  on the next send). The surface owns the state; a thread turns it on only if
+   *  its backend stores the quote. */
+  replies?: boolean;
   /** widest the column grows on a wide window (default 760); null = never capped (the card pane) */
   colMax?: number | null;
   /** room under the last message (default 24; the card pane keeps its 20) */
@@ -69,9 +72,22 @@ export interface ChatSurfaceProps {
 }
 
 export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeholder, draftKey, recipients, error,
-  top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, onReply, onRewind, colMax, tabClear,
+  top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, replies, onRewind, colMax, tabClear,
   bottomInset, scrollPad, scrollRef }: ChatSurfaceProps) {
   const t = useTheme();
+  // THE MESSAGE BEING ANSWERED (owner 2026-09-25): attached to exactly the next
+  // send (or live steer) and cleared by it. A mirrored card message answers THAT card.
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
+  const withReply = (o: SteerOpts): SteerOpts => {
+    if (!replies || !replyTo) return o;
+    const q = replyTo;
+    setReplyTo(null);
+    return { ...o, reply_to: { text: q.text, by: q.by, seq: q.seq }, ...(q.card ? { to: `card:${q.card}` } : {}) };
+  };
+  const onReply = replies
+    ? (st: TStep) => setReplyTo({ text: (st.text || st.label || "").trim().slice(0, 300),
+        by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })
+    : undefined;
   const tr = useT();
   const insets = useSafeAreaInsets();
   const { wide } = useResponsive();
@@ -104,7 +120,9 @@ export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeh
         <View style={{ width: "100%", maxWidth: col, alignSelf: "center" }}>
           {aboveComposer}
           {error ? <Text style={{ color: t.danger, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 }}>{error}</Text> : null}
-          <Composer {...composer} onSend={(txt, o) => { scroll.current?.toBottom(); return onSend(txt, o); }} models={models ?? ["auto"]} minimal={minimal} busy={busy} onStop={onStop}
+          <Composer {...composer} quote={replyTo} onClearQuote={() => setReplyTo(null)}
+            onSteerLive={composer?.onSteerLive ? (txt, o) => composer.onSteerLive!(txt, withReply(o)) : undefined}
+            onSend={(txt, o) => { scroll.current?.toBottom(); return onSend(txt, withReply(o)); }} models={models ?? ["auto"]} minimal={minimal} busy={busy} onStop={onStop}
             placeholder={placeholder} draftKey={draftKey} recipients={recipients}
             bottomInset={kb > 0 ? (bottomInset ?? insets.bottom) + 10 : (bottomInset ?? insets.bottom + 8)} />
         </View>

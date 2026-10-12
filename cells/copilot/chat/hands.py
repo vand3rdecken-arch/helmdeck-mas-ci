@@ -135,7 +135,8 @@ def running_ids():
         return [k for k, t in _tasks.items() if t["status"] == "running"]
 
 
-def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, room=None):
+def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, room=None,
+          model=None, resume=""):
     """Start the hands process for `task` and return its id immediately.
 
     kind="agent" (owner 2026-09-25 "wie Paseo - Thread oder Subprocess"): the
@@ -162,13 +163,22 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
     scratch = os.path.join(DAEMON_ROOT, "state", "hands", hid)
     os.makedirs(scratch, exist_ok=True)
     title = (task or "").strip().splitlines()[0][:90] if (task or "").strip() else hid
-    brief = (brief_text if brief_text is not None else harness.brief("delegate" if agent else "hands")) + "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
+    # a ROOM run is a turn of the room's resumable conversation: the question
+    # travels as the user message (so the session keeps it), the system brief
+    # stays the same every turn. Any other run carries its task in the brief.
+    brief = (brief_text if brief_text is not None else harness.brief("delegate" if agent else "hands"))
+    if not room:
+        brief += "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
     argv = [copilot.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", copilot.henry_pmode(),
             "--append-system-prompt-file", copilot._brief_file(brief)]
     if room:                      # the room watches this run type (room_henry.live)
         argv.insert(argv.index("--verbose") + 1, "--include-partial-messages")
     argv += harness.cli_args("machine-worker")
+    if model:
+        argv += ["--model", model]
+    if resume:
+        argv += ["--resume", resume]
     # an agent needs no PC/browser: lean like Henry (no MCP servers, fast start)
     argv += copilot._lean_mcp_args() if agent else _mcp_config_arg({"allowed_tools": MCP_GRANTS}, capper=True)
     env = tool_path()
@@ -182,7 +192,8 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
         ahead = 0 if agent else len(_queue) + (1 if _active else 0)
         _tasks[hid] = {"title": title, "status": "running", "since": time.time(), "updated": time.time(),
                        "detail": task.strip()[:600], "pid": None, "user": user, "skey": skey, "card": card,
-                       "kind": kind, "room": room, "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
+                       "kind": kind, "room": room, "resume": resume,
+                       "stdin": task.strip() if room else "", "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
                        "result": ("wartet: %d Hände-Lauf(e) davor (ein Desktop, ein Browser)" % ahead) if ahead else ""}
         if not agent:
             _queue.append(hid)
@@ -300,11 +311,14 @@ def _run(hid, desktop=True):
 def _pump(hid, p):
     from spine.agent import proctable
     try:
-        p.stdin.write("Do the TASK in your system prompt now."); p.stdin.close()
+        with _lock:
+            _stdin = (_tasks.get(hid) or {}).get("stdin")
+        p.stdin.write(_stdin or "Do the TASK in your system prompt now."); p.stdin.close()
     except Exception:                                    # noqa: BLE001
         pass
     last = time.time()
     result, is_error, steps = "", False, 0
+    last_usage = None              # the LAST call's usage = the room session's context fill
     watchdog = {"stop": False}
     with _lock:
         room_id = ((_tasks.get(hid) or {}).get("room") or {}).get("id")
@@ -330,6 +344,9 @@ def _pump(hid, p):
         except ValueError:
             continue
         if ev.get("type") == "assistant":
+            _u = (ev.get("message") or {}).get("usage")
+            if isinstance(_u, dict) and _u:
+                last_usage = _u
             for b in ((ev.get("message") or {}).get("content") or []):
                 if isinstance(b, dict) and b.get("type") == "tool_use":
                     steps += 1
@@ -350,10 +367,14 @@ def _pump(hid, p):
         elif ev.get("type") == "result":
             result = str(ev.get("result") or "")
             is_error = bool(ev.get("is_error"))
-            try:                          # the plan calibration's share of it
-                from spine.turn import econ
-                econ.record_spend("hands", list((ev.get("modelUsage") or {}).keys()),
-                                  ev.get("usage"), ev.get("total_cost_usd"))
+            try:
+                if room_id and not is_error:      # a room turn: session pointer + meter + spend
+                    from cells.copilot.chat import room_henry
+                    room_henry.on_result(room_id, ev, last_usage)
+                else:                             # the plan calibration's share of it
+                    from spine.turn import econ
+                    econ.record_spend("hands", list((ev.get("modelUsage") or {}).keys()),
+                                      ev.get("usage"), ev.get("total_cost_usd"))
             except Exception:                            # noqa: BLE001
                 pass
     watchdog["stop"] = True
@@ -423,6 +444,9 @@ def _land_room(t, hid, status, result, steps):
     else:
         text = "Ich konnte gerade nicht antworten (%s)." % (result.strip().splitlines() or ["?"])[0][:140]
         extra = {"to": asker, "error": True}
+        if t.get("resume"):             # the resumed session may be what failed: rebuild from the record
+            from cells.copilot.chat import room_henry as _rh
+            _rh.drop_session(room, "resumed run failed")
     try:
         rooms.post(room, "Henry", text[:rooms.TEXT_MAX], by_kind="henry", extra=extra)
     except Exception as e:                               # noqa: BLE001

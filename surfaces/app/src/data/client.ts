@@ -959,8 +959,9 @@ export const api = {
     req<{ text: string; thinking?: string; status?: string; running: boolean; since?: number | null;
       steps?: { id?: string; tool: string; label: string; text?: string; status: "running" | "completed" | "failed"; ta?: number }[];
     }>("GET", `/rooms/live?room=${encodeURIComponent(room)}`),
-  roomPost: (room: string, text: string) =>
-    req<import("./types").RoomMessage>("POST", "/rooms/post", { room, text }),
+  roomPost: (room: string, text: string, o: { reply_to?: ReplyRef; model?: string; thinking?: string } = {}) =>
+    req<import("./types").RoomMessage>("POST", "/rooms/post", { room, text, ...(o.reply_to ? { reply_to: o.reply_to } : {}),
+      ...(o.model ? { model: o.model } : {}), ...(o.thinking ? { thinking: o.thinking } : {}) }),
   roomNew: (name: string, members: string[]) =>
     req<{ id: string; name: string; members: string[] }>("POST", "/rooms/new", { name, members }),
   roomMembers: (room: string, add: string[], remove: string[]) =>

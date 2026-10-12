@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { api } from "@/data/client";
+import { api, type ReplyRef, type SteerOpts } from "@/data/client";
 import { usePresence } from "@/data/presence";
+import { useModels } from "@/data/use_models";
 import { chatFallbackInterval, useStreamCaps } from "@/data/stream";
 import type { RoomMessage } from "@/data/types";
 import { useT } from "@/i18n";
@@ -15,6 +16,7 @@ import { useTheme } from "@/theme";
 import type { Recipient } from "@/ui/card_composer";
 import type { TStep } from "@/ui/card_transcript";
 import { ChatSurface } from "@/ui/chat_surface";
+import { ContextMeter } from "@/ui/context_meter";
 import { Empty, ScreenHeader } from "@/ui/kit";
 import { RoomProjects } from "@/ui/room_projects";
 import { ThinkingIndicator } from "@/ui/thinking_indicator";
@@ -49,6 +51,10 @@ export default function RoomScreen() {
   const room = data?.room ?? null;
   const messages: RoomMessage[] = Array.isArray(data?.messages) ? data!.messages : [];
   const members = room?.members ?? [];
+  const stats = data?.stats;
+  // the model picker is the owner's: every member's turn spends the owner's plan
+  const isOwner = me?.role === "owner";
+  const { data: models } = useModels(isOwner);
   const admin = can(me, "rooms.manage");
 
   // announce this room as the screen being read, so a push for it does not buzz
@@ -61,7 +67,8 @@ export default function RoomScreen() {
   const [err, setErr] = useState("");
   const [info, setInfo] = useState(false);
   const post = useMutation({
-    mutationFn: (body: string) => api.roomPost(roomId, body),
+    mutationFn: (v: { body: string; reply_to?: ReplyRef; model?: string; thinking?: string }) =>
+      api.roomPost(roomId, v.body, { reply_to: v.reply_to, model: v.model, thinking: v.thinking }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["room", roomId] });
       void qc.invalidateQueries({ queryKey: ["rooms"] });
@@ -70,11 +77,11 @@ export default function RoomScreen() {
   });
   // The composer is the Henry chat's own: a recipient picked in its @ popover
   // becomes the @name the daemon reads - @henry is what wakes Henry.
-  const send = (body: string, o: { to?: string }) => {
+  const send = (body: string, o: SteerOpts) => {
     const v = body.trim();
     if (!v) return;
     setErr("");
-    post.mutate(o.to ? "@" + o.to + " " + v : v);
+    post.mutate({ body: o.to ? "@" + o.to + " " + v : v, reply_to: o.reply_to, model: o.model, thinking: o.thinking });
   };
 
   // Henry is "answering" while the last @henry has no Henry message after it
@@ -136,9 +143,9 @@ export default function RoomScreen() {
     }
     if (x.byKind === "henry") {
       return { role: "assistant", kind: x.error ? "error" : "text", text: x.text, ts: x.ts, seq: x.seq,
-               by: "Henry", byKind: "henry", to: x.to };
+               by: "Henry", byKind: "henry", to: x.to, quote: x.reply_to };
     }
-    return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "human" };
+    return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "human", quote: x.reply_to };
   });
   // The live turn, drawn with the SAME rows the board chat uses: tool rows, then
   // the prose as it types (streaming bubble). Before any prose, the thinking row.
@@ -234,7 +241,9 @@ export default function RoomScreen() {
 
       <ChatSurface steps={steps} me={me?.name} loading={isLoading} empty={<Empty text={tr("rooms.noMessages")} />}
         onSend={(txt, o) => send(txt, o)} placeholder={tr("rooms.placeholder")} draftKey={"room:" + roomId}
-        recipients={recipients} error={err} minimal
+        recipients={recipients} error={err} minimal={!isOwner} replies models={isOwner ? models : undefined}
+        aboveComposer={<ContextMeter tokens={stats?.ctx_tokens} window={stats?.ctx_window}
+          style={{ paddingHorizontal: 14, paddingTop: 6 }} />}
         afterTranscript={busy && !liveText
           ? <ThinkingIndicator since={live?.since} preview={(live?.thinking ?? "").trim() || (live?.steps?.length ? "" : live?.status)} /> : null} />
     </View>

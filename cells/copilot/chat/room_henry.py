@@ -98,9 +98,7 @@ def build_prompt(room, history, author, text, rows):
     last HISTORY_LINES messages with their authors, and the question."""
     lines = []
     for m in history[-HISTORY_LINES:]:
-        who = "Henry" if m.get("byKind") == "henry" else (m.get("by") or "?")
-        lines.append("[%s %s] %s: %s" % (m.get("date", ""), m.get("ts", ""), who,
-                                         (m.get("text") or "").replace("\r", "")))
+        lines.append(_line(m))
     win = ("nur die letzten %d von %d Nachrichten, aelteste zuerst; Aelteres steht hier nicht"
            % (HISTORY_LINES, len(history)) if len(history) > HISTORY_LINES
            else "aelteste zuerst; alle %d Nachrichten" % len(history))
@@ -115,10 +113,164 @@ def build_prompt(room, history, author, text, rows):
                author))
 
 
-def _argv():
+# ---------------------------------------------------------------- the room's session
+# ONE resumable Henry conversation per room (owner 2026-10-12: "jeder Raum hat eine
+# id und kann resumt werden"). Same homes the board chat and a card chat already
+# use, keyed by the room instead of the user - no new table:
+#   session pointer  copilot._sessions()      {skey: sid}
+#   model pick       copilot._model_prefs()   {skey: cli model}
+#   economics/meter  copilot_stats._stats()   {skey: ctx_tokens, ctx_window, ...}
+# The room RECORD stays the source of truth: the session is a cache of it. A lost
+# or rotated session is rebuilt from the record (build_prompt), never lost.
+
+
+def skey(rid):
+    """The identity of one room conversation. NUL-prefixed like a card key, so it
+    can never equal an account name (a bare user key is the board chat)."""
+    return "\x00room:" + rid
+
+
+def session_id(rid):
     from cells.copilot.chat import copilot
-    return [copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan",
-            "--tools", "", "--model", MODEL, "--setting-sources", ""] + copilot._lean_mcp_args()
+    return copilot._sessions().get(skey(rid)) or ""
+
+
+def drop_session(rid, why=""):
+    """Forget the room's session (resume failed, or the context hit the mark): the
+    next turn rebuilds from the record. The meter reads 0 until that turn reports
+    a real figure - never the old session's."""
+    from cells.copilot.chat import copilot, copilot_stats
+    sess = copilot._sessions()
+    if sess.pop(skey(rid), None) is not None:
+        copilot._save_sessions(sess)
+    st = copilot_stats._stats()
+    m = st.get(skey(rid))
+    if m:
+        m.pop("ctx_tokens", None)
+        m["rotated_at_turn"] = int(m.get("turns") or 0)
+        copilot_stats._save_stats(st)
+    try:
+        from spine.storage import events
+        events.emit("room", rid, action="session_dropped", why=why[:120])
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
+def forget(rid):
+    """The room is gone: its session pointer, model pick and stats go with it."""
+    from cells.copilot.chat import copilot, copilot_stats
+    k = skey(rid)
+    sess = copilot._sessions()
+    if sess.pop(k, None) is not None:
+        copilot._save_sessions(sess)
+    prefs = copilot._model_prefs()
+    if prefs.pop(k, None) is not None:
+        from spine.storage import db
+        db.doc_put(copilot._MODELS_KEY, prefs)
+    st = copilot_stats._stats()
+    if st.pop(k, None) is not None:
+        copilot_stats._save_stats(st)
+
+
+def stats(rid):
+    """What the room's meter and picker read (served with GET /rooms/messages)."""
+    from cells.copilot.chat import copilot, copilot_stats
+    m = copilot_stats._stats().get(skey(rid)) or {}
+    return {"turns": int(m.get("turns") or 0), "ctx_tokens": m.get("ctx_tokens"),
+            "ctx_window": m.get("ctx_window"), "cost": m.get("cost") or 0,
+            "model": copilot._model_prefs().get(skey(rid)) or ""}
+
+
+def pick_model(rid, author, pick, text):
+    """The CLI model of this turn. The OWNER's explicit pick wins and becomes the
+    room's sticky model (copilot.chat's order: pick > recorded > default); a
+    member's pick is ignored - everyone's turns spend the owner's plan. The
+    window law of turnopts still applies to whatever wins."""
+    from cells.copilot.chat import copilot
+    from spine.agent import turnopts
+    k = skey(rid)
+    owner = _is_owner(author)
+    explicit = (pick or "").strip() if owner else ""
+    pick = explicit if explicit and explicit != "auto" else (copilot._model_prefs().get(k) or MODEL)
+    ctx = stats(rid).get("ctx_tokens")
+    cli, _ = turnopts.resolve_model(pick, text, False, signals={"ctx_tokens": ctx}, account=author)
+    cli = cli or MODEL
+    if explicit:
+        copilot._save_model_pref(k, cli)
+    return cli
+
+
+def maybe_rotate(rid):
+    """Compaction for a room: at the board chat's own mark (copilot._compact_mark)
+    the session is dropped and rebuilt from the record. The record already IS the
+    durable truth of a shared conversation, so this is cheap and safe; a true
+    /compact for rooms is registered debt (spine/registry/debt.py)."""
+    from cells.copilot.chat import copilot, copilot_stats
+    m = copilot_stats._stats().get(skey(rid)) or {}
+    mark, why = copilot._compact_mark(m)
+    if session_id(rid) and int(m.get("ctx_tokens") or 0) >= mark:
+        drop_session(rid, "context %dk >= %s mark" % (int(m["ctx_tokens"]) // 1000, why))
+        return True
+    return False
+
+
+def on_result(rid, raw, ctx_usage):
+    """A room turn finished (guest path AND the owner's hands run): the session
+    pointer advances only on the runtime's own result event, and the economics
+    fold at event time into the room's stats (copilot_stats._fold_stats, the one
+    owner - it also records the spend)."""
+    from cells.copilot.chat import copilot, copilot_stats
+    if not isinstance(raw, dict) or raw.get("is_error"):
+        return
+    sid = raw.get("session_id")
+    if sid:
+        sess = copilot._sessions()
+        if sess.get(skey(rid)) != sid:
+            sess[skey(rid)] = sid
+            copilot._save_sessions(sess)
+    copilot_stats._fold_stats(skey(rid), raw, ctx_usage)
+
+
+def _line(m):
+    who = "Henry" if m.get("byKind") == "henry" else (m.get("by") or "?")
+    q = m.get("reply_to") or {}
+    quote = ('(Antwort auf %s: "%s") ' % (q.get("by") or "eine Nachricht", q.get("text", "")[:200])
+             if q.get("text") else "")
+    return "[%s %s] %s: %s%s" % (m.get("date", ""), m.get("ts", ""), who, quote,
+                                  (m.get("text") or "").replace("\r", ""))
+
+
+def delta_prompt(room, history, author, text):
+    """A RESUMED turn: the session already holds everything up to Henry's last
+    answer, so only what the room said since (incl. the question) rides in -
+    derived from the record, no stored cursor. An errored Henry row never
+    advanced the session, so it does not count as his last answer."""
+    last = -1
+    for i, m in enumerate(history):
+        if m.get("byKind") == "henry" and not m.get("error"):
+            last = i
+    new = history[last + 1:][-HISTORY_LINES:]
+    return ("NEU IM RAUM %s seit deiner letzten Antwort (aelteste zuerst):\n%s\n\n"
+            "Die Nachricht von %s, die dich mit @henry anspricht, ist die letzte. "
+            "Antworte %s direkt." % (room["name"], "\n".join(_line(m) for m in new) or "(nichts)",
+                                    author, author))
+
+
+def turn_prompt(room, history, author, text, rows, thinking=""):
+    """(prompt, resumed): the delta on a live session, else the whole record."""
+    from spine.agent import turnopts
+    if session_id(room["id"]):
+        body, resumed = delta_prompt(room, history, author, text), True
+    else:
+        body, resumed = build_prompt(room, history, author, text, rows), False
+    return turnopts.augment_prompt(body, thinking, []), resumed
+
+
+def _argv(model=None, resume=""):
+    from cells.copilot.chat import copilot
+    return ([copilot.CLAUDE, "-p", "--output-format", "json", "--permission-mode", "plan",
+             "--tools", "", "--model", model or MODEL, "--setting-sources", ""]
+            + (["--resume", resume] if resume else []) + copilot._lean_mcp_args())
 
 
 def _empty_cwd():
@@ -227,16 +379,18 @@ def live(rid):
             "running": running, "since": since}
 
 
-def run_claude(system, prompt, timeout=TIMEOUT, live=None):
+def run_claude(system, prompt, timeout=TIMEOUT, live=None, model=None, resume="", rid=None):
     """The ONE place this module spawns the CLI: (reply text, raw result event).
     stdin carries the turn; the brief goes as a FILE (Windows' command-line cap,
     see copilot._brief_file). stream-json, so room `live` (a room id) can watch
     the reply and the reasoning arrive; the result event is the same dict the
-    old one-shot json output was."""
+    old one-shot json output was. `resume` = the room's session id; `rid` = the
+    room whose session/meter this turn feeds (on_result) - absent for the private
+    Henry, which stays one-shot."""
     from cells.copilot.chat import copilot
     from spine.agent import drivers
     from spine.agent.spawnenv import tool_path
-    argv = _argv() + ["--system-prompt-file", copilot._brief_file(system)]
+    argv = _argv(model, resume) + ["--system-prompt-file", copilot._brief_file(system)]
     i = argv.index("json")                       # _argv's "--output-format json"
     argv[i:i + 1] = ["stream-json", "--verbose", "--include-partial-messages"]
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=_empty_cwd(), stdin=subprocess.PIPE,
@@ -253,7 +407,7 @@ def run_claude(system, prompt, timeout=TIMEOUT, live=None):
         proctable.kill_owned(p)
     timer = threading.Timer(timeout, _kill)
     timer.start()
-    raw, parts, think = None, [], []
+    raw, parts, think, last_usage = None, [], [], None
     try:
         try:
             p.stdin.write(prompt)
@@ -270,6 +424,10 @@ def run_claude(system, prompt, timeout=TIMEOUT, live=None):
                 continue
             if ev.get("type") == "result":
                 raw = ev
+            elif ev.get("type") == "assistant":     # the LAST call's usage = the context fill
+                u = (ev.get("message") or {}).get("usage")
+                if isinstance(u, dict) and u:
+                    last_usage = u
             elif live:
                 live_event(live, ev, parts, think)
         p.wait()
@@ -282,12 +440,17 @@ def run_claude(system, prompt, timeout=TIMEOUT, live=None):
     if raw is None:
         time.sleep(0.05)                          # let the stderr reader land
         raise RuntimeError("no model output: " + ("".join(errbuf) or "").strip()[:200])
-    try:                                   # the plan calibration's share of it
-        from spine.turn import econ
-        econ.record_spend("room", list((raw.get("modelUsage") or {}).keys()),
-                          raw.get("usage"), raw.get("total_cost_usd"))
+    try:
+        if rid and not raw.get("is_error"):
+            on_result(rid, raw, last_usage)            # session pointer + meter + spend
+        else:                              # the plan calibration's share of it
+            from spine.turn import econ
+            econ.record_spend("room", list((raw.get("modelUsage") or {}).keys()),
+                              raw.get("usage"), raw.get("total_cost_usd"))
     except Exception:                                            # noqa: BLE001
         pass
+    if resume and raw.get("is_error"):
+        raise RuntimeError("resume failed: " + str(raw.get("result") or "")[:160])
     return (raw.get("result") or "").strip(), raw
 
 
@@ -323,7 +486,7 @@ def _shared_projects_block(room, author):
             + "\n".join("- %s: %s" % (p["name"], p["repo"]) for p in rows))
 
 
-def _owner_turn(room, author, text):
+def _owner_turn(room, author, text, opts=None):
     """The OWNER asks in a room. His own Henry answers, as ITS OWN RUN beside his
     main chat (hands.spawn kind="agent": a one-shot child with his tools, no
     session, no shared per-user chat state), so a room question neither waits for
@@ -334,12 +497,17 @@ def _owner_turn(room, author, text):
     from cells.copilot.chat import hands
     viewer = copilot_memory.room_viewer(room["id"])
     rows = copilot_memory.all_notes(viewer)
-    task = (build_prompt(room, rooms.history(room["id"], author), author, text, rows)
-            + _shared_projects_block(room, author))
+    opts = opts or {}
+    maybe_rotate(room["id"])
+    prompt, resumed = turn_prompt(room, rooms.history(room["id"], author), author, text, rows,
+                                  opts.get("thinking", ""))
+    task = prompt + _shared_projects_block(room, author)
     try:
         hands.spawn(author, task, skey=author, kind="agent", brief_text=owner_brief(),
                     room={"id": room["id"], "to": author},
-                    why="@henry im Raum %s" % room["name"])
+                    why="@henry im Raum %s" % room["name"],
+                    model=pick_model(room["id"], author, opts.get("model"), text),
+                    resume=session_id(room["id"]) if resumed else "")
     except Exception as e:                                       # noqa: BLE001
         return rooms.post(room["id"], "Henry", "Ich konnte gerade nicht antworten (%s)."
                           % str(e)[:120], by_kind="henry", extra={"to": author, "error": True})
@@ -351,14 +519,16 @@ def _lock_for(rid):
         return _locks.setdefault(rid, threading.Lock())
 
 
-def answer(rid, author, text, runner=None):
+def answer(rid, author, text, runner=None, opts=None):
     """One Henry turn in room `rid`, in answer to `author`'s message. Blocks on
     the room's lock (the queue), reads the record at THAT moment, stores the
     reply (or an honest failure note) and returns the stored message, or None
     when the queue is full. `runner(system, prompt) -> (text, raw)` is the seam
-    the tests use; production uses run_claude."""
+    the tests use; production uses run_claude. `opts` = {model, thinking} of the
+    asking message (only the owner's pick counts, see pick_model)."""
+    opts = opts or {}
     owner_turn = runner is None and _is_owner(author)   # a test seam runner always wins
-    runner = runner or (lambda s, p: run_claude(s, p, live=rid))
+    seam = runner
     with _guard:
         if _waiting.get(rid, 0) >= MAX_QUEUED:
             return None
@@ -372,14 +542,29 @@ def answer(rid, author, text, runner=None):
                 return None
             live_turn(rid)
             if owner_turn:
-                posted = _owner_turn(room, author, text)
+                posted = _owner_turn(room, author, text, opts)
                 handed_off = posted is None
                 return posted
             viewer = copilot_memory.room_viewer(rid)
             rows = copilot_memory.all_notes(viewer)
-            prompt = build_prompt(room, rooms.history(rid, author), author, text, rows)
+            hist = rooms.history(rid, author)
             try:
-                reply, _raw = runner(brief(), prompt)
+                if seam:
+                    reply, _raw = seam(brief(), build_prompt(room, hist, author, text, rows))
+                else:
+                    maybe_rotate(rid)
+                    model = pick_model(rid, author, opts.get("model"), text)
+                    prompt, resumed = turn_prompt(room, hist, author, text, rows, opts.get("thinking", ""))
+                    try:
+                        reply, _raw = run_claude(brief(), prompt, live=rid, model=model, rid=rid,
+                                                 resume=session_id(rid) if resumed else "")
+                    except Exception:                            # noqa: BLE001
+                        if not resumed:
+                            raise
+                        # the session is gone / refused: the record rebuilds it, once
+                        drop_session(rid, "resume failed")
+                        prompt, _ = turn_prompt(room, hist, author, text, rows, opts.get("thinking", ""))
+                        reply, _raw = run_claude(brief(), prompt, live=rid, model=model, rid=rid)
             except Exception as e:                               # noqa: BLE001
                 return rooms.post(rid, "Henry", "Ich konnte gerade nicht antworten (%s)."
                                   % str(e)[:120], by_kind="henry", extra={"to": author, "error": True})
@@ -398,7 +583,7 @@ def answer(rid, author, text, runner=None):
             live_end(rid)
 
 
-def maybe_answer(msg, background=True, runner=None):
+def maybe_answer(msg, background=True, runner=None, opts=None):
     """Called by the route after a HUMAN message landed. Starts Henry only when
     the message mentions him AND the room allows it; Henry's own messages never
     reach here, so he can never trigger himself."""
@@ -407,7 +592,7 @@ def maybe_answer(msg, background=True, runner=None):
     room = rooms.get(msg["room_id"]) if msg.get("room_id") else None
     if not room or not room.get("henry_on_mention", True):
         return False
-    args = (msg["room_id"], msg["by"], msg["text"], runner)
+    args = (msg["room_id"], msg["by"], msg["text"], runner, opts)
     if background:
         threading.Thread(target=answer, args=args, daemon=True,
                          name="room-henry:%s" % msg["room_id"]).start()

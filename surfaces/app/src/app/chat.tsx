@@ -245,18 +245,6 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
     return () => usePresence.getState().setFocusedCard(null);
   }, []));
   const [busy, setBusy] = useState(false);
-  // THE MESSAGE BEING ANSWERED (messenger-style reply, owner 2026-09-25): set
-  // by a swipe / the reply arrow on a bubble, shown as the composer's quote
-  // bar, attached to exactly the next send and cleared by it.
-  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
-  const withReply = (o: SteerOpts): SteerOpts => {
-    if (!replyTo) return o;
-    const q = replyTo;
-    setReplyTo(null);
-    return { ...o, reply_to: { text: q.text, by: q.by, seq: q.seq },
-      // a card's mirrored message: the answer goes to THAT card, by its id
-      ...(q.card ? { to: `card:${q.card}` } : {}) };
-  };
   // phone: the conversation list is a full-screen sheet over the chat; on
   // desktop it is a permanent sidebar (CopilotOverlay/ChatScreen), so the
   // header button only exists on the narrow layout.
@@ -973,8 +961,7 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
         colMax={colMax} tabClear={tabClear}
         isEmpty={msgs.length === 0 && !showWelcome && !(busy && stream.trim())}
         empty={<Empty text={tr("chat.empty")} />}
-        onReply={(st) => setReplyTo({ text: (st.text || st.label || "").trim().slice(0, 300),
-          by: st.by || (st.byKind === "henry" ? "Henry" : undefined), seq: st.seq, card: st.card })}
+        replies
         afterTranscript={busy && !stream.trim()
           ? <ThinkingIndicator since={liveSince} preview={think.trim() || (liveSteps.length ? "" : liveStatus)} /> : null}
         aboveComposer={(
@@ -1009,13 +996,12 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
             <UnsentStrip scope="board" onRetry={(m) => send(m.text, m.opts, m.id)} />
           </>
         )}
-        onSend={(txt, o) => send(txt, withReply(o))}
+        onSend={(txt, o) => send(txt, o)}
         busy={busy} onStop={stop} models={models ?? ["auto"]}
         placeholder={tr("chat.placeholder")} draftKey="board-copilot"
         recipients={cardRecipients}
         composer={{
-          onSteerLive: (txt, o) => steerLive(txt, withReply(o)),
-          quote: replyTo, onClearQuote: () => setReplyTo(null),
+          onSteerLive: (txt, o) => steerLive(txt, o),
           // Mode row (owner request 2026-09-12): Henry's permission mode, same
           // options and labels as a card's composer, current mode first. The
           // pick rides in the send body (`mode`) - card parity.

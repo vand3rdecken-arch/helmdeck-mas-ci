@@ -220,6 +220,26 @@ DEBT = [
         "since": "2026-09-02",
     },
     {
+        "id": "room-session-rotates-not-compacts",
+        "order": -8,
+        "title": "a room's Henry session is ROTATED at the compaction mark, not /compact-ed",
+        "status": "open",
+        "what": "Each room has one resumable Henry session (room_henry.skey, "
+                "2026-10-12). At copilot._compact_mark the session is dropped "
+                "and the next turn is rebuilt from the room record "
+                "(room_henry.maybe_rotate) instead of running the board's "
+                "/compact + memory-save + prune. _maybe_compact/_do_prune are "
+                "hard-wired to the board key and the user's chat log "
+                "(same root as henry-card-session-uncompacted).",
+        "why_it_bites": "A rotation forgets what Henry knew beyond the last "
+                        "30 room messages and the room notes (tool findings, "
+                        "earlier reasoning); /compact would keep a summary.",
+        "trigger": "A long-running room with research turns of the owner.",
+        "fix": "Give _maybe_compact a conversation key (with henry-card-session-"
+               "uncompacted) and let rooms call it; drop maybe_rotate then.",
+        "since": "2026-10-12",
+    },
+    {
         "id": "henry-card-session-uncompacted",
         "order": -9,
         "title": "only the BOARD Henry session is proactively compacted/pruned - card sessions are not",

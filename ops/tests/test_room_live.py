@@ -81,7 +81,7 @@ with open(CHILD, "w", encoding="utf-8") as f:
     f.write("print(%r, flush=True)\n" % final)
 
 real_popen = subprocess.Popen
-room_henry._argv = lambda: ["--output-format", "json", "x"]            # shape only; the child ignores it
+room_henry._argv = lambda *a, **k: ["--output-format", "json", "x"]            # shape only; the child ignores it
 import spine.agent.drivers as drivers
 drivers._cmd_line = lambda argv: [sys.executable, CHILD]
 room_henry._empty_cwd = lambda: SANDBOX

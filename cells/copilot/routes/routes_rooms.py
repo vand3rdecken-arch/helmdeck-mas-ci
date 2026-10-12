@@ -62,7 +62,9 @@ def rooms_messages_get(self, user):
         return self._send(404, json.dumps({"error": "unknown room"}))
     if msgs:       # the member is looking at these: advance THEIR read cursor
         rooms.mark_read(rid, user["name"], msgs[-1]["seq"])
-    return self._send(200, json.dumps({"room": rooms.get(rid), "messages": msgs}))
+    from cells.copilot.chat import room_henry
+    return self._send(200, json.dumps({"room": rooms.get(rid), "messages": msgs,
+                                       "stats": room_henry.stats(rid)}))
 
 
 def rooms_live_get(self, user):
@@ -102,13 +104,17 @@ def rooms_post_post(self, user, body):
     if not rooms.is_member(rid, user["name"]):
         return self._send(404, json.dumps({"error": "unknown room"}))
     try:
-        msg = rooms.post(rid, user["name"], body.get("text", ""))
+        from cells.copilot.chat import copilot
+        ref = copilot._reply_ref(body.get("reply_to"))
+        msg = rooms.post(rid, user["name"], body.get("text", ""),
+                         extra={"reply_to": ref} if ref else None)
     except ValueError as e:
         return self._send(400, json.dumps({"error": str(e)}))
     # @henry: answer in the background (the reply arrives as the next message,
     # the chat cursor wakes every member's app); the post itself returns at once
     from cells.copilot.chat import room_henry
-    room_henry.maybe_answer(msg)
+    room_henry.maybe_answer(msg, opts={"model": str(body.get("model") or ""),
+                                       "thinking": str(body.get("thinking") or "")})
     return self._send(200, json.dumps(msg))
 
 
