@@ -268,3 +268,9 @@ daemon/takeout/
 .shots/
 .refs.log
 daemon/daemon_origin_tunnel.log.out
+
+# gt_check2/ (2026-10-12 23:14): ps1/py scripts + ticker dumps a running agent
+# (GT ticker check) dropped in the repo root, not made by any script this repo
+# owns. Left in place (look before deleting), ignored so the loop's clean-tree
+# check stops flagging someone else's scratch. Globbed: next run = gt_check3/.
+/gt_check*/
