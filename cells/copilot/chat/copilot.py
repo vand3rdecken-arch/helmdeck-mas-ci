@@ -2502,15 +2502,23 @@ def try_inject(user, message, client_msg_id=""):
         return False
     with _inject_guard:
         st = _inject.get(user)
-        if not st or not st["tools"] or st["p"].poll() is not None:
+        h = _running.get(user)
+        if st and st["tools"] and st["p"].poll() is None:
+            try:
+                st["p"].stdin.write(json.dumps({"type": "user", "message": {
+                    "role": "user", "content": _INJECT_HEAD + message}}) + chr(10))
+                st["p"].stdin.flush()
+            except Exception:                                # noqa: BLE001
+                return False
+            st["absorbed"] += 1
+        elif isinstance(h, _EngineHandle) and h.can_inject():
+            try:                                             # an engine with its own steer path
+                if not h.inject(_INJECT_HEAD + message):
+                    return False
+            except Exception:                                # noqa: BLE001
+                return False
+        else:
             return False
-        try:
-            st["p"].stdin.write(json.dumps({"type": "user", "message": {
-                "role": "user", "content": _INJECT_HEAD + message}}) + chr(10))
-            st["p"].stdin.flush()
-        except Exception:                                    # noqa: BLE001
-            return False
-        st["absorbed"] += 1
     _you = {"cls": "you", "text": message, "ts": time.strftime("%H:%M")}
     if client_msg_id:
         _you["client_msg_id"] = client_msg_id
@@ -2550,6 +2558,8 @@ class _EngineHandle:
         self.abort = None
         self.done = False
         self.aborted = False
+        self.tools = set()      # ids of the tool calls open right now (the inject window)
+        self.send = None        # engine hook: fold one more user message into the running turn
 
     def poll(self):
         return 0 if self.done else None
@@ -2562,6 +2572,12 @@ class _EngineHandle:
                 self.abort()
             except Exception:                                # noqa: BLE001
                 pass
+
+    def can_inject(self):
+        return bool(self.send and self.tools and self.poll() is None)
+
+    def inject(self, text):
+        return bool(self.send(text))
 
     stop = interrupt        # Stop and takeover both end the turn; the chat-level
                             # flag (_cancelled vs _superseded) says WHICH it was
@@ -2844,7 +2860,7 @@ def _oc_tool(name, inp):
     return _OC_TOOLS.get((name or "").lower(), name or "tool"), inp
 
 
-def _opencode_live_sink(live_key, steps):
+def _opencode_live_sink(live_key, steps, handle=None):
     """The board chat's streaming preview for an OpenCode turn, folded from the
     driver's own events AT EVENT TIME (opencode_driver._emit_live) into the
     same livebuf fields the claude stream fills: `partial` (prose so far),
@@ -2870,6 +2886,11 @@ def _opencode_live_sink(live_key, steps):
                 livebuf.set_field(live_key, "status", "überlegt")
             elif kind == "tool":
                 tname, inp = _oc_tool(ev.get("name"), ev.get("input") if isinstance(ev.get("input"), dict) else {})
+                if handle is not None and ev.get("id"):
+                    if ev.get("status") == "running":
+                        handle.tools.add(ev["id"])      # a tool is open: the inject window
+                    else:
+                        handle.tools.discard(ev["id"])
                 step = next((s for s in steps if s.get("id") == ev.get("id")), None)
                 if step is None:
                     lbl, sub = _fmt._tool_label(tname, inp)
@@ -2890,6 +2911,14 @@ def _opencode_live_sink(live_key, steps):
     return sink
 
 
+def _slot_for(skey, engine):
+    """The conversation key of ONE engine's session: the claude session keeps
+    the bare skey, every other engine gets its own slot. The session pointer
+    AND the delta seams (what that session has already been shown) hang on it -
+    a claude and an OpenCode session of the same chat never saw the same text."""
+    return skey if engine != "opencode" else (skey or "") + "\x00opencode"
+
+
 def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, handle=None, live_steps=None):
     """ENGINE: one Henry turn on the OpenCode gateway (free models + DeepSeek
     fallback). `opencode/*` ids cannot run on the `claude` CLI, so this runs
@@ -2908,14 +2937,16 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, han
     # namespaces: sharing the slot sent a claude UUID to /session/<uuid>/prompt_async
     # (HTTP 500 "UnknownError", reproduced 2026-10-09) and would have overwritten
     # the claude pointer with a "ses_" id. Own slot per engine, same doc.
-    slot = (skey or "") + "\x00opencode"
+    slot = _slot_for(skey, "opencode")
     prior = sess.get(slot)
     base = {"id": "henry-" + re.sub(r"[^A-Za-z0-9_-]+", "_", slot or "u"),
             "worktree": ROOT, "run_dir": run_dir,
             "dispatched_by": user,        # whose provider keys the OpenCode server gets
             "session_id": prior}
     steps = live_steps if live_steps is not None else []
-    base["live"] = _opencode_live_sink(live_key, steps)      # streaming preview, at event time
+    base["live"] = _opencode_live_sink(live_key, steps, handle)      # streaming preview, at event time
+    if handle is not None:
+        handle.send = lambda text: opencode_driver.inject(base["id"], text)
     cfg = {"type": "opencode", "model": cli_model}
     if handle is not None:
         handle.abort = lambda: opencode_driver.cancel(base["id"])
@@ -3024,6 +3055,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     cli_model, _ = turnopts.resolve_model(_pick, message, bool(paths),
                                           signals={"ctx_tokens": _st.get("ctx_tokens")},
                                           policy=_chat_routing_policy(card), account=user)
+    _slot = _slot_for(skey, turnopts.engine_for(cli_model))     # this engine's session key
     if cli_model and model_source != "voice":
         _save_model_pref(skey, cli_model)
     # The composer's Mode row (2026-09-12): a picked mode is the owner's
@@ -3130,7 +3162,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
     _snap_hash, _snap_when, _snap_lines = None, time.time(), None
     if _snap_body:
         _snap_hash, _snap_lines = _snap_stable(_snap_body)
-        _seen = _snap_seen.get(skey)
+        _seen = _snap_seen.get(_slot)
         if _seen and time.time() - _seen[1] < 1800:
             if _seen[0] == _snap_hash:
                 snapshot_block = ("BOARD SNAPSHOT: unveraendert seit deiner letzten "
@@ -3187,7 +3219,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             # own module-level comment for why no separate timestamp is needed.
             import hashlib
             _ovl_hash = hashlib.sha1(_ovl.encode("utf-8", "replace")).hexdigest()
-            if _ovl_seen.get(skey) == (_ovl_hash, sid):
+            if _ovl_seen.get(_slot) == (_ovl_hash, sess.get(_slot)):
                 _ovl = ""
         if _ovl:
             extra_system = (extra_system + "\n\n" + _ovl) if extra_system else _ovl
@@ -3327,6 +3359,11 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         # _running, the same restart witness), so Stop, takeover by a newer
         # owner message, the live "running" flag and restart_daemon's
         # "is Henry mid-turn" check all see an OpenCode turn.
+        # SURFACE SWITCH, same rule as the claude branch: an earlier watch/glass/
+        # voice turn's device overlay is still in THIS session's transcript.
+        _revoke = _surface_switch(_slot, overlay, not sess.get(_slot))
+        if _revoke:
+            turn = _revoke + "\n\n" + turn
         _h = _EngineHandle()
         _running[user] = _h
         _turn_started[user] = time.time()
@@ -3821,7 +3858,7 @@ def _conclude_turn(c, e):
                 # the fresh session never saw any snapshot - the delta seam
                 # must send the next one FULL, not as a reference to a turn
                 # this session doesn't contain
-                _snap_seen.pop(skey, None)
+                _snap_seen.pop(slot, None)
             chain = [s for s in (st.get("session_chain") or []) if s != sid]
             chain.append(sid)
             st["session_chain"] = chain[-6:]           # bounded - last 6 prior sessions
@@ -4088,20 +4125,22 @@ def _conclude_turn(c, e):
                 # card it produced rides along - copilot_actions._tag - so the
                 # app draws a thread tile instead of a sentence)
         threading.Thread(target=_run_bg, daemon=True, name="copilot-actions").start()
-    if warm:       # the keepalive and the delta-seams belong to the warm claude session
+    if warm:       # the keepalive belongs to the warm claude process
         # feed the keepalive: a real turn IS the freshest cache there is
         _last_turn_at[skey] = _last_touch_at[skey] = time.time()
-        if _snap_hash:
-            # the model has now really SEEN this state - only from here on may an
-            # unchanged board collapse to the one-line reference / a changed one
-            # to a diff against these lines (CARD chats only - see the branch above)
-            _snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)
-        if _ovl_hash:
-            # keyed on (hash, session id) rather than a timestamp window: the
-            # model's own --resume already proves it saw this overlay as long as
-            # the session id is unchanged, and sid_final IS the id the NEXT turn
-            # resumes from - a compaction/detach/fresh-spawn changes it, which is
-            # exactly when a resend is needed, with no separate reset plumbing.
-            _ovl_seen[skey] = (_ovl_hash, sid_final or sid)
+    # The delta seams belong to the ENGINE'S session (`slot`), whichever engine
+    # ran: what a claude session read says nothing about an OpenCode one.
+    if _snap_hash:
+        # the model has now really SEEN this state - only from here on may an
+        # unchanged board collapse to the one-line reference / a changed one
+        # to a diff against these lines (CARD chats only - see the branch above)
+        _snap_seen[slot] = (_snap_hash, _snap_when, _snap_lines)
+    if _ovl_hash:
+        # keyed on (hash, session id) rather than a timestamp window: the
+        # model's own --resume already proves it saw this overlay as long as
+        # the session id is unchanged, and sid_final IS the id the NEXT turn
+        # resumes from - a compaction/detach/fresh-spawn changes it, which is
+        # exactly when a resend is needed, with no separate reset plumbing.
+        _ovl_seen[slot] = (_ovl_hash, sid_final or sid)
     return {"reply": out.get("reply", ""), "actions": [], "refused": refused,
             "cost": d.get("total_cost_usd"), "usage": usage}

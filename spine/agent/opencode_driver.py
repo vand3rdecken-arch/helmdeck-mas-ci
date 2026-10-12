@@ -279,6 +279,8 @@ class _OpenCodeSession:
         self.err_tail = []
         self._stream_resp = None
         self._msg_roles = {}     # messageID -> role, from message.updated
+        self._part_types = {}    # partID -> text|reasoning|tool..., from message.part.updated
+        self._deltas = {}        # partID -> text streamed so far THIS turn (live preview only)
         from spine.registry import harness
         agent = "machine-worker" if t.get("machine") else "card-worker"
         self.brief = harness.brief(agent)
@@ -421,6 +423,8 @@ class _OpenCodeSession:
                 self._msg_roles[info["id"]] = info["role"]
         elif etype == "message.part.updated":
             self._fold_part(props, is_delta=False)
+        elif etype == "message.part.delta":
+            self._fold_delta(props)
         elif etype == "session.idle":
             if cur is not None:
                 cur["status"] = "completed"
@@ -450,9 +454,31 @@ class _OpenCodeSession:
             except Exception:
                 pass
 
+    def _fold_delta(self, props):
+        """TOKEN DELTAS -> the live preview only (measured 2026-10-12 against
+        opencode 1.18.35: `message.part.delta` {delta, field:"text", messageID,
+        partID, sessionID}; the part's type is known from the earlier, still
+        empty `message.part.updated`). Display-only: the settled part stays the
+        ONE persisted copy (see _fold_part), so nothing here touches the
+        timeline - and the settled frame replaces this text under the same id."""
+        if props.get("field") != "text" or not props.get("delta"):
+            return
+        pid = props.get("partID")
+        if self._msg_roles.get(props.get("messageID")) == "user":
+            return
+        ptype = self._part_types.get(pid)
+        if ptype not in ("text", "reasoning"):
+            return                      # unknown part: the settled frame will say
+        acc = self._deltas.get(pid, "") + props["delta"]
+        self._deltas[pid] = acc
+        self._emit_live({"kind": "text" if ptype == "text" else "thinking",
+                         "id": "s:" + pid, "text": _clean_text(acc)})
+
     def _fold_part(self, props, is_delta):
         part = props.get("part") or props
         ptype = part.get("type")
+        if part.get("id") and ptype:
+            self._part_types[part["id"]] = ptype
         # Parts carry no role - it lives on the message (message.updated,
         # which the server sends before the message's parts). The prompt's own
         # part echoes back on the bus; folded as "assistant" it became the
@@ -539,6 +565,7 @@ class _OpenCodeSession:
 
     def _run_turn_locked(self, prompt, run_dir, live=None):
         _cancelled.discard(self.tid)
+        self._deltas = {}
         if not self.alive():
             self.kill()
             self._spawn()
@@ -619,13 +646,34 @@ def _note(cfg, t, err):
 def run(cfg, t, prompt):
     s = _get_session(cfg, t)
     try:
-        sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".", live=t.get("live"))
+        # the live sink only exists for the board chat; a card (and any session
+        # object that predates it) keeps the two-argument call
+        kw = {"live": t["live"]} if t.get("live") else {}
+        sid, reply, meta = s.run_turn(prompt, t.get("run_dir") or ".", **kw)
     except Exception as e:
         _note(cfg, t, str(e))
         raise
     if meta.get("is_error"):
         _note(cfg, t, meta.get("error") or "")
     return sid or t.get("session_id"), reply, meta
+
+
+def inject(tid, text):
+    """Fold one more user message into the turn that is RUNNING on this session.
+    MEASURED 2026-10-12 (opencode 1.18.35, free model): a prompt_async sent while
+    a tool runs is queued behind the tool and answered by the SAME loop - one
+    `session.idle` at the end, the reply covers both messages. True = sent."""
+    with _sessions_guard:
+        s = _sessions.get(tid)
+    if s is None or not s.alive() or s._cur is None or not s.session_id:
+        return False
+    try:
+        s.client.prompt_async(s.session_id, s.worktree,
+                              [{"type": "text", "text": _clean_text((text or "").strip())}],
+                              model=s.cfg.get("model"), system=s.brief)
+    except Exception:
+        return False
+    return True
 
 
 def cancel(tid):

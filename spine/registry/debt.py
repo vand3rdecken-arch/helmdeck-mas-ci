@@ -242,31 +242,32 @@ DEBT = [
     {
         "id": "opencode-turn-not-interruptible",
         "order": -8,
-        "title": "an OpenCode Henry turn is stoppable, takeover-able and streamed, but not steerable",
-        "status": "open",
-        "what": "copilot._conclude_turn is the one END of a Henry turn, "
-                "copilot._EngineHandle the one contract Stop (cancel()) and "
-                "takeover (supersede()) use for every engine, and the driver's "
-                "events feed the live preview at event time "
-                "(opencode_driver._emit_live -> copilot._opencode_live_sink); all "
-                "paid 2026-10-12 (test_chat_engine_parity). What stays per engine: "
-                "(1) try_inject - the steer-into-an-open-tool-window path only "
-                "exists for the claude stream (_inject), so a message sent "
-                "during an OpenCode turn queues instead of folding in; "
-                "(2) the delta seams (_snap_seen / _ovl_seen) are keyed by "
-                "conversation, not by engine session, and only advance for the "
-                "warm claude session; (3) the OpenCode prose arrives as settled "
-                "part updates, not token deltas, so it streams in chunks.",
-        "why_it_bites": "Alternating claude and OpenCode models in one chat can "
-                        "send an 'unchanged board' reference to a session that "
-                        "never saw the full snapshot; a message typed mid-turn "
-                        "waits for the whole OpenCode turn (or takes it over).",
-        "trigger": "Owner switches the model mid-conversation, or types a "
-                   "second message while a DeepSeek turn runs tools.",
-        "fix": "Grow _EngineHandle into the full engine interface (run, "
-               "interrupt, inject) and key the seen-state by (skey, engine "
-               "slot); fold message.part.delta frames into the sink.",
+        "title": "an OpenCode Henry turn ran as a second, shorter pipeline next to the claude one - PAID",
+        "status": "paid",
+        "what": "With an OpenCode/DeepSeek model as Henry, copilot._chat_via_opencode "
+                "parsed the ```actions``` block and returned it unexecuted (hands, "
+                "file_card, moves, memory sentinels, the advisory door, compaction "
+                "were all dead), could not be stopped or taken over, streamed "
+                "nothing and kept its delta seams under the claude session's key.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. Owner "
+                        "2026-10-12: \"warum Opencode anders als Claude - muss ich "
+                        "dann fuer alle verschiedene Module pflegen. Das ist nicht "
+                        "akzeptabel.\" An engine now only RUNS a turn.",
+        "trigger": "n/a (fixed)",
+        "fix": "copilot._conclude_turn is the ONE end of a Henry turn; copilot."
+               "_EngineHandle is the one contract for Stop (cancel), takeover "
+               "(supersede) and steer-into-a-running-turn (try_inject); "
+               "opencode_driver emits text/thinking/tool events AND token "
+               "deltas (message.part.delta, measured against opencode 1.18.35) "
+               "to a per-turn sink that fills the same livebuf fields as the "
+               "claude stream; the delta seams (_snap_seen / _ovl_seen / surface "
+               "switch) hang on _slot_for(skey, engine). Steering was MEASURED: "
+               "a prompt_async sent while a tool runs is answered by the same "
+               "loop, one session.idle. Pinned by ops/tests/"
+               "test_chat_engine_parity.py (fails on the previous commits). "
+               "Adding an engine = one function that returns an outcome.",
         "since": "2026-10-12",
+        "paid": "2026-10-12",
     },
     {
         "id": "henry-card-session-uncompacted",

@@ -78,8 +78,12 @@ def _fake_run_action(a, user, role, owner_msg=""):
 copilot._run_action = _fake_run_action
 
 # ---- fake claude process -----------------------------------------------------
+SENT = []                 # everything chat() writes to the fake claude process
+
+
 class _Stdin:
     def write(self, s):
+        SENT.append(s)
         return len(s)
 
     def flush(self):
@@ -321,6 +325,7 @@ check(last_bot() == "Erster Teil\n\nZweiter Teil", "the persisted answer is unch
 from spine.agent.opencode_driver import _OpenCodeSession
 _s = object.__new__(_OpenCodeSession)
 _s.tid, _s.run_dir, _s._msg_roles = "henry-test", tempfile.mkdtemp(prefix="hd-ocrd-"), {"m_user": "user", "m_asst": "assistant"}
+_s._part_types, _s._deltas = {}, {}
 _ev = []
 _s._cur = {"live": _ev.append, "running_tools": set(), "done": threading.Event(), "last_event": 0}
 _s._fold_part({"part": {"id": "x1", "type": "text", "messageID": "m_asst", "text": "Hallo", "role": "assistant"}}, False)
@@ -335,6 +340,133 @@ check(not any(e.get("text") == "frage" for e in _ev), "the prompt's own echo (us
 _s._cur = {"live": None, "running_tools": set(), "done": threading.Event(), "last_event": 0}
 _s._fold_part({"part": {"id": "x5", "type": "text", "messageID": "m_asst", "text": "ohne sink", "role": "assistant"}}, False)
 check(True, "a turn without a sink (a card) is unaffected")
+
+
+# ---- token deltas: the driver turns message.part.delta into a streaming preview
+print("opencode: token deltas")
+_s2 = object.__new__(_OpenCodeSession)
+_s2.tid, _s2.run_dir = "henry-delta", tempfile.mkdtemp(prefix="hd-ocrd2-")
+_s2._msg_roles, _s2._part_types, _s2._deltas = {}, {}, {}
+_s2.session_id = "ses_d"
+_dev = []
+_s2._cur = {"live": _dev.append, "running_tools": set(), "done": threading.Event(), "last_event": 0}
+
+
+def _ev(etype, **props):
+    props.setdefault("sessionID", "ses_d")
+    _s2._on_event({"type": etype, "properties": props})
+
+
+_ev("message.updated", info={"id": "mu", "role": "user"})
+_ev("message.updated", info={"id": "ma", "role": "assistant"})
+_ev("message.part.updated", part={"id": "pt", "messageID": "ma", "type": "text", "text": ""})
+_ev("message.part.updated", part={"id": "pr", "messageID": "ma", "type": "reasoning", "text": ""})
+for chunk in ("Das ", "Meer ", "ist tief."):
+    _ev("message.part.delta", messageID="ma", partID="pt", field="text", delta=chunk)
+_ev("message.part.delta", messageID="ma", partID="pr", field="text", delta="denke")
+_ev("message.part.delta", messageID="mu", partID="pt", field="text", delta="ECHO")
+_ev("message.part.delta", messageID="ma", partID="unknown", field="text", delta="X")
+_txt = [e["text"] for e in _dev if e["kind"] == "text"]
+check(_txt == ["Das ", "Das Meer ", "Das Meer ist tief."],
+      "text streams token by token, cumulative, spaces kept so words never glue (got %r)" % (_txt,))
+check([e["text"] for e in _dev if e["kind"] == "thinking"] == ["denke"], "reasoning deltas go to the thinking preview")
+check(not any("ECHO" in e["text"] or e["text"] == "X" for e in _dev), "the prompt echo (user role) and an unknown part are not previewed")
+from spine.agent import timeline_store
+check(not any("Meer" in str(x.get("text")) for x in timeline_store.read(_s2.run_dir)),
+      "deltas are display-only: nothing is written to the persisted timeline")
+_ev("message.part.updated", part={"id": "pt", "messageID": "ma", "type": "text", "text": "Das Meer ist tief.", "role": "assistant"})
+check(_dev[-1]["id"] == "s:pt" and _dev[-1]["text"] == "Das Meer ist tief.", "the settled part replaces the streamed text under the SAME id")
+
+# ---- steering into the running turn: the inject window
+print("opencode: steer into the running turn")
+INJECTED = []
+_inj_started, _inj_gate = threading.Event(), threading.Event()
+
+
+def _inject_oc_run(cfg, base, prompt):
+    base["live"]({"kind": "tool", "id": "tt", "name": "bash", "input": {"command": "sleep 5"}, "status": "running"})
+    _inj_started.set()
+    _inj_gate.wait(10)
+    return "ses_oc_1", "fertig", {"cost_usd": 0.001}
+
+
+def _fake_inject(tid, text):
+    INJECTED.append((tid, text))
+    return True
+
+
+opencode_driver.run = _inject_oc_run
+opencode_driver.inject = _fake_inject
+db.chat_clear()
+check(copilot.try_inject(OWNER, "nichts laeuft") is False, "no turn running: try_inject is False")
+_t = threading.Thread(target=lambda: copilot.chat(OWNER, "lange aufgabe", role="owner"), daemon=True)
+_t.start()
+_inj_started.wait(10)
+check(copilot.try_inject(OWNER, "und nenne MANGO") is True, "a message during an open tool call is folded into the running OpenCode turn")
+check(len(INJECTED) == 1 and "MANGO" in INJECTED[0][1] and INJECTED[0][1].startswith(copilot._INJECT_HEAD[:20])
+      and INJECTED[0][0].startswith("henry-"), "the engine got the text with the steer header, for Henry's session (got %r)" % (INJECTED,))
+_msgs = (copilot.history(OWNER) or {}).get("messages") or []
+check(any(m.get("cls") == "you" and m.get("text") == "und nenne MANGO" for m in _msgs), "the owner's row is persisted at submission")
+_inj_gate.set()
+_t.join(10)
+check(not _t.is_alive() and copilot.try_inject(OWNER, "zu spaet") is False, "after the turn it is False again")
+
+# a turn with NO open tool call: the message is not absorbed (it queues as its own turn)
+_inj_started.clear(); _inj_gate.clear(); del INJECTED[:]
+
+
+def _idle_oc_run(cfg, base, prompt):
+    _inj_started.set()
+    _inj_gate.wait(10)
+    return "ses_oc_1", "fertig", {"cost_usd": 0.001}
+
+
+opencode_driver.run = _idle_oc_run
+_t = threading.Thread(target=lambda: copilot.chat(OWNER, "ohne tool", role="owner"), daemon=True)
+_t.start()
+_inj_started.wait(10)
+check(copilot.try_inject(OWNER, "mitten im antworten") is False and not INJECTED,
+      "no open tool call: not injected (a frame written while the answer streams would open a turn nobody pumps)")
+_inj_gate.set(); _t.join(10)
+
+# ---- the delta seams hang on the ENGINE'S session, not on the conversation
+print("seams per engine session")
+from spine.registry import behavior
+_real_overlay = behavior.overlay
+behavior.overlay = lambda proj, skip=(): "PROJEKTREGEL-XYZ"
+OC_PROMPTS = []
+
+
+def _capture_oc_run(cfg, base, prompt):
+    OC_PROMPTS.append(prompt)
+    return "ses_oc_1", "ok", {"cost_usd": 0.001}
+
+
+opencode_driver.run = _capture_oc_run
+CURRENT["text"] = "ok"
+
+
+def turn(engine):
+    turnopts.engine_for = (lambda mid: engine)
+    del SENT[:]
+    del OC_PROMPTS[:]
+    copilot.chat(OWNER, "seam test " + engine, role="owner")
+    return "".join(SENT) if engine == "claude" else (OC_PROMPTS[0] if OC_PROMPTS else "")
+
+
+db.chat_clear()
+copilot._ovl_seen.clear()
+p1 = turn("claude")
+check("PROJEKTREGEL-XYZ" in p1, "claude turn 1 carries the project overlay")
+p2 = turn("opencode")
+check("PROJEKTREGEL-XYZ" in p2, "the OpenCode session has NOT seen it (the claude session did): it is sent again")
+p3 = turn("opencode")
+check("PROJEKTREGEL-XYZ" not in p3, "OpenCode turn 2: its own session has seen it - not repeated")
+p4 = turn("claude")
+check("PROJEKTREGEL-XYZ" not in p4, "claude turn 2: not repeated either - the engines do not disturb each other")
+_k = copilot._skey(OWNER, None)
+check(_k in copilot._ovl_seen and (_k + "\x00opencode") in copilot._ovl_seen, "each engine session has its own seam entry")
+behavior.overlay = _real_overlay
 
 turnopts.fallback_model = _real_fb
 turnopts.engine_for = _real_engine_for

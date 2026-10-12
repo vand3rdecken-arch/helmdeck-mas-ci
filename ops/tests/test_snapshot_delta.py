@@ -68,13 +68,14 @@ ok("_snap_head, _snap_body, _snap_tail = \"CARD CONTEXT" in src,
    "the CARD branch hashes the card-context BODY, not a header")
 ok('_snap_head, _snap_body, _snap_tail = "", "", ""' in src,
    "the BOARD branch sets an empty body outright - nothing left to hash there at all")
-ok("_snap_seen[skey] = (_snap_hash, _snap_when, _snap_lines)" in src,
+_end = inspect.getsource(copilot._conclude_turn)   # the turn's end, one for every engine
+ok("_snap_seen[slot] = (_snap_hash, _snap_when, _snap_lines)" in _end,
    "the seen entry carries the lines a later delta diffs against")
 # 2026-09-15 ("voller Umbau"): keyed on (hash, session id) instead of the
 # board snapshot's own continuity window - the board branch stopped setting
 # _snap_seen at all once its push was removed, so overlay dedup needed its
 # own, session-id-based proof that survives that removal.
-ok("_ovl_seen.get(skey) == (_ovl_hash, sid)" in src and "_ovl_hash = None" in src,
+ok("_ovl_seen.get(_slot) == (_ovl_hash, sess.get(_slot))" in src and "_ovl_hash = None" in src,
    "the project overlay rides once per continuous session (hash, sid) - decoupled from the board push")
 
 print("\n" + ("FAIL (%d)" % len(fails) if fails else "snapshot-delta: all pinned - PASS"))

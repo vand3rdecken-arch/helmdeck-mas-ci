@@ -60,7 +60,7 @@ import inspect
 src = inspect.getsource(ocd._OpenCodeSession.__init__) + inspect.getsource(ocd._OpenCodeSession._spawn)
 check('t.get("dispatched_by")' in src and "_env(self.cfg, self.account)" in src, "session stores dispatched_by and passes it to _env")
 from cells.copilot.chat import copilot
-check('"dispatched_by": user' in inspect.getsource(copilot._chat_via_opencode), "board chat via OpenCode names its account")
+check('"dispatched_by": user' in inspect.getsource(copilot._engine_opencode), "board chat via OpenCode names its account")
 
 print()
 if FAILS:

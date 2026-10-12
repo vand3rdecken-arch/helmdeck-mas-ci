@@ -91,7 +91,8 @@ ok("[... gekuerzt]" in sent["p"] and "vollstaendige Ergebnis steht" not in sent[
    "bg wake marks the 300 cut and does not promise the full result")
 
 # 1 - action cap drop is reported
-csrc = inspect.getsource(_real_chat)
+# the turn's end lives in _conclude_turn since 2026-10-12 (one end for every engine)
+csrc = inspect.getsource(_real_chat) + inspect.getsource(copilot._conclude_turn)
 ok("nicht ausgefuehrt (Limit 6)" in csrc, "chat() reports dropped actions via _pending_actions")
 
 print("\n" + ("FAIL (%d)" % len(fails) if fails else "copilot-disclosure: PASS"))
