@@ -20,8 +20,13 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-boardsui-")
+# Writable state derives from DATA_ROOT (daemon/paths.py), read from the
+# environment at import time - setting DAEMON_ROOT alone left the db on the
+# live file and the guard below refused (2026-10-12). Must precede the import.
+os.environ["HELMDECK_DATA_ROOT"] = SANDBOX
 import daemon.paths
 daemon.paths.DAEMON_ROOT = SANDBOX
+daemon.paths.DATA_ROOT = SANDBOX
 
 from spine.auth import auth                     # noqa: E402
 from spine.storage import boards, db, events    # noqa: E402

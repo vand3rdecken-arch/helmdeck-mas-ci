@@ -73,6 +73,7 @@ const prioLabel = (tr: TFn, p?: string) => (p ? (PRIO_KEY[p] ? tr(PRIO_KEY[p]) :
  *  for one release as the PRD specifies: it is what a workspace that renamed a
  *  lane before boards existed still reads on any board whose column the user
  *  never labelled. */
+const NO_LABELS: Record<string, string> = {};
 export function useLaneLabels() {
   const tr = useT();
   // /me first: it carries the public UI policy for EVERY role. The dashboard
@@ -80,9 +81,10 @@ export function useLaneLabels() {
   // with raw lane keys while the owner saw the configured labels.
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const { data } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 10000 });
-  const labels = me?.ui?.lane_labels ?? data?.settings?.policy?.lane_labels ?? {};
-  return (lane: string) => labels[lane]
-    ?? (LANE_KEY[lane] ? tr(LANE_KEY[lane]) : lane.charAt(0).toUpperCase() + lane.slice(1));
+  const labels = me?.ui?.lane_labels ?? data?.settings?.policy?.lane_labels ?? NO_LABELS;
+  // stable per (labels, language): a dep of the memoised tiles' onMove
+  return useCallback((lane: string) => labels[lane]
+    ?? (LANE_KEY[lane] ? tr(LANE_KEY[lane]) : lane.charAt(0).toUpperCase() + lane.slice(1)), [labels, tr]);
 }
 
 /** The completion date on a done card: "Fertig · 14:32" today, "Fertig · 03.10."
@@ -185,7 +187,37 @@ function RunningPulse({ color }: { color: string }) {
   return <RNAnimated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color, opacity: o }} />;
 }
 
-function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
+// The per-card metrics (touches, cost, mode) indexed ONCE per metrics payload.
+// Every tile used to `find` its own row and take two `Math.max` passes over
+// ALL metric cards (676 rows, every card ever filed - not the 187 shown) on
+// every render: ~190 tiles x 3 x 676 per refetch wave, and the push loop
+// refetches every 2 s while the daemon works. Keyed by the array identity so
+// a new payload rebuilds, a re-render of the same one costs a lookup.
+type MetricCard = NonNullable<Awaited<ReturnType<typeof api.metrics>>>["cards"][number];
+type MetricsIndex = { byId: Map<string, MetricCard>; maxA: number; maxH: number };
+const NO_METRICS: MetricsIndex = { byId: new Map(), maxA: 1, maxH: 1 };
+const metricsIndexCache = new WeakMap<MetricCard[], MetricsIndex>();
+function metricsIndex(cards: MetricCard[] | undefined): MetricsIndex {
+  if (!cards) return NO_METRICS;
+  let ix = metricsIndexCache.get(cards);
+  if (!ix) {
+    let maxA = 1, maxH = 1;   // cross-card scale so the split bars compare
+    const byId = new Map<string, MetricCard>();
+    for (const c of cards) {
+      byId.set(c.id, c);
+      if (c.ai_cost > maxA) maxA = c.ai_cost;
+      if (c.touches > maxH) maxH = c.touches;
+    }
+    ix = { byId, maxA, maxH };
+    metricsIndexCache.set(cards, ix);
+  }
+  return ix;
+}
+
+// memo: a tile re-renders only when ITS track object or the metrics change -
+// not when a sibling moves, the drag indicator steps, or the toast toggles.
+// `onMove` is a useCallback in BoardList for exactly this reason.
+const Card = React.memo(function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   const t = useTheme();
   const tr = useT();
   const flat = useAiFlat();
@@ -194,10 +226,8 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
   // tap-to-expand for the last-reply/report preview (see below)
   const [subOpen, setSubOpen] = useState(false);
   const { data: metrics } = useQuery({ queryKey: ["metrics"], queryFn: api.metrics, staleTime: 8000 });
-  const cards = metrics?.cards ?? [];
-  const e = cards.find((c) => c.id === k.id);
-  const maxA = Math.max(1, ...cards.map((c) => c.ai_cost));   // cross-card scale so
-  const maxH = Math.max(1, ...cards.map((c) => c.touches));   // split bars compare
+  const { byId, maxA, maxH } = metricsIndex(metrics?.cards);
+  const e = byId.get(k.id);
   // Step number from the card's own field; the branch regex is only a fallback
   // for cards filed before process_step existed (their branches still end in
   // -sN). New branches carry a card-id tail, so the regex alone would silently
@@ -322,7 +352,7 @@ function Card({ k, onMove }: { k: Track; onMove: (k: Track) => void }) {
       ) : null}
     </Pressable>
   );
-}
+});
 
 function NextUp({ items, onDone }: { items: Track[]; onDone: (k: Track) => void }) {
   const t = useTheme();
@@ -486,8 +516,12 @@ function LayoutToggle({ layout, onSet }: { layout: string; onSet: (v: string) =>
 // stations are data now - nothing below may assume there are four of them.
 
 // The mouse-up that ends a drag also reaches the card's Pressable on web and
-// would open the card. Every drag start/end stamps this; the card ignores a
-// press (or long-press) within DRAG_PRESS_GUARD_MS of the stamp.
+// would open the card. A drag that ACTIVATED stamps this at start and end; the
+// card ignores a press (or long-press) within DRAG_PRESS_GUARD_MS of the stamp.
+// Only an activated drag: onFinalize also runs for a pan that never activated
+// (every plain click is one - the pointer went down and up before the
+// long-press delay), and stamping there blocked EVERY card open on desktop
+// (owner report 2026-10-12, since 9897d389). `success` is false for those.
 let lastDragAt = 0;
 const DRAG_PRESS_GUARD_MS = 400;
 function markDrag() { lastDragAt = Date.now(); }
@@ -522,9 +556,9 @@ function DraggableCard({
       runOnJS(onMoveTarget)(e.absoluteX, e.absoluteY, k.id);
     })
     .onEnd((e) => { runOnJS(onDropCard)(k.id, e.absoluteX, e.absoluteY); })
-    .onFinalize(() => {
+    .onFinalize((_e, success) => {
       lifted.value = 0; tx.value = withTiming(0); ty.value = withTiming(0);
-      runOnJS(markDrag)();
+      if (success) runOnJS(markDrag)();
     });
 
   const aStyle = useAnimatedStyle(() => ({
@@ -838,7 +872,12 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
   const { data: serverOlder } = useQuery<number>({ queryKey: OLDER_KEY, queryFn: () => 0, enabled: false, initialData: 0 });
   const heldOlder = Array.isArray(data) ? data.filter((k) => !k.archived && isOlderDone(k, now)).length : 0;
   const olderCount = (serverOlder ?? 0) + heldOlder;
-  const shown = rows.filter((k) => {
+  // Memoised on the list and the scope, not on `now`: a fresh array here made
+  // `columns`, the kanban's grouping and every tile's identity new on EVERY
+  // render (a toast, the drag indicator, a sheet) - the memos below were
+  // keyed on it and never hit. The 14-day window moves once a day; the next
+  // pull (every write moves it) re-evaluates it anyway.
+  const shown = useMemo(() => rows.filter((k) => {
     if (eff === "archived") return !!k.archived || isOlderDone(k, now);
     if (isOlderDone(k, now)) return false;
     if (eff === "needs_you") return needsOwner(k) && !k.archived;
@@ -847,7 +886,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     // folder here). Client-side only - /tracks never filtered by repo.
     if (eff.startsWith("repo:")) return (k.repo ?? "") === eff.slice(5) && !k.archived;
     return !k.archived; // "all"
-  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [rows, eff]);
   // The columns actually drawn: the active board's, plus a derived overflow
   // column for any station that holds cards this board does not show. Computed
   // over `shown` (the filtered set) rather than every row, so the invariant is
@@ -862,7 +902,8 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
     return columns.filter((c) => !seen.has(c.station) && seen.add(c.station));
   }, [columns]);
 
-  function onMove(k: Track) {
+  // Stable identity: it is every memoised tile's only callback prop.
+  const onMove = useCallback((k: Track) => {
     sheet.show({
       title: cardTitle(k.task),
       message: tr("board.moveTo"),
@@ -878,7 +919,7 @@ export function BoardList({ filter, topInset = 0 }: { filter?: "needs_you"; topI
         },
       })),
     });
-  }
+  }, [sheet.show, tr, moveTargets, label, gateDone, showToast, qc]);
 
   // The Archive chip is not a scope like the repo chips - it is the OTHER
   // half of the board (the slice every other view hides). So it is the one

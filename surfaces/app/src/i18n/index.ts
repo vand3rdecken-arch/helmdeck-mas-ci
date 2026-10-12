@@ -13,6 +13,7 @@
 // The engine itself lives in ./core (no app imports) so the transport layer can
 // translate without importing this file, which pulls in data/client.
 import { useQuery } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { api } from "@/data/client";
 import { cachedProfile } from "@/data/profile";
@@ -55,5 +56,8 @@ export function useLang(): Lang {
 /** Component-facing translator: re-renders when the workspace language changes. */
 export function useT(): (key: string, vars?: Record<string, string | number>) => string {
   const lang = useLang();
-  return (key, vars) => render(DICT[key], key, lang, vars);
+  // Stable per language: it sits in useCallback/useMemo deps across the app
+  // (board tiles are React.memo on a callback that closes over it); a fresh
+  // function per render silently defeated all of them.
+  return useCallback((key, vars) => render(DICT[key], key, lang, vars), [lang]);
 }
