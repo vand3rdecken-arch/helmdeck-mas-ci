@@ -17,6 +17,7 @@ import {
 import { api } from "@/data/client";
 import { useAuthGate } from "@/data/authgate";
 import { useConfig } from "@/data/config";
+import { useDemo } from "@/data/demo";
 import { useT } from "@/i18n";
 import { fieldStyle, Hint } from "@/ui/settings_sections";
 import { useTheme } from "@/theme";
@@ -79,6 +80,11 @@ export function LoginScreen() {
   const applyToken = (token: string | undefined) => {
     if (!token) return;
     useConfig.getState().set({ token });
+    // A real credential beats the sample board. The demo flag is persisted, so
+    // one tap on "try the demo" (board invite, onboarding) would otherwise
+    // answer every request from the fixture for good - the owner's real login
+    // "always landed in demo" (2026-10-12). Pairing already does this (config.ts).
+    useDemo.getState().disable();
     useAuthGate.getState().clearAuthRequired();
     qc.invalidateQueries();
   };
@@ -169,7 +175,12 @@ export function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: "center", justifyContent: "center", padding: 28 }}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        {/* Tap-outside-to-dismiss is a touch-keyboard idiom. On web/desktop the
+            click on a FIELD bubbles to this wrapper too, so Keyboard.dismiss
+            blurred the input the instant the mouse focused it - the login
+            fields could not be clicked into (owner report 2026-10-12, since
+            d55ec188). A desktop has no on-screen keyboard to dismiss. */}
+        <TouchableWithoutFeedback onPress={Platform.OS === "web" ? undefined : Keyboard.dismiss} accessible={false}>
           <View style={{ width: "100%", maxWidth: 420, gap: 14 }}>
             <View style={{ gap: 6 }}>
               {mode === "setup" ? backLink : null}
