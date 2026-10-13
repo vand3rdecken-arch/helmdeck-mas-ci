@@ -184,6 +184,16 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
     // would spin that loop hot and starve the UI.
     if (path.startsWith("/stream/wait")) await new Promise((r) => setTimeout(r, 8000));
     const d = demoRespond(method, path, body);
+    // A GET the fixture does not model is NOT answered with {}: react-query
+    // would record that as a SUCCESSFUL payload, persist it (query.ts
+    // dehydrates every query that has data), and the next real-login launch
+    // hydrates an object with none of the fields the screen was typed for -
+    // measured 2026-10-13: /repo/templates cached as {} during a demo session
+    // at 17:18, then `data.repos.length` threw in Onboard on every desktop
+    // start until the cache was dropped ("Something went wrong", Try again
+    // dead). An error is the honest answer and is never persisted. Mutations
+    // keep the empty ack - a demo button press has nothing to show anyway.
+    if (d === undefined && method === "GET") throw new ApiError(404, t("net.httpError", { status: 404, method, path }));
     return (d === undefined ? {} : d) as T;
   }
   const cfg = useConfig.getState();

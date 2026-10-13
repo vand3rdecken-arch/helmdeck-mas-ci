@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { create } from "zustand";
 
 import { t } from "@/i18n/core";
+import { clearCache, queryClient } from "./query";
 
 import type { Step } from "./client";
 import type { Metrics, Me, Track } from "./types";
@@ -44,11 +45,21 @@ async function persist(active: boolean) {
   } catch { /* unavailable */ }
 }
 
+async function dropQueries() {
+  queryClient.clear();
+  await clearCache();
+}
+
 export const useDemo = create<DemoState>((set) => ({
   active: false,
   hydrated: false,
-  enable: () => { reset(); set({ active: true }); persist(true); },
-  disable: () => { set({ active: false }); persist(false); },
+  // Both switches drop the query cache, memory AND the persisted blob: the
+  // fixture's rows must not be shown as a real board after login, and a real
+  // board's rows must not leak into the demo. Measured the other direction on
+  // 2026-10-13 - a demo-era answer survived in the persisted cache past the
+  // real login and crashed Onboard at the next desktop start (client.ts req()).
+  enable: () => { reset(); set({ active: true }); persist(true); void dropQueries(); },
+  disable: () => { set({ active: false }); persist(false); void dropQueries(); },
   hydrate: async () => {
     try {
       const raw = isWeb ? globalThis.localStorage?.getItem(KEY) : await SecureStore.getItemAsync(KEY);

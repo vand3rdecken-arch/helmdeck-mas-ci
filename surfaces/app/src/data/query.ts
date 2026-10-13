@@ -49,7 +49,10 @@ export const queryClient = new QueryClient({
 //
 // CACHE_BUSTER is the schema version (Bluesky uses the app version; here every
 // OTA would wipe the cache, so it is bumped by hand when a cached shape changes).
-const CACHE_BUSTER = "v2";
+// v3 (2026-10-13): drop every cache written while the demo fixture could answer
+// an unmodelled GET with {} (client.ts req()) - the owner's desktop carried a
+// {} for ["repoTemplates"] from 2026-10-12 17:18 and crashed at every launch.
+const CACHE_BUSTER = "v3";
 const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: "helmdeck.qcache",
