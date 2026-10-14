@@ -33,8 +33,11 @@ _lock = threading.Lock()
 
 # Incremental fold cache: {run_id: {"seq", "order", "folded"}}. A live card's
 # long-poll re-reads this every ~0.35s while a turn is producing; the cache
-# folds only rows past the last seen seq. Kept for the life of the daemon
-# process, one entry per run ever read - bounded in practice (one per card).
+# folds only rows past the last seen seq. LRU-bounded (CACHE_MAX runs): it used
+# to keep one entry per run ever read "for the life of the daemon", which the
+# inbox turned into every card's whole history (186k steps, ~430 MB measured
+# 2026-10-14). A run that falls out simply re-folds once on its next read.
+CACHE_MAX = 24
 _cache = {}
 
 
@@ -78,7 +81,10 @@ def read(run_dir, limit=400):
                 entry["folded"][sid] = {}
             entry["folded"][sid].update(rec)
             entry["seq"] = seq
+        _cache.pop(rid, None)              # re-insert = most recently used
         _cache[rid] = entry
+        while len(_cache) > CACHE_MAX:
+            _cache.pop(next(iter(_cache)))
         # Slice BEFORE copying: the cache holds the run's whole history, and
         # copying every step on every tick would silently reintroduce an
         # O(history) cost on the return path - callers only ever want the

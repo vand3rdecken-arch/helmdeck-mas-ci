@@ -80,7 +80,7 @@ def threads(user, limit=200):
     from cells.engineer.cards import sessions
     from cells.engineer.chains import processes
     from cells.copilot.chat import card_mirror
-    from spine.agent import timeline_store
+    from spine.ops.runs import run_id_of
     from spine.storage import db
 
     tail = db.chat_tail(user, 1)
@@ -113,8 +113,10 @@ def threads(user, limit=200):
         if t.get("archived") or t.get("board_hidden"):
             continue
         run_dir = t.get("run_dir") or ""
-        steps = timeline_store.read(run_dir) if run_dir else []
-        lm = _last_line(steps)
+        # ONE line per card, read from the table newest-first - never the whole
+        # folded timeline (that filled timeline_store's cache with every card's
+        # history: ~430 MB held by the daemon, measured 2026-10-14).
+        lm = db.timeline_last_line(run_id_of(run_dir)) if run_dir else None
         at = float(lm.get("ta") or 0.0) if lm else 0.0
         bucket = _bucket(t)
         if not at:

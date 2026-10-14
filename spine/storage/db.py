@@ -1856,6 +1856,60 @@ def timeline_max_seq(run_id):
     return int(r[0] or 0)
 
 
+def timeline_last_line(run_id):
+    """The newest CONVERSATION step of a run, folded - or None. Conversation =
+    kind text/note written by the owner or Henry (byKind human/henry) with
+    non-empty text; tool rows and worker steps are not "the last thing said".
+
+    Why it exists (measured 2026-10-14): the inbox (cells/copilot/chat/threads)
+    needs ONE line per card but used to fold the card's WHOLE timeline into
+    timeline_store's cache - every card ever listed, 186,401 steps, ~430 MB of
+    Python objects held for the life of the daemon. This reads newest-first and
+    stops at the first hit, so the cost is the tail of the run, not its history,
+    and nothing is retained. Same fold rule as timeline_store.read (rows sharing
+    a step_id dict.update'd in seq order), applied to just the candidate step.
+
+    The answer is remembered per run, VERIFIED against the run's max(seq) (an
+    indexed single-row read) on every call: a run nobody wrote to since is
+    answered without touching its history, a run that grew is re-read. One
+    small step per card - not the history - so the memory is bounded by the
+    number of cards, and a stale entry cannot be served (the key is the table's
+    own monotonic counter, not a flag)."""
+    c = conn()
+    top = timeline_max_seq(run_id)
+    hit = _last_line_cache.get(run_id)
+    if hit is not None and hit[0] == top:
+        return dict(hit[1]) if hit[1] else None
+    found = _timeline_last_line_scan(c, run_id)
+    _last_line_cache[run_id] = (top, found)
+    return dict(found) if found else None
+
+
+_last_line_cache = {}                   # run_id -> (max seq it was read at, step or None)
+
+
+def _timeline_last_line_scan(c, run_id):
+    seen = set()
+    for (sid,) in c.execute(
+            "SELECT step_id FROM timeline WHERE run_id=? AND "
+            "(data LIKE '%\"byKind\": \"human\"%' OR data LIKE '%\"byKind\": \"henry\"%') "
+            "ORDER BY seq DESC", (run_id,)):
+        if sid in seen:
+            continue
+        seen.add(sid)
+        step = {}
+        for (d,) in c.execute("SELECT data FROM timeline WHERE run_id=? AND step_id=? ORDER BY seq",
+                              (run_id, sid)):
+            try:
+                step.update(json.loads(d))
+            except ValueError:
+                continue
+        if (step.get("kind") in ("text", "note") and step.get("byKind") in ("human", "henry")
+                and (step.get("text") or "").strip()):
+            return step
+    return None
+
+
 def timeline_since(run_id, after_seq=0):
     """[(seq, step_id, patch)] in order, only rows past after_seq - the
     O(delta) read timeline_store's fold cache asks for."""
