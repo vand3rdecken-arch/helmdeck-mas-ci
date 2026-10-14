@@ -927,6 +927,13 @@ export const api = {
     req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/setup", { name, password, ...whoAmI() }, undefined, true),
   authRegister: (name: string, password: string, invite: string) =>
     req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/register", { name, password, invite, ...whoAmI() }, undefined, true),
+  // Forgotten password: the owner mints a one-time code for this account
+  // (createResetCode), the person enters it here with a new password of their
+  // own choosing. Signs in on success, like login.
+  authReset: (name: string, code: string, password: string) =>
+    req<{ ok: boolean; token?: string; error?: string }>("POST", "/auth/reset", { name, code, password, ...whoAmI() }, undefined, true),
+  createResetCode: (name: string, ttlHours: number) =>
+    req<import("./types").InviteRow>("POST", "/invites/reset", { name, ttl_hours: ttlHours }),
   // Deletes the SIGNED-IN account (routes_auth.py's auth_delete_account) after
   // re-checking its password. skipAuthGate: a wrong password must surface as
   // the daemon's message, not bounce the user to the login screen.

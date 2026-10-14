@@ -399,6 +399,7 @@ export interface InviteRow {
   state: "open" | "used" | "revoked" | "expired";
   created?: string; created_by?: string; expires?: string;
   used_by?: string | null; used_at?: string | null; note?: string;
+  kind?: "invite" | "reset"; for_user?: string | null;
 }
 
 // A registered remote-execution device (ops/docs/backlog/remote-device-

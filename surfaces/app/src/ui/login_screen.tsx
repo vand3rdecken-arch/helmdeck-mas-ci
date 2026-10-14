@@ -25,7 +25,7 @@ import { useTheme } from "@/theme";
 // "choose" + "connect" are the first-run fork (no owner yet): this PC becomes the
 // server (-> "setup"), or it only attaches to a server that already exists
 // (-> "connect", the same pairing code the phone's PairingGate takes).
-type Mode = "in" | "up" | "setup" | "choose" | "connect";
+type Mode = "in" | "up" | "setup" | "choose" | "connect" | "reset";
 
 const hasInviteLink = () =>
   !!new URLSearchParams(globalThis.location?.search ?? "").get("invite");
@@ -94,6 +94,7 @@ export function LoginScreen() {
     try {
       const r = mode === "setup" ? await api.authSetup(name.trim(), password)
         : mode === "up" ? await api.authRegister(name.trim(), password, invite.trim())
+        : mode === "reset" ? await api.authReset(name.trim(), invite.trim(), password)
         : await api.login(name.trim(), password);
       if (!r.ok || !r.token) {
         setErr(r.error || tr("login.failed")); setBusy(false); return;
@@ -120,8 +121,11 @@ export function LoginScreen() {
   };
 
   const title = tr(mode === "choose" ? "login.chooseTitle" : mode === "connect" ? "login.connectTitle"
-    : mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount" : "login.signIn");
-  const showsInvite = mode === "up" && !noCodeNeeded;
+    : mode === "setup" ? "login.setupTitle" : mode === "up" ? "login.createAccount"
+    : mode === "reset" ? "login.resetTitle" : "login.signIn");
+  // the code field: an invitation code on sign-up (unless sign-up is open), the
+  // owner's reset code on a forgotten password - same field, same typing habits
+  const showsInvite = (mode === "up" && !noCodeNeeded) || mode === "reset";
   const backLink = (
     <Pressable onPress={() => { setMode("choose"); setErr(""); }} style={{ paddingVertical: 6 }}>
       <Text style={{ color: t.txtTertiary, fontSize: 13, fontWeight: "600" }}>← {tr("login.back")}</Text>
@@ -188,6 +192,7 @@ export function LoginScreen() {
               {mode === "setup" ? (
                 <Hint text={tr("login.setupHint")} />
               ) : null}
+              {mode === "reset" ? <Hint text={tr("login.resetHint")} /> : null}
             </View>
 
             {mode !== "setup" ? (
@@ -211,7 +216,7 @@ export function LoginScreen() {
               returnKeyType={showsInvite ? "next" : "go"}
               onSubmitEditing={() => (showsInvite ? inviteRef.current?.focus() : submit())} />
             {showsInvite ? (
-              <TextInput ref={inviteRef} placeholder={tr("login.invite")} placeholderTextColor={t.txtTertiary}
+              <TextInput ref={inviteRef} placeholder={tr(mode === "reset" ? "login.resetCode" : "login.invite")} placeholderTextColor={t.txtTertiary}
                 autoCapitalize="characters" autoCorrect={false}
                 value={invite} onChangeText={(v) => setInvite(v.toUpperCase())} style={field}
                 returnKeyType="go" onSubmitEditing={submit} />
@@ -219,14 +224,21 @@ export function LoginScreen() {
 
             {err ? <Text style={{ color: t.danger, fontSize: 12.5 }}>{err}</Text> : null}
 
-            <Pressable onPress={submit} disabled={busy || !name.trim() || !password}
+            <Pressable onPress={submit} disabled={busy || !name.trim() || !password || (mode === "reset" && !invite.trim())}
               style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
                 backgroundColor: busy ? t.surface2 : t.accent, borderRadius: 14, paddingVertical: 14, opacity: !name.trim() || !password ? 0.6 : 1 }}>
               {busy ? <ActivityIndicator color="#fff" /> : null}
               <Text style={{ color: busy ? t.txtSecondary : "#fff", fontSize: 15, fontWeight: "600" }}>
-                {tr(mode === "setup" ? "login.setupSubmit" : mode === "up" ? "login.createAccount" : "login.signIn")}
+                {tr(mode === "setup" ? "login.setupSubmit" : mode === "up" ? "login.createAccount"
+                  : mode === "reset" ? "login.resetSubmit" : "login.signIn")}
               </Text>
             </Pressable>
+
+            {mode === "in" ? (
+              <Pressable onPress={() => { setMode("reset"); setErr(""); setPassword(""); }} style={{ alignSelf: "center", paddingVertical: 6 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 13, fontWeight: "600" }}>{tr("login.forgot")}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </TouchableWithoutFeedback>
       </ScrollView>

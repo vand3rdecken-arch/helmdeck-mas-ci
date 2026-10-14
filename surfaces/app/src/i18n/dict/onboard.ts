@@ -86,6 +86,11 @@ export const onboard: Dict = {
   "login.passwordNew": { de: "Passwort (mind. 8 Zeichen)", en: "Password (at least 8 characters)" },
   "login.invite": { de: "Einladungscode", en: "Invitation code" },
   "login.failed": { de: "Anmeldung fehlgeschlagen", en: "Sign-in failed" },
+  "login.forgot": { de: "Passwort vergessen?", en: "Forgot password?" },
+  "login.resetTitle": { de: "Passwort zurücksetzen", en: "Reset password" },
+  "login.resetHint": { de: "Frag den Owner dieses Workspace nach einem Reset-Code (Einstellungen > Nutzer > Reset-Code). Mit dem Code wählst du hier dein neues Passwort selbst.", en: "Ask this workspace's owner for a reset code (Settings > Users > Reset code). With it you choose your new password here yourself." },
+  "login.resetCode": { de: "Reset-Code", en: "Reset code" },
+  "login.resetSubmit": { de: "Passwort setzen und anmelden", en: "Set password and sign in" },
 
   // ---- first-run fork: server vs. client (login_screen.tsx mode "choose") ----
   "login.chooseTitle": { de: "Wie willst du HelmDeck nutzen?", en: "How do you want to use HelmDeck?" },

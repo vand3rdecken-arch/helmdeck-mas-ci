@@ -523,6 +523,34 @@ def set_password(name, password, actor=None):
             return
     raise ValueError("no such user")
 
+def reset_password_with_code(name, code, password):
+    """The signed-out way back in: an owner-minted single-use reset code
+    (invites.create_reset) plus a new password the person chooses.
+
+    Wrong codes count against the SAME per-name lockout as wrong passwords -
+    this is an unauthenticated guess surface exactly like login(), so it must
+    not be the cheaper door. Every refusal is one message (see claim_reset)."""
+    from spine.auth import invites
+    if _locked_until(name):
+        _audit("reset.blocked", name, name)
+        raise ValueError("reset code not accepted")
+    if len(password or "") < 8:
+        # checked BEFORE the claim so a too-short password does not burn the code
+        raise ValueError("password: 8 chars minimum")
+    try:
+        invites.claim_reset(code, name)
+    except ValueError:
+        n = _note_failure(name)
+        _audit("reset.failed", name, name, fails=n, locks_out=(n >= LOCK_AFTER))
+        raise
+    try:
+        set_password(name, password, actor=name)
+    except Exception:
+        invites.release(code, name)      # the password was not changed - hand the code back
+        raise
+    _clear_failures(name)
+    _audit("user.password_reset", name, name, via="reset_code")
+
 def set_role(name, role, actor=None):
     if role not in ROLES:
         raise ValueError("bad role")

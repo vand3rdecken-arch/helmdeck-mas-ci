@@ -156,6 +156,26 @@ def auth_login(self, user, body):
     return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
 
 
+def auth_reset(self, user, body):
+    """Forgotten password, signed out: name + owner-minted reset code + the new
+    password. Signs the person straight in (same mint as auth_login) so the
+    screen they were stuck on is the last one they see."""
+    from spine.auth import auth
+    name = (body.get("name") or "").strip()
+    pw = body.get("password") or ""
+    try:
+        auth.reset_password_with_code(name, body.get("code") or "", pw)
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    except Exception:                                              # noqa: BLE001
+        return self._send(500, json.dumps({"error": "reset failed, try again"}))
+    sid = auth.login(name, pw)
+    if not sid:
+        return self._send(200, json.dumps({"ok": True}))
+    tok = auth.issue_token(name, _device_label(body), device=_device_id(body))
+    return self._send_cookie(200, json.dumps({"ok": True, "token": tok}), sid=sid)
+
+
 def auth_logout(self, user, body):
     from spine.auth import auth
     if self._sid():
@@ -191,6 +211,7 @@ POST_ROUTES = {
     "/auth/setup": auth_setup,
     "/auth/register": auth_register,
     "/auth/login": auth_login,
+    "/auth/reset": auth_reset,
     "/auth/logout": auth_logout,
     "/auth/delete-account": auth_delete_account,
 }

@@ -273,4 +273,4 @@ daemon/daemon_origin_tunnel.log.out
 # (GT ticker check) dropped in the repo root, not made by any script this repo
 # owns. Left in place (look before deleting), ignored so the loop's clean-tree
 # check stops flagging someone else's scratch. Globbed: next run = gt_check3/.
-/gt_check*/
+/gt_*/

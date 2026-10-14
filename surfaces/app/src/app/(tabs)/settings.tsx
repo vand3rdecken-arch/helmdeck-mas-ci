@@ -383,6 +383,15 @@ export default function Settings() {
     try { await api.post(`/users/${u.name}/password`, { password: pw }); Alert.alert(tr("settings.users.pwSetTitle"), tr("settings.users.pwSetMsg")); }
     catch (e) { fail(e); }
   }
+  // The person picks their own password on the login screen with this code, so
+  // the owner never types or transmits one (unlike resetPw above).
+  async function resetCode(u: UserRow) {
+    try {
+      const r = await api.createResetCode(u.name, 24);
+      await Clipboard.setStringAsync(r.code);
+      Alert.alert(tr("settings.users.resetCodeTitle", { name: u.name }), tr("settings.users.resetCodeMsg", { code: r.code }));
+    } catch (e) { fail(e); }
+  }
   async function delUser(u: UserRow) {
     if (!(await confirmAsync(tr("settings.users.delConfirm", { name: u.name }), tr("settings.users.delMsg")))) return;
     try { await api.post(`/users/${u.name}/delete`, {}); await refetchUsers(); } catch (e) { fail(e); }
@@ -813,6 +822,7 @@ export default function Settings() {
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingTop: 2 }}>
                       <Pressable onPress={() => addToken(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.addToken")}</Text></Pressable>
                       <Pressable onPress={() => resetPw(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.password")}</Text></Pressable>
+                      <Pressable onPress={() => resetCode(u)}><Text style={{ color: t.txtSecondary, fontSize: 12 }}>{tr("settings.users.resetCode")}</Text></Pressable>
                       <Pressable onPress={() => delUser(u)}><Text style={{ color: t.danger, fontSize: 12 }}>{tr("settings.users.delete")}</Text></Pressable>
                     </View>
                   </View>

@@ -123,8 +123,16 @@ def state(inv):
     return "open"
 
 
+def kind(inv):
+    """"invite" (a person joins) or "reset" (an existing account's owner gets
+    back in). Rows written before resets existed carry no kind - they are
+    invitations, which is why the default lives here and not in a migration."""
+    return inv.get("kind") or "invite"
+
+
 def _public(inv):
     return {"code": inv["code"], "role": inv["role"], "state": state(inv),
+            "kind": kind(inv), "for_user": inv.get("for_user"),
             "created": inv.get("created"), "created_by": inv.get("created_by"),
             "expires": inv.get("expires"), "used_by": inv.get("used_by"),
             "used_at": inv.get("used_at"), "note": inv.get("note", "")}
@@ -158,6 +166,60 @@ def create(role, actor, ttl_days=None, note=""):
     return _public(inv)
 
 
+RESET_TTL_HOURS = (1, 24, 72)
+
+
+def create_reset(user, role, actor, ttl_hours=24):
+    """Mint a single-use PASSWORD-RESET code bound to one existing account.
+
+    Same object, same table as an invitation (it is the same thing: an
+    owner-minted, expiring, single-use bearer code), but it can only be
+    redeemed by claim_reset() for exactly `user` - a reset code never creates an
+    account, and an invitation code never changes a password. The person it is
+    for chooses their own new password at redemption, so the owner never types
+    or transmits one (the failure the invitation redesign already removed)."""
+    try:
+        hours = int(ttl_hours or 24)
+    except (TypeError, ValueError):
+        raise ValueError("ttl_hours must be a number")
+    if hours not in RESET_TTL_HOURS:
+        raise ValueError("ttl_hours must be one of: %s" % ", ".join(map(str, RESET_TTL_HOURS)))
+    with _lock:
+        rows = _load()
+        live = {r["code"] for r in rows}
+        code = gen_code()
+        while code in live:
+            code = gen_code()
+        inv = {"code": code, "kind": "reset", "for_user": user, "role": role,
+               "created": _now(), "created_by": actor or "-",
+               "expires": _stamp(hours * 3600), "used_by": None, "used_at": None,
+               "revoked": False, "revoked_by": None, "note": ""}
+        rows.append(inv)
+        _save(rows)
+    _audit("reset.create", actor, code, for_user=user, expires=inv["expires"])
+    return _public(inv)
+
+
+def claim_reset(code, user):
+    """Mark a reset code spent BY `user`. One refusal message for every way it
+    can fail (unknown, wrong account, used, revoked, expired): the login screen
+    is unauthenticated, and a message that tells those apart would confirm
+    which names have a live reset pending."""
+    code = (code or "").strip().upper()
+    bad = ValueError("reset code not accepted")
+    with _lock:
+        rows = _load()
+        inv = next((r for r in rows if r["code"] == code), None)
+        if (not inv or kind(inv) != "reset" or inv.get("for_user") != user
+                or state(inv) != "open"):
+            raise bad
+        inv["used_by"] = user
+        inv["used_at"] = _now()
+        _save(rows)
+    _audit("reset.redeem", user, code, for_user=user)
+    return True
+
+
 def list_all():
     """Newest first: open invitations, then recent history. State is derived
     per row, so a caller filters on `state` instead of on a stored flag."""
@@ -166,7 +228,9 @@ def list_all():
 
 
 def count_open():
-    return sum(1 for r in _load() if state(r) == "open")
+    # resets are not a way to sign up - counting them would show the "create
+    # account" tab on the strength of a code that cannot create one
+    return sum(1 for r in _load() if state(r) == "open" and kind(r) == "invite")
 
 
 def revoke(code, actor=None):
@@ -191,7 +255,7 @@ def peek(code):
     act on. Read-only - used to validate before anything irreversible happens."""
     code = (code or "").strip().upper()
     inv = next((r for r in _load() if r["code"] == code), None)
-    if not inv:
+    if not inv or kind(inv) != "invite":
         raise ValueError("unknown invitation code")
     st = state(inv)
     if st != "open":
@@ -213,7 +277,7 @@ def claim(code, name):
     with _lock:
         rows = _load()
         inv = next((r for r in rows if r["code"] == code), None)
-        if not inv:
+        if not inv or kind(inv) != "invite":     # a reset code never signs anyone up
             raise ValueError("unknown invitation code")
         st = state(inv)
         if st != "open":

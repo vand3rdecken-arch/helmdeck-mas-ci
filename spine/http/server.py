@@ -99,7 +99,7 @@ class H(BaseHTTPRequestHandler):
     # endpoints are public; every data/control route needs a logged-in
     # session (cookie) or a per-user device token.
     OPEN = ("/auth/state", "/auth/login", "/auth/logout",
-            "/auth/setup", "/auth/register", "/glance",
+            "/auth/setup", "/auth/register", "/auth/reset", "/glance",
             # W2b device-code pairing (relay_client.py's own header has the
             # rationale): the claiming device has no session yet by
             # definition, so this must be reachable before auth - same class

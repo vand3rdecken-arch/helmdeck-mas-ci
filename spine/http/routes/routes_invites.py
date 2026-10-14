@@ -32,6 +32,22 @@ def invites_post(self, user, body):
     return self._send(200, json.dumps(inv))
 
 
+def reset_code_post(self, user, body):
+    """Owner mints a one-time password-reset code for an existing account. The
+    person enters it on the login screen and chooses their own new password."""
+    from spine.auth import auth, invites
+    name = (body.get("name") or "").strip()
+    target = auth.get_user(name)
+    if not target:
+        return self._send(400, json.dumps({"error": "no such user"}))
+    try:
+        inv = invites.create_reset(name, target["role"], actor=user["name"],
+                                   ttl_hours=body.get("ttl_hours"))
+    except ValueError as e:
+        return self._send(400, json.dumps({"error": str(e)}))
+    return self._send(200, json.dumps(inv))
+
+
 def invite_revoke_post(self, user, code):
     from spine.auth import invites
     try:
@@ -41,9 +57,9 @@ def invite_revoke_post(self, user, code):
 
 
 GET_ROUTES = {"/invites": invites_get}
-POST_ROUTES = {"/invites": invites_post}
+POST_ROUTES = {"/invites": invites_post, "/invites/reset": reset_code_post}
 # Read by permissions.cap_for() through _CAP_MODULES. The per-code revoke is a
 # path-param route and therefore lives in permissions.PATTERNS instead, next to
 # the /users/* entries it mirrors.
 GET_CAPS = {"/invites": "users.manage"}
-POST_CAPS = {"/invites": "users.manage"}
+POST_CAPS = {"/invites": "users.manage", "/invites/reset": "users.manage"}
