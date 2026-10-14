@@ -46,14 +46,45 @@ def _owner_idle_s():
     return time.time() - last
 
 
+# A live turn that has produced no frame for this long is STANDING STILL, not
+# working: past the tool cap (BASH_MAX_TIMEOUT_MS, 5 min - one tool cannot be
+# silent longer) and below the driver's own 900 s hung-watchdog, which would
+# end it anyway. Owner 2026-10-14: "check der idle auch wenn was stehen
+# geblieben ist" - a wedged card used to keep the idle-check silent for good.
+STALL_S = 360
+
+
+def _stalled():
+    """[(kind, id, silent_seconds)] of work that is formally live but silent:
+    card turns by the driver's own frame clock (drivers.turn_silence_s), hands
+    runs by their last step stamp. Observations at call time, nothing stored."""
+    from spine.ops import daemonctl
+    from spine.agent import drivers
+    from cells.copilot.chat import hands
+    out = []
+    for cid in daemonctl.running_turns():
+        s = drivers.turn_silence_s(cid)
+        if s is not None and s > STALL_S:
+            out.append(("karte", cid, s))
+    now = time.time()
+    for hid, d in hands.tasks().items():
+        if d.get("status") == "running" and now - float(d.get("updated") or now) > STALL_S:
+            out.append((d.get("kind") or "hands", hid, now - float(d["updated"])))
+    return out
+
+
 def _anything_live():
-    """True if a card turn or a hands run is actually in flight - the same
-    facts daemonctl.status() already reports, read fresh (drivers.turn_active
-    is an observation, not a stored flag)."""
+    """True if a card turn or a hands run is actually in flight AND moving -
+    the same facts daemonctl.status() already reports, read fresh
+    (drivers.turn_active is an observation, not a stored flag). Work that is
+    live but has gone silent (_stalled) does not count: that is exactly the
+    situation the idle-check exists to look at."""
     from spine.ops import daemonctl
     from cells.copilot.chat import hands
-    return bool(daemonctl.running_turns() or daemonctl.background_work()
-                or hands.running_ids())
+    stalled = {i for _k, i, _s in _stalled()}
+    turns = [c for c in daemonctl.running_turns() if c not in stalled]
+    hand = [h for h in hands.running_ids() if h not in stalled]
+    return bool(turns or daemonctl.background_work() or hand)
 
 
 def _last_idle_check_open_ts():
@@ -89,124 +120,6 @@ def _already_fired_this_stretch():
     return opened >= present
 
 
-def _pid_alive(pid_s):
-    import os
-    try:
-        os.kill(int(pid_s), 0)
-        return True
-    except (OSError, ValueError):
-        return False
-
-
-def _browser_targets_line():
-    """Every open target in HelmDeck's OWN Chrome (own debug port, own
-    user-data-dir - spine.media.browsercap.ensure_chrome) - by construction
-    never the owner's daily browser (that is windows-mcp's separate path,
-    which this function never touches or even names)."""
-    from spine.media import browsercap
-    port = browsercap.DEFAULT_PORT
-    if not browsercap._cdp_up(port):
-        return "browser: HelmDeck-Chrome nicht offen"
-    try:
-        import json
-        import urllib.request
-        with urllib.request.urlopen(
-                "http://127.0.0.1:%d/json/list" % port, timeout=3) as r:
-            targets = json.loads(r.read().decode("utf-8", "replace"))
-    except Exception as e:
-        return "browser: Ziel-Liste nicht lesbar (%s)" % str(e)[:80]
-    pages = [t for t in targets if t.get("type") == "page"]
-    if not pages:
-        return "browser: 0 offene Tabs"
-    items = "; ".join("%s (%s)" % ((t.get("title") or t.get("url") or "?")[:40],
-                                   (t.get("id") or "")[:8])
-                      for t in pages[:8])
-    return "browser: %d offene Tab(s) in HelmDecks eigenem Chrome: %s" % (len(pages), items)
-
-
-def _dev_ports_line():
-    """Every card's REGISTERED dev port and its lane/status - not whether
-    something still listens (Henry can check that himself if he needs to)."""
-    from spine.storage import db
-    rows = []
-    for t in db.tracks_all():
-        port = t.get("dev_port")
-        if port:
-            rows.append("%s:%s(%s/%s)" % (t.get("id"), port, t.get("lane"), t.get("status")))
-    return "dev-ports: " + (", ".join(rows) if rows else "keine registriert")
-
-
-def _orphan_worktree_dirs():
-    """Worktree folders on disk that git itself no longer lists AND no card
-    references - read-only listing, no reclaim (spine.git.worktrees.
-    reclaim_worktree/sweep_worktrees stay the CODE that Henry or a follow-up
-    card can call; this only OBSERVES for the snapshot)."""
-    import os
-    from spine.storage import db
-    from spine.git.gitutil import _repo_hash, _git_try, WORKTREE_DIRNAME
-    tracks = db.tracks_all()
-    repos = {t.get("repo") for t in tracks if t.get("repo")}
-    referenced = {os.path.realpath(t["worktree"]) for t in tracks if t.get("worktree")}
-    out = []
-    for repo in repos:
-        if not repo or not os.path.isdir(repo):
-            continue
-        rc, listing, _ = _git_try(repo, "worktree", "list", "--porcelain")
-        known = set()
-        if rc == 0:
-            for line in listing.splitlines():
-                if line.startswith("worktree "):
-                    known.add(os.path.realpath(line[len("worktree "):].strip()))
-        hashdir = os.path.join(os.path.abspath(os.path.join(repo, "..", WORKTREE_DIRNAME)),
-                               _repo_hash(repo))
-        if not os.path.isdir(hashdir):
-            continue
-        for name in os.listdir(hashdir):
-            p = os.path.join(hashdir, name)
-            if os.path.isdir(p):
-                rp = os.path.realpath(p)
-                if rp not in known and rp not in referenced:
-                    out.append(name)
-    return out
-
-
-def _worktrees_line():
-    orphans = _orphan_worktree_dirs()
-    if not orphans:
-        return "worktrees ohne git-Registrierung: keine"
-    shown = ", ".join(orphans[:10])
-    more = " (+%d weitere)" % (len(orphans) - 10) if len(orphans) > 10 else ""
-    return "worktrees ohne git-Registrierung: %d - %s%s" % (len(orphans), shown, more)
-
-
-def _locks_line():
-    """Any lock directory under HELMDECK_LOCK_DIR (today android-build, see
-    ops/deploy/build_lock.sh) whose recorded holder pid is dead - read-only,
-    the same staleness TEST the shell acquirer itself already applies on the
-    next build, just reported here instead of acted on."""
-    import os
-    root = os.environ.get("HELMDECK_LOCK_DIR") or os.path.join(
-        os.path.expanduser("~"), ".helmdeck", "locks")
-    if not os.path.isdir(root):
-        return "locks mit toter PID: keine"
-    dead = []
-    for name in os.listdir(root):
-        pidfile = os.path.join(root, name, "pid")
-        if not os.path.isfile(pidfile):
-            continue
-        try:
-            lines = [l.strip() for l in
-                     open(pidfile, encoding="utf-8").read().splitlines() if l.strip()]
-        except OSError:
-            continue
-        if not lines:
-            continue
-        pid_s = lines[1] if len(lines) > 1 else lines[0]   # line 2 = real Windows pid
-        if not _pid_alive(pid_s):
-            dead.append(name)
-    return "locks mit toter PID: " + (", ".join(dead) if dead else "keine")
-
-
 def _load_line():
     from spine.ops import resources
     s = resources.sample(0.2)
@@ -215,15 +128,52 @@ def _load_line():
     return "last: CPU %s, RAM %s" % (cpu, ram)
 
 
+def _owner_line():
+    m = int(_owner_idle_s() // 60)
+    live = "Karte oder Haende live" if _anything_live() else "keine Karte, keine Haende live"
+    return "owner: seit %d min nicht gesehen; %s" % (m, live)
+
+
+def _owned_line():
+    """WHICH processes are the daemon's own (spine.agent.proctable.owned: the
+    OS's job + parent links, read now). The one fact Henry cannot fetch for
+    himself - 2026-10-13 he ended a Paseo-owned claude.exe because nothing told
+    him whose it was. Everything NOT listed here is the owner's or another
+    program's."""
+    from spine.agent import proctable
+    rows = []
+    now = time.time()
+    for pid, exe, started in proctable.owned():
+        if (exe or "").lower() in ("conhost.exe",):
+            continue                                    # console plumbing, never a decision
+        if not started:
+            age = "?"
+        elif now - started >= 3600:
+            age = "%dh" % ((now - started) // 3600)
+        else:
+            age = "%dm" % ((now - started) // 60)
+        rows.append("%s %d (%s)" % (exe, pid, age))
+    return ("dem Daemon gehoeren: " + (", ".join(rows) if rows else "keine Kindprozesse")
+            + " - alles andere gehoert dem Owner oder fremden Programmen")
+
+
+def _stalled_line():
+    st = _stalled()
+    if not st:
+        return ""
+    return "stehen still: " + ", ".join("%s %s (%d min ohne Ausgabe)" % (k, i, s // 60)
+                                        for k, i, s in st)
+
+
 def situation_snapshot():
     """The Lagebild an idle-check escalation carries as `detail` - facts
-    only, no verdict. escalations.emit() caps this at DETAIL_MAX (4000) chars
-    and marks a cut with "[... N Zeichen gekuerzt]"; every line here stays
-    short and bounded on its own, and the lock/load lines come last only
-    because the whole block is far below that cap."""
-    lines = [_browser_targets_line(), _dev_ports_line(), _worktrees_line(),
-             _locks_line(), _load_line()]
-    return "\n".join(lines)
+    only, no verdict, and only the facts Henry cannot fetch himself. Tabs,
+    dev ports, worktrees and locks used to be listed here (owner decree
+    2026-09-20); he reads those with his own hands, so the daemon no longer
+    curates what he looks at (owner 2026-10-14: "offener, die AI muss selber
+    ueberlegen")."""
+    lines = [_owner_line(), _stalled_line(), _owned_line(), _load_line()]
+    return "\n".join(ln for ln in lines if ln)
 
 
 def check(force=False):

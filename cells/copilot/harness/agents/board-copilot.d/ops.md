@@ -12,17 +12,29 @@ mit dem Verb {"type": "stop", "target": ...} - der Daemon besitzt den Prozess
 und raeumt Status, Kachel und Bericht mit auf. Alles andere (Dev-Server,
 Test-Server, haengende Tools) darfst du direkt beenden: `taskkill /PID <n> /T /F`
 oder `Stop-Process -Id <n> -Force`.
+WESSEN IST DER PROZESS: vor jedem Kill einer claude.exe/node/python/cmd lies die
+Elternkette BIS ZUR WURZEL (cmd.exe und explorer.exe mitnehmen, nicht nur die
+Namen, die dich interessieren). Haengt sie unter dem Daemon (pythonw.exe -m
+daemon.swarm), ist sie unsere. Haengt sie unter Paseo.exe, der Claude-Desktop-App
+oder einer Shell des Owners, ist es SEINE Sitzung. Beende sie nicht, auch wenn sie
+alt aussieht: Alter ist kein Beleg fuer "haengt", CPU der letzten Sekunden ist
+einer. Nenne bei jedem beendeten Fremdprozess PID und Grund in deiner Antwort.
 
 MASCHINEN-RESSOURCEN / idle-check (owner decree 2026-09-20): der Daemon
 selbst raeumt NICHTS auf und entscheidet nichts - er beobachtet nur. Wenn der
 Owner laenger als policy.idle_minutes (Default 30) keinen Presence-
 Herzschlag geschickt hat UND keine Karte und keine Haende laufen, feuert er
-EINMAL pro Ruhephase eine 'idle-check'-Eskalation mit einem Lagebild: offene
-Tabs in HelmDecks eigenem Chrome (spine.media.browsercap - NIE das Chrome des
-Owners, das faehrt windows-mcp separat), registrierte Dev-Ports je Karte mit
-Lane/Status, Worktree-Ordner ohne git-Registrierung, Locks (z.B.
-android-build.lock) mit toter Holder-PID, CPU/RAM. Das ist eine Beobachtung,
-keine Empfehlung. DU entscheidest im Broker-Turn mit deinen Haenden, was
+EINMAL pro Ruhephase eine 'idle-check'-Eskalation mit einem Lagebild aus
+drei Zeilen: wie lange der Owner weg ist, WELCHE Prozesse dem Daemon gehoeren
+(aus Job-Objekten und Prozessbaum des OS, gerade gelesen), CPU/RAM. Steht eine
+Karte oder ein Haende-Lauf still (laeuft formal, aber seit ueber 6 Minuten kein
+Frame), kommt eine vierte Zeile "stehen still" dazu - und dieser Stillstand
+blockiert den Check nicht mehr; frueher schwieg er, solange irgendetwas "lief". Alles
+andere holst du dir selbst: offene Tabs in HelmDecks eigenem Chrome (NIE das
+Chrome des Owners, das faehrt windows-mcp separat), Dev-Ports, Worktree-Ordner
+ohne git-Registrierung, Locks mit toter Holder-PID, Scratch-Ordner. Was nicht
+in der Prozesszeile steht, gehoert dem Owner oder einem fremden Programm. Das
+ist eine Beobachtung, keine Empfehlung. DU entscheidest im Broker-Turn mit deinen Haenden, was
 wirklich weg kann - nie ein Fenster/Prozess des Owners, nie etwas, das noch
 lebt oder zu einer laufenden Karte gehoert. Nenne im "text"/"why" konkret,
 was du geschlossen/geloescht hast und warum; das landet als Begruendung im

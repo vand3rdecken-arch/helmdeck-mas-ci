@@ -235,6 +235,47 @@ def own(p):
     return p
 
 
+def owned():
+    """[(pid, exe, started_epoch_or_None)] of every live process THIS daemon
+    owns - the question "is this one mine?" answered from what the OS keeps,
+    never from a stored list. Owned = a descendant of the daemon by live parent
+    links, OR a member of one of our kill-on-close jobs (that is what still
+    reaches a grandchild whose parent already died). Everything else on the
+    box belongs to the owner or to another program (Paseo, Claude Desktop,
+    the owner's shells) - ownership by EXCLUSION, the way Paseo's agent knows
+    its own sessions. Read-only; nothing here kills or adopts."""
+    try:
+        table = _pid_table()
+    except Exception:                                   # noqa: BLE001
+        return []
+    names = {p: exe for p, _pp, exe in table}
+    mine = set(_descendants(os.getpid()))
+    if os.name == "nt":
+        try:
+            ctypes, wintypes, k32 = _job_api()
+            k32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+            with _jobs_lock:
+                jobs = list(_jobs.values())
+            if jobs:
+                for pid in names:
+                    if pid in mine or pid == os.getpid():
+                        continue
+                    hp = k32.OpenProcess(0x1000, False, pid)        # QUERY_LIMITED_INFORMATION
+                    if not hp:
+                        continue
+                    try:
+                        for j in jobs:
+                            r = wintypes.BOOL(0)
+                            if k32.IsProcessInJob(hp, j, ctypes.byref(r)) and r.value:
+                                mine.add(pid)
+                                break
+                    finally:
+                        k32.CloseHandle(hp)
+        except Exception:                               # noqa: BLE001
+            pass
+    return sorted(((p, names.get(p, "?"), _proc_start_epoch(p)) for p in mine), key=lambda r: r[0])
+
+
 def kill_owned(p):
     """Kill ONE spawned process AND its whole family (replaces bare p.kill() /
     p.terminate(), which left every child behind)."""

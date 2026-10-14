@@ -282,6 +282,31 @@ def turn_active(tid):
         return False
 
 
+def turn_silence_s(tid):
+    """Seconds since the live turn of `tid` last produced ANY frame, or None
+    when no turn is in flight. The same clock the idle-watchdog reads
+    (cur["last_event"], bumped by the pump on every frame) - exposed so
+    spine.ops.idle_check can tell a card that is working from one that is
+    standing still, instead of treating every live turn as busy."""
+    with _sessions_guard:
+        s = _sessions.get(tid)
+    if s is None:
+        for reg, guard in _native_registries():
+            with guard:
+                s = reg.get(tid)
+            if s is not None:
+                break
+    if s is None:
+        return None
+    try:
+        cur = s._cur
+        if not (s.alive() and cur is not None):
+            return None
+        return max(0.0, _time.time() - float(cur.get("last_event") or _time.time()))
+    except Exception:
+        return None
+
+
 # --- idle eviction + shutdown (Paseo: collectIdleAgents / closeAllAgents) ----
 # A card holds ONE persistent worker, but keeping ALL touched cards' workers
 # alive forever would leak memory on a busy board. So, like Paseo, a worker only
