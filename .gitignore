@@ -274,3 +274,6 @@ daemon/daemon_origin_tunnel.log.out
 # owns. Left in place (look before deleting), ignored so the loop's clean-tree
 # check stops flagging someone else's scratch. Globbed: next run = gt_check3/.
 /gt_*/
+
+# Rust tray prototype build output (surfaces/desktop/tray-rs)
+/surfaces/desktop/tray-rs/target/
