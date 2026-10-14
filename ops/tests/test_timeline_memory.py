@@ -107,7 +107,24 @@ def test_fold_cache_is_bounded():
     check(len(steps) == 1 and steps[0]["text"] == "hi 0", "an evicted run simply re-folds on its next read")
 
 
+def test_connections_use_the_small_page_cache():
+    """One connection per thread: the default 2000 KiB cache x ~70 threads was
+    ~140 MB of the daemon. Checked on a NEW thread's connection, the way the
+    daemon's request/relay workers get theirs."""
+    import threading
+    out = {}
+
+    def w():
+        out["kib"] = db.conn().execute("PRAGMA cache_size").fetchone()[0]
+    th = threading.Thread(target=w)
+    th.start()
+    th.join()
+    check(out.get("kib") == -db.CACHE_KIB, "a thread's connection gets the %d KiB page cache" % db.CACHE_KIB)
+    check(db.CACHE_KIB >= 512, "never below 512 KiB: 256 KiB measured slower on hot reads")
+
+
 if __name__ == "__main__":
+    test_connections_use_the_small_page_cache()
     test_matches_the_old_fold()
     test_memo_follows_writes()
     test_listing_does_not_fill_the_fold_cache()

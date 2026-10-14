@@ -78,6 +78,14 @@ def _refuse_live_db_from_tests():
                            "first, or set HELMDECK_ALLOW_LIVE_DB=1" % (DBPATH, entry))
 
 
+# Page cache PER CONNECTION, and there is one connection per thread that ever
+# touches the db (~70 live in the daemon). SQLite's default is 2000 KiB; at that
+# size 40 busy threads held +186 MB, at 512 KiB +49 MB (measured 2026-10-14),
+# with no slower hot reads (86 ms vs 97 ms per round; 256 KiB WAS slower, 129 ms,
+# so this is the floor). The OS page cache serves the rest of the file.
+CACHE_KIB = 512
+
+
 def conn():
     c = getattr(_local, "c", None)
     if c is None:
@@ -85,6 +93,7 @@ def conn():
         c = sqlite3.connect(DBPATH, timeout=15)
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
+        c.execute("PRAGMA cache_size=-%d" % CACHE_KIB)
         _local.c = c
     return c
 
