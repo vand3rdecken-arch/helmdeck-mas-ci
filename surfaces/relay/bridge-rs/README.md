@@ -53,8 +53,16 @@ Also missing: the long-poll fallback when the worker has no `/tunnel/ws`, the pe
 
 ## Recommendation
 
-Do not switch the production bridge to this on the numbers above: there is no latency, CPU or
-meaningful memory gain, and the three seams are security-sensitive design work. The one thing a
-separate bridge process WOULD buy is that the phone's socket survives a daemon restart (the room would
-keep its daemon socket and answer "daemon starting" instead of dropping). That is a product question,
-not a performance one - decide it before building the seams.
+Do not switch the production bridge to this. On the numbers above there is no latency, CPU or
+meaningful memory gain, and the three seams are security-sensitive design work.
+
+The one thing a separate bridge process WOULD have bought is that the phone's socket survives a daemon
+restart. That gap was the real problem, and it had a cheaper cause (2026-10-15): the daemon needed
+**64 s** from process start to a connected relay socket, while the worker holds phone requests for only
+**15 s** (`HOLD_MS`). py-spy on a real boot showed ~45 s of it in `sessions.sweep_zombies`, which rewrote
+595 cards on every start (see `ops/tests/test_boot_sweep_cost.py`). After that fix the relay is up
+**9 s** after the process is created - inside the hold - so a phone request during a restart is held and
+answered instead of failing. A second process would now save almost nothing.
+
+Revisit only if a restart still shows up as an outage on the phone, or the bridge has to outlive the
+daemon for another reason; then start from the three seams above, with this prototype as the data plane.
