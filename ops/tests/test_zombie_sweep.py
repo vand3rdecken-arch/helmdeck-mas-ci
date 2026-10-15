@@ -75,13 +75,13 @@ def test_sweep():
     check(db.track_get("t-idle")["status"] == "needs_you",
           "non-running track untouched")
 
-    with open(os.path.join(SANDBOX, "t-zombie", "actions.jsonl"), encoding="utf-8") as f:
-        notes = [json.loads(l) for l in f if l.strip()]
+    # the flight recorder is a db table now (state-into-db), not actions.jsonl
+    from spine.ops import actionlog
+    notes = actionlog.read_timeline(os.path.join(SANDBOX, "t-zombie"))
     check(any(sessions.ZOMBIE_NOTE in (n.get("detail") or "") for n in notes),
           "restart note in the flight recorder")
 
-    with open(events.EV, encoding="utf-8") as f:
-        evs = [json.loads(l) for l in f if l.strip()]
+    evs = events.read_events()                  # the events TABLE is the record (events.jsonl is retired)
     check(any(e["kind"] == "bounce" and e["track"] == "t-zombie"
               and e.get("reason") == "daemon_restart" for e in evs),
           "bounce event emitted with reason=daemon_restart")
@@ -175,7 +175,7 @@ def test_move_lane_registration():
     calls = []
     real = lanemachine._move_lane
 
-    def _fake(t_id, lane, actor="owner", _autopark=True):
+    def _fake(t_id, lane, actor="owner", _autopark=True, note=None):
         calls.append((lane, lanemachine.lane_active(t_id)))
         if _autopark:   # re-enter once - the park_and_retry_merge shape
             lanemachine.move_lane(t_id, "review", actor=actor, _autopark=False)
@@ -192,7 +192,7 @@ def test_move_lane_registration():
     check(not lanemachine.lane_active(tid), "registration released once the move returns")
 
     # break-it: the body raising must still release the registration
-    def _boom(t_id, lane, actor="owner", _autopark=True):
+    def _boom(t_id, lane, actor="owner", _autopark=True, note=None):
         raise RuntimeError("gate blew up")
 
     lanemachine._move_lane = _boom

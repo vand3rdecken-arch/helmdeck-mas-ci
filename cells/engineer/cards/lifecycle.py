@@ -246,7 +246,17 @@ def sweep_zombies(min_idle_s=0):
         # so did every background agent inside it. A registry entry surviving
         # here is a zombie by construction: clear it (with a visible note) so
         # the card doesn't wait on a task that can never report.
+        # ONLY a card with something to settle: a descriptor still "running" or the
+        # waiting_on=background gate. The old test was "has a bg_tasks dict" - true for
+        # EVERY card that ever ran a background task (their descriptors stay as
+        # 'canceled' history on purpose), so every boot walked and REWROTE all of them
+        # (595 of 729 on 2026-10-15, each write invalidating the card cache and the next
+        # read re-parsing every card: ~45 of the daemon's 60 boot seconds, and every
+        # card's `updated` stamp reset to the restart minute).
         if not min_idle_s and isinstance(t.get("bg_tasks"), dict) \
+                and (t.get("waiting_on") == "background"
+                     or any(isinstance(v, dict) and v.get("status", "running") == "running"
+                            for v in t["bg_tasks"].values())) \
                 and not drivers.has_session(t["id"]):
             names = _bg_names([(v.get("title") or v.get("desc") or "task")
                                for v in t["bg_tasks"].values() if v.get("status", "running") == "running"])
@@ -255,9 +265,11 @@ def sweep_zombies(min_idle_s=0):
             # and that the restart ended it (Paseo clickable history). Only the
             # waiting_on gate is cleared so the card is handed back.
             n = sessions.reconcile_bg(t["id"], why="Mit dem Daemon-Neustart abgebrochen")   # lazy: bg-task cluster still in sessions.py
+            # False = "nothing to change, do not save": None would have rewritten the card
+            # (and bumped `updated`) even when the gate was not set.
             _mutate(t["id"], lambda tt: tt.__setitem__("waiting_on", "you")
                     if tt.get("waiting_on") == "background"
-                    and not sessions.running_bg(tt) else None)
+                    and not sessions.running_bg(tt) else False)
             if n:
                 try:
                     ActionLog(t["run_dir"]).log(
