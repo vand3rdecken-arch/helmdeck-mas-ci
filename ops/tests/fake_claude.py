@@ -108,6 +108,11 @@ def main():
             # null frame and return the real result.
             emit({"type": "result", "subtype": "success", "result": "",
                   "usage": {}, "session_id": SID})
+            # The real CLI flushes the dead turn's result, THEN works. Back to back, the
+            # waiter thread often woke only after the pump had already replaced the null
+            # result with the real one, so "a fresh spawn takes the first frame at face
+            # value" was a race in the test, not a property of the driver.
+            __import__("time").sleep(0.4)
             emit({"type": "stream_event",
                   "event": {"type": "content_block_delta",
                             "delta": {"type": "text_delta", "text": "real:"}}})

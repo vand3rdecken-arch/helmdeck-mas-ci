@@ -26,6 +26,10 @@ with open(_WRAP, "w", encoding="utf-8") as _f:
     _f.write('@echo off\r\n"%s" "%s" %%*\r\n'
              % (sys.executable, os.path.join(HERE, "fake_claude.py")))
 drivers.CLAUDE = _WRAP
+from spine.agent import agentcli
+# the real install resolves claude.cmd to claude.exe and spawns a plain argv list; the .cmd
+# fallback goes through cmd.exe (8191-char limit) and the card briefs outgrew it. Same seam here.
+agentcli._real_claude_exe = lambda _cmd: [sys.executable, os.path.join(HERE, "fake_claude.py")]
 drivers._PIDFILE = os.path.join(tempfile.mkdtemp(), "driver_pids.json")
 
 _fails = []

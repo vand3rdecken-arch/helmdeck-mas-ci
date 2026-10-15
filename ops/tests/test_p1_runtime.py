@@ -22,6 +22,11 @@ Run: py -3.12 ops/tests/test_p1_runtime.py
 import json, os, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# the action log is a db table now (state-into-db): sandbox it, never the live db
+_SBX = tempfile.mkdtemp(prefix="hd-p1-db-")
+from spine.storage import db
+db.DBPATH = os.path.join(_SBX, "helmdeck.db")
+db.init()
 from spine.agent import drivers
 from spine.agent import claude_sessions
 from spine.agent.drivers import _ClaudeSession
@@ -208,11 +213,8 @@ try:
     time.sleep(0.2)   # fake pump/drain threads exit on their empty iterables
     check("session id dropped (fresh session)", s.session_id is None)
     check("no --resume in the spawn argv", "--resume" not in spawned["argv"])
-    try:
-        with open(os.path.join(tmp, "actions.jsonl"), encoding="utf-8") as f:
-            notes = f.read()
-    except OSError:
-        notes = ""
+    from spine.ops import actionlog
+    notes = " ".join(str(r) for r in actionlog.read_timeline(tmp))
     check("visible note in the card feed", "frische Session" in notes)
 finally:
     drivers.subprocess.Popen = _popen
