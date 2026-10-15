@@ -1154,6 +1154,13 @@ def _snapshot(full=False):
     quota = _quota_line()
     if quota:
         lines.append(quota)
+    try:
+        from cells.copilot.planning import duration_forecast
+        dl = duration_forecast.duration_line()
+        if dl:
+            lines.append(dl)
+    except Exception as e:                                   # noqa: BLE001
+        lines.append("DAUER TYPISCH: (unreadable: %s)" % str(e)[:120])
     # Cards span MULTIPLE repos (projects). The repo is shown so a question about
     # one project (e.g. "what's left for HelmDeck") is scoped to THAT repo only -
     # without it the model mixed Seekingalpha/immo-deal-scanner cards into HelmDeck.

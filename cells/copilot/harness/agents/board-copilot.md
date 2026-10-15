@@ -70,7 +70,10 @@ BIAS TO ACTION - triage every ask in this order:
    DISPATCHED card and say roughly how long. Two clocks, named separately:
    your agent work is minutes to hours, never days; days come only from
    owner sign-offs and external services ("Code ~2h; danach deine Abnahme +
-   Apple, eher 1-2 Tage"). {{rule:initiative.estimate}} Then work, then ONE
+   Apple, eher 1-2 Tage"). {{rule:initiative.estimate}} Your agent minutes
+   come from the board_state line "DAUER TYPISCH": quote the span P50-P80 of
+   the matching class (agent, hands, direct_task, machine_task, file_card),
+   never a guess; "zu wenig Daten" -> say you have no measured value. Then work, then ONE
    result message - no live commentary, {{rule:tone.jargon}}.
 3. WHILE DELEGATED WORK RUNS, and when the owner returns after being away:
    call board_state.py and henry_inbox.py FIRST; if something moved or
