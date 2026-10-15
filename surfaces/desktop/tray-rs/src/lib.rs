@@ -138,6 +138,17 @@ pub fn find_root(arg: Option<&str>) -> Option<PathBuf> {
     None
 }
 
+/// Where the daemon keeps its writable state (db, logs): HELMDECK_DATA_ROOT
+/// when set - the same rule as daemon/paths.py DATA_ROOT (MSIX installs, and a
+/// sandbox daemon in tests) - else `<root>/daemon`. The tray's log and the
+/// relay-status read follow the daemon, not the code checkout.
+pub fn data_dir(root: &Path) -> PathBuf {
+    match std::env::var("HELMDECK_DATA_ROOT") {
+        Ok(d) if !d.trim().is_empty() => PathBuf::from(d),
+        _ => root.join("daemon"),
+    }
+}
+
 /// pythonw.exe for the daemon: HELMDECK_PYTHON, then the per-user 3.12
 /// install (the interpreter the live daemon runs on), then PATH.
 pub fn find_python() -> Option<PathBuf> {
@@ -176,7 +187,7 @@ pub fn open_daemon_log(daemon_dir: &Path) -> io::Result<File> {
 
 /// Start `python -m daemon.swarm serve [port]` from the repo root, hidden.
 pub fn spawn_daemon(root: &Path, python: &Path, port: u16) -> io::Result<Child> {
-    let daemon_dir = root.join("daemon");
+    let daemon_dir = data_dir(root);
     let log = open_daemon_log(&daemon_dir)?;
     let log2 = log.try_clone()?;
     let mut cmd = Command::new(python);
@@ -262,6 +273,25 @@ where
         } else {
             false
         }
+    }
+}
+
+// ------------------------------------------------------------ single instance
+
+/// One tray per daemon port per login session: a named mutex, Local\ so it
+/// needs no privileges (same scheme as the daemon's own singleton). Returns
+/// false when another tray already holds it. The handle is deliberately kept
+/// for the life of the process - the OS releases it when the tray dies.
+pub fn single_instance(port: u16) -> bool {
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    let name: Vec<u16> = format!(r"Local\HelmDeckTray-{port}").encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if h.is_null() {
+            return true; // cannot create it -> never block the tray from starting
+        }
+        GetLastError() != ERROR_ALREADY_EXISTS
     }
 }
 
@@ -521,6 +551,26 @@ mod tests {
             c,
             r#""C:\Program Files\HelmDeck\helmdeck-tray.exe" --root "C:\Users\x y\swarmdeck""#
         );
+    }
+
+    #[test]
+    fn a_second_tray_for_the_same_port_is_refused() {
+        let port = 61987; // not a real daemon port: the mutex name only
+        assert!(single_instance(port), "first tray takes the lock");
+        assert!(!single_instance(port), "second tray for the same port is refused");
+        assert!(single_instance(port + 1), "another port is another daemon: independent");
+    }
+
+    #[test]
+    fn data_dir_follows_the_daemon_not_the_checkout() {
+        let root = Path::new(r"C:\repo");
+        std::env::remove_var("HELMDECK_DATA_ROOT");
+        assert_eq!(data_dir(root), PathBuf::from(r"C:\repo\daemon"));
+        std::env::set_var("HELMDECK_DATA_ROOT", r"C:\sandbox\data");
+        assert_eq!(data_dir(root), PathBuf::from(r"C:\sandbox\data"));
+        std::env::set_var("HELMDECK_DATA_ROOT", "  ");
+        assert_eq!(data_dir(root), PathBuf::from(r"C:\repo\daemon"), "blank means unset");
+        std::env::remove_var("HELMDECK_DATA_ROOT");
     }
 
     #[test]

@@ -35,6 +35,7 @@ enum UserEvent {
     State(Snapshot),
     Menu(MenuEvent),
     DoubleClick,
+    Quit,
 }
 
 enum Cmd {
@@ -78,7 +79,7 @@ fn main() {
         eprintln!("helmdeck-tray: repo root not found (--root DIR or HELMDECK_ROOT)");
         std::process::exit(2);
     };
-    let daemon_dir = root.join("daemon");
+    let daemon_dir = hd::data_dir(&root);
     let exe = std::env::current_exe().expect("exe");
 
     if args.iter().any(|a| a == "--once") {
@@ -95,8 +96,21 @@ fn main() {
         return;
     }
 
+    if !hd::single_instance(port) {
+        std::process::exit(4); // another tray already supervises this daemon port
+    }
+
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+
+    // test/benchmark helper: leave through the SAME quit path as the menu
+    if let Some(secs) = arg(&args, "--run-for").and_then(|s| s.parse::<u64>().ok()) {
+        let p = proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(secs));
+            let _ = p.send_event(UserEvent::Quit);
+        });
+    }
 
     // ---- supervisor thread: owns the child, beats every 4 s, takes commands
     let (tx, rx) = mpsc::channel::<Cmd>();
@@ -203,6 +217,16 @@ fn main() {
                 }
             }
             Event::UserEvent(UserEvent::DoubleClick) => open_ui(port),
+            Event::UserEvent(UserEvent::Quit) => {
+                if let Some(t) = tx.take() {
+                    let _ = t.send(Cmd::Quit);
+                }
+                if let Some(h) = sup.take() {
+                    let _ = h.join();
+                }
+                tray.take();
+                *flow = ControlFlow::Exit;
+            }
             Event::UserEvent(UserEvent::Menu(e)) => {
                 if e.id == id_open {
                     open_ui(port);

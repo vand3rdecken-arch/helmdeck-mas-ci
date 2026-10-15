@@ -712,6 +712,7 @@ dependencies = [
  "serde_json",
  "tao",
  "tray-icon",
+ "windows-sys 0.61.2",
  "winreg",
 ]
 
