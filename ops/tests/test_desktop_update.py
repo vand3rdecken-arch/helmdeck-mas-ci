@@ -158,7 +158,7 @@ probe.close()
 # --- relay settings reader ----------------------------------------------------
 sp = os.path.join(TMP, "settings.json")
 with open(sp, "w") as f:
-    json.dump({"relay": {"url": "https://relay.example/ ", "room": "r"}}, f)
+    json.dump({"url": "https://relay.example/ "}, f)   # relay_feed.json shape (events.sync_relay_feed)
 check("read_relay_url strips + trims", desktop_update.read_relay_url(sp) == "https://relay.example")
 check("read_relay_url None without settings",
       desktop_update.read_relay_url(os.path.join(TMP, "nope.json")) is None)

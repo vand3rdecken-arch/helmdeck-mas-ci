@@ -5925,7 +5925,7 @@ DEBT = [
     {
         "id": "rust-tray-no-desktop-update",
         "title": "The Rust tray (production supervisor since 2026-10-15) does not run the Electron desktop auto-update",
-        "status": "open",
+        "status": "paid",
         "what": "surfaces/desktop/tray-rs replaced tray.py as the autostarted supervisor. "
                 "tray.py also ran desktop_update.py (the Paseo-style silent check every 30 min "
                 "that stages the packaged Electron shell's app-dist) and supervised the local "
@@ -5939,7 +5939,7 @@ DEBT = [
         "fix": "Either port desktop_update to the Rust tray, or run it from the daemon (it only "
                "needs the relay feed url and the app-dist path), and give the fallback relay "
                "its own supervisor. `py -3.12 ops/tools/tray_switch.py python` is the way back "
-               "meanwhile.",
+               "meanwhile. PAID 2026-10-15: desktop_update.py now carries packaged_appdist/update_once and a `--once` mode (one JSON line); the Rust tray runs it on Paseo's cadence (30 min, 10 s retry) from its own thread and shows the result in the menu; tray.py calls the same two functions (one copy). The local relay.py + cloudflared fallback is RETIRED, not ported: the Cloudflare Worker has served the public relay since 2026-09-22 and that decree says nothing on this PC may listen for the phone any more; `tray_switch.py python` restores the old supervisor if a rollback is ever needed.",
         "since": "2026-10-15",
         "order": 93,
     },

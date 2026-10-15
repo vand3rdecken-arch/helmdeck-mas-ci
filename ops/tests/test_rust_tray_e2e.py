@@ -90,7 +90,12 @@ def main():
     pidfile = os.path.join(ROOT, "daemon", "daemon.pid")
     live_pid_text = open(pidfile).read() if os.path.exists(pidfile) else None
     sandbox = tempfile.mkdtemp(prefix="hd-tray-e2e-")
-    env = dict(os.environ, HELMDECK_DATA_ROOT=sandbox)
+    # the update thread must run, but never against the REAL installed shell:
+    # a stub engine answers in the one-json-line shape desktop_update.py --once prints
+    stub = os.path.join(sandbox, "stub_update.py")
+    with open(stub, "w") as f:
+        f.write("print('{\"text\": \"stub-ok\", \"retry\": false}')\n")
+    env = dict(os.environ, HELMDECK_DATA_ROOT=sandbox, HELMDECK_UPDATE_SCRIPT=stub)
 
     # THE GATE: prove the sandbox env really redirects the daemon's data root
     got = subprocess.run(
@@ -121,6 +126,11 @@ def main():
         check(denv.get("HELMDECK_DATA_ROOT") == sandbox, "...and it runs on the sandbox data root")
         check(os.path.getsize(os.path.join(sandbox, "daemon.out.log")) > 0 if os.path.exists(os.path.join(sandbox, "daemon.out.log")) else False,
               "its output went to the sandbox daemon.out.log, not the live one")
+
+        tlog = os.path.join(sandbox, "tray-rs.log")
+        got = wait_for(lambda: os.path.exists(tlog) and "update: stub-ok" in open(tlog, encoding="utf-8").read(), 30)
+        check(got is not None, "the update thread ran the engine and logged its answer (%.1fs)" % (got if got is not None else -1))
+        check("daemon spawned, pid %d" % dpid in open(tlog, encoding="utf-8").read(), "the tray log names the daemon it spawned")
 
         # steady state, then the resilience beat
         time.sleep(3)

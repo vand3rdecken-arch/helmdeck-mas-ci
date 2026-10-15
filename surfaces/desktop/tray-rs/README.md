@@ -10,7 +10,7 @@ opens the web UI, restarts the daemon, toggles autostart.
     helmdeck-tray --once                       # state as JSON (debug build prints; release is a GUI binary)
     helmdeck-tray --dump-icon DIR              # icon-up.png / icon-down.png
     helmdeck-tray --run-for N                  # leave through the quit path after N s (tests, benchmarks)
-    cargo test                                 # 11 unit tests, incl. spawn/adopt/respawn against a real process
+    cargo test                                 # 14 unit tests, incl. spawn/adopt/respawn against a real process
 
 Same contract as tray.py: health by ANY http reply on `/system/health` (never `/`,
 which redirects to the web UI - the 2026-08-29 eviction war), adopt before spawn,
@@ -30,10 +30,21 @@ Switching never stops the daemon; the new tray adopts it by health. Re-run `rust
 after a rebuild: the exe is COPIED so `cargo clean` cannot empty the autostart.
 Starting the Python tray by hand takes autostart back (tray.py repairs the Run value).
 
-## Deliberately NOT ported (debt `rust-tray-no-desktop-update`)
+## Desktop-shell update (debt `rust-tray-no-desktop-update`, paid)
 
-- Desktop-shell auto-update (`desktop_update.py`): the Electron shell is switched off.
-- Local relay.py + cloudflared supervision: the Cloudflare Worker serves the relay.
+The update engine stays ONE Python file, `surfaces/desktop/desktop_update.py`
+(HTTPS, hashing, the staged swap). The tray runs `desktop_update.py --once` from its
+own thread on Paseo's cadence (30 min, 10 s retry while a download is pending) and
+shows the answer as the menu line "Update: ...". `tray.py` calls the same two
+functions, so there is a single copy. Every spawn, update answer and quit goes to
+`<data dir>/tray-rs.log`.
+
+## Deliberately NOT ported
+
+- Local relay.py + cloudflared supervision: retired, not ported. The Cloudflare
+  Worker has served the public relay since 2026-09-22 and nothing on this PC may
+  listen for the phone any more. `tray_switch.py python` restores the old supervisor
+  if a rollback is ever needed.
 - Autostart REPAIR at start: only the menu item and `tray_switch.py` write the Run key.
 
 ## Measured (2026-10-15, side by side against the live daemon, 60 s)

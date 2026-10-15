@@ -276,6 +276,131 @@ where
     }
 }
 
+// ------------------------------------------------------------ desktop update
+
+/// Paseo's cadence, same numbers as desktop_update.py: a silent check every 30
+/// minutes, a retry after 10 seconds while a download is mid-flight.
+pub const UPDATE_EVERY: Duration = Duration::from_secs(30 * 60);
+pub const UPDATE_RETRY: Duration = Duration::from_secs(10);
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct UpdateResult {
+    pub text: String,
+    pub retry: bool,
+}
+
+pub fn next_update_delay(r: &UpdateResult) -> Duration {
+    if r.retry { UPDATE_RETRY } else { UPDATE_EVERY }
+}
+
+/// The engine prints ONE json line (`{"text":..,"retry":..}`); take the last
+/// line that parses, so a stray warning before it cannot hide the answer.
+pub fn parse_update_line(stdout: &str) -> Option<UpdateResult> {
+    stdout.lines().rev().find_map(|l| {
+        let v: serde_json::Value = serde_json::from_str(l.trim()).ok()?;
+        Some(UpdateResult {
+            text: v.get("text")?.as_str()?.to_string(),
+            retry: v.get("retry").and_then(|r| r.as_bool()).unwrap_or(false),
+        })
+    })
+}
+
+/// python.exe (console subsystem, so stdout is capturable) next to the
+/// pythonw.exe the daemon uses; PATH as the fallback.
+pub fn find_python_console() -> Option<PathBuf> {
+    if let Some(w) = find_python() {
+        let c = w.with_file_name("python.exe");
+        if c.is_file() {
+            return Some(c);
+        }
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|d| d.join("python.exe"))
+        .find(|p| p.is_file())
+}
+
+/// Run `python <args>` hidden, wait at most `limit`, return its stdout.
+pub fn run_python(python: &Path, args: &[&str], cwd: &Path, limit: Duration) -> io::Result<String> {
+    let mut child = Command::new(python)
+        .args(args)
+        .current_dir(cwd)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let start = std::time::Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            break;
+        }
+        if start.elapsed() > limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "update check timed out"));
+        }
+        sleep(Duration::from_millis(100));
+    }
+    let mut out = String::new();
+    if let Some(mut so) = child.stdout.take() {
+        let _ = so.read_to_string(&mut out);
+    }
+    Ok(out)
+}
+
+/// One update cycle through the shared Python engine (desktop_update.py):
+/// HTTPS, hashing and the staged swap stay in the ONE place that has them.
+pub fn run_update_once(root: &Path, python: &Path, data: &Path) -> UpdateResult {
+    // HELMDECK_UPDATE_SCRIPT: test seam (the e2e test must not touch the real installed shell)
+    let script = std::env::var_os("HELMDECK_UPDATE_SCRIPT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("surfaces").join("desktop").join("desktop_update.py"));
+    let feed = data.join("relay_feed.json");
+    match run_python(
+        python,
+        &[&script.to_string_lossy(), "--once", &feed.to_string_lossy()],
+        root,
+        Duration::from_secs(120),
+    ) {
+        Ok(out) => parse_update_line(&out).unwrap_or(UpdateResult {
+            text: "Fehler, neuer Versuch: keine Antwort".into(),
+            retry: true,
+        }),
+        Err(e) => UpdateResult { text: format!("Fehler, neuer Versuch: {}", e), retry: true },
+    }
+}
+
+// ------------------------------------------------------------------------ log
+
+/// `YYYY-MM-DD HH:MM:SS` in UTC from a unix timestamp (no date crate needed).
+pub fn utc_stamp(secs: u64) -> String {
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // civil-from-days (Howard Hinnant)
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// One line into `<data dir>/tray-rs.log` (spawns, restarts, update results,
+/// quit): the evidence a supervisor that has no console owes. Never fails the tray.
+pub fn log_line(data: &Path, msg: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(data.join("tray-rs.log")) {
+        let _ = writeln!(f, "{} {}", utc_stamp(now), msg);
+    }
+}
+
 // ------------------------------------------------------------ single instance
 
 /// One tray per daemon port per login session: a named mutex, Local\ so it
@@ -551,6 +676,40 @@ mod tests {
             c,
             r#""C:\Program Files\HelmDeck\helmdeck-tray.exe" --root "C:\Users\x y\swarmdeck""#
         );
+    }
+
+    #[test]
+    fn update_answer_is_parsed_and_scheduled_like_paseo() {
+        let ok = parse_update_line("{\"text\": \"aktuell\", \"retry\": false}\n").unwrap();
+        assert_eq!(ok, UpdateResult { text: "aktuell".into(), retry: false });
+        assert_eq!(next_update_delay(&ok), Duration::from_secs(1800));
+        let bad = parse_update_line("warning: x\n{\"text\": \"Fehler, neuer Versuch: t\", \"retry\": true}\n").unwrap();
+        assert!(bad.retry, "a stray line before the answer does not hide it");
+        assert_eq!(next_update_delay(&bad), Duration::from_secs(10), "retry fast while a download is pending");
+        assert!(parse_update_line("not json\n\n").is_none());
+        assert!(parse_update_line("{\"retry\": true}").is_none(), "no text, no answer");
+    }
+
+    #[test]
+    fn a_real_python_child_is_run_and_its_answer_read_and_a_hang_is_cut() {
+        let py = find_python_console().expect("python.exe");
+        let out = run_python(
+            &py,
+            &["-c", "print('noise'); print('{\"text\": \"aktuell\", \"retry\": false}')"],
+            Path::new("."),
+            Duration::from_secs(20),
+        )
+        .unwrap();
+        assert_eq!(parse_update_line(&out).unwrap().text, "aktuell");
+        let hung = run_python(&py, &["-c", "import time; time.sleep(30)"], Path::new("."), Duration::from_millis(600));
+        assert_eq!(hung.unwrap_err().kind(), io::ErrorKind::TimedOut, "a hung check is killed, never waited on forever");
+    }
+
+    #[test]
+    fn utc_stamp_is_a_real_date() {
+        assert_eq!(utc_stamp(0), "1970-01-01 00:00:00");
+        assert_eq!(utc_stamp(1_791_990_000), "2026-10-14 15:00:00");
+        assert_eq!(utc_stamp(1_709_164_800 + 86_399), "2024-02-29 23:59:59", "leap day");
     }
 
     #[test]

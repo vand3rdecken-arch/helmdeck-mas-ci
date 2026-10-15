@@ -336,72 +336,12 @@ def _stop_relay(sweep=False):
 # is untouched; this runs in its own thread.
 
 def _packaged_appdist():
-    """Where the installed Electron shell keeps the bundle it serves. Derived
-    from the NSIS installer's own uninstall registration (evidence, not a
-    guessed path). electron-builder's NSIS omits InstallLocation and the owner
-    installs to a custom dir (allowToChangeInstallationDirectory), so the
-    install dir comes from the UninstallString/DisplayIcon paths that key
-    records. Fallback: the default per-user dir. None when no packaged install
-    exists - then there is nothing to update here."""
-    cands = []
-    if winreg:
-        try:
-            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                               r"Software\Microsoft\Windows\CurrentVersion\Uninstall")
-        except OSError:
-            k = None
-        if k:
-            try:
-                i = 0
-                while True:
-                    try:
-                        sub = winreg.EnumKey(k, i); i += 1
-                    except OSError:
-                        break
-                    try:
-                        with winreg.OpenKey(k, sub) as sk:
-                            name, _ = winreg.QueryValueEx(sk, "DisplayName")
-                            if not str(name).strip().lower().startswith("helmdeck"):
-                                continue
-                            for val in ("InstallLocation", "UninstallString", "DisplayIcon"):
-                                try:
-                                    v, _ = winreg.QueryValueEx(sk, val)
-                                except OSError:
-                                    continue
-                                p = str(v).strip().strip('"').split('"')[0].strip()
-                                d = p if val == "InstallLocation" else os.path.dirname(p)
-                                if d:
-                                    cands.append(os.path.join(d, "resources", "app-dist"))
-                    except OSError:
-                        continue
-            finally:
-                k.Close()
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        cands.append(os.path.join(local, "Programs", "HelmDeck", "resources", "app-dist"))
-    for c in cands:
-        if os.path.isdir(c):
-            return c
-    return None
+    return desktop_update.packaged_appdist()      # one copy, shared with the Rust tray
 
 
 def _update_once():
     """One silent cycle. Returns (status-text, retry-soon)."""
-    base = desktop_update.read_relay_url(RELAY_FEED) or desktop_update.DEFAULT_FEED
-    target = _packaged_appdist()
-    if not target:
-        return "aus (keine Desktop-App installiert)", False
-    try:
-        # while the Electron shell serves, only STAGE - the shell swaps on its
-        # own quit/start (Paseo installs on quit, never under a live app)
-        r = desktop_update.sync_target(base, target,
-                                       allow_swap=lambda: not desktop_update.shell_busy())
-        return {"up-to-date": "aktuell",
-                "staged": "bereit – App übernimmt beim Beenden",
-                "applied": "angewendet ✓"}.get(r, r), False
-    except Exception as e:
-        # Paseo: a failed SILENT check is logged and retried, never surfaced
-        return "Fehler, neuer Versuch: %s" % str(e)[:60], True
+    return desktop_update.update_once(RELAY_FEED)
 
 
 def _update_loop(icon):

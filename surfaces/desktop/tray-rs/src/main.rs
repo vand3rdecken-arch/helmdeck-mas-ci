@@ -33,6 +33,7 @@ struct Snapshot {
 
 enum UserEvent {
     State(Snapshot),
+    Update(String),
     Menu(MenuEvent),
     DoubleClick,
     Quit,
@@ -100,6 +101,7 @@ fn main() {
         std::process::exit(4); // another tray already supervises this daemon port
     }
 
+    hd::log_line(&daemon_dir, &format!("tray start: root {}, port {port}{}", root.display(), if watch_only { ", watch-only" } else { "" }));
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
@@ -127,7 +129,11 @@ fn main() {
                     return Err(std::io::Error::other("watch-only"));
                 }
                 let py = python.clone().ok_or_else(|| std::io::Error::other("no pythonw.exe"))?;
-                hd::spawn_daemon(&spawn_root, &py, port)
+                let child = hd::spawn_daemon(&spawn_root, &py, port);
+                if let Ok(c) = &child {
+                    hd::log_line(&hd::data_dir(&spawn_root), &format!("daemon spawned, pid {}", c.id()));
+                }
+                child
             },
         );
         let mut last: Option<Snapshot> = None;
@@ -159,9 +165,34 @@ fn main() {
         }
     });
 
+    // ---- desktop-shell update thread: the shared Python engine, Paseo's cadence.
+    // Not run in --watch-only (that mode must have no side effects) or --no-update.
+    let (upd_tx, upd_rx) = mpsc::channel::<()>();
+    let upd_thread = if watch_only || args.iter().any(|a| a == "--no-update") {
+        None
+    } else {
+        let (u_root, u_data, u_proxy) = (root.clone(), daemon_dir.clone(), proxy.clone());
+        Some(std::thread::spawn(move || {
+            let Some(py) = hd::find_python_console() else {
+                let _ = u_proxy.send_event(UserEvent::Update("aus (kein Python gefunden)".into()));
+                return;
+            };
+            loop {
+                let r = hd::run_update_once(&u_root, &py, &u_data);
+                hd::log_line(&u_data, &format!("update: {}", r.text));
+                let _ = u_proxy.send_event(UserEvent::Update(r.text.clone()));
+                // the sender is dropped on quit: the wait ends at once
+                if let Err(mpsc::RecvTimeoutError::Disconnected) = upd_rx.recv_timeout(hd::next_update_delay(&r)) {
+                    return;
+                }
+            }
+        }))
+    };
+
     // ---- menu (items live on the main thread; updated from State events)
     let m_daemon = MenuItem::new("Daemon: …", false, None);
     let m_relay = MenuItem::new("Relay: …", false, None);
+    let m_update = MenuItem::new("Update: prüft …", false, None);
     let m_open = MenuItem::new("Web-UI / Handy koppeln", true, None);
     let m_restart = MenuItem::new("Daemon neu starten", !watch_only, None);
     let m_auto = CheckMenuItem::new("Bei Anmeldung starten", true, hd::autostart_value().is_some(), None);
@@ -170,6 +201,7 @@ fn main() {
     menu.append_items(&[
         &m_daemon,
         &m_relay,
+        &m_update,
         &PredefinedMenuItem::separator(),
         &m_open,
         &m_restart,
@@ -195,6 +227,10 @@ fn main() {
     let mut tray = None;
     let mut sup = Some(sup);
     let mut tx = Some(tx);
+    let mut upd_tx = Some(upd_tx);
+    let _upd_thread = upd_thread; // detached on quit: a running check must not hold the exit
+    let p_quit = proxy.clone();
+    let log_dir = daemon_dir.clone();
     let auto_cmd = hd::autostart_cmd(&exe, &root);
 
     event_loop.run(move |event, _, flow| {
@@ -217,7 +253,12 @@ fn main() {
                 }
             }
             Event::UserEvent(UserEvent::DoubleClick) => open_ui(port),
+            Event::UserEvent(UserEvent::Update(text)) => {
+                m_update.set_text(format!("Update: {text}"));
+            }
             Event::UserEvent(UserEvent::Quit) => {
+                hd::log_line(&log_dir, "tray quit");
+                upd_tx.take(); // ends the update thread's wait
                 if let Some(t) = tx.take() {
                     let _ = t.send(Cmd::Quit);
                 }
@@ -240,14 +281,7 @@ fn main() {
                         m_auto.set_checked(!on); // the write failed: show the truth
                     }
                 } else if e.id == id_quit {
-                    if let Some(t) = tx.take() {
-                        let _ = t.send(Cmd::Quit);
-                    }
-                    if let Some(h) = sup.take() {
-                        let _ = h.join();
-                    }
-                    tray.take();
-                    *flow = ControlFlow::Exit;
+                    let _ = p_quit.send_event(UserEvent::Quit); // one quit path for menu and --run-for
                 }
             }
             _ => {}

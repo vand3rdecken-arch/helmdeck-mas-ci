@@ -216,3 +216,92 @@ def sync_target(base, app_dist, allow_swap):
         return "staged"
     apply_staged(app_dist, pending)
     return "applied"
+
+
+def packaged_appdist():
+    """Where the installed Electron shell keeps the bundle it serves. Derived
+    from the NSIS installer's own uninstall registration (evidence, not a
+    guessed path). electron-builder's NSIS omits InstallLocation and the owner
+    installs to a custom dir (allowToChangeInstallationDirectory), so the
+    install dir comes from the UninstallString/DisplayIcon paths that key
+    records. Fallback: the default per-user dir. None when no packaged install
+    exists - then there is nothing to update here.
+    (Moved here from tray.py so the Python and the Rust tray share ONE copy.)"""
+    try:
+        import winreg
+    except ImportError:
+        winreg = None
+    cands = []
+    if winreg:
+        try:
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                               r"Software\Microsoft\Windows\CurrentVersion\Uninstall")
+        except OSError:
+            k = None
+        if k:
+            try:
+                i = 0
+                while True:
+                    try:
+                        sub = winreg.EnumKey(k, i)
+                        i += 1
+                    except OSError:
+                        break
+                    try:
+                        with winreg.OpenKey(k, sub) as sk:
+                            name, _ = winreg.QueryValueEx(sk, "DisplayName")
+                            if not str(name).strip().lower().startswith("helmdeck"):
+                                continue
+                            for val in ("InstallLocation", "UninstallString", "DisplayIcon"):
+                                try:
+                                    v, _ = winreg.QueryValueEx(sk, val)
+                                except OSError:
+                                    continue
+                                path = str(v).strip().strip('"').split('"')[0].strip()
+                                d = path if val == "InstallLocation" else os.path.dirname(path)
+                                if d:
+                                    cands.append(os.path.join(d, "resources", "app-dist"))
+                    except OSError:
+                        continue
+            finally:
+                k.Close()
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        cands.append(os.path.join(local, "Programs", "HelmDeck", "resources", "app-dist"))
+    for c in cands:
+        if os.path.isdir(c):
+            return c
+    return None
+
+
+def update_once(relay_feed_path):
+    """One silent cycle. Returns (status-text, retry-soon) - the exact strings
+    the Python tray's menu showed, so either tray displays the same thing."""
+    base = read_relay_url(relay_feed_path) or DEFAULT_FEED
+    target = packaged_appdist()
+    if not target:
+        return "aus (keine Desktop-App installiert)", False
+    try:
+        # while the Electron shell serves, only STAGE - the shell swaps on its
+        # own quit/start (Paseo installs on quit, never under a live app)
+        r = sync_target(base, target, allow_swap=lambda: not shell_busy())
+        return {"up-to-date": "aktuell",
+                "staged": "bereit – App übernimmt beim Beenden",
+                "applied": "angewendet ✓"}.get(r, r), False
+    except Exception as e:
+        # Paseo: a failed SILENT check is logged and retried, never surfaced
+        return "Fehler, neuer Versuch: %s" % str(e)[:60], True
+
+
+if __name__ == "__main__":
+    # `desktop_update.py --once [relay_feed.json]`: one cycle, one JSON line on
+    # stdout - how the Rust tray runs this engine on Paseo's cadence without
+    # re-implementing HTTPS + hashing + the staged swap in Rust.
+    import sys
+    if "--once" not in sys.argv:
+        sys.exit("usage: desktop_update.py --once [relay_feed.json]")
+    rest = [a for a in sys.argv[1:] if a != "--once"]
+    feed = rest[0] if rest else os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "daemon", "relay_feed.json")
+    text, retry = update_once(feed)
+    print(json.dumps({"text": text, "retry": retry}, ensure_ascii=True))
