@@ -199,12 +199,22 @@ def _tail_lines(path, max_bytes=1_200_000):
 # dropped the first ~80% of the conversation from the chat (2026-08-20,
 # "full conversation not shown"). A shrunk file means rotation -> full reparse.
 _OBJS_LOCK = threading.Lock()
-_OBJS_CACHE = {}       # path -> {"read": consumed bytes, "buf": partial line, "objs": [dict]}
-_OBJS_CACHE_MAX = 6    # sessions watched at once; each can hold a few MB of objects
+_OBJS_CACHE = {}       # path -> {"read": consumed bytes, "buf": partial line, "objs": [dict], "sz": [int], "bytes": int}
+_OBJS_CACHE_MAX = 4    # sessions watched at once
+# BOUNDED (owner 2026-10-15). This used to parse the WHOLE file on the first call
+# and keep every object for the life of the daemon. Measured on Henry's real
+# 375 MB board session: +930 MB private that is never given back, a 2.9 GB peak
+# while parsing - while read_transcript() only ever returns the last `limit` (400)
+# steps. So: the first read takes a WINDOW from the end of the file, later reads
+# only the appended bytes, and each entry keeps at most a BUDGET of JSON bytes
+# (oldest records drop off the front). A shrunk file means rotation -> fresh read.
+_OBJS_WINDOW = 16 * 1024 * 1024    # first read: at most this much, from the end
+_OBJS_BUDGET = 24 * 1024 * 1024    # JSON bytes one cache entry may hold
 
 
 def _session_objects(path):
-    """All parsed json objects of a session .jsonl, reading only appended bytes."""
+    """Parsed json objects of the TAIL of a session .jsonl (see the bound above),
+    reading only appended bytes after the first call."""
     try:
         size = os.path.getsize(path)
     except OSError:
@@ -212,19 +222,25 @@ def _session_objects(path):
     with _OBJS_LOCK:
         ent = _OBJS_CACHE.get(path)
         if ent is None or size < ent["read"]:
-            ent = {"read": 0, "buf": b"", "objs": []}
+            ent = {"read": 0, "buf": b"", "objs": [], "sz": [], "bytes": 0}
             _OBJS_CACHE[path] = ent
             while len(_OBJS_CACHE) > _OBJS_CACHE_MAX:
                 _OBJS_CACHE.pop(next(iter(k for k in _OBJS_CACHE if k != path)))
         if size > ent["read"]:
+            offset, skip_partial = ent["read"], False
+            if offset == 0 and size > _OBJS_WINDOW:
+                offset, skip_partial = size - _OBJS_WINDOW, True
             with open(path, "rb") as f:
-                f.seek(ent["read"])
+                f.seek(offset)
                 chunk = f.read()
-            ent["read"] += len(chunk)
+            ent["read"] = offset + len(chunk)
+            if skip_partial:                  # we landed mid-line: the first line is not ours
+                i = chunk.find(b"\n")
+                chunk = chunk[i + 1:] if i >= 0 else b""
             buf = ent["buf"] + chunk
             nl = buf.rfind(b"\n")
             if nl < 0:
-                ent["buf"] = buf          # still mid-line (agent mid-flush)
+                ent["buf"] = buf              # still mid-line (agent mid-flush)
             else:
                 complete, ent["buf"] = buf[:nl], buf[nl + 1:]
                 for line in complete.decode("utf-8", "replace").split("\n"):
@@ -232,9 +248,20 @@ def _session_objects(path):
                     if not line:
                         continue
                     try:
-                        ent["objs"].append(json.loads(line))
+                        obj = json.loads(line)
                     except ValueError:
                         continue
+                    ent["objs"].append(obj)
+                    ent["sz"].append(len(line))
+                    ent["bytes"] += len(line)
+                if ent["bytes"] > _OBJS_BUDGET:
+                    k, over = 0, ent["bytes"] - _OBJS_BUDGET
+                    while k < len(ent["sz"]) - 1 and over > 0:
+                        over -= ent["sz"][k]
+                        ent["bytes"] -= ent["sz"][k]
+                        k += 1
+                    del ent["objs"][:k]
+                    del ent["sz"][:k]
         return ent["objs"]
 
 
