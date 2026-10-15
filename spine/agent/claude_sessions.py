@@ -146,6 +146,40 @@ def _find_transcript(session_id):
     return None
 
 
+def last_compact_summary(session_id, max_bytes=8_000_000):
+    """Text of the NEWEST compaction summary the CLI wrote into this session's
+    transcript (the user record flagged `isCompactSummary`), or "". Reads only
+    the tail: a fresh compaction sits at the end, and the transcript can be
+    hundreds of MB (Henry's board session was 374 MB), which must never be
+    loaded to answer "what did the last compaction say"."""
+    path = _find_transcript(session_id)
+    if not path:
+        return ""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+            data = f.read()
+    except OSError:
+        return ""
+    for ln in reversed(data.split(b"\n")):
+        if b'"isCompactSummary"' not in ln:
+            continue
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            continue
+        if not d.get("isCompactSummary"):
+            continue
+        c = (d.get("message") or {}).get("content")
+        if isinstance(c, str):
+            return c
+        return "\n".join(b.get("text", "") for b in (c or [])
+                         if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
 def _tail_lines(path, max_bytes=1_200_000):
     """Read only the last ~max_bytes so a huge transcript doesn't blow up polls."""
     size = os.path.getsize(path)

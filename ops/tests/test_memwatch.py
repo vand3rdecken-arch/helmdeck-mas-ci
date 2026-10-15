@@ -1,14 +1,19 @@
 # -*- coding: utf-8 -*-
-"""memwatch (spine/ops/memwatch.py) must do its one job: name the code LINE
-that holds growing memory, write it to the event log, and switch its own
-expensive half off when the window is over.
+"""memwatch (spine/ops/memwatch.py): the cheap sampler that stays after the
+tracemalloc diagnosis window was removed (2026-10-15).
+
+  - process_memory reads real private / working-set / peak numbers via ctypes;
+  - sample() writes ONE `mem` event with them into the event log;
+  - the peak working set is a high-water mark: it SEES a transient spike that a
+    10-minute raster would miss (the old prune loaded 374 MB for two seconds);
+  - starting memwatch never turns tracemalloc on (it slowed allocation-heavy
+    paths ~2.8x), and report() carries no allocation-site data any more.
 
 Run: py -3.12 ops/tests/test_memwatch.py
 """
 import os
 import sys
 import tempfile
-import time
 import tracemalloc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -32,56 +37,37 @@ def check(cond, msg):
         _fails.append(msg)
 
 
-_LEAK = []
-
-
-def _the_leaky_line():
-    _LEAK.append(bytearray(1024 * 1024))                  # <- the line memwatch must name
-
-
 def mem_events():
     return [d for d in events.read_events() if d.get("kind") == "mem"]
 
 
-def test_process_memory_is_read():
-    priv, ws = memwatch.process_memory()
-    check(priv and priv > 10 and ws and ws > 10, "private/working-set size come back as real numbers (%.0f / %.0f MB)" % (priv or 0, ws or 0))
+priv, ws, peak = memwatch.process_memory()
+check(priv and priv > 10 and ws and ws > 10 and peak and peak >= ws,
+      "private / working set / peak come back as real numbers (%.0f / %.0f / %.0f MB)" % (priv or 0, ws or 0, peak or 0))
 
+memwatch.sample()
+ev = mem_events()
+check(len(ev) == 1 and "private" in str(ev[0]) and "peak" in str(ev[0]) and "threads" in str(ev[0]),
+      "sample() writes one `mem` event with size, peak and thread count")
 
-def test_names_the_growing_line():
-    tracemalloc.stop()
-    memwatch._baseline = None
-    memwatch._started = time.time() - memwatch.BASELINE_AFTER - 1
-    tracemalloc.start(1)
-    memwatch.sample()                                      # takes the baseline, logs a line
-    first = mem_events()
-    check(len(first) == 1 and "private" in str(first[0]), "a `mem` event with the process size is written to the event log")
-    for _ in range(40):
-        _the_leaky_line()
-    rep = memwatch.report()
-    sites = [g["site"] for g in rep["grew_since_baseline_kib"]]
-    check(any(s.endswith("test_memwatch.py:%d" % (_the_leaky_line.__code__.co_firstlineno + 1)) for s in sites[:3]),
-          "the leaking line is among the top growers: %s" % (sites[:2],))
-    top = rep["grew_since_baseline_kib"][0]
-    check(top["plus_kib"] >= 30 * 1024, "...with its growth (%.0f KiB for 40 MiB allocated)" % top["plus_kib"])
-    memwatch.sample()
-    last = str(mem_events()[-1])
-    check("GREW:" in last and "test_memwatch.py" in last, "the logged event names that line too")
+before = memwatch.process_memory()[2]
+spike = bytearray(120 * 1024 * 1024)
+for i in range(0, len(spike), 4096):                       # touch every page: it must enter the working set
+    spike[i] = 1
+del spike
+after = memwatch.process_memory()
+check(after[2] >= before + 100, "a freed 120 MB spike still shows in the peak (%.0f -> %.0f MB) while the live size fell back (%.0f MB)"
+      % (before, after[2], after[1]))
 
+check(not tracemalloc.is_tracing(), "memwatch does not turn tracemalloc on")
+memwatch.start(every=3600)
+check(not tracemalloc.is_tracing(), "...nor does start()")
+rep = memwatch.report()
+check(rep["private_mb"] and "peak_working_set_mb" in rep and "grew_since_baseline_kib" not in rep,
+      "report() is the cheap shape (no allocation-site data)")
 
-def test_the_expensive_half_switches_itself_off():
-    memwatch._started = time.time() - memwatch.TRACE_HOURS * 3600 - 5
-    memwatch.sample()
-    check(not tracemalloc.is_tracing(), "after TRACE_HOURS tracemalloc is stopped")
-    check("window over" in str(mem_events()[-1]), "...and the event says so; sampling itself continues")
-
-
-if __name__ == "__main__":
-    test_process_memory_is_read()
-    test_names_the_growing_line()
-    test_the_expensive_half_switches_itself_off()
-    print()
-    if _fails:
-        print("FAILED: %d check(s)" % len(_fails))
-        sys.exit(1)
-    print("ALL GREEN - memwatch names the growing line and ends its own cost")
+print()
+if _fails:
+    print("FAILED: %d check(s)" % len(_fails))
+    sys.exit(1)
+print("ALL GREEN - memwatch samples size and peak, and costs nothing between samples")

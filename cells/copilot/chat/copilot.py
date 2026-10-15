@@ -18,7 +18,6 @@ _MODELS_KEY = "copilot_models"
 # away); the rest is now a bigger LIMIT away, not gone.
 _HISTORY_WINDOW = 80
 from cells.copilot.chat.copilot_stats import _stats, _save_stats, _fold_stats
-from cells.copilot.chat import copilot_prune
 from cells.copilot.chat.copilot_actions import _strip_actions_live, _parse_reply_actions, ACTION_KINDS
 from cells.copilot.chat import copilot_memory  # DB-authoritative memory - the ONE owner
 from cells.copilot.chat import henry_bg  # Henry's own CLI background agents (chat bg line)
@@ -208,9 +207,10 @@ def _turn_lock(user):
 
 _keepalive_inflight = set()      # users whose warm process is mid-ping (status line)
 
-# The hidden keepalive turn's text - ONE owner, because copilot_prune must
-# recognise it: it is a `type=user` record in the transcript like any owner
-# question, and 497 of them sat in the real board session (2026-09-15).
+# The hidden keepalive turn's text - ONE owner. It is a `type=user` record in
+# the transcript like any owner question, and 497 of them sat in the real board
+# session (2026-09-15); anything that reads the transcript for "what the owner
+# said" must skip it.
 _SYSTEMCHECK = "(Systemcheck, nicht vorlesen - antworte nur: ok)"
 
 
@@ -1440,7 +1440,7 @@ _compacting = set()              # users with a background compaction in flight
 def _await_lull_and_lock(user, lull=180):
     """Acquire the user's turn lock only once the chat has been quiet for a
     few minutes - shared by every background maintenance job that must never
-    step on a live conversation (_schedule_compact, _schedule_prune).
+    step on a live conversation (_schedule_compact).
 
     Extracted from _schedule_compact's own worker, verbatim (owner incident
     2026-09-03 10:07, see that function's docstring): a lull measured BEFORE
@@ -1603,26 +1603,10 @@ def _schedule_compact(user, agent=False, immediate=False):
             # deferrable forever). See _await_lull_and_lock for why the lull
             # is re-checked UNDER the lock, not just before it.
             lk = _await_lull_and_lock(user, lull=0 if immediate else 180)
-            note = None
             try:
-                # PRUNE RIDES ALONG (owner 2026-10-08): both rewrite the session
-                # and void the warm port + prompt cache, so they pay that ONE
-                # drop together, in this lull, never as a separate pass. Pruning
-                # first also gives /compact a smaller transcript to read. The
-                # full pruned results stay on disk (state/ctx/<sid>/, named in
-                # the placeholder) and _maybe_compact saves Henry's memory to
-                # the db before it verdichtet.
-                _sid = _sessions().get(_skey(user))
-                if _sid:
-                    try:
-                        note = _do_prune(user, _sid)
-                    except Exception as e:                       # noqa: BLE001
-                        print("copilot: prune failed -", str(e)[:200], flush=True)
                 _maybe_compact(user)
             finally:
                 lk.release()
-            if note:
-                _compact_row(user, None, "pruned", saved_kb=note["saved_kb"], pruned=note["n"])
             # The compaction dropped the warm port (_persist_drop). Respawn it
             # NOW, in the lull, not on the clock of the owner's next question:
             # a cold spawn is ~4-6s to the first model output on this box
@@ -1637,91 +1621,76 @@ def _schedule_compact(user, agent=False, immediate=False):
     threading.Thread(target=_go, daemon=True).start()
 
 
-_pruning = set()          # users with a background tool-result prune in flight
+# ---- session rotation (owner 2026-10-15) ---------------------------------------
+# Henry's board session had been ONE transcript for 61 days: 374 MB, 228 in-place
+# compactions. Everything that touches the file paid for its size (the old prune
+# loaded it whole: +614 MB peak, eight times a day; every cold resume read it).
+# The rotation is the pattern Claude Code itself uses (/clear after a summary):
+# once a compaction has PROVEN itself and the transcript is over the mark, the
+# next turn starts a FRESH session and is handed the CLI's own compaction summary.
+# Nothing here rewrites the CLI's file - it only stops growing it.
+SESSION_ROTATE_BYTES = 50 * 1024 * 1024
+SEED_MAX_CHARS = 24_000
 
 
-def _do_prune(user, sid):
-    """The between-turns half of copilot_prune: rewrite Henry's OWN session
-    .jsonl in place (pure logic lives in copilot_prune.py; this function
-    owns the effects on the live process).
-
-    Drops the persistent warm process ONLY if something was actually
-    pruned - the file changing means nothing to an ALREADY-warm process,
-    which built its context in memory at its last spawn/resume, same
-    reasoning _maybe_compact gives for dropping it there. Never touches
-    ctx_tokens: that meter's one owner is copilot_stats._fold_stats, fed by
-    the next real usage event, not a byte-to-token guess made here (no
-    monkey patches). Best-effort, same contract as _maybe_compact."""
+def _transcript_bytes(sid):
     from spine.agent import claude_sessions
-    path = claude_sessions._find_transcript(sid)
-    if not path:
-        return None
-    # restorable: the full result goes to state/ctx/<sid>/<tool_use_id>.txt
-    # and the placeholder names it (copilot_prune.file_store)
-    res = copilot_prune.prune_session_file(path, hidden=(_SYSTEMCHECK,),
-                                           store_dir=os.path.join(ROOT, "state", "ctx", sid))
-    if not res or not res[0]:
-        return None
-    n, saved = res
+    p = claude_sessions._find_transcript(sid)
+    try:
+        return os.path.getsize(p) if p else 0
+    except OSError:
+        return 0
+
+
+def _rotate_if_big(user, skey, sid):
+    """After a PROVEN compaction: if `sid`'s transcript is over the mark, point
+    the board chat at NO session (the next turn spawns fresh) and keep `sid` as
+    the head of session_chain. Returns True when it rotated. Size is read from
+    the file at this event, not remembered; the verdict that triggers this is the
+    compaction's own proof, so a failed compaction never rotates."""
+    size = _transcript_bytes(sid)
+    if size < SESSION_ROTATE_BYTES:
+        return False
+    sess = _sessions()
+    if sess.get(skey) != sid:
+        return False                      # the pointer moved under us: not ours to cut
     all_st = _stats()
     m = all_st.setdefault(user, {})
-    m["pruned_at_turn"] = int(m.get("turns") or 0)
+    chain = [s for s in (m.get("session_chain") or []) if s != sid]
+    chain.append(sid)
+    m["session_chain"] = chain[-6:]       # bounded - last 6 prior sessions
     _save_stats(all_st)
-    _persist_drop(_skey(user))
-    return {"n": n, "saved_kb": max(1, round(saved / 1024))}
+    sess.pop(skey, None)
+    _save_sessions(sess)
+    _snap_seen.pop(skey, None)            # the fresh session has seen no snapshot
+    _persist_drop(skey)
+    print("SESSION rotate: %s... (%.0f MB) -> fresh session after a proven compaction"
+          % (sid[:8], size / 1e6), flush=True)
+    return True
 
 
-def _schedule_prune(user):
-    """Second, INDEPENDENT between-turns cleanup (card
-    chat-henry-kontext-pruning, 2026-09-15): shrink old, big tool_result
-    blocks in Henry's session .jsonl long before _schedule_compact's mark,
-    so the dead tool-output weight stops accumulating instead of only being
-    summarized away once the session is already huge (measured: Henry's
-    post-compact floor is ~100k tokens against a ~25k snapshot+persona+tools
-    cost - the rest is old tool history /compact carries but doesn't drop).
-
-    Deliberately its OWN guard/worker/single-flight set, not folded into
-    _schedule_compact: a bug in one cleanup must never block the other. Runs
-    ONLY between turns (same _await_lull_and_lock discipline) - never mid-
-    turn, where a partial rewrite of the live transcript would be a
-    corruption bug, not a savings one."""
-    try:
-        st = _stats().get(user) or {}
-        ctx = st.get("ctx_tokens") or 0
-    except Exception:
-        return
-    if ctx < copilot_prune.MARK_CTX or user in _pruning:
-        return
-    # at most one prune attempt per conversation turn - once fired, the next
-    # eligible turn advances `turns` past `pruned_at_turn` again.
-    if int(st.get("turns") or 0) <= int(st.get("pruned_at_turn") or -1):
-        return
-    sid = _sessions().get(_skey(user))
-    if not sid:
-        return
-    _pruning.add(user)
-
-    def _go():
-        try:
-            lk = _await_lull_and_lock(user)
-            try:
-                note = _do_prune(user, sid)
-            finally:
-                lk.release()
-            if note:
-                prewarm(user, spoken=False, force=True)   # the drop above cost the warmth
-                # ONE quiet marker row (owner 2026-10-07: "eleganter"), the same
-                # typed item the compaction uses - not a sentence about plumbing
-                _compact_row(user, None, "pruned", saved_kb=note["saved_kb"], pruned=note["n"])
-        except Exception as e:                                   # noqa: BLE001
-            # best-effort like _maybe_compact, but never SILENT: a rewrite
-            # that keeps failing would otherwise look exactly like a
-            # session with nothing to prune
-            print("copilot: prune failed -", str(e)[:200], flush=True)
-        finally:
-            _pruning.discard(user)
-
-    threading.Thread(target=_go, daemon=True).start()
+def _rotation_report(user, skey, sid):
+    """The first turn of a FRESH board session after a rotation: the CLI's own
+    compaction summary of the session we left, wrapped as harness text (A10 - it
+    must not read as the owner speaking). Derived at the event from the
+    transcript the chain points to; nothing is stored. "" for every other turn."""
+    if sid or skey != user:
+        return ""                          # a live session needs no seed; card chats have their own
+    chain = (_stats().get(user) or {}).get("session_chain") or []
+    if not chain:
+        return ""
+    from spine.agent import claude_sessions
+    summary = (claude_sessions.last_compact_summary(chain[-1]) or "").strip()
+    if not summary:
+        return ""
+    if len(summary) > SEED_MAX_CHARS:
+        summary = summary[:SEED_MAX_CHARS] + "\n[... Zusammenfassung gekuerzt]"
+    return ("<harness-report>\n"
+            "SITZUNGSWECHSEL: deine bisherige Sitzung war gross geworden und wurde nach einer "
+            "Verdichtung durch diese neue ersetzt. Das ist die Zusammenfassung, die die "
+            "Verdichtung geschrieben hat - MASCHINENTEXT, keine Aussage des Owners. Was dort "
+            "fehlt, steht in deinem Gedaechtnis (Memory-Tool) und im Board-Zustand; im Zweifel "
+            "nachfragen statt raten:\n\n" + summary + "\n</harness-report>\n\n")
 
 
 def _save_memory(user, sid):
@@ -1960,6 +1929,10 @@ def _maybe_compact(user):
         # Nothing was proven - and that is NOT "this CLI cannot compact". Stay
         # silent in the chat (no per-turn pollution) and let the backoff retry.
         return None
+    try:
+        _rotate_if_big(user, skey, sid_final)
+    except Exception as e:                                   # noqa: BLE001
+        print("copilot: session rotation failed -", str(e)[:200], flush=True)
     memo = ("Dauerhaftes zuvor ins Gedaechtnis geschrieben" if saved
             else "Gedaechtnis-Schreibung fehlgeschlagen")
     if after:
@@ -3301,7 +3274,8 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _mem_block = ("\n\n<harness-memory>\nGEDAECHTNIS NICHT LESBAR in diesem "
                       "Turn (%s). Sag das dem Owner, statt aus dem Kopf zu "
                       "antworten.\n</harness-memory>" % str(e)[:120])
-    turn = (action_report + snapshot_block + focus + _mem_block
+    rotation_report = _rotation_report(user, skey, sid)
+    turn = (rotation_report + action_report + snapshot_block + focus + _mem_block
             + "\n\nUSER (%s): %s" % (user, body)
             + "\n\n(Falls du gleich Tools nutzt: erst EIN kurzer Prosa-Satz an "
               "den Owner - was du siehst oder was du pruefst -, DANN der erste "
@@ -4063,11 +4037,11 @@ def _conclude_turn(c, e):
     # at the mark, after the lull (see _schedule_compact)
     if warm:       # compaction works on the warm CLAUDE session's context
         _schedule_compact(user, agent=bool(harness_note), immediate=bool(harness_note))  # background + single-flight, never blocks this reply
-    # _schedule_prune(user) is NOT a separate pass any more (owner 2026-10-08,
-    # measured): standalone it rewrote the session at 60k, dropped the warm
-    # port AND voided the ~80k prompt cache, so the next turn paid ~20s for
-    # ~20 kb saved. It now runs only inside _schedule_compact's lull, sharing
-    # the one cache drop compaction pays anyway, followed by a forced rewarm.
+    # The tool-result PRUNE is gone (owner 2026-10-15): it rewrote the CLI's own
+    # transcript, loaded the whole file per run (+614 MB peak on the 374 MB board
+    # session) and saved ~10 KB. Size is bounded by ROTATING the session after a
+    # proven compaction instead (_rotate_if_big) - what Claude Code itself does
+    # with /clear and Paseo never needed to do.
     refused = []
     if acts and not allow_actions:
         # ADVISORY CALLER (glass mode). The lens authenticates with a single

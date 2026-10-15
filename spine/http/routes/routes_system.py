@@ -120,7 +120,7 @@ def admin_daemon_get(self, user):
 
 
 def admin_memory_get(self, user):
-    """GET /admin/memory: what this daemon holds, by allocation site (spine/ops/memwatch)."""
+    """GET /admin/memory: private size, working set, peak, threads, objects (spine/ops/memwatch)."""
     if is_restricted(user):
         return self._send(403, json.dumps({"error": "owner only"}))
     from spine.ops import memwatch

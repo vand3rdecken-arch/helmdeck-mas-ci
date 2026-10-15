@@ -2,9 +2,9 @@
 """The three context patterns borrowed 2026-10-07 (owner: "wir implementieren
 die drei Muster") - pinned so none of them silently degrades to a lossy cut:
 
- 1. RESTORABLE PRUNE (copilot_prune + file_store): an old, big tool_result is
-    replaced by a pointer - head text + the path of a file holding ALL of it;
-    without a store the old opaque placeholder stays.
+ 1. (REMOVED 2026-10-15) the restorable tool-result prune: it rewrote the CLI's
+    own transcript and loaded the whole 374 MB board session per run. Size is
+    bounded by session rotation instead (ops/tests/test_session_rotate.py).
  2. CAP AT THE SOURCE (ops/tools/ctxout): a reader's output above its budget
     is shown head+tail with a note naming the full file; under the budget it
     passes byte-identical; HELMDECK_CTX_CAP=0 never cuts.
@@ -25,7 +25,6 @@ sys.path.insert(0, os.path.join(ROOT, "ops", "tools"))
 TMP = tempfile.mkdtemp(prefix="helmdeck-ctx-patterns-")
 os.environ["HELMDECK_DATA_ROOT"] = TMP
 
-from cells.copilot.chat import copilot_prune as pr          # noqa: E402
 import ctxout                                              # noqa: E402
 
 FAILS = []
@@ -36,40 +35,6 @@ def check(name, cond, detail=""):
     if not cond:
         FAILS.append(name)
 
-
-def user(text):
-    return json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}})
-
-
-def tool_use(tid, name):
-    return json.dumps({"type": "assistant", "message": {"role": "assistant",
-                       "content": [{"type": "tool_use", "id": tid, "name": name, "input": {}}]}})
-
-
-def tool_result(tid, text):
-    return json.dumps({"type": "user", "message": {"role": "user",
-                       "content": [{"type": "tool_result", "tool_use_id": tid, "content": text}]}})
-
-
-BIG = "BOARD\n" + "\n".join("card-%03d running 12%%" % i for i in range(400))      # ~8 KB
-lines = [user("hi"), tool_use("t1", "Bash"), tool_result("t1", BIG)] + [user("turn %d" % i) for i in range(8)]
-
-# 1: restorable prune
-store_dir = os.path.join(TMP, "ctx", "sess")
-out, n, saved = pr.prune_lines(lines, store=pr.file_store(store_dir))
-check("prune: one block pruned", n == 1, n)
-rec = json.loads(out[2])
-ph = rec["message"]["content"][0]["content"]
-check("prune: placeholder names the tool and the file", "[gekürzt: Bash" in ph and "voll: " in ph and "/t1.txt" in ph, ph[:120])
-check("prune: placeholder keeps the head text", "BOARD card-000 running 12%" in ph, ph[:160])
-path = ph.split("voll: ", 1)[1].split("]", 1)[0]
-check("prune: the file holds ALL of it", os.path.isfile(path) and open(path, encoding="utf-8").read() == BIG)
-check("prune: bytes really freed", saved > 7000, saved)
-out2, n2, _ = pr.prune_lines(lines)
-ph2 = json.loads(out2[2])["message"]["content"][0]["content"]
-check("prune: without a store the old opaque placeholder stays", ph2.startswith("[gekürzt: Bash") and "voll" not in ph2, ph2)
-check("prune: a young result is untouched",
-      pr.prune_lines([user("a"), tool_use("t2", "Bash"), tool_result("t2", BIG), user("b")], store=pr.file_store(store_dir))[1] == 0)
 
 # 2: cap at the source
 os.environ.pop("HELMDECK_CTX_CAP", None)

@@ -5946,7 +5946,7 @@ DEBT = [
     {
         "id": "memwatch-tracemalloc-window",
         "title": "The daemon runs tracemalloc for 2 h after every boot (diagnosis probe, slows allocation-heavy paths ~2.8x)",
-        "status": "open",
+        "status": "paid",
         "what": "spine/ops/memwatch.py starts tracemalloc (1 frame) at boot and stops it after "
                 "TRACE_HOURS = 2, writing a `mem` event every 10 min that names the code lines that "
                 "grew since a baseline taken 5 min after boot. It exists to find why a fresh daemon "
@@ -5957,8 +5957,8 @@ DEBT = [
                         "(JSON parsing, /tracks, timeline reads) up to ~2.8x slower - measured on the "
                         "live db, 41 s -> 117 s for the same workload.",
         "trigger": "the growth leader is named in the `mem` events, or a start where the 2 h slowdown hurts",
-        "fix": "Fix the leader named by the GREW line, then delete the tracemalloc half (start(trace=...), "
-               "_grew/_holding, BASELINE_AFTER/TRACE_HOURS) and keep the sampler.",
+        "fix": "PAID 2026-10-15: the window ran and answered - the Python heap was ~30 MB of a ~250 MB process, so the memory was native and transient, not a leaking Python structure; the biggest transient was the prune of Henry's 374 MB session (+614 MB). The prune is gone, the session rotates after a proven compaction, and the tracemalloc half is deleted; the sampler stays and now also logs the peak working set. (original plan: Fix the leader named by the GREW line, then delete the tracemalloc half (start(trace=...), "
+               "_grew/_holding, BASELINE_AFTER/TRACE_HOURS) and keep the sampler.)",
         "since": "2026-10-15",
         "order": 94,
     },
