@@ -277,3 +277,4 @@ daemon/daemon_origin_tunnel.log.out
 
 # Rust tray prototype build output (surfaces/desktop/tray-rs)
 /surfaces/desktop/tray-rs/target/
+/surfaces/relay/bridge-rs/target/
