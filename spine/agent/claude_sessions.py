@@ -212,6 +212,28 @@ _OBJS_WINDOW = 16 * 1024 * 1024    # first read: at most this much, from the end
 _OBJS_BUDGET = 24 * 1024 * 1024    # JSON bytes one cache entry may hold
 
 
+_BIG_SEEN = set()
+
+
+def _log_big_open(path, size):
+    """ONE line per oversize transcript per daemon run, naming WHO asked. The
+    bound above makes a big open harmless, but on 2026-10-15 nobody could say
+    which request had opened Henry's 375 MB session (the sampler only saw the
+    +1 GB step afterwards); the caller chain is the evidence that was missing."""
+    if path in _BIG_SEEN:
+        return
+    _BIG_SEEN.add(path)
+    try:
+        import traceback
+        frames = traceback.extract_stack(limit=9)[:-2]
+        who = " <- ".join("%s:%d %s" % (os.path.basename(f.filename), f.lineno, f.name)
+                          for f in reversed(frames))
+        print("claude_sessions: BIG transcript opened (%d MB > window, tail only): %s | %s"
+              % (size // 1_000_000, os.path.basename(path), who), flush=True)
+    except Exception:                                    # noqa: BLE001
+        pass
+
+
 def _session_objects(path):
     """Parsed json objects of the TAIL of a session .jsonl (see the bound above),
     reading only appended bytes after the first call."""
@@ -230,6 +252,7 @@ def _session_objects(path):
             offset, skip_partial = ent["read"], False
             if offset == 0 and size > _OBJS_WINDOW:
                 offset, skip_partial = size - _OBJS_WINDOW, True
+                _log_big_open(path, size)
             with open(path, "rb") as f:
                 f.seek(offset)
                 chunk = f.read()

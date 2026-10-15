@@ -103,6 +103,31 @@ for k in range(cs._OBJS_CACHE_MAX + 3):
     cs._session_objects(pk)
 check(len(cs._OBJS_CACHE) == cs._OBJS_CACHE_MAX, "at most %d sessions are cached" % cs._OBJS_CACHE_MAX)
 
+# 7. an oversize open names its caller, once
+import io
+import contextlib
+write(p, 2000)                                    # big again (section 4 shrank it)
+reset()
+cs._BIG_SEEN.clear()
+
+
+def _the_request_handler():
+    return cs._session_objects(p)
+
+
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    _the_request_handler()
+    _the_request_handler()
+out = buf.getvalue()
+check(out.count("BIG transcript opened") == 1, "an oversize open logs exactly ONE line per file")
+check("big.jsonl" in out and "_the_request_handler" in out, "...naming the file and the function that asked")
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    reset(); cs._session_objects(q)
+check("BIG transcript" not in buf.getvalue(), "a file under the window logs nothing")
+
+
 print()
 if _fails:
     print("=== %d FAILED ===" % len(_fails))

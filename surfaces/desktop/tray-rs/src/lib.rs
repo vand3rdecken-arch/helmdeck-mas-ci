@@ -51,7 +51,21 @@ pub fn health(port: u16) -> bool {
             Ok(k) => n += k,
         }
     }
-    n == buf.len() && &buf == b"HTTP/"
+    let alive = n == buf.len() && &buf == b"HTTP/";
+    if alive {
+        // Read the reply to its end before closing. Closing after the first five
+        // bytes made the daemon's write fail with WinError 10054 and log a 22-line
+        // traceback for every probe that raced it (318 in five hours, 2026-10-15).
+        let mut sink = [0u8; 1024];
+        let mut total = 0;
+        while total < 16 * 1024 {
+            match s.read(&mut sink) {
+                Ok(0) | Err(_) => break,
+                Ok(k) => total += k,
+            }
+        }
+    }
+    alive
 }
 
 // ------------------------------------------------------------ relay status
@@ -565,6 +579,33 @@ mod tests {
     fn any_http_reply_is_alive_even_401() {
         let p = stub_server(b"HTTP/1.0 401 Unauthorized\r\n\r\n");
         assert!(health(p), "an auth-gated reply must count as ALIVE");
+    }
+
+    #[test]
+    fn the_probe_reads_the_reply_to_its_end_so_the_daemon_never_sees_a_reset() {
+        // The daemon writes header, then body. A probe that hangs up after the
+        // first 5 bytes makes the body write fail (WinError 10054 on Windows) and
+        // the daemon logs a traceback per probe. Here the "daemon" delays its body.
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut s, _) = l.accept().unwrap();
+            let mut b = [0u8; 256];
+            let _ = s.read(&mut b);
+            s.write_all(b"HTTP/1.0 401 Unauthorized
+
+").unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+            let body = [b'x'; 8 * 1024];
+            let r1 = s.write_all(&body);
+            std::thread::sleep(Duration::from_millis(100));
+            let r2 = s.write_all(&body);
+            let _ = tx.send((r1.is_ok(), r2.is_ok()));
+        });
+        assert!(health(port));
+        let (first, second) = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(first && second, "the probe left before the daemon finished writing");
     }
 
     #[test]
