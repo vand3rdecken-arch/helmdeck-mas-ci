@@ -119,6 +119,14 @@ def admin_daemon_get(self, user):
     return self._send(200, json.dumps(daemonctl.status()))
 
 
+def admin_memory_get(self, user):
+    """GET /admin/memory: what this daemon holds, by allocation site (spine/ops/memwatch)."""
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from spine.ops import memwatch
+    return self._send(200, json.dumps(memwatch.report()))
+
+
 def admin_restart_post(self, user, body):
     """The ONE restart verb (owner request 2026-09-12). Refuses while a card
     turn is live unless body.force; fires the out-of-tree HelmDeckRestart
@@ -340,6 +348,7 @@ def processes_sub_post(self, user, body, pid, step):
 
 GET_ROUTES = {
     "/admin/daemon": admin_daemon_get,
+    "/admin/memory": admin_memory_get,
     "/presence": presence_get,
     "/sessions/claude": sessions_claude_get,
     "/history": history_get,

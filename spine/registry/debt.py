@@ -5943,6 +5943,25 @@ DEBT = [
         "since": "2026-10-15",
         "order": 93,
     },
+    {
+        "id": "memwatch-tracemalloc-window",
+        "title": "The daemon runs tracemalloc for 2 h after every boot (diagnosis probe, slows allocation-heavy paths ~2.8x)",
+        "status": "open",
+        "what": "spine/ops/memwatch.py starts tracemalloc (1 frame) at boot and stops it after "
+                "TRACE_HOURS = 2, writing a `mem` event every 10 min that names the code lines that "
+                "grew since a baseline taken 5 min after boot. It exists to find why a fresh daemon "
+                "(155 MB) reaches ~1,055 MB in 18.7 h after the timeline-cache and SQLite page-cache "
+                "fixes. The cheap half (private/working-set size, threads, object count per 10 min and "
+                "GET /admin/memory) stays.",
+        "why_it_bites": "For 2 h after EVERY daemon start, tracing makes allocation-heavy requests "
+                        "(JSON parsing, /tracks, timeline reads) up to ~2.8x slower - measured on the "
+                        "live db, 41 s -> 117 s for the same workload.",
+        "trigger": "the growth leader is named in the `mem` events, or a start where the 2 h slowdown hurts",
+        "fix": "Fix the leader named by the GREW line, then delete the tracemalloc half (start(trace=...), "
+               "_grew/_holding, BASELINE_AFTER/TRACE_HOURS) and keep the sampler.",
+        "since": "2026-10-15",
+        "order": 94,
+    },
 ]
 
 def list_debt():

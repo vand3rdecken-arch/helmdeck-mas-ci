@@ -743,6 +743,8 @@ def serve(port=8140, takeover=False):
     from spine.ops import idle_check
     idle_check.start_idle_check_loop()   # owner away + board quiet -> ONE kind=idle-check
                                           # escalation with a facts-only snapshot; Henry judges
+    from spine.ops import memwatch
+    memwatch.start()                     # `mem` events + a 2 h tracemalloc window: names the code lines that grow
     from cells.engineer.cards import sessions
     reclaimed = sessions.sweep_worktrees()  # WORKTREE RECLAMATION backstop: merged+clean card trees left
     if reclaimed:                            # by pre-reclaim builds (the "System too full" pile-up). Paseo
