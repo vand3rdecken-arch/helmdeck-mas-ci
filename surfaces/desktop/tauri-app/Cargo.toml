@@ -1,0 +1,22 @@
+[package]
+name = "helmdeck-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "HelmDeck desktop window in Tauri (prototype of the Electron shell in surfaces/desktop/main.js)"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]
+serde_json = "1.0.154"
+tauri = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+winreg = "0.56.0"
+
+[build-dependencies]
+tauri-build = "2"
