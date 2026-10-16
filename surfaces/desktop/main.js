@@ -7,7 +7,7 @@
 // Requirements on the user's machine (same as HelmDeck itself):
 //   - Python 3.12 (the `py -3.12` launcher on Windows, or `python3`)
 //   - the `claude` CLI (Claude Code) - the agent runtime cards execute in
-const { app, BrowserWindow, dialog, shell, ipcMain, Menu } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, shell, ipcMain, Menu } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const http = require("http");
@@ -569,6 +569,27 @@ function createWindow() {
   win.loadURL("http://localhost:" + WEB_PORT + "/?v=" + Date.now() + "#cfg=" + encodeURIComponent(cfg));
   // open external links in the real browser, not a new Electron window
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+  // Electron ships NO context menu: without this handler right-click does
+  // nothing at all, so a path or an answer in the chat could only be copied by
+  // keyboard (owner report 2026-10-16). Standard shape: copy/cut/paste/select
+  // all by the roles the page's own selection and editability allow, plus
+  // "copy link".
+  win.webContents.on("context-menu", (_e, p) => {
+    const items = [];
+    if (p.linkURL) {
+      items.push({ label: "Copy link", click: () => clipboard.writeText(p.linkURL) });
+      items.push({ type: "separator" });
+    }
+    if (p.isEditable) {
+      items.push({ role: "cut", enabled: p.editFlags.canCut });
+      items.push({ role: "copy", enabled: p.editFlags.canCopy });
+      items.push({ role: "paste", enabled: p.editFlags.canPaste });
+    } else if (p.selectionText) {
+      items.push({ role: "copy" });
+    }
+    items.push({ role: "selectAll" });
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
   win.on("closed", () => { win = null; });
   watchPageLoad(win);
 }

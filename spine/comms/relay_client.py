@@ -705,6 +705,107 @@ def _pull(relay, room):
         raise
 
 
+# --- PIPE ENGINE (2026-10-16) -----------------------------------------------
+# relay.engine == "pipe": the room WebSocket belongs to the KEY-LESS Rust bridge
+# (surfaces/relay/bridge-rs, supervised by the tray) and this process talks to it
+# over two owner-only named pipes - the same JSON objects the socket carries,
+# one per line. The bridge keeps the room socket across a daemon restart and
+# holds phone frames meanwhile; admission, pairing, keys and every reply stay
+# HERE, byte for byte (_serve_one / _admit / _EventPublisher are shared with the
+# socket engine). The daemon never dials the room in this mode: a second socket
+# would make the room close the first and start a redial war.
+PIPE_BUSY_S = 5.0               # how long to wait for a pipe that is mid-handover
+
+
+class _PipeAbsent(Exception):
+    """No bridge is listening on the pipe (not started yet, or stopped)."""
+
+
+def pipe_base():
+    """Short pipe name both ends derive from the user name (the tray and the
+    bridge use the same rule)."""
+    user = (_os.environ.get("USERNAME") or _os.environ.get("USER") or "").lower()
+    return "helmdeck-relay-" + user
+
+
+def engine():
+    """Which relay engine the workspace asked for: "inproc" (default) or "pipe".
+    Read from the db every cycle - never remembered in the process."""
+    try:
+        from spine.storage import events
+        e = (events.settings().get("relay") or {}).get("engine")
+    except Exception:                                        # noqa: BLE001
+        return "inproc"
+    return "pipe" if e == "pipe" else "inproc"
+
+
+def _pipe_open(suffix, mode):
+    path = "\\\\.\\pipe\\" + pipe_base() + suffix
+    deadline = time.time() + PIPE_BUSY_S
+    while True:
+        try:
+            return open(path, mode)
+        except FileNotFoundError:
+            raise _PipeAbsent(path)
+        except OSError as e:
+            # 231 = every instance busy: the bridge is between two clients
+            if getattr(e, "winerror", None) == 231 and time.time() < deadline:
+                time.sleep(0.1)
+                continue
+            raise
+
+
+def _pipe_session(relay, room, sk, port, serve=None):
+    """One attached session to the bridge. Blocks while it lives; returns when
+    the bridge closes the pipe (it stopped, or restarted)."""
+    serve = serve or _serve_one
+    wr = _pipe_open(".rx", "wb")           # daemon -> bridge
+    lock = threading.Lock()
+
+    def send_obj(obj):
+        with lock:
+            wr.write(json.dumps(obj).encode("utf-8") + b"\n")
+            wr.flush()
+
+    def send(fid, cipher, to=None):
+        m = {"kind": "reply", "id": fid, "cipher": cipher}
+        if to:
+            m["to"] = to
+        send_obj(m)
+
+    events = None
+    try:
+        send_obj({"kind": "hello", "relay": relay, "room": room})
+        rd = _pipe_open(".tx", "rb")       # bridge -> daemon
+        events = _EventPublisher(sk, send_obj)
+        events.start()
+        _ws_state["fails"] = 0
+        _ws_state["opened"] = time.time()
+        _set_mode("pipe")
+        while not _stop:
+            line = rd.readline()
+            if not line:
+                return                     # the bridge closed its end
+            try:
+                data = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(data, dict):
+                continue
+            kind = data.get("kind")
+            if kind == "frame":
+                _dispatch(serve, relay, room, sk, port, data, send=send)
+            elif kind == "client":
+                events.announce(data.get("pub") or "")
+    finally:
+        if events:
+            events.stop()
+        try:
+            wr.close()
+        except Exception:                                    # noqa: BLE001
+            pass
+
+
 def _loop(port):
     # The whole body is guarded: a single unhandled error (a hiccup in
     # events.settings(), a transient DNS/TLS failure, a relay restart) must
@@ -737,6 +838,18 @@ def _loop(port):
                                "the relay URL is https (Settings -> Mobile app)")
                 except Exception:
                     pass
+            if engine() == "pipe":
+                t0 = time.time()
+                try:
+                    _pipe_session(relay, room, sk, port)
+                    errs, delay = 0, 3
+                    time.sleep(WS_REDIAL_S)
+                except _PipeAbsent:
+                    # the bridge is not up (tray starting it, or stopped): wait quietly,
+                    # say so once - never fall back to dialing the room ourselves
+                    _set_mode("pipe-waiting", "no relay bridge on the pipe yet")
+                    time.sleep(2)
+                continue
             if _ws_wanted(relay):
                 t0 = time.time()
                 try:
