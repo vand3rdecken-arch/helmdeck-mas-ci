@@ -37,6 +37,8 @@ RUN_NAME = "HelmDeck"
 BUILT = os.path.join(ROOT, "surfaces", "desktop", "tray-rs", "target", "release", "helmdeck-tray.exe")
 INSTALL_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "HelmDeck", "tray")
 INSTALLED = os.path.join(INSTALL_DIR, "helmdeck-tray.exe")
+BRIDGE_BUILT = os.path.join(ROOT, "surfaces", "relay", "bridge-rs", "target", "release", "helmdeck-relay-bridge.exe")
+BRIDGE_INSTALLED = os.path.join(INSTALL_DIR, "helmdeck-relay-bridge.exe")   # the tray looks next to itself first
 TRAY_PY = os.path.join(ROOT, "surfaces", "desktop", "tray.py")
 PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"   # not on PATH on this box
 NO_WINDOW = 0x08000000
@@ -142,6 +144,12 @@ def switch(to):
         stop(t["python"] + t["rust"])             # the exe copy needs the old one gone
         os.makedirs(INSTALL_DIR, exist_ok=True)
         shutil.copy2(BUILT, INSTALLED)
+        if os.path.exists(BRIDGE_BUILT):
+            # the bridge too (the new tray respawns it when relay.engine is "pipe"); a RUNNING bridge
+            # locks its exe, so it is stopped first - only when it is the installed copy
+            ps("Get-Process helmdeck-relay-bridge -ErrorAction SilentlyContinue | Stop-Process -Force")
+            time.sleep(1)
+            shutil.copy2(BRIDGE_BUILT, BRIDGE_INSTALLED)
         set_run(rust_cmd())
         subprocess.Popen([INSTALLED, "--root", ROOT], creationflags=DETACHED | NO_WINDOW, close_fds=True)
     else:

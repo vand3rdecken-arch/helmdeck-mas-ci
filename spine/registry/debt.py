@@ -5962,6 +5962,26 @@ DEBT = [
         "since": "2026-10-15",
         "order": 94,
     },
+    {
+        "id": "relay-pipe-no-longpoll-fallback",
+        "order": 95,
+        "title": "relay.engine=pipe has no long-poll fallback and holds phone frames at most 45 s",
+        "status": "open",
+        "what": "In the pipe engine the Rust bridge owns the room socket and the daemon never dials the "
+                "room. If the worker lost its /tunnel/ws route, the inproc engine would fall back to "
+                "long-polling /tunnel/pull; the bridge does not - it redials the socket forever. Frames "
+                "that wait longer than HOLD_FOR (45 s) for a returning daemon are dropped, and the phone "
+                "times out on its own; the bridge cannot answer them because it holds no key.",
+        "why_it_bites": "A worker without the websocket route (an old self-hosted relay) cuts the phone "
+                        "off while engine=pipe; the owner must flip back to inproc "
+                        "(py -3.12 ops/tools/relay_engine.py inproc).",
+        "trigger": "the relay URL points at anything but the Cloudflare worker, or a daemon restart "
+                   "that takes longer than the hold window",
+        "fix": "If a non-websocket relay is ever supported again, give the pipe engine the same "
+               "detour (the daemon pulls and the bridge stays idle), or have the worker answer a "
+               "dropped frame with a 503 res so the phone fails fast instead of timing out.",
+        "since": "2026-10-16",
+    },
 ]
 
 def list_debt():

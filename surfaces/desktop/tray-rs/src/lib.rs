@@ -99,28 +99,128 @@ pub fn relay_status_from_json(raw: Option<&str>) -> String {
 /// reader process; the daemon's own loader does the same), falling back to the
 /// legacy settings.json like tray.py does.
 pub fn relay_status(daemon_dir: &Path) -> String {
+    relay_status_from_json(relay_row(daemon_dir).as_deref())
+}
+
+/// The JSON of the `relay` row: helmdeck.db first, then the legacy settings.json.
+pub fn relay_row(daemon_dir: &Path) -> Option<String> {
     use rusqlite::{Connection, OpenFlags};
     let db = daemon_dir.join("helmdeck.db");
-    let from_db = Connection::open_with_flags(
-        &db,
-        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .ok()
-    .and_then(|c| {
-        let _ = c.busy_timeout(Duration::from_secs(2));
-        c.query_row("SELECT value FROM workspace_config WHERE key='relay'", [], |r| {
-            r.get::<_, String>(0)
-        })
+    let from_db = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
         .ok()
-    });
-    if let Some(raw) = from_db {
-        return relay_status_from_json(Some(&raw));
+        .and_then(|c| {
+            let _ = c.busy_timeout(Duration::from_secs(2));
+            c.query_row("SELECT value FROM workspace_config WHERE key='relay'", [], |r| r.get::<_, String>(0)).ok()
+        });
+    if from_db.is_some() {
+        return from_db;
     }
-    let legacy = std::fs::read_to_string(daemon_dir.join("settings.json"))
+    std::fs::read_to_string(daemon_dir.join("settings.json"))
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get("relay").map(|r| r.to_string()));
-    relay_status_from_json(legacy.as_deref())
+        .and_then(|v| v.get("relay").map(|r| r.to_string()))
+}
+
+// ------------------------------------------------------------- relay bridge
+
+/// relay.engine == "pipe": the key-less Rust bridge owns the room socket (the daemon's
+/// `relay_client.engine()` reads the same row). Anything else - absent, "inproc", unreadable -
+/// means the daemon dials the room itself, which is today's behaviour.
+pub fn relay_engine_is_pipe(raw: Option<&str>) -> bool {
+    raw.and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+        .and_then(|v| v.get("engine").and_then(|e| e.as_str()).map(|e| e == "pipe"))
+        .unwrap_or(false)
+}
+
+/// helmdeck-relay-bridge.exe next to the tray exe (installed layout), else the checkout's build.
+pub fn find_bridge(exe_dir: &Path, root: &Path) -> Option<PathBuf> {
+    [
+        exe_dir.join("helmdeck-relay-bridge.exe"),
+        root.join("surfaces").join("relay").join("bridge-rs").join("target").join("release").join("helmdeck-relay-bridge.exe"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
+}
+
+/// Start the bridge hidden, its output appended to daemon/relay-bridge.log.
+pub fn spawn_bridge(bridge: &Path, daemon_dir: &Path) -> io::Result<Child> {
+    let log = OpenOptions::new().create(true).append(true).open(daemon_dir.join("relay-bridge.log"))?;
+    let log2 = log.try_clone()?;
+    Command::new(bridge)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(log)
+        .stderr(log2)
+        .spawn()
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum BridgeState {
+    /// the engine setting says the daemon dials the room itself
+    Off,
+    /// our child is running
+    Running(u32),
+    /// wanted, but not ours right now (another bridge holds the pipe, or a restart is being held off)
+    Waiting,
+}
+
+/// Keeps the bridge running exactly while `relay.engine` is "pipe". The pipe's first-instance flag
+/// is the single-instance guard: a second bridge exits with code 3, which means "someone else has
+/// it" and is held off for a while instead of being respawned every beat.
+pub struct BridgeKeeper<S: FnMut() -> io::Result<Child>> {
+    spawn: S,
+    child: Option<Child>,
+    hold_until: Option<std::time::Instant>,
+    pub hold_external: Duration,
+    pub hold_crash: Duration,
+}
+
+impl<S: FnMut() -> io::Result<Child>> BridgeKeeper<S> {
+    pub fn new(spawn: S) -> Self {
+        BridgeKeeper { spawn, child: None, hold_until: None, hold_external: Duration::from_secs(30), hold_crash: Duration::from_secs(10) }
+    }
+
+    pub fn tick(&mut self, want: bool) -> BridgeState {
+        if !want {
+            self.stop();
+            self.hold_until = None;
+            return BridgeState::Off;
+        }
+        if let Some(c) = self.child.as_mut() {
+            match c.try_wait() {
+                Ok(None) => return BridgeState::Running(c.id()),
+                Ok(Some(st)) => {
+                    let d = if st.code() == Some(3) { self.hold_external } else { self.hold_crash };
+                    self.hold_until = Some(std::time::Instant::now() + d);
+                    self.child = None;
+                }
+                Err(_) => self.child = None,
+            }
+        }
+        if self.hold_until.map(|t| std::time::Instant::now() < t).unwrap_or(false) {
+            return BridgeState::Waiting;
+        }
+        self.hold_until = None;
+        match (self.spawn)() {
+            Ok(c) => {
+                let pid = c.id();
+                self.child = Some(c);
+                BridgeState::Running(pid)
+            }
+            Err(_) => {
+                self.hold_until = Some(std::time::Instant::now() + self.hold_crash);
+                BridgeState::Waiting
+            }
+        }
+    }
+
+    /// Stop OUR bridge (never one we did not start).
+    pub fn stop(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
 }
 
 // -------------------------------------------------------------- daemon spawn
@@ -781,5 +881,60 @@ mod tests {
         assert_eq!(find_root(Some(t.to_str().unwrap())), Some(t.clone()));
         assert_eq!(find_root(Some(r"C:\definitely\not\here")), None);
         let _ = std::fs::remove_dir_all(&t);
+    }
+
+    // ---- relay bridge keeper
+
+    fn sleeper() -> io::Result<Child> {
+        Command::new("cmd").args(["/c", "ping", "-n", "30", "127.0.0.1"]).creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).spawn()
+    }
+
+    fn exits(code: i32) -> impl FnMut() -> io::Result<Child> {
+        move || Command::new("cmd").args(["/c", &format!("exit {code}")]).creation_flags(CREATE_NO_WINDOW).spawn()
+    }
+
+    #[test]
+    fn the_engine_setting_defaults_to_the_daemon_dialling_itself() {
+        assert!(!relay_engine_is_pipe(None));
+        assert!(!relay_engine_is_pipe(Some("not json")));
+        assert!(!relay_engine_is_pipe(Some(r#"{"url":"https://r","room":"x"}"#)));
+        assert!(!relay_engine_is_pipe(Some(r#"{"engine":"inproc"}"#)));
+        assert!(!relay_engine_is_pipe(Some(r#"{"engine":"PIPE"}"#)), "exact match only");
+        assert!(relay_engine_is_pipe(Some(r#"{"engine":"pipe","room":"x"}"#)));
+    }
+
+    #[test]
+    fn the_bridge_runs_exactly_while_the_engine_is_pipe_and_stops_when_it_is_not() {
+        let mut k = BridgeKeeper::new(sleeper);
+        assert_eq!(k.tick(false), BridgeState::Off);
+        let BridgeState::Running(pid) = k.tick(true) else { panic!("should start") };
+        assert_eq!(k.tick(true), BridgeState::Running(pid), "no second spawn while it lives");
+        assert_eq!(k.tick(false), BridgeState::Off, "switching back stops it");
+        let BridgeState::Running(pid2) = k.tick(true) else { panic!("should start again") };
+        assert_ne!(pid, pid2);
+        k.stop();
+    }
+
+    #[test]
+    fn a_bridge_that_finds_the_pipe_taken_is_not_respawned_every_beat() {
+        let mut k = BridgeKeeper::new(exits(3));
+        k.hold_external = Duration::from_secs(60);
+        assert!(matches!(k.tick(true), BridgeState::Running(_)));
+        sleep(Duration::from_millis(800));
+        assert_eq!(k.tick(true), BridgeState::Waiting, "exit 3 = someone else has the pipe");
+        assert_eq!(k.tick(true), BridgeState::Waiting, "...and it stays held off");
+        assert_eq!(k.tick(false), BridgeState::Off, "switching off clears the hold");
+    }
+
+    #[test]
+    fn a_crashing_bridge_is_restarted_after_a_short_pause() {
+        let mut k = BridgeKeeper::new(exits(1));
+        k.hold_crash = Duration::from_millis(200);
+        assert!(matches!(k.tick(true), BridgeState::Running(_)));
+        sleep(Duration::from_millis(800));
+        assert_eq!(k.tick(true), BridgeState::Waiting);
+        sleep(Duration::from_millis(300));
+        assert!(matches!(k.tick(true), BridgeState::Running(_)), "after the pause it tries again");
+        k.stop();
     }
 }

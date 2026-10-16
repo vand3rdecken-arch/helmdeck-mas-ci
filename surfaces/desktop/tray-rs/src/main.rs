@@ -119,6 +119,7 @@ fn main() {
     let sup_proxy = event_loop.create_proxy();
     let sup_root = root.clone();
     let sup_dir = daemon_dir.clone();
+    let exe_for_sup = exe.clone();
     let sup = std::thread::spawn(move || {
         let python = hd::find_python();
         let spawn_root = sup_root.clone();
@@ -136,12 +137,31 @@ fn main() {
                 child
             },
         );
+        // the key-less relay bridge: runs exactly while relay.engine == "pipe" (read from the db each beat)
+        let bridge_exe = hd::find_bridge(exe_for_sup.parent().unwrap_or(std::path::Path::new(".")), &sup_root);
+        let bridge_dir = sup_dir.clone();
+        let mut bridge = hd::BridgeKeeper::new(move || {
+            let b = bridge_exe.clone().ok_or_else(|| std::io::Error::other("helmdeck-relay-bridge.exe not found"))?;
+            let child = hd::spawn_bridge(&b, &bridge_dir);
+            if let Ok(c) = &child {
+                hd::log_line(&bridge_dir, &format!("relay bridge spawned, pid {}", c.id()));
+            }
+            child
+        });
         let mut last: Option<Snapshot> = None;
         loop {
             let up = sv.tick();
+            let row = hd::relay_row(&sup_dir);
+            let bridge_state = if watch_only { hd::BridgeState::Off } else { bridge.tick(hd::relay_engine_is_pipe(row.as_deref())) };
+            let mut relay = if up { hd::relay_status_from_json(row.as_deref()) } else { "Desktop aus".into() };
+            match bridge_state {
+                hd::BridgeState::Running(_) => relay.push_str(" · Brücke"),
+                hd::BridgeState::Waiting => relay.push_str(" · Brücke wartet"),
+                hd::BridgeState::Off => {}
+            }
             let snap = Snapshot {
                 daemon: up,
-                relay: if up { hd::relay_status(&sup_dir) } else { "Desktop aus".into() },
+                relay,
                 ours: sv.our_pid(),
             };
             if last.as_ref() != Some(&snap) {
@@ -158,6 +178,7 @@ fn main() {
                     if !watch_only {
                         sv.restart(); // stops only a daemon WE started
                     }
+                    bridge.stop(); // ...and only a bridge we started
                     return;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}

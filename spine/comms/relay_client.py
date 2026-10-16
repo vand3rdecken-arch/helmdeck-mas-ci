@@ -275,6 +275,8 @@ def _ws_session(relay, room, sk, port, serve=None):
             try:
                 msg = ws.recv(timeout=5)
             except TimeoutError:
+                if engine() == "pipe":
+                    return          # the owner switched engines: hand the room to the bridge
                 continue
             if not isinstance(msg, str):
                 continue

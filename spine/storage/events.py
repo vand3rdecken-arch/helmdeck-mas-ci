@@ -82,7 +82,10 @@ DEFAULTS = {
     # by issuing a code ({expires: ts}, see relay_client.PAIR_TTL).
     # Empty url = OFF (LAN only).
     "relay": {"url": "", "room": "", "sk": "", "phone_pub": "",
-              "phone_pubs": [], "pair_pending": None},
+              "phone_pubs": [], "pair_pending": None,
+              # who holds the room socket: "inproc" (this daemon dials it) or "pipe"
+              # (the key-less Rust bridge does, tray-supervised) - relay_client.engine()
+              "engine": "inproc"},
     # preset repo: filing a ticket never needs a path typed (fallback repo).
     "default_repo": "",
     # execution drivers (drivers.py): a card picks one by name. claude-desktop =

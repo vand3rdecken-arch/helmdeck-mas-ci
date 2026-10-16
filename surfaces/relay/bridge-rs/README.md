@@ -1,68 +1,69 @@
-# helmdeck-relay-bridge (Rust prototype, NOT wired in)
+# helmdeck-relay-bridge (key-less, switchable)
 
-The data plane of the relay bridge in Rust: one WebSocket to the room, a fixed pool of 24
-workers that decrypt a phone frame, call the local daemon on loopback and send the sealed answer
-back, a protocol ping every 20 s (no pong in 10 s -> redial), backoff redial, replies over 900 KB
-through `/tunnel/push`. Wire-compatible with `spine/comms/relay_client.py` and the phone
-(Curve25519 + XSalsa20-Poly1305, `nonce(24) || ciphertext`, same JSON inner request/reply).
+The process that holds the phone's room WebSocket so it survives a daemon restart. It is OFF by
+default (`relay.engine = "inproc"`: the daemon dials the room itself, as always). Turn it on with
+`py -3.12 ops/tools/relay_engine.py pipe`, back with `... inproc`.
+
+    phone <-> Cloudflare worker <-> [bridge: ONE WebSocket, ping, redial, hold queue]
+                                         <-> two owner-only named pipes <->
+                                    daemon (relay_client._pipe_session -> _serve_one / _admit / events)
+
+## What it is NOT (the point of the redesign)
+
+The first prototype (2026-10-15) decrypted frames itself, so it needed the room secret key, its
+own copy of the pinned device list, and a way to admit new devices - three security seams, and no
+measurable gain over the Python bridge (see git history of this README). This version has none of
+them: **the bridge holds no key and decides nothing.** Frames go to the daemon exactly as the room
+sent them, replies and events come back exactly as the daemon sealed them. Admission, pairing, the
+secret key, the "frame waited" / "daemon took" logs and the event publisher stay in
+`spine/comms/relay_client.py`, byte for byte. `Cargo.toml` has no crypto crate to prove it.
+
+## Wire (newline-delimited JSON, the same objects the WebSocket carries)
+
+| pipe | direction | messages |
+|---|---|---|
+| `\\.\pipe\helmdeck-relay-<user>.rx` | daemon -> bridge | `hello {relay, room}`, `reply {id, cipher, to}`, `event {to, cipher}` |
+| `\\.\pipe\helmdeck-relay-<user>.tx` | bridge -> daemon | `frame {id, pub, cipher, t}`, `client {pub}` |
+
+Two pipes because one synchronous handle serialises a blocked read against a write. The daemon
+opens `.rx`, says hello (relay URL + room), then opens `.tx`. Replies over 900 KB go over
+`/tunnel/push` straight from the daemon (`_deliver`), as in the inproc engine.
+
+## Behaviour
+
+- Dials NOTHING until a daemon says hello; one socket per room (the daemon never dials in this mode).
+- A daemon restart: the bridge keeps the socket, holds up to 64 frames for up to 45 s, delivers them
+  in order when the daemon is back. The room's liveness probe is answered by the bridge itself.
+- A daemon that stays away for more than 60 s (GRACE): the bridge closes the room socket, so the worker
+  answers phones with its own 503 - what a stopped daemon looks like today. A returning daemon is
+  served again at once.
+- A reply that finds the socket gone is pushed over `/tunnel/push` (same waiting id).
+- Redial: an established socket redials at once, a failing dial backs off 3..60 s.
+
+## Security
+
+Both pipes are created with an explicit protected DACL naming only the current user's SID
+(`D:P(A;;GA;;;<sid>)`; Windows' default would give Everyone read), `PIPE_REJECT_REMOTE_CLIENTS`, and
+`FILE_FLAG_FIRST_PIPE_INSTANCE` - a second bridge, or something squatting on the name, exits with code 3.
+`ops/tests/test_relay_bridge_rs_e2e.py` reads the DACL back from the kernel.
+
+## Run / verify
 
     cargo build --release
-    helmdeck-relay-bridge --relay https://relay.helmdeck.de --room R --sk <b64> --pubs <b64,b64> [--port 8140] [--workers 24] [--run-for SECS]
-    cargo test                                          # 7 tests: crypto, wire format, serving, refusal, forgery, dead daemon
-    py -3.12 ops/tests/test_relay_bridge_rs_e2e.py      # against the REAL worker, throw-away room, PyNaCl phone
-    py -3.12 ops/tools/bench_relay_bridge.py 40 8       # A/B against the Python bridge
+    cargo test                                          # 7: hold queue, order, bounds, grace, stale client, DACL, squatter
+    py -3.12 ops/tests/test_relay_bridge_rs_e2e.py      # REAL worker, throw-away room, REAL Python daemon half as a killable subprocess
+    py -3.12 ops/tools/relay_engine.py status|pipe|inproc
 
-## Proven
+The e2e proves: GET/POST/1.3 MB reply/404, an unpinned key refused BY THE DAEMON and served once the
+daemon opens its pairing window, a forged frame answered with silence, a joining phone announced and
+sent its event, a daemon KILLED mid-flight (the request is held and answered when the next daemon
+attaches, 3.6 s), the grace window, and 8 phones x 20 requests.
 
-- byte-compatible with the Python side and the real worker (end to end, PyNaCl phone): GET, POST
-  with a unicode body and headers, a 1.3 MB reply via push, the daemon's own error status, an
-  unpinned key answered "not paired" sealed to itself, a forged frame answered with silence and the
-  bridge still serving, 8 phones x 20 requests at once.
+The tray (`surfaces/desktop/tray-rs`, `BridgeKeeper`) starts and stops the bridge while the db row says
+`pipe` (checked every 4 s) and logs to `daemon/relay-bridge.log`. The Python tray does not supervise it:
+`relay_engine.py` refuses `pipe` without the Rust tray.
 
-## Measured (2026-10-15, real worker, each bridge in its own process, 8 phones x 40 requests)
+## Known limits (debt `relay-pipe-no-longpoll-fallback`)
 
-| | Python bridge | Rust bridge |
-|---|---|---|
-| latency p50 | 145 / 156 ms | 183 / 162 ms |
-| latency p95 | 236 / 259 ms | 284 / 254 ms |
-| CPU per 1,000 requests | 2.5 / 2.1 s | 2.6 / 1.6 s |
-| private memory (own process) | 31 MB | 5 MB |
-| threads | 15 | 28 |
-
-Latency and CPU are a wash: the internet round trip to the worker (~130 ms) dominates. The memory
-figure is for a bridge in its OWN process; the Python bridge in production lives inside the daemon
-and costs it a few MB and threads, so the real saving is single-digit MB. One request per run hit a
-connection reset after ~19 s on BOTH bridges (the phone-side HTTPS client / the line), not a bridge
-fault.
-
-## Not in the prototype - the three seams a production switch needs
-
-1. **Admitting NEW devices.** Pairing pins a key by writing `settings.relay` inside an open pairing
-   window. The bridge only serves keys passed in `--pubs`. A production bridge needs the daemon to own
-   admission and answer a narrow question ("may this key be served, and pin it if the window is open?")
-   - NOT as a normal HTTP route: the bridge forwards arbitrary paths from decrypted frames to
-   `127.0.0.1:8140`, so any route on that port is reachable by a paired phone.
-2. **Pushing change events to the phone.** The daemon's change counter lives in the daemon process
-   (`db.wait_any`). The bridge needs a signal channel that is not a phone-reachable route.
-3. **The daemon's relay secret key.** Today it sits in `workspace_config.relay`; reading it from a
-   second process is what the tray already does for the pairing status, but a bridge that holds the key
-   widens who can read it.
-
-Also missing: the long-poll fallback when the worker has no `/tunnel/ws`, the per-frame
-"waited Ns in the relay queue" log, the "daemon took Ns" log.
-
-## Recommendation
-
-Do not switch the production bridge to this. On the numbers above there is no latency, CPU or
-meaningful memory gain, and the three seams are security-sensitive design work.
-
-The one thing a separate bridge process WOULD have bought is that the phone's socket survives a daemon
-restart. That gap was the real problem, and it had a cheaper cause (2026-10-15): the daemon needed
-**64 s** from process start to a connected relay socket, while the worker holds phone requests for only
-**15 s** (`HOLD_MS`). py-spy on a real boot showed ~45 s of it in `sessions.sweep_zombies`, which rewrote
-595 cards on every start (see `ops/tests/test_boot_sweep_cost.py`). After that fix the relay is up
-**9 s** after the process is created - inside the hold - so a phone request during a restart is held and
-answered instead of failing. A second process would now save almost nothing.
-
-Revisit only if a restart still shows up as an outage on the phone, or the bridge has to outlive the
-daemon for another reason; then start from the three seams above, with this prototype as the data plane.
+No long-poll fallback (a worker without `/tunnel/ws` needs `inproc`); frames held longer than 45 s are
+dropped and the phone times out by itself; Windows only (the pipe layer).
