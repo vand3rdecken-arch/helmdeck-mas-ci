@@ -91,6 +91,15 @@ def daemon_main(room, port, sk_b64, pins, pipe, window_file):
             return True, ""
         return False, "this device is not paired with the workspace"
     rc._admit = admit
+    real_serve = rc._serve_one
+
+    def serve(*a, **k):
+        try:
+            return real_serve(*a, **k)
+        except Exception:                                    # noqa: BLE001
+            import traceback
+            traceback.print_exc()
+    rc._serve_one = serve
 
     class Events:                                            # the real one waits on the live db
         def __init__(self, sk, send_obj):
@@ -108,7 +117,7 @@ def daemon_main(room, port, sk_b64, pins, pipe, window_file):
     rc._EventPublisher = Events
     while True:
         try:
-            rc._pipe_session(RELAY, room, sk_b64, port)
+            rc._pipe_session(RELAY, room, sk_b64, int(port))
         except rc._PipeAbsent:
             time.sleep(0.3)
         time.sleep(0.2)
@@ -151,13 +160,19 @@ def phone_call(room, phone_sk, phone_pub_b64, daemon_pk, method, path, body="", 
 
 
 def sddl_of_pipe(name):
-    """The DACL the kernel holds for \\\\.\\pipe\\<name>, as SDDL."""
+    """The DACL the kernel holds for the pipe, as SDDL (opens it with READ_CONTROL only)."""
     adv = ctypes.WinDLL("advapi32", use_last_error=True)
     kern = ctypes.WinDLL("kernel32", use_last_error=True)
+    kern.CreateFileW.restype = wintypes.HANDLE
+    kern.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    h = kern.CreateFileW("\\\\.\\pipe\\" + name, 0x20000, 3, None, 3, 0, None)    # READ_CONTROL, OPEN_EXISTING
+    if h in (None, ctypes.c_void_p(-1).value):
+        return "ERR_OPEN%d" % ctypes.get_last_error()
     pdacl, psd, pstr = ctypes.c_void_p(), ctypes.c_void_p(), wintypes.LPWSTR()
-    adv.GetNamedSecurityInfoW.argtypes = [wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p,
-                                          ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-    rc = adv.GetNamedSecurityInfoW("\\\\.\\pipe\\" + name, 6, 4, None, None, ctypes.byref(pdacl), None, ctypes.byref(psd))
+    adv.GetSecurityInfo.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    rc = adv.GetSecurityInfo(h, 6, 4, None, None, ctypes.byref(pdacl), None, ctypes.byref(psd))
+    kern.CloseHandle(h)
     if rc != 0:
         return "ERR%d" % rc
     adv.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
@@ -226,7 +241,7 @@ def main():
         wait_for(lambda: any("bridge up" in l for l in plog), 10)
         for suffix in (".rx", ".tx"):
             sd = sddl_of_pipe(probe_pipe + suffix)
-            check(sd.startswith("D:P(A;;GA;;;S-1-5-") and sd.count("(A;") == 1 and "WD" not in sd and "AN" not in sd and "BU" not in sd,
+            check((sd.startswith("D:P(A;;GA;;;S-1-5-") or sd.startswith("D:P(A;;FA;;;S-1-5-")) and sd.count("(A;") == 1 and "WD" not in sd and "AN" not in sd and "BU" not in sd,
                   "pipe %s carries a protected, one-ACE, current-user-only DACL: %s" % (suffix, sd))
         dup = subprocess.run([EXE, "--pipe", probe_pipe, "--run-for", "2"], capture_output=True, text=True, creationflags=NO_WINDOW, timeout=20)
         check(dup.returncode == 3, "a second bridge on the same pipe name is refused (exit %d)" % dup.returncode)
@@ -374,8 +389,8 @@ def main():
             except Exception:                                # noqa: BLE001
                 pass
         srv.shutdown()
-        if _fails:
-            print("\n".join(blog[-25:]))
+        if _fails or sys.exc_info()[0]:
+            print("--- bridge log\n" + "\n".join(blog[-25:]))
     print()
     if _fails:
         print("=== %d FAILED ===" % len(_fails))

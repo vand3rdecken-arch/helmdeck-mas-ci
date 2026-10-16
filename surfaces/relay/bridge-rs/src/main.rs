@@ -230,7 +230,11 @@ fn main() {
                             break;
                         }
                     }
-                    hb::Pop::Idle => {}
+                    hb::Pop::Idle => {
+                        if !pipe.client_alive() {
+                            break; // the daemon died without the bridge having a frame to fail on
+                        }
+                    }
                     hb::Pop::Stale => break,
                 }
             }

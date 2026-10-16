@@ -10,10 +10,10 @@ use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, LocalFree, ERROR
 use windows_sys::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1};
 use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
 use windows_sys::Win32::Storage::FileSystem::{
-    FlushFileBuffers, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_INBOUND, PIPE_ACCESS_OUTBOUND,
+    FlushFileBuffers, ReadFile, WriteFile, FILE_FLAG_FIRST_PIPE_INSTANCE, PIPE_ACCESS_DUPLEX, PIPE_ACCESS_INBOUND,
 };
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
+    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PeekNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -74,7 +74,8 @@ impl Pipe {
                 return Err(io::Error::last_os_error());
             }
             let sa = SECURITY_ATTRIBUTES { nLength: size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: sd, bInheritHandle: 0 };
-            let dir = if inbound { PIPE_ACCESS_INBOUND } else { PIPE_ACCESS_OUTBOUND };
+            // duplex for the writing end so PeekNamedPipe works on it (the client still only reads)
+            let dir = if inbound { PIPE_ACCESS_INBOUND } else { PIPE_ACCESS_DUPLEX };
             let h = CreateNamedPipeW(
                 wide(path).as_ptr(),
                 dir | FILE_FLAG_FIRST_PIPE_INSTANCE,
@@ -102,6 +103,11 @@ impl Pipe {
             }
         }
         Ok(())
+    }
+
+    /// False once the client closed its end (a dead daemon). Only meaningful on a duplex pipe.
+    pub fn client_alive(&self) -> bool {
+        unsafe { PeekNamedPipe(self.h, null_mut(), 0, null_mut(), null_mut(), null_mut()) != 0 }
     }
 
     /// Drop the current client so the next one can connect.

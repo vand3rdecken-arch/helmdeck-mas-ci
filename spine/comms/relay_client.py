@@ -739,33 +739,70 @@ def engine():
     return "pipe" if e == "pipe" else "inproc"
 
 
-def _pipe_open(suffix, mode):
-    path = "\\\\.\\pipe\\" + pipe_base() + suffix
-    deadline = time.time() + PIPE_BUSY_S
-    while True:
+class _PipeEnd:
+    """One end of a bridge pipe, over raw Win32 handles (_winapi - what
+    multiprocessing.connection uses). open() on a named pipe works for writing
+    and then fails a blocking read with EINVAL (measured 2026-10-16), and one
+    synchronous handle serialises a read against a write - hence one end per
+    direction."""
+
+    def __init__(self, suffix, write):
+        import _winapi
+        self._w = _winapi
+        path = "\\\\.\\pipe\\" + pipe_base() + suffix
+        access = _winapi.GENERIC_WRITE if write else _winapi.GENERIC_READ
+        deadline = time.time() + PIPE_BUSY_S
+        while True:
+            try:
+                self._h = _winapi.CreateFile(path, access, 0, _winapi.NULL, _winapi.OPEN_EXISTING, 0, _winapi.NULL)
+                break
+            except FileNotFoundError:
+                raise _PipeAbsent(path)
+            except OSError as e:
+                # 231 = every instance busy: the bridge is between two clients
+                if getattr(e, "winerror", None) == 231 and time.time() < deadline:
+                    time.sleep(0.1)
+                    continue
+                raise
+        self._buf = b""
+
+    def write(self, data):
+        view = memoryview(data)
+        while view:
+            n, _ = self._w.WriteFile(self._h, view)
+            view = view[n:]
+
+    def readline(self):
+        """One line including its newline; b"" when the other end is gone."""
+        while b"\n" not in self._buf:
+            try:
+                chunk, _ = self._w.ReadFile(self._h, 65536)
+            except OSError:
+                chunk = b""                  # broken pipe = the bridge closed its end
+            if not chunk:
+                rest, self._buf = self._buf, b""
+                return rest
+            self._buf += chunk
+        line, _, self._buf = self._buf.partition(b"\n")
+        return line + b"\n"
+
+    def close(self):
         try:
-            return open(path, mode)
-        except FileNotFoundError:
-            raise _PipeAbsent(path)
-        except OSError as e:
-            # 231 = every instance busy: the bridge is between two clients
-            if getattr(e, "winerror", None) == 231 and time.time() < deadline:
-                time.sleep(0.1)
-                continue
-            raise
+            self._w.CloseHandle(self._h)
+        except OSError:
+            pass
 
 
 def _pipe_session(relay, room, sk, port, serve=None):
     """One attached session to the bridge. Blocks while it lives; returns when
     the bridge closes the pipe (it stopped, or restarted)."""
     serve = serve or _serve_one
-    wr = _pipe_open(".rx", "wb")           # daemon -> bridge
+    wr = _PipeEnd(".rx", write=True)        # daemon -> bridge
     lock = threading.Lock()
 
     def send_obj(obj):
         with lock:
             wr.write(json.dumps(obj).encode("utf-8") + b"\n")
-            wr.flush()
 
     def send(fid, cipher, to=None):
         m = {"kind": "reply", "id": fid, "cipher": cipher}
@@ -776,7 +813,7 @@ def _pipe_session(relay, room, sk, port, serve=None):
     events = None
     try:
         send_obj({"kind": "hello", "relay": relay, "room": room})
-        rd = _pipe_open(".tx", "rb")       # bridge -> daemon
+        rd = _PipeEnd(".tx", write=False)      # bridge -> daemon
         events = _EventPublisher(sk, send_obj)
         events.start()
         _ws_state["fails"] = 0

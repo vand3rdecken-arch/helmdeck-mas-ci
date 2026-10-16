@@ -48,7 +48,7 @@ pub struct Hub {
 pub enum Pop {
     Line(String),
     Idle,
-    Stale, // the daemon attached/detached since this pipe connection began: reconnect
+    Stale, // the daemon detached since this pipe connection began: it is a dead client, reconnect
 }
 
 impl Default for Hub {
@@ -72,7 +72,6 @@ impl Hub {
     pub fn attach(&self, relay: &str, room: &str) {
         let mut s = self.st.lock().unwrap();
         s.attached = true;
-        s.gen += 1;
         s.target = Some((relay.to_string(), room.to_string()));
         s.detached_at = None;
         self.cv.notify_all();
@@ -228,14 +227,18 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_connection_is_told_to_reconnect() {
+    fn a_connection_from_before_a_detach_is_told_to_reconnect() {
         let h = Hub::new();
         h.attach("https://r", "room");
         let g = h.gen();
+        // attaching does not invalidate the pipe the daemon is about to open (hello races the open)
+        assert!(matches!(h.pop(g, Duration::from_millis(10)).0, Pop::Idle));
         h.detach();
         assert!(matches!(h.pop(g, Duration::from_millis(10)).0, Pop::Stale));
         h.attach("https://r", "room");
-        assert!(matches!(h.pop(g, Duration::from_millis(10)).0, Pop::Stale)); // old generation
+        assert!(matches!(h.pop(g, Duration::from_millis(10)).0, Pop::Stale)); // still the old client
+        let g2 = h.gen();
+        assert!(matches!(h.pop(g2, Duration::from_millis(10)).0, Pop::Idle));
     }
 
     #[test]
