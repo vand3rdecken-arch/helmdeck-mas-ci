@@ -53,8 +53,14 @@ fn icon_for(ok: bool) -> Icon {
     Icon::from_rgba(rgba, w, h).expect("icon")
 }
 
-fn open_ui(port: u16) {
+/// The native Tauri window when it is installed (or built in the checkout), else the browser.
+fn open_ui(port: u16, shell: Option<&PathBuf>) {
     use std::os::windows::process::CommandExt;
+    if let Some(exe) = shell {
+        if hd::spawn_desktop_shell(exe).is_ok() {
+            return;
+        }
+    }
     let _ = Command::new("rundll32")
         .args(["url.dll,FileProtocolHandler", &format!("http://127.0.0.1:{port}/")])
         .creation_flags(hd::CREATE_NO_WINDOW)
@@ -253,6 +259,7 @@ fn main() {
     let p_quit = proxy.clone();
     let log_dir = daemon_dir.clone();
     let auto_cmd = hd::autostart_cmd(&exe, &root);
+    let shell = hd::find_desktop_shell(exe.parent().unwrap_or(std::path::Path::new(".")), &root);
 
     event_loop.run(move |event, _, flow| {
         *flow = ControlFlow::Wait;
@@ -273,7 +280,7 @@ fn main() {
                     let _ = t.set_tooltip(Some(hd::tooltip(s.daemon, &s.relay)));
                 }
             }
-            Event::UserEvent(UserEvent::DoubleClick) => open_ui(port),
+            Event::UserEvent(UserEvent::DoubleClick) => open_ui(port, shell.as_ref()),
             Event::UserEvent(UserEvent::Update(text)) => {
                 m_update.set_text(format!("Update: {text}"));
             }
@@ -291,7 +298,7 @@ fn main() {
             }
             Event::UserEvent(UserEvent::Menu(e)) => {
                 if e.id == id_open {
-                    open_ui(port);
+                    open_ui(port, shell.as_ref());
                 } else if e.id == id_restart {
                     if let Some(t) = tx.as_ref() {
                         let _ = t.send(Cmd::Restart);

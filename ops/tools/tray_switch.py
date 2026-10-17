@@ -38,6 +38,8 @@ BUILT = os.path.join(ROOT, "surfaces", "desktop", "tray-rs", "target", "release"
 INSTALL_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "HelmDeck", "tray")
 INSTALLED = os.path.join(INSTALL_DIR, "helmdeck-tray.exe")
 BRIDGE_BUILT = os.path.join(ROOT, "surfaces", "relay", "bridge-rs", "target", "release", "helmdeck-relay-bridge.exe")
+SHELL_BUILT = os.path.join(ROOT, "surfaces", "desktop", "tauri-app", "target", "release", "helmdeck-desktop.exe")
+SHELL_INSTALLED = os.path.join(INSTALL_DIR, "helmdeck-desktop.exe")   # the tray opens it for "Web-UI"
 BRIDGE_INSTALLED = os.path.join(INSTALL_DIR, "helmdeck-relay-bridge.exe")   # the tray looks next to itself first
 TRAY_PY = os.path.join(ROOT, "surfaces", "desktop", "tray.py")
 PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"   # not on PATH on this box
@@ -150,6 +152,10 @@ def switch(to):
             ps("Get-Process helmdeck-relay-bridge -ErrorAction SilentlyContinue | Stop-Process -Force")
             time.sleep(1)
             shutil.copy2(BRIDGE_BUILT, BRIDGE_INSTALLED)
+        if os.path.exists(SHELL_BUILT):
+            ps("Get-Process helmdeck-desktop -ErrorAction SilentlyContinue | Stop-Process -Force")
+            time.sleep(1)
+            shutil.copy2(SHELL_BUILT, SHELL_INSTALLED)
         set_run(rust_cmd())
         subprocess.Popen([INSTALLED, "--root", ROOT], creationflags=DETACHED | NO_WINDOW, close_fds=True)
     else:

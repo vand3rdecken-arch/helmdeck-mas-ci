@@ -154,6 +154,21 @@ pub fn spawn_bridge(bridge: &Path, daemon_dir: &Path) -> io::Result<Child> {
         .spawn()
 }
 
+/// helmdeck-desktop.exe (the Tauri window) next to the tray exe (installed layout), else the checkout's build.
+pub fn find_desktop_shell(exe_dir: &Path, root: &Path) -> Option<PathBuf> {
+    [
+        exe_dir.join("helmdeck-desktop.exe"),
+        root.join("surfaces").join("desktop").join("tauri-app").join("target").join("release").join("helmdeck-desktop.exe"),
+    ]
+    .into_iter()
+    .find(|p| p.is_file())
+}
+
+/// Start the Tauri window (it is single-instance: a second start focuses the first).
+pub fn spawn_desktop_shell(exe: &Path) -> io::Result<Child> {
+    Command::new(exe).creation_flags(CREATE_NO_WINDOW).stdin(Stdio::null()).spawn()
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BridgeState {
     /// the engine setting says the daemon dials the room itself
