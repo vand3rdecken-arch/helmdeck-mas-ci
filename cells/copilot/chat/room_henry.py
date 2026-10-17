@@ -56,13 +56,23 @@ _live_since = {}                # rid -> epoch the room's busy spell began
 _guard = threading.Lock()
 
 
+def _render(txt, surface="room"):
+    """Splice the owner's behaviour rules (Notizen anlegen) into the brief. Total:
+    a broken rule table costs the setting, never the answer."""
+    try:
+        from spine.registry import behavior
+        return behavior.render(txt, surface)
+    except Exception:                                        # noqa: BLE001
+        return txt
+
+
 def brief():
     """Read at CALL time, so an edit applies on the next turn with no restart.
     A missing/unreadable file costs the customisation, never the answer."""
     try:
         with open(BRIEF, encoding="utf-8") as f:
             txt = f.read().strip()
-        return txt or _FALLBACK_BRIEF
+        return _render(txt) if txt else _FALLBACK_BRIEF
     except OSError:
         return _FALLBACK_BRIEF
 

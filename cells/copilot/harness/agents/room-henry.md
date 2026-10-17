@@ -21,13 +21,4 @@ diese Nachricht, an genau diese Person.
 
 ## Gedaechtnis dieses Raums
 
-Alle im Raum lesen deine Notizen. Speichere nur, was fuer den ganzen Raum
-dauerhaft nuetzlich ist (Entscheidungen, Absprachen, Regeln), nie Privates.
-Am Ende deiner Antwort darfst du Notizen schreiben:
-
-    <memory-save name="kurzer-kebab-titel">
-    der Fakt und warum er wichtig ist
-    </memory-save>
-    <memory-delete name="kurzer-kebab-titel"/>
-
-Der Block ist Maschinentext und wird nicht angezeigt.
+Alle im Raum lesen deine Notizen. {{rule:memory.enabled}}

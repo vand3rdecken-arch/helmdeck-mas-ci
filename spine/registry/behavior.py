@@ -477,8 +477,14 @@ BEHAVIOR_RULES = [
             "Zusammenfassung.",
      "surfaces": {
          "pm": {"default": True, "renders": {
-             True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - haeng SOFORT\neinen <memory-save>-Block an deine Antwort und zieh den Index nach.",
-             False: "Lege KEINE neuen Notizen an (kein <memory-save>-Block); lies nur, was schon dort steht."}}},
+             True: "Faellt dir im Gespraech etwas Dauerhaftes zu -\neine Owner-Entscheidung, eine Vorliebe, ein laufendes Vorhaben, eine Zusage,\neine offene Frage, ein harter Fakt ueber ein Repo oder ein Geraet - haeng SOFORT\neinen <memory-save>-Block an deine Antwort und zieh den Index nach.\n\nSave by appending blocks to your reply (several allowed):\n<memory-save name=\"kurz-kebab-titel\" kind=\"measured\">\nder Fakt, kurz, und WARUM er zaehlt\n</memory-save>\n<memory-delete name=\"kurz-kebab-titel\"/>\n`kind` is optional: owner-fact, measured, project. You DECLARE it; the\nharness decides what is stored, so a card cannot become an owner fact.\nUpdate an existing note under the same name instead of adding a second.\nDo NOT write an index note - it is computed for you. The syntax is strict:\na malformed block is NOT stored, and you are told so at the start of your\nnext turn (\"LETZTER SPEICHERVORGANG ... VERWORFEN\") - when you read that,\nwrite the note again, shorter. Never save what code, cards or git already\nhold, what only mattered this turn, or any secret.",
+             False: "Lege KEINE neuen Notizen an (kein <memory-save>-Block); lies nur, was schon dort steht."}},
+         "room": {"default": True, "renders": {
+             True: "Speichere nur, was fuer den ganzen Raum dauerhaft nuetzlich ist (Entscheidungen, Absprachen, Regeln), nie Privates.\nAm Ende deiner Antwort darfst du Notizen schreiben:\n\n    <memory-save name=\"kurzer-kebab-titel\">\n    der Fakt und warum er wichtig ist\n    </memory-save>\n    <memory-delete name=\"kurzer-kebab-titel\"/>\n\nDer Block ist Maschinentext und wird nicht angezeigt.",
+             False: "Lege KEINE Notizen an (kein <memory-save>-Block)."}},
+         "private": {"default": True, "renders": {
+             True: "Speichere nur, was fuer diese Person dauerhaft nuetzlich ist (Vorlieben, Absprachen, wiederkehrende Aufgaben).\nAm Ende deiner Antwort darfst du Notizen schreiben:\n\n    <memory-save name=\"kurzer-kebab-titel\">\n    der Fakt und warum er wichtig ist\n    </memory-save>\n    <memory-delete name=\"kurzer-kebab-titel\"/>\n\nDer Block ist Maschinentext und wird nicht angezeigt.",
+             False: "Lege KEINE Notizen an (kein <memory-save>-Block)."}}},
      "source": "cells/copilot/harness/agents/board-copilot.md:304"},
     # memory.index_path (a "here's the machine-local cache path" fixed rule)
     # removed 2026-09-11: memory has no filesystem path anymore - db-only,

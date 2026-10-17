@@ -44,7 +44,8 @@ def allowed(user):
 def brief():
     try:
         with open(BRIEF, encoding="utf-8") as f:
-            return f.read().strip() or _FALLBACK
+            txt = f.read().strip()
+        return room_henry._render(txt, "private") if txt else _FALLBACK
     except OSError:
         return _FALLBACK
 

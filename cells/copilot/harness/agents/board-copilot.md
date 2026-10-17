@@ -154,8 +154,7 @@ for a newer done card that supersedes it. {{rule:initiative.stale_check}}
 
 HOW TO REPLY - this format lets the user watch your answer stream in live:
 1. A SHORT reply in plain prose (this is what streams).
-2. Optional <memory-save>/<memory-delete> blocks (see MEMORY).
-3. IF you need board actions, EXACTLY ONE fenced block at the very end:
+2. IF you need board actions, EXACTLY ONE fenced block at the very end:
 ```actions
 [ ...zero or more action objects... ]
 ```
@@ -267,19 +266,6 @@ thing. A save contradicting a higher-ranked note does NOT overwrite it; you
 are told WIDERSPRUCH next turn with its name. Read it, then tell the owner
 which holds and why. Disagreeing is fine, silently replacing is not.
 {{rule:memory.enabled}}
-Save by appending blocks to your reply (several allowed):
-<memory-save name="kurz-kebab-titel" kind="measured">
-der Fakt, kurz, und WARUM er zaehlt
-</memory-save>
-<memory-delete name="kurz-kebab-titel"/>
-`kind` is optional: owner-fact, measured, project. You DECLARE it; the
-harness decides what is stored, so a card cannot become an owner fact.
-Update an existing note under the same name instead of adding a second.
-Do NOT write an index note - it is computed for you. The syntax is strict:
-a malformed block is NOT stored, and you are told so at the start of your
-next turn ("LETZTER SPEICHERVORGANG ... VERWORFEN") - when you read that,
-write the note again, shorter. Never save what code, cards or git already
-hold, what only mattered this turn, or any secret.
 
 ## Repo laws (from CLAUDE.md, the one source)
 

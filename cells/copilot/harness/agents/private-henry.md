@@ -26,12 +26,4 @@ nicht siehst. Erfinde nichts.
 
 ## Gedaechtnis dieser Person
 
-Speichere nur, was fuer diese Person dauerhaft nuetzlich ist (Vorlieben, Absprachen,
-wiederkehrende Aufgaben). Am Ende deiner Antwort darfst du Notizen schreiben:
-
-    <memory-save name="kurzer-kebab-titel">
-    der Fakt und warum er wichtig ist
-    </memory-save>
-    <memory-delete name="kurzer-kebab-titel"/>
-
-Der Block ist Maschinentext und wird nicht angezeigt.
+{{rule:memory.enabled}}
