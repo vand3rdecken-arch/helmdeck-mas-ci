@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef } from "react";
 import { Animated, Easing, Text, View } from "react-native";
+import { isWeb } from "@/ui/responsive";
 
 import { useLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -55,8 +56,8 @@ function useBreath(on: boolean) {
   useEffect(() => {
     if (!on) { v.setValue(1); return; }
     const loop = Animated.loop(Animated.sequence([
-      Animated.timing(v, { toValue: 0.35, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(v, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(v, { toValue: 0.35, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
+      Animated.timing(v, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
     ]));
     loop.start();
     return () => loop.stop();
@@ -69,7 +70,7 @@ function useSpin(on: boolean) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!on) { v.setValue(0); return; }
-    const loop = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1600, easing: Easing.linear, useNativeDriver: true }));
+    const loop = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1600, easing: Easing.linear, useNativeDriver: !isWeb }));
     loop.start();
     return () => loop.stop();
   }, [on, v]);

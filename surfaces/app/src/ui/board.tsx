@@ -178,8 +178,8 @@ function RunningPulse({ color }: { color: string }) {
   const o = useRef(new RNAnimated.Value(1)).current;
   useEffect(() => {
     const loop = RNAnimated.loop(RNAnimated.sequence([
-      RNAnimated.timing(o, { toValue: 0.28, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      RNAnimated.timing(o, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      RNAnimated.timing(o, { toValue: 0.28, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
+      RNAnimated.timing(o, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
     ]));
     loop.start();
     return () => loop.stop();

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { isWeb } from "@/ui/responsive";
 import { api, type ChatThread, type ChatThreads } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -57,7 +58,7 @@ function timeAgo(at: number, nowS: number, nowLabel: string): string {
 export function StatusRing({ color }: { color: string }) {
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: true }));
+    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: !isWeb }));
     a.start();
     return () => a.stop();
   }, [spin]);

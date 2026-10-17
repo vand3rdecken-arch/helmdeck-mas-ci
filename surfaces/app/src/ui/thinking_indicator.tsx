@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Text, View } from "react-native";
+import { isWeb } from "@/ui/responsive";
 
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -29,8 +30,8 @@ export function ThinkingIndicator({ preview, since }: { preview?: string; since?
     const pulse = (v: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
         Animated.delay(delay),
-        Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0.25, duration: 300, useNativeDriver: true }),
+        Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: !isWeb }),
+        Animated.timing(v, { toValue: 0.25, duration: 300, useNativeDriver: !isWeb }),
         Animated.delay(360 - delay),
       ]));
     const anims = [pulse(d0, 0), pulse(d1, 160), pulse(d2, 320)];
