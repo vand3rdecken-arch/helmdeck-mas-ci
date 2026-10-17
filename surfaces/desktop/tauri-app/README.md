@@ -47,7 +47,8 @@ refuses even the four bridge calls ("not allowed by ACL").
 
 1. **Starting/supervising the daemon.** The tray owns that. The window only adopts.
 2. **The rest of the setup wizard.** Ported: endpoints, probes, Claude install + login, daemon start.
-   NOT ported: the embeddable-Python fetch (needs an unzip), the `claude -p` hand-offs (Python fallback,
+   Python: bundled runtime first, else the embeddable CPython is fetched + unpacked (real download tested)
+   and its `_pth` pinned to the daemon root. NOT ported: the `claude -p` hand-offs (Python fallback,
    daemon diagnosis), optional engine installs (status only), the Microsoft Store variant, the
    mac/linux login terminal. The e2e check of the control plane needs ports 8141/3300 free (it skips
    while the Electron app runs).
@@ -55,7 +56,7 @@ refuses even the four bridge calls ("not allowed by ACL").
    app renders; a check at start and every 30 min downloads in the background, "restart now" installs.
    Every update is verified against the public key in `tauri.conf.json`; the private key is OUTSIDE the repo
    (`%USERPROFILE%\.helmdeck-keys`, password DPAPI-protected). Status is pushed into the page, not polled.
-   Feed: `latest.json` on the newest release of `helmdeck-release` - see the RELEASE CAVEAT below.
+   Feed: `latest.json` on the fixed `tauri-feed` tag of `helmdeck-release` (below).
    `py -3.12 ops/deploy/release_tauri.py --version x.y.z [--publish]` builds the signed NSIS installer
    (4.8 MB). The UI bundle itself is refreshed by the tray's update thread, not by the shell.
 4. **Packaging and signing.** NSIS is built now (see 3). Not done: Windows code signing (SmartScreen warns on a
@@ -68,9 +69,9 @@ refuses even the four bridge calls ("not allowed by ACL").
 
 Both shells coexist: nothing in `surfaces/desktop/main.js` was touched.
 
-## RELEASE CAVEAT
+## Update feed (decided 2026-10-18: a fixed tag)
 
-`tauri.conf.json` points at `https://github.com/Tienduyvo/helmdeck-release/releases/latest/download/latest.json`.
-"latest" is the newest release of that repo, which the Electron desktop feed also uses. Publishing a Tauri release
-there can change which release the Electron updater sees as latest. Decide before the first `--publish`
-(a separate repo, or a fixed tag for the feed).
+`tauri.conf.json` points at `.../releases/download/tauri-feed/latest.json`: a FIXED tag of `helmdeck-release`, not
+"latest". The Electron feed follows the newest release of the same repo, so Tauri installers go to their own
+`v<version>` releases (`--latest=false`) and only `latest.json` on `tauri-feed` is replaced each time
+(`ops/deploy/release_tauri.py --publish`; not run yet).

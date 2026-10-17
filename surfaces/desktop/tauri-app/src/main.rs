@@ -203,10 +203,12 @@ fn daemon_data_dir() -> Option<PathBuf> {
 /// running install; this is the first-run path, before any tray exists).
 fn start_daemon(python: &str) -> bool {
     let Some(root) = find_root() else { return false };
-    let mut parts = python.split_whitespace();
-    let Some(program) = parts.next() else { return false };
+    let (program, lead) = setup::daemon_argv(python);
+    if program.is_empty() {
+        return false;
+    }
     let mut c = std::process::Command::new(program);
-    c.args(parts).args(["-m", "daemon.swarm", "serve"]).current_dir(&root).env("PYTHONUNBUFFERED", "1").stdin(std::process::Stdio::null());
+    c.args(lead).args(["-m", "daemon.swarm", "serve"]).current_dir(&root).env("PYTHONUNBUFFERED", "1").stdin(std::process::Stdio::null());
     if let Some(dir) = daemon_data_dir() {
         if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("daemon.out.log")) {
             if let Ok(f2) = f.try_clone() {
@@ -263,9 +265,14 @@ fn main() {
                 }
             }
             // the first-run control plane: probes + provisioning, behind a per-launch nonce
-            let setup = setup::Setup::new(setup::Probes::real(DAEMON_PORT));
-            let data_dir = daemon_data_dir();
-            let started = setup::serve(setup.clone(), setup::SETUP_PORT, Arc::new(start_daemon), data_dir.map(|d| d.join("daemon.out.log")));
+            let resources = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())).unwrap_or_default();
+            let env = setup::Env {
+                resources: resources.clone(),
+                daemon_root: find_root(),
+                daemon_log: daemon_data_dir().map(|d| d.join("daemon.out.log")),
+            };
+            let setup = setup::Setup::with_env(setup::Probes::real(DAEMON_PORT, resources), env);
+            let started = setup::serve(setup.clone(), setup::SETUP_PORT, Arc::new(start_daemon));
             let url = match &problem {
                 Some(p) => error_page(p),
                 None => window_url(started.ok().map(|_| (setup::SETUP_PORT, setup.nonce.as_str()))),

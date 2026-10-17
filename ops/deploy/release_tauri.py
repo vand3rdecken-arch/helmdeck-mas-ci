@@ -4,8 +4,11 @@
     py -3.12 ops/deploy/release_tauri.py --version 0.2.0                # build + sign + latest.json, upload NOTHING
     py -3.12 ops/deploy/release_tauri.py --version 0.2.0 --publish      # ...and upload to helmdeck-release
 
-The update feed is `latest.json` on the newest release of Tienduyvo/helmdeck-release (the URL baked
-into tauri.conf.json): {version, notes, pub_date, platforms: {"windows-x86_64": {signature, url}}}.
+The update feed is `latest.json` on a FIXED tag, `tauri-feed`, of Tienduyvo/helmdeck-release (the URL baked
+into tauri.conf.json). A fixed tag, not "latest": the Electron desktop feed uses the newest release of the
+same repo, and a Tauri release must never change which release counts as newest. The installer itself goes
+to its own `v<version>` release (not marked latest); `latest.json` is re-uploaded to `tauri-feed` each time.
+Feed shape: {version, notes, pub_date, platforms: {"windows-x86_64": {signature, url}}}.
 The installer's signature is checked by every installed app against the PUBLIC key in tauri.conf.json.
 
 The PRIVATE key lives OUTSIDE the repo: %USERPROFILE%\\.helmdeck-keys\\updater.key. Its password is a
@@ -28,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 APP = os.path.join(ROOT, "surfaces", "desktop", "tauri-app")
 KEYS = os.path.join(os.environ.get("USERPROFILE", os.path.expanduser("~")), ".helmdeck-keys")
 REPO = "Tienduyvo/helmdeck-release"
+FEED_TAG = "tauri-feed"
 
 
 def dpapi_unprotect(blob):
@@ -93,7 +97,15 @@ def main():
         print("not published (no --publish)")
         return
     tag = "v" + a.version
-    subprocess.run(["gh", "release", "create", tag, "--repo", REPO, "--title", "HelmDeck " + a.version, "--notes", a.notes or tag, exe, exe + ".sig", latest], check=True)
+    # the installer: its own release, never "latest" (Electron's feed follows the newest release)
+    subprocess.run(["gh", "release", "create", tag, "--repo", REPO, "--latest=false", "--title", "HelmDeck (Tauri) " + a.version,
+                    "--notes", a.notes or tag, exe, exe + ".sig"], check=True)
+    # the feed: a fixed tag, created once, its latest.json replaced on every release
+    have = subprocess.run(["gh", "release", "view", FEED_TAG, "--repo", REPO], capture_output=True).returncode == 0
+    if not have:
+        subprocess.run(["gh", "release", "create", FEED_TAG, "--repo", REPO, "--latest=false", "--title", "Tauri update feed",
+                        "--notes", "latest.json for the Tauri desktop updater. Replaced on every release."], check=True)
+    subprocess.run(["gh", "release", "upload", FEED_TAG, latest, "--repo", REPO, "--clobber"], check=True)
     print("published", tag)
 
 

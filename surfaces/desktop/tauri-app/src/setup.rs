@@ -8,7 +8,7 @@
 //! every step idempotent and re-entrant; probes cached once positive, a miss retried no more than
 //! every MISS_TTL (a fresh machine misses everything, and the screen polls twice a second).
 //!
-//! NOT ported (still Electron-only, see README): the embeddable-Python fetch, the `claude -p`
+//! NOT ported (still Electron-only, see README): the `claude -p`
 //! hand-offs, optional engine installs (status only here), the Microsoft Store variant, the
 //! mac/linux login terminal.
 
@@ -138,7 +138,14 @@ pub struct Claude {
     pub version: String,
 }
 
-pub fn find_python() -> Option<String> {
+/// A python command as ONE string: argv joined by a tab (a path may contain spaces, a launcher
+/// has arguments: "py<TAB>-3.12"). `daemon_argv` splits it back.
+pub fn find_python(resources: &Path) -> Option<String> {
+    // the runtime the installer bundles (or `fetch_python` unpacked) wins
+    let bundled = resources.join("python").join(if cfg!(windows) { "python.exe" } else { "bin/python3" });
+    if bundled.is_file() {
+        return Some(bundled.to_string_lossy().into_owned());
+    }
     let cands: &[(&str, &[&str])] = if cfg!(windows) {
         &[("py", &["-3.12"]), ("py", &["-3"]), ("python", &[]), ("python3", &[])]
     } else {
@@ -146,7 +153,7 @@ pub fn find_python() -> Option<String> {
     };
     for (cmd, args) in cands {
         if version_of(cmd, args).is_some() {
-            return Some(format!("{cmd} {}", args.join(" ")).trim().to_string());
+            return Some(std::iter::once(*cmd).chain(args.iter().copied()).collect::<Vec<_>>().join("\t"));
         }
     }
     if cfg!(windows) {
@@ -161,6 +168,66 @@ pub fn find_python() -> Option<String> {
         }
     }
     None
+}
+
+/// (program, leading args) of a `find_python` string.
+pub fn daemon_argv(py: &str) -> (String, Vec<String>) {
+    let mut it = py.split('\t').map(str::to_string);
+    (it.next().unwrap_or_default(), it.collect())
+}
+
+pub const PY_EMBED_URL: &str = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip";
+
+/// An embeddable CPython ignores PYTHONPATH and the cwd - its `pythonXY._pth` is the only lever - so
+/// `-m daemon.swarm` would fail on exactly the fresh machine this fetch exists for, with the traceback
+/// in daemon.out.log where the screen never looks. Append the daemon root once (idempotent).
+pub fn pin_pth(py_dir: &Path, daemon_root: &Path) -> Result<bool, String> {
+    let Ok(entries) = std::fs::read_dir(py_dir) else { return Ok(false) };
+    let Some(file) = entries.flatten().map(|e| e.path()).find(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.to_lowercase())
+            .map(|n| n.starts_with("python") && n.ends_with("._pth"))
+            .unwrap_or(false)
+    }) else {
+        return Ok(false); // a full install, not an embed: nothing to pin
+    };
+    let body = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+    let root = daemon_root.to_string_lossy().into_owned();
+    if body.lines().any(|l| l.trim().eq_ignore_ascii_case(&root)) {
+        return Ok(false);
+    }
+    let mut f = std::fs::OpenOptions::new().append(true).open(&file).map_err(|e| e.to_string())?;
+    let sep = if body.ends_with('\n') { "" } else { "\r\n" };
+    write!(f, "{sep}{root}\r\n").map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn powershell() -> String {
+    let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into());
+    format!("{root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+}
+
+/// Download + unpack the embeddable runtime into `<resources>/python` (Windows only). PowerShell is
+/// always there, so no unzip dependency is shipped.
+pub fn fetch_python(resources: &Path, url: &str) -> Result<(), String> {
+    let target = resources.join("python");
+    let zip = resources.join("python-embed.zip");
+    let script = format!(
+        "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; \
+         Invoke-WebRequest -UseBasicParsing -Uri '{url}' -OutFile '{z}'; \
+         Expand-Archive -Path '{z}' -DestinationPath '{t}' -Force; Remove-Item -Path '{z}' -ErrorAction SilentlyContinue",
+        z = zip.display(),
+        t = target.display()
+    );
+    std::fs::create_dir_all(resources).map_err(|e| e.to_string())?;
+    let mut c = command(&powershell());
+    c.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    match run_capture(c, Duration::from_secs(300)) {
+        Some((0, _)) => Ok(()),
+        Some((_, out)) => Err(out.trim().lines().last().unwrap_or("unknown error").to_string()),
+        None => Err("Zeitueberschreitung beim Laden".into()),
+    }
 }
 
 pub fn find_claude() -> Option<Claude> {
@@ -220,9 +287,9 @@ pub struct Probes {
 }
 
 impl Probes {
-    pub fn real(daemon_port: u16) -> Probes {
+    pub fn real(daemon_port: u16, resources: PathBuf) -> Probes {
         Probes {
-            python: Arc::new(find_python),
+            python: Arc::new(move || find_python(&resources)),
             claude: Arc::new(find_claude),
             engine: Arc::new(|id| version_of(id, &[])),
             daemon_up: Arc::new(move || daemon_up(daemon_port)),
@@ -238,18 +305,31 @@ struct Cache {
     missed: std::collections::HashMap<String, Instant>,
 }
 
+/// Where this install keeps things: the runtime, the repo root the daemon starts from, its log.
+#[derive(Clone, Default)]
+pub struct Env {
+    pub resources: PathBuf,
+    pub daemon_root: Option<PathBuf>,
+    pub daemon_log: Option<PathBuf>,
+}
+
 pub struct Setup {
     pub nonce: String,
     probes: Probes,
     log: Mutex<Vec<(u128, String, String)>>,
     flags: Mutex<(bool, bool)>, // (running, done)
     cache: Mutex<Cache>,
+    env: Env,
     hints: Arc<Mutex<Vec<String>>>, // written by the login-output thread, folded into the log on read
 }
 
 impl Setup {
     pub fn new(probes: Probes) -> Arc<Setup> {
-        Arc::new(Setup { nonce: nonce(), probes, log: Mutex::new(Vec::new()), flags: Mutex::new((false, false)), cache: Mutex::new(Cache::default()), hints: Arc::new(Mutex::new(Vec::new())) })
+        Setup::with_env(probes, Env::default())
+    }
+
+    pub fn with_env(probes: Probes, env: Env) -> Arc<Setup> {
+        Arc::new(Setup { nonce: nonce(), probes, env, log: Mutex::new(Vec::new()), flags: Mutex::new((false, false)), cache: Mutex::new(Cache::default()), hints: Arc::new(Mutex::new(Vec::new())) })
     }
 
     pub fn say(&self, line: &str, kind: &str) {
@@ -303,12 +383,16 @@ impl Setup {
         self.cache.lock().unwrap().claude = Some(c);
     }
 
+    fn bundled_dir(&self) -> PathBuf {
+        self.env.resources.join("python")
+    }
+
     pub fn state_json(&self) -> serde_json::Value {
         let py = self.python();
         let claude = self.claude();
         let (running, done) = *self.flags.lock().unwrap();
         serde_json::json!({
-            "python": py.is_some(), "pythonBundled": false,
+            "python": py.is_some(), "pythonBundled": py.as_deref().map(|p| Path::new(p).starts_with(self.bundled_dir())).unwrap_or(false),
             "claude": claude.is_some(), "claudeVersion": claude.map(|c| c.version).unwrap_or_default(),
             "daemon": (self.probes.daemon_up)(),
             "running": running, "done": done,
@@ -350,7 +434,7 @@ impl Setup {
     }
 
     /// Start a provisioning run unless one is in flight. Returns whether THIS call started one.
-    pub fn provision(self: &Arc<Self>, start_daemon: Arc<dyn Fn(&str) -> bool + Send + Sync>, daemon_log: Option<PathBuf>) -> bool {
+    pub fn provision(self: &Arc<Self>, start_daemon: Arc<dyn Fn(&str) -> bool + Send + Sync>, env: Env) -> bool {
         {
             let mut f = self.flags.lock().unwrap();
             if f.0 {
@@ -360,14 +444,14 @@ impl Setup {
         }
         let me = self.clone();
         std::thread::spawn(move || {
-            let ok = me.run(&*start_daemon, daemon_log);
+            let ok = me.run(&*start_daemon, &env);
             let mut f = me.flags.lock().unwrap();
             *f = (false, ok);
         });
         true
     }
 
-    fn run(&self, start_daemon: &dyn Fn(&str) -> bool, daemon_log: Option<PathBuf>) -> bool {
+    fn run(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env) -> bool {
         // 1) Claude Code
         let mut claude = self.claude();
         if claude.is_none() {
@@ -415,13 +499,38 @@ impl Setup {
         }
         self.say("Claude ist angemeldet.", "ok");
 
-        // 2) Runtime for the daemon (detect only in this port; the embeddable fetch is not ported)
-        let Some(py) = self.python() else {
-            self.say("Keine Python-Laufzeit gefunden.", "err");
+        // 2) Runtime for the daemon (stdlib-only, so the embeddable build suffices)
+        let mut py = self.python();
+        if py.is_none() {
+            self.say("Keine Python-Laufzeit gefunden.", "info");
+            if cfg!(windows) {
+                self.say("Lade Python-Laufzeit (~11 MB)…", "info");
+                match fetch_python(&env.resources, PY_EMBED_URL) {
+                    Ok(()) => {
+                        self.cache.lock().unwrap().missed.remove("python");
+                        py = (self.probes.python)();
+                        if let Some(p) = &py {
+                            self.cache.lock().unwrap().python = Some(p.clone());
+                        }
+                    }
+                    Err(e) => self.say(&format!("Download fehlgeschlagen: {e}"), "err"),
+                }
+            }
+        }
+        let Some(py) = py else {
+            self.say("Ohne Python-Laufzeit kann der Daemon nicht starten.", "err");
             self.say("Installiere Python 3.12 von https://python.org, dann hier erneut starten.", "hint");
             return false;
         };
         self.say("Python-Laufzeit bereit.", "ok");
+        // covers the runtime the installer bundled AND the one just fetched: same folder, same _pth
+        if let Some(root) = &env.daemon_root {
+            match pin_pth(&env.resources.join("python"), root) {
+                Ok(true) => self.say("Python-Laufzeit auf HelmDeck ausgerichtet.", "ok"),
+                Ok(false) => {}
+                Err(e) => self.say(&format!("Konnte die Python-Laufzeit nicht ausrichten: {e}"), "err"),
+            }
+        }
 
         // 3) Instance
         if !(self.probes.daemon_up)() {
@@ -438,7 +547,7 @@ impl Setup {
         }
         if !(self.probes.daemon_up)() {
             self.say("Die Instanz antwortet nicht.", "err");
-            match daemon_log.as_deref().map(|p| log_tail(p, 12)) {
+            match env.daemon_log.as_deref().map(|p| log_tail(p, 12)) {
                 Some(t) if !t.is_empty() => {
                     self.say("Letzte Zeilen aus daemon.out.log:", "info");
                     for l in t {
@@ -596,7 +705,7 @@ fn respond(s: &mut TcpStream, code: u16, body: &serde_json::Value) {
     );
 }
 
-fn handle(mut s: TcpStream, setup: &Arc<Setup>, start_daemon: &Arc<dyn Fn(&str) -> bool + Send + Sync>, daemon_log: &Option<PathBuf>) {
+fn handle(mut s: TcpStream, setup: &Arc<Setup>, start_daemon: &Arc<dyn Fn(&str) -> bool + Send + Sync>) {
     let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
     // read the WHOLE request head: answering and closing with bytes still unread makes the peer see a
     // connection reset instead of the answer (a request can arrive in several segments)
@@ -626,7 +735,7 @@ fn handle(mut s: TcpStream, setup: &Arc<Setup>, start_daemon: &Arc<dyn Fn(&str) 
         "/setup/log" => respond(&mut s, 200, &setup.log_json()),
         "/setup/engines" => respond(&mut s, 200, &setup.engines_json()),
         "/setup/provision" => {
-            let started = setup.provision(start_daemon.clone(), daemon_log.clone());
+            let started = setup.provision(start_daemon.clone(), setup.env.clone());
             respond(&mut s, 200, &serde_json::json!({"started": started, "alreadyRunning": !started}));
         }
         _ => respond(&mut s, 404, &serde_json::json!({"error": "not found"})),
@@ -638,14 +747,13 @@ pub fn serve(
     setup: Arc<Setup>,
     port: u16,
     start_daemon: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    daemon_log: Option<PathBuf>,
 ) -> std::io::Result<u16> {
     let l = TcpListener::bind(("127.0.0.1", port))?;
     let bound = l.local_addr()?.port();
     std::thread::spawn(move || {
         for s in l.incoming().flatten() {
-            let (setup, sd, dl) = (setup.clone(), start_daemon.clone(), daemon_log.clone());
-            std::thread::spawn(move || handle(s, &setup, &sd, &dl));
+            let (setup, sd) = (setup.clone(), start_daemon.clone());
+            std::thread::spawn(move || handle(s, &setup, &sd));
         }
     });
     Ok(bound)
@@ -679,7 +787,7 @@ mod tests {
 
     fn server(p: Probes) -> (u16, Arc<Setup>) {
         let setup = Setup::new(p);
-        let port = serve(setup.clone(), 0, Arc::new(|_| false), None).unwrap();
+        let port = serve(setup.clone(), 0, Arc::new(|_| false)).unwrap();
         (port, setup)
     }
 
@@ -760,7 +868,7 @@ mod tests {
     fn a_second_provision_call_does_not_start_a_second_run() {
         let s = Setup::new(probes(None, false, Arc::new(AtomicUsize::new(0))));
         s.flags.lock().unwrap().0 = true; // a run is in flight
-        assert!(!s.provision(Arc::new(|_| false), None), "the reload mid-provision must not claim it started a run");
+        assert!(!s.provision(Arc::new(|_| false), Env::default()), "the reload mid-provision must not claim it started a run");
     }
 
     #[test]
@@ -802,5 +910,53 @@ mod tests {
         assert_eq!(query_param("/setup/state?n=abc&x=1", "n").unwrap(), "abc");
         assert_eq!(query_param("/setup/state?x=1&n=abc", "n").unwrap(), "abc");
         assert!(query_param("/setup/state", "n").is_none());
+    }
+
+    #[test]
+    fn a_python_command_survives_spaces_and_launcher_arguments() {
+        assert_eq!(daemon_argv("py\t-3.12"), ("py".to_string(), vec!["-3.12".to_string()]));
+        assert_eq!(daemon_argv("C:\\Users\\Tien Duy Vo\\python.exe"), ("C:\\Users\\Tien Duy Vo\\python.exe".to_string(), vec![]));
+    }
+
+    #[test]
+    fn a_bundled_runtime_wins_over_the_system_one() {
+        let d = std::env::temp_dir().join(format!("hd-res-{}", std::process::id()));
+        let py = d.join("python");
+        std::fs::create_dir_all(&py).unwrap();
+        std::fs::write(py.join(if cfg!(windows) { "python.exe" } else { "python3" }), "").unwrap();
+        if cfg!(windows) {
+            assert_eq!(find_python(&d).unwrap(), py.join("python.exe").to_string_lossy());
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_embed_pth_gets_the_daemon_root_exactly_once() {
+        let d = std::env::temp_dir().join(format!("hd-pth-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("python312._pth"), "python312.zip\r\n.\r\n#import site").unwrap();
+        let root = std::path::PathBuf::from("C:\\HelmDeck");
+        assert_eq!(pin_pth(&d, &root), Ok(true));
+        assert_eq!(pin_pth(&d, &root), Ok(false), "a re-entered provision must not stack a second line");
+        let body = std::fs::read_to_string(d.join("python312._pth")).unwrap();
+        assert_eq!(body.lines().filter(|l| *l == "C:\\HelmDeck").count(), 1);
+        assert!(body.contains("#import site"), "site stays disabled");
+        assert_eq!(pin_pth(&d.join("nowhere"), &root), Ok(false), "no embed, nothing to pin");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Real network + PowerShell: `cargo test -- --ignored`. Fetches the actual runtime into a temp folder,
+    /// then proves it runs and that the daemon root lands in its _pth.
+    #[test]
+    #[ignore]
+    fn the_embeddable_runtime_really_downloads_unpacks_and_runs() {
+        let d = std::env::temp_dir().join(format!("hd-fetch-{}", std::process::id()));
+        fetch_python(&d, PY_EMBED_URL).unwrap();
+        let py = find_python(&d).unwrap();
+        assert!(py.ends_with("python.exe"));
+        let out = run_capture({ let mut c = command(&py); c.arg("--version"); c }, Duration::from_secs(20)).unwrap();
+        assert!(out.1.contains("3.12"), "{}", out.1);
+        assert_eq!(pin_pth(&d.join("python"), std::path::Path::new("C:\\HelmDeck")), Ok(true));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
