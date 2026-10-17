@@ -51,10 +51,15 @@ refuses even the four bridge calls ("not allowed by ACL").
    daemon diagnosis), optional engine installs (status only), the Microsoft Store variant, the
    mac/linux login terminal. The e2e check of the control plane needs ports 8141/3300 free (it skips
    while the Electron app runs).
-3. **The full-app updater** (`native-updater.js`, electron-updater). Tauri has its own updater plugin
-   with a signing key; the release feed (`helmdeck-release`) would need `latest.json` in its format.
-   The UI bundle itself is refreshed by the tray's update thread, not by the shell.
-4. **Packaging and signing.** Electron has three pipelines: NSIS (`electron-builder.yml`), MSIX
+3. **The full-app updater: built** (`src/updater.rs`, tauri-plugin-updater). States are the ones the web
+   app renders; a check at start and every 30 min downloads in the background, "restart now" installs.
+   Every update is verified against the public key in `tauri.conf.json`; the private key is OUTSIDE the repo
+   (`%USERPROFILE%\.helmdeck-keys`, password DPAPI-protected). Status is pushed into the page, not polled.
+   Feed: `latest.json` on the newest release of `helmdeck-release` - see the RELEASE CAVEAT below.
+   `py -3.12 ops/deploy/release_tauri.py --version x.y.z [--publish]` builds the signed NSIS installer
+   (4.8 MB). The UI bundle itself is refreshed by the tray's update thread, not by the shell.
+4. **Packaging and signing.** NSIS is built now (see 3). Not done: Windows code signing (SmartScreen warns on a
+   fresh install), MSIX and the Mac App Store. Electron has three pipelines: NSIS (`electron-builder.yml`), MSIX
    (`electron-builder.appx.yml`, `build_msix.ps1`) and Mac App Store (`electron-builder.mas.yml`,
    notarization). `bundle.active` is `false` here: this builds an exe, not an installer.
 5. **macOS menu / re-open window** (the App Store rejection fix of 2026-09-27).
@@ -62,3 +67,10 @@ refuses even the four bridge calls ("not allowed by ACL").
    login item have non-Windows branches) but nothing here was built or run off Windows.
 
 Both shells coexist: nothing in `surfaces/desktop/main.js` was touched.
+
+## RELEASE CAVEAT
+
+`tauri.conf.json` points at `https://github.com/Tienduyvo/helmdeck-release/releases/latest/download/latest.json`.
+"latest" is the newest release of that repo, which the Electron desktop feed also uses. Publishing a Tauri release
+there can change which release the Electron updater sees as latest. Decide before the first `--publish`
+(a separate repo, or a fixed tag for the feed).

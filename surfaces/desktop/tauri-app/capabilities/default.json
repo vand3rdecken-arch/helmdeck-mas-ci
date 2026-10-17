@@ -4,5 +4,5 @@
   "description": "The HelmDeck window may call exactly the four bridge commands, and only from its own local UI server. No core or plugin permissions: the page cannot open dialogs, windows or files by itself.",
   "windows": ["main"],
   "remote": { "urls": ["http://localhost:3300/*", "http://127.0.0.1:3300/*"] },
-  "permissions": ["allow-app-info", "allow-pick-folder", "allow-login-item-get", "allow-login-item-set"]
+  "permissions": ["allow-app-info", "allow-pick-folder", "allow-login-item-get", "allow-login-item-set", "allow-update-status", "allow-update-install"]
 }

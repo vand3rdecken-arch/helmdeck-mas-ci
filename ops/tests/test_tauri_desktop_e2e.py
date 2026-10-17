@@ -66,6 +66,11 @@ PAGE = """<!doctype html><html><body style="background:#0b0f14;color:#fff">bridg
     out.info = await n.getAppInfo();
     out.update = await n.getUpdateStatus();
     out.js = await n.getJsUpdateStatus();
+    out.pushed = await new Promise(function (res) {
+      var off = n.onUpdateStatus(function (st) { off(); res(st && st.state === "downloaded"); });
+      window.__hdNativeUpdate({ state: "downloaded", version: "9.9.9", message: null });
+      setTimeout(function () { res(false); }, 2000);
+    });
     out.login0 = await n.getLoginItem();
     out.login1 = await n.setLoginItem(true);
     out.login2 = await n.setLoginItem(false);
@@ -155,8 +160,11 @@ def main():
         info = r.get("info") or {}
         check(info.get("platform") == "win32" and info.get("packaged") is True and info.get("shellVersion"),
               "getAppInfo has the Electron shape: %s" % info)
-        check((r.get("update") or {}).get("state") == "current" and (r.get("js") or {}).get("state") == "current",
-              "update status answers 'current' (the tray refreshes the bundle)")
+        valid = {"unavailable", "checking", "downloading", "downloaded", "current", "error"}
+        check((r.get("update") or {}).get("state") in valid and set(r.get("update") or {}) >= {"state", "version", "message"},
+              "the whole-app updater answers a state the web app renders: %s" % (r.get("update") or {}).get("state"))
+        check((r.get("js") or {}).get("state") == "current", "the JS-bundle update answers 'current' (the tray refreshes the bundle)")
+        check(r.get("pushed") is True, "a status pushed by the shell reaches onUpdateStatus listeners in the page")
         l0, l1, l2 = r.get("login0") or {}, r.get("login1") or {}, r.get("login2") or {}
         check(l0.get("openAtLogin") is False and l1.get("openAtLogin") is True and l2.get("openAtLogin") is False,
               "the login-item toggle round-trips: %s -> %s -> %s" % (l0.get("openAtLogin"), l1.get("openAtLogin"), l2.get("openAtLogin")))

@@ -598,8 +598,19 @@ fn respond(s: &mut TcpStream, code: u16, body: &serde_json::Value) {
 
 fn handle(mut s: TcpStream, setup: &Arc<Setup>, start_daemon: &Arc<dyn Fn(&str) -> bool + Send + Sync>, daemon_log: &Option<PathBuf>) {
     let _ = s.set_read_timeout(Some(Duration::from_secs(5)));
+    // read the WHOLE request head: answering and closing with bytes still unread makes the peer see a
+    // connection reset instead of the answer (a request can arrive in several segments)
     let mut buf = [0u8; 4096];
-    let n = s.read(&mut buf).unwrap_or(0);
+    let mut n = 0;
+    while n < buf.len() {
+        match s.read(&mut buf[n..]) {
+            Ok(0) | Err(_) => break,
+            Ok(k) => n += k,
+        }
+        if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+    }
     let head = String::from_utf8_lossy(&buf[..n]);
     let target = head.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
     if head.starts_with("OPTIONS") {

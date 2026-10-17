@@ -16,6 +16,7 @@
 
 mod setup;
 mod ui_server;
+mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -24,15 +25,23 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 const DAEMON_PORT: u16 = 8140;
 
-/// `window.helmdeckNative` on top of Tauri's invoke. The update calls answer "current": the
-/// UI bundle is refreshed by the tray's update thread, and a full-app updater is not ported.
+/// `window.helmdeckNative` on top of Tauri's invoke. The whole-app updater is `updater.rs`; the UI
+/// bundle is refreshed by the tray's update thread, so the JS-update calls answer "current".
 const BRIDGE_JS: &str = r#"
 (function () {
   var inv = function (c, a) { return window.__TAURI_INTERNALS__.invoke(c, a); };
   var current = function () { return Promise.resolve({ state: "current", version: null, message: null }); };
   var off = function () { return function () {}; };
+  // the shell PUSHES each native-update status here (window.eval), the page never polls
+  var listeners = [];
+  window.__hdNativeUpdate = function (s) { listeners.slice().forEach(function (cb) { try { cb(s); } catch (e) {} }); };
   window.helmdeckNative = {
-    getUpdateStatus: current, onUpdateStatus: off, installUpdate: function () {},
+    getUpdateStatus: function () { return inv("update_status"); },
+    onUpdateStatus: function (cb) {
+      listeners.push(cb);
+      return function () { listeners = listeners.filter(function (x) { return x !== cb; }); };
+    },
+    installUpdate: function () { inv("update_install"); },
     getJsUpdateStatus: current, onJsUpdateStatus: off, applyJsUpdateNow: function () {},
     pickFolder: function () { return inv("pick_folder"); },
     getAppInfo: function () { return inv("app_info"); },
@@ -131,6 +140,16 @@ fn login_item() -> serde_json::Value {
 }
 
 #[tauri::command]
+fn update_status(state: tauri::State<Arc<updater::Updater>>) -> serde_json::Value {
+    state.status()
+}
+
+#[tauri::command]
+fn update_install(app: tauri::AppHandle, state: tauri::State<Arc<updater::Updater>>) {
+    state.install(&app);
+}
+
+#[tauri::command]
 fn login_item_get() -> serde_json::Value {
     login_item()
 }
@@ -224,8 +243,12 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![app_info, pick_folder, login_item_get, login_item_set])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![app_info, pick_folder, login_item_get, login_item_set, update_status, update_install])
         .setup(|app| {
+            let upd = updater::Updater::new();
+            app.manage(upd.clone());
+            updater::start(app.handle().clone(), upd);
             let mut problem: Option<String> = None;
             if !ui_server::already_serving(ui_server::UI_PORT) {
                 match ui_server::resolve_app_dist() {
