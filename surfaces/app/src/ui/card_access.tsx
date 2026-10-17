@@ -33,17 +33,19 @@ export function CardAccessPanel({ k }: { k: Track }) {
   const chip = (name: string, on: boolean, onPress: () => void) => (
     <Pressable key={name} onPress={onPress} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
       borderWidth: 1, borderColor: on ? t.accent : t.borderSubtle, backgroundColor: on ? t.accent + "26" : "transparent" }}>
-      <Text style={{ color: on ? t.txtPrimary : t.txtSecondary, fontSize: 12.5 }}>{name}</Text>
+      <Text style={{ color: on ? t.txtPrimary : t.txtSecondary, fontSize: 12.5 }}>{on ? "✓ " : "+ "}{name}</Text>
     </Pressable>
   );
   const operators = accounts.filter((a) => a.role === "operator");
+  // The heading states the CURRENT grant; the chips below are the toggles.
+  const who = (names: string[]) => (names.length ? names.join(", ") : tr("card.access.nobody"));
   if (accounts.length === 0) return null;
   return (
     <Panel>
       <SectionLabel text={tr("card.access.title")} />
       {operators.length > 0 ? (
         <View style={{ gap: 6, marginBottom: 8 }}>
-          <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("card.access.assigned")}</Text>
+          <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("card.access.assigned")}: {who(assigned)}</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {operators.map((a) => chip(a.name, assigned.includes(a.name),
               () => assign.mutate({ name: a.name, on: !assigned.includes(a.name) })))}
@@ -51,7 +53,7 @@ export function CardAccessPanel({ k }: { k: Track }) {
         </View>
       ) : null}
       <View style={{ gap: 6 }}>
-        <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("card.access.shared")}</Text>
+        <Text style={{ color: t.txtTertiary, fontSize: 11.5 }}>{tr("card.access.shared")}: {who(shared)}</Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
           {accounts.map((a) => chip(a.name, shared.includes(a.name),
             () => share.mutate({ name: a.name, on: !shared.includes(a.name) })))}

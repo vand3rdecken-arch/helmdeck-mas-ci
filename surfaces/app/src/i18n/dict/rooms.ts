@@ -59,6 +59,7 @@ export const rooms: Dict = {
   "card.access.title": { de: "Zugriff", en: "Access" },
   "card.access.assigned": { de: "Arbeitet daran (Operator)", en: "Works on it (operator)" },
   "card.access.shared": { de: "Sieht Titel, Status und Ergebnis", en: "Sees title, status and result" },
+  "card.access.nobody": { de: "niemand", en: "nobody" },
 
   "henry.title": { de: "Henry", en: "Henry" },
   "henry.placeholder": { de: "Frag Henry zu deiner Arbeit …", en: "Ask Henry about your work …" },
