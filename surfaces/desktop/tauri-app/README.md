@@ -9,7 +9,11 @@ does for the Electron shell, minus the parts the tray took over:
 - opens ONE window on it and hands the app the daemon URL in the `#cfg` hash, no token;
 - exposes `window.helmdeckNative` with the shapes the web app already reads from the Electron
   preload: `getAppInfo`, `pickFolder`, `getLoginItem` / `setLoginItem`, update status ("current");
-- opens external links in the real browser; one instance at a time.
+- opens external links in the real browser; one instance at a time;
+- runs the first-run setup control plane (`src/setup.rs`, port 8141, per-launch nonce in the `#cfg` hash):
+  `/setup/state`, `/log`, `/engines`, `/provision` with the shapes the web app reads from `setup.js`.
+  Provisions Claude Code (npm install -g, winget Node, hidden `claude auth login` with a 5-min poll),
+  detects Python, starts the daemon. 12 tests, incl. nonce refusal and probe caching.
 
     cd surfaces/desktop/tauri-app
     cargo build --release                         # target/release/helmdeck-desktop.exe, 7 MB
@@ -42,8 +46,11 @@ refuses even the four bridge calls ("not allowed by ACL").
 ## NOT ported (what an Electron replacement still needs)
 
 1. **Starting/supervising the daemon.** The tray owns that. The window only adopts.
-2. **The first-run setup wizard** (`setup.js`, 920 lines): Python / `claude` CLI checks, the loopback
-   control endpoint the onboarding screen uses while the daemon is down.
+2. **The rest of the setup wizard.** Ported: endpoints, probes, Claude install + login, daemon start.
+   NOT ported: the embeddable-Python fetch (needs an unzip), the `claude -p` hand-offs (Python fallback,
+   daemon diagnosis), optional engine installs (status only), the Microsoft Store variant, the
+   mac/linux login terminal. The e2e check of the control plane needs ports 8141/3300 free (it skips
+   while the Electron app runs).
 3. **The full-app updater** (`native-updater.js`, electron-updater). Tauri has its own updater plugin
    with a signing key; the release feed (`helmdeck-release`) would need `latest.json` in its format.
    The UI bundle itself is refreshed by the tray's update thread, not by the shell.

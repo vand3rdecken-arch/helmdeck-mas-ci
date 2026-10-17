@@ -14,7 +14,11 @@
 //! What it deliberately does NOT do: start or supervise the daemon (the tray owns that), the
 //! first-run setup wizard (setup.js), the two updaters. See README.
 
+mod setup;
 mod ui_server;
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -56,8 +60,12 @@ fn url_component(s: &str) -> String {
     s.replace('+', "%2B").replace('/', "%2F").replace('=', "%3D")
 }
 
-fn window_url() -> String {
-    let cfg = format!("{{\"baseUrl\":\"http://localhost:{DAEMON_PORT}\"}}");
+fn window_url(setup: Option<(u16, &str)>) -> String {
+    // like main.js: the daemon URL plus, when the control plane is up, its port and nonce (no credential)
+    let cfg = match setup {
+        Some((port, nonce)) => format!("{{\"baseUrl\":\"http://localhost:{DAEMON_PORT}\",\"setup\":{{\"port\":{port},\"nonce\":\"{nonce}\"}}}}"),
+        None => format!("{{\"baseUrl\":\"http://localhost:{DAEMON_PORT}\"}}"),
+    };
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -147,6 +155,54 @@ fn login_item_set(enabled: bool) -> serde_json::Value {
     login_item()
 }
 
+/// Repo root: HELMDECK_ROOT, else walk up from the exe and the cwd until `daemon/swarm.py` exists.
+fn find_root() -> Option<PathBuf> {
+    let ok = |p: &std::path::Path| p.join("daemon").join("swarm.py").is_file();
+    if let Ok(r) = std::env::var("HELMDECK_ROOT") {
+        let p = PathBuf::from(r);
+        if ok(&p) {
+            return Some(p);
+        }
+    }
+    for start in [std::env::current_exe().ok(), std::env::current_dir().ok()].into_iter().flatten() {
+        let mut d = start.parent().map(|p| p.to_path_buf());
+        while let Some(cur) = d {
+            if ok(&cur) {
+                return Some(cur);
+            }
+            d = cur.parent().map(|p| p.to_path_buf());
+        }
+    }
+    None
+}
+
+fn daemon_data_dir() -> Option<PathBuf> {
+    find_root().map(|r| std::env::var("HELMDECK_DATA_ROOT").ok().filter(|s| !s.trim().is_empty()).map(PathBuf::from).unwrap_or_else(|| r.join("daemon")))
+}
+
+/// Start `<python> -m daemon.swarm serve` hidden from the repo root (the tray does this for a
+/// running install; this is the first-run path, before any tray exists).
+fn start_daemon(python: &str) -> bool {
+    let Some(root) = find_root() else { return false };
+    let mut parts = python.split_whitespace();
+    let Some(program) = parts.next() else { return false };
+    let mut c = std::process::Command::new(program);
+    c.args(parts).args(["-m", "daemon.swarm", "serve"]).current_dir(&root).env("PYTHONUNBUFFERED", "1").stdin(std::process::Stdio::null());
+    if let Some(dir) = daemon_data_dir() {
+        if let Ok(f) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("daemon.out.log")) {
+            if let Ok(f2) = f.try_clone() {
+                c.stdout(f).stderr(f2);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    c.spawn().is_ok()
+}
+
 fn error_page(msg: &str) -> String {
     let html = format!(
         "<body style='background:#0b0f14;color:#e6edf3;font:16px system-ui;padding:48px'><h2>HelmDeck</h2><p>{msg}</p></body>"
@@ -183,9 +239,13 @@ fn main() {
                     }
                 }
             }
+            // the first-run control plane: probes + provisioning, behind a per-launch nonce
+            let setup = setup::Setup::new(setup::Probes::real(DAEMON_PORT));
+            let data_dir = daemon_data_dir();
+            let started = setup::serve(setup.clone(), setup::SETUP_PORT, Arc::new(start_daemon), data_dir.map(|d| d.join("daemon.out.log")));
             let url = match &problem {
                 Some(p) => error_page(p),
-                None => window_url(),
+                None => window_url(started.ok().map(|_| (setup::SETUP_PORT, setup.nonce.as_str()))),
             };
             let target = url.parse().expect("window url");
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(target))
@@ -224,7 +284,7 @@ mod tests {
 
     #[test]
     fn the_cfg_hash_decodes_to_the_daemon_url_like_main_js_builds_it() {
-        let url = window_url();
+        let url = window_url(None);
         assert!(url.starts_with("http://localhost:3300/?v="), "{url}");
         let hash = url.split("#cfg=").nth(1).unwrap().replace("%2B", "+").replace("%2F", "/").replace("%3D", "=");
         // the same payload main.js base64-encodes: {"baseUrl":"http://localhost:8140"}

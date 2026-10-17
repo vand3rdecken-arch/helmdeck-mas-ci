@@ -29,6 +29,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import winreg
@@ -87,6 +88,12 @@ def main():
         print("SKIP: no release build at", EXE)
         return 0
     s = socket.socket()
+    if s.connect_ex(("127.0.0.1", 8141)) == 0:
+        s.close()
+        print("SKIP: something already serves the setup port 8141 - close the HelmDeck window first")
+        return 0
+    s.close()
+    s = socket.socket()
     if s.connect_ex(("127.0.0.1", 3300)) == 0:
         s.close()
         print("SKIP: something already serves port 3300 - close the HelmDeck window first")
@@ -133,6 +140,18 @@ def main():
         decoded = base64.b64decode(urllib.parse.unquote(cfg)).decode() if cfg else ""
         check(json.loads(decoded or "{}").get("baseUrl") == "http://localhost:8140", "the #cfg hash hands the page the daemon URL (%s)" % decoded)
         check("token" not in decoded.lower(), "...and no credential")
+        setup = json.loads(decoded or "{}").get("setup") or {}
+        check(setup.get("port") == 8141 and len(setup.get("nonce", "")) == 32, "...and the setup control plane's port + per-launch nonce (%s)" % setup.get("port"))
+        base = "http://127.0.0.1:%s/setup/state" % setup.get("port")
+        try:
+            urllib.request.urlopen(base, timeout=5)
+            refused = False
+        except urllib.error.HTTPError as ex:
+            refused = ex.code == 403
+        check(refused, "the control plane refuses a request without the nonce (403)")
+        with urllib.request.urlopen(base + "?n=" + setup.get("nonce", ""), timeout=30) as resp:
+            st = json.loads(resp.read())
+        check({"python", "claude", "daemon", "running", "done"} <= set(st), "...and answers /setup/state with the nonce: %s" % {k: st.get(k) for k in ("python", "claude", "daemon")})
         info = r.get("info") or {}
         check(info.get("platform") == "win32" and info.get("packaged") is True and info.get("shellVersion"),
               "getAppInfo has the Electron shape: %s" % info)
