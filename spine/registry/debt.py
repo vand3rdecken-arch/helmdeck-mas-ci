@@ -5986,7 +5986,7 @@ DEBT = [
         "id": "tauri-store-startuptask",
         "order": 96,
         "title": "Tauri Store build: the 'start at login' toggle does not drive the MSIX StartupTask",
-        "status": "open",
+        "status": "in_progress",
         "what": "The Tauri MSIX declares a StartupTask (Enabled=false, Store review wants opt-in). Electron's Store "
                 "build flips it from the in-app toggle via app.setLoginItemSettings; the Tauri shell reports "
                 "status 'store-settings' and writes nothing, so the owner must enable it in Windows Settings > "
@@ -5995,9 +5995,12 @@ DEBT = [
         "why_it_bites": "A Store user who flips 'Beim Anmelden starten' in HelmDeck sees it stay off; the daemon "
                         "then is not up after a reboot until the window is opened by hand.",
         "trigger": "the first Store release of the Tauri package",
-        "fix": "Drive Windows.ApplicationModel.StartupTask (GetAsync('HelmDeckStartup') -> RequestEnableAsync / "
-               "Disable) from login_item_set when store::packaged(), via the windows crate; then install the "
-               "package once (Developer Mode: Add-AppxPackage -Register) and run the e2e against it.",
+        "fix": "CODE LANDED 2026-10-18: login_item/login_item_set drive Windows.ApplicationModel.StartupTask "
+               "(GetAsync('HelmDeckStartup') -> RequestEnableAsync / Disable) when store::packaged(), the state "
+               "maps to openAtLogin + a status that says WHY it is off (disabled-by-user cannot be re-enabled by "
+               "the app). Unit-tested; unpackaged the call fails cleanly. OPEN until verified in a real packaged "
+               "run: enable Developer Mode, Add-AppxPackage -Register the staged manifest, flip the toggle, "
+               "read the state back - then flip this to paid.",
         "since": "2026-10-18",
     },
 ]

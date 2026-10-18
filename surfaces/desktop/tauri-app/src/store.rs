@@ -82,6 +82,58 @@ pub fn spawn_daemon(py: &str, root: &Path, data: &Path, port: u16) -> std::io::R
     Ok(c.spawn()?.id())
 }
 
+/// TaskId of the StartupTask the MSIX manifest declares (ops/deploy/build_msix_tauri.py).
+pub const STARTUP_TASK_ID: &str = "HelmDeckStartup";
+
+/// What the web app's login-item toggle reads, from a Windows.ApplicationModel.StartupTaskState
+/// (0 Disabled, 1 DisabledByUser, 2 Enabled, 3 DisabledByPolicy, 4 EnabledByPolicy). `status` tells the
+/// UI WHY it is off: a task the user disabled in Windows Settings cannot be re-enabled by the app -
+/// RequestEnableAsync leaves it off - so the toggle must not pretend.
+pub fn login_item_json(state: Option<i32>) -> serde_json::Value {
+    let (on, status) = match state {
+        Some(2) => (true, "enabled"),
+        Some(4) => (true, "enabled-by-policy"),
+        Some(0) => (false, "disabled"),
+        Some(1) => (false, "disabled-by-user"),
+        Some(3) => (false, "disabled-by-policy"),
+        _ => (false, "unavailable"),
+    };
+    serde_json::json!({ "openAtLogin": on, "status": status, "isMas": false })
+}
+
+/// The task's current state; None when there is no package or no such task.
+pub fn startup_task_state() -> Option<i32> {
+    #[cfg(windows)]
+    {
+        use windows::ApplicationModel::StartupTask;
+        let task = StartupTask::GetAsync(&windows::core::HSTRING::from(STARTUP_TASK_ID)).ok()?.join().ok()?;
+        task.State().ok().map(|s| s.0)
+    }
+    #[cfg(not(windows))]
+    None
+}
+
+/// Enable (asks Windows; may show nothing and stay off if the user disabled it in Settings) or disable.
+/// Returns the state afterwards.
+pub fn startup_task_set(enable: bool) -> Option<i32> {
+    #[cfg(windows)]
+    {
+        use windows::ApplicationModel::StartupTask;
+        let task = StartupTask::GetAsync(&windows::core::HSTRING::from(STARTUP_TASK_ID)).ok()?.join().ok()?;
+        if enable {
+            let _ = task.RequestEnableAsync().ok()?.join();
+        } else {
+            let _ = task.Disable();
+        }
+        task.State().ok().map(|s| s.0)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = enable;
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +166,23 @@ mod tests {
         let r = data_root();
         assert!(r.ends_with("HelmDeck\\daemon-data") || r.ends_with("HelmDeck/daemon-data"));
         assert!(!r.to_string_lossy().contains("WindowsApps"));
+    }
+
+    #[test]
+    fn every_startup_task_state_maps_to_what_the_toggle_reads() {
+        assert_eq!(login_item_json(Some(2))["openAtLogin"], true);
+        assert_eq!(login_item_json(Some(4))["status"], "enabled-by-policy");
+        assert_eq!(login_item_json(Some(0))["openAtLogin"], false);
+        let user_off = login_item_json(Some(1));
+        assert_eq!((user_off["openAtLogin"].clone(), user_off["status"].clone()), (false.into(), "disabled-by-user".into()));
+        assert_eq!(login_item_json(None)["status"], "unavailable");
+        assert_eq!(login_item_json(Some(2))["isMas"], false);
+    }
+
+    #[test]
+    fn without_a_package_the_startup_task_is_simply_absent() {
+        // unpackaged (cargo test): the WinRT call fails cleanly instead of panicking or faking a state
+        assert_eq!(startup_task_state(), None);
+        assert_eq!(startup_task_set(false), None);
     }
 }

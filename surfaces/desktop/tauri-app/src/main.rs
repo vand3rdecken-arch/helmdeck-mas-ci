@@ -127,9 +127,8 @@ const RUN_NAME: &str = "HelmDeckDesktop";
 
 fn login_item() -> serde_json::Value {
     if store::packaged() {
-        // the manifest declares a StartupTask (Enabled="false"); the toggle does not drive it yet -
-        // the owner enables it in Windows Settings > Apps > Startup (debt tauri-store-startuptask)
-        return serde_json::json!({ "openAtLogin": false, "status": "store-settings", "isMas": false });
+        // the manifest's StartupTask (declared Enabled="false": opt-in by the user, never at first launch)
+        return store::login_item_json(store::startup_task_state());
     }
     #[cfg(windows)]
     let on = {
@@ -163,8 +162,8 @@ fn login_item_get() -> serde_json::Value {
 #[tauri::command]
 fn login_item_set(enabled: bool) -> serde_json::Value {
     if store::packaged() {
-        let _ = enabled;
-        return login_item(); // a Store app must not write the Run key
+        // a Store app must not write the Run key: the toggle drives the StartupTask instead
+        return store::login_item_json(store::startup_task_set(enabled));
     }
     #[cfg(windows)]
     {
