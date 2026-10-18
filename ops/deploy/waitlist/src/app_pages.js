@@ -44,6 +44,7 @@ const LESENACHWEIS_INDEX = page("readproof", "ReadProof", "ReadProof for Conflue
 </ul>
 <h2>Price / Preis</h2>
 <p>Free up to 10 users. From 11 users USD 0.50 per user and month, 30-day trial via the Atlassian Marketplace. / Gratis bis 10 Nutzer. Ab 11 Nutzern 0,50 USD je Nutzer und Monat, 30 Tage Testphase über den Atlassian Marketplace.</p>
+<p><a href="/readproof/compare">Price comparison, checked 18 October 2026 / Preisvergleich, Stand 18.10.2026</a></p>
 <p>The app records confirmations; it does not make an organisation compliant with any regulation. / Die App hält Bestätigungen fest; sie macht keine Organisation konform mit einer Vorschrift.</p>`);
 const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadProof", `<h1>Documentation / Dokumentation</h1>
 <p>English first, deutsch darunter.</p>
@@ -666,7 +667,67 @@ Sie sind für Sicherungen Ihrer Jira-Daten verantwortlich. Testen Sie die App vo
 <p>Project Kaiser, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland, support@helmdeck.de</p>
 `);
 
+// ---------------------------------------------------------------- price comparison
+// Source: public Atlassian Marketplace API, checked 18 October 2026. USD per
+// month at 10 / 50 / 100 / 500 users. The lowest value per column is computed,
+// never typed, so a bold cell can not claim more than the data shows.
+const PRICE_DATE_EN = "18 October 2026";
+const PRICE_DATE_DE = "18. Oktober 2026";
+const TIERS = [10, 50, 100, 500];
+const money = (v) => v.toFixed(2).replace(/\.00$/, "");
+
+function compareTable(own, others, free) {
+  const rows = [own, ...others];
+  const best = TIERS.map((_, i) => Math.min(...rows.map((r) => r.p[i])));
+  const tr = (r) => `<tr><td>${r.n}${r === own ? " (this app / diese App)" : ""}</td>` +
+    r.p.map((v, i) => `<td>${v === best[i] ? `<strong>${money(v)}</strong>` : money(v)}</td>`).join("") + "</tr>";
+  return `<table>
+<tr><th>App</th>${TIERS.map((t) => `<th>${t} users / Nutzer</th>`).join("")}</tr>
+${rows.map(tr).join("\n")}
+</table>
+<p class=muted>USD per month / USD pro Monat. Bold = lowest price in that column among the apps listed, ties included. / Fett = niedrigster Preis der Spalte unter den gelisteten Apps, Gleichstände eingeschlossen.</p>` +
+    (free ? `<p>Free apps, not in the table / Kostenlose Apps, nicht in der Tabelle: ${free}.</p>` : "");
+}
+
+const RP_OTHERS = [
+  { n: "Comala", p: [0, 47, 94, 259.5] },
+  { n: "QC Read &amp; Understood", p: [1, 16.5, 33, 97.5] },
+  { n: "Clearlane Read &amp; Understood", p: [0, 15, 30, 87.5] },
+  { n: "Read &amp; Understood Acknowledgement", p: [3, 15, 30, 107] },
+  { n: "Read Receipts", p: [0, 28, 56, 196.5] },
+  { n: "Ackdesk", p: [0, 27.5, 55, 210] },
+  { n: "Read &amp; Confirm", p: [0, 33.5, 67, 238.5] },
+];
+const LD_OTHERS = [
+  { n: "Narva", p: [0, 27.5, 55, 165] },
+  { n: "codecentric", p: [0, 17.5, 35, 136] },
+  { n: "ALDEVA", p: [0, 15.5, 31, 143.5] },
+  { n: "Label Pro", p: [0, 15, 30, 85] },
+  { n: "Label Organizer", p: [0, 19, 38, 85] },
+  { n: "Labele", p: [0, 14, 28, 107.5] },
+];
+
+const RP_COMPARE = page("readproof", "ReadProof", "Price comparison, ReadProof", `<h1>Price comparison / Preisvergleich</h1>
+<p><strong>EN:</strong> Monthly list prices of ReadProof and seven read-and-confirm apps for Confluence Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
+<p><strong>DE:</strong> Monatliche Listenpreise von ReadProof und sieben Lesebestätigungs-Apps für Confluence Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
+${compareTable({ n: "ReadProof", p: [0, 25, 50, 200] }, RP_OTHERS)}
+<h2>What the numbers say / Was die Zahlen sagen</h2>
+<p>EN: ReadProof is free up to 10 users, like most of the others. At 50 and 100 users several apps are cheaper (Clearlane and Read &amp; Understood Acknowledgement cost 15 and 30). At 500 users ReadProof is cheaper than Comala, Ackdesk and Read &amp; Confirm, but dearer than Read Receipts, QC, Clearlane and Read &amp; Understood Acknowledgement. We are not the cheapest app from 50 users up. Compare features and price together.</p>
+<p>DE: ReadProof ist bis 10 Nutzer gratis, wie die meisten anderen. Bei 50 und 100 Nutzern sind mehrere Apps günstiger (Clearlane und Read &amp; Understood Acknowledgement: 15 und 30). Bei 500 Nutzern ist ReadProof günstiger als Comala, Ackdesk und Read &amp; Confirm, aber teurer als Read Receipts, QC, Clearlane und Read &amp; Understood Acknowledgement. Ab 50 Nutzern sind wir nicht die günstigste App. Vergleiche Funktionen und Preis zusammen.</p>
+<p><a href="/readproof/">Back to ReadProof / Zurück zu ReadProof</a></p>`);
+
+const LD_COMPARE = page("label-doktor", "Label Doctor", "Price comparison, Label Doctor", `<h1>Price comparison / Preisvergleich</h1>
+<p><strong>EN:</strong> Monthly list prices of Label Doctor and six label apps for Jira Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
+<p><strong>DE:</strong> Monatliche Listenpreise von Label Doctor und sechs Label-Apps für Jira Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
+${compareTable({ n: "Label Doctor", p: [0, 12.5, 25, 108] }, LD_OTHERS, "Label It, Smart Label Manager, Label Ledger")}
+<h2>What the numbers say / Was die Zahlen sagen</h2>
+<p>EN: Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>
+<p>DE: Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>
+<p><a href="/label-doktor/">Back to Label Doctor / Zurück zu Label Doctor</a></p>`);
+
 export const APP_PAGES = {
+  "/readproof/compare": RP_COMPARE,
+  "/label-doktor/compare": LD_COMPARE,
   "/readproof": LESENACHWEIS_INDEX,
   "/readproof/": LESENACHWEIS_INDEX,
   "/readproof/docs": LESENACHWEIS_DOCS,

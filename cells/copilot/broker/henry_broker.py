@@ -257,12 +257,12 @@ _STAGE1_TAIL = (
     "(prueft das Gate) bzw. done (nimmt ab, merged, deployed) - nicht parken und auf "
     "den Owner warten. action \"restart\" = Daemon-Neustart ueber den Harness. "
     "Antworte am ENDE NUR mit diesem JSON:\n"
-    '{"action": "need|hands|move|ship|restart|rerun_deploy|steer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
+    '{"action": "need|hands|move|ship|restart|rerun_deploy|steer|answer|notify_owner|direct_task|machine_task|accept_steps|cancel_process|finish_process|set_next|ignore",\n'
     ' "data": "bei need: die Liste",\n'
     ' "card": "karten-id oder leer",\n'
     ' "lane": "bei move: review|done (done weckt den Prozess der Karte fuer den naechsten Schritt; review ist fuer Ergebnisse, die nur der Owner beurteilen kann)",\n'
     ' "kind": "bei ship: none|ota|native",\n'
-    ' "text": "bei hands: dein Vorhaben; bei direct_task/machine_task: der Auftrag der neuen Karte; bei move: DEINE Antwort an den Owner, kurz und alltagssprachlich, auf dem Handy lesbar: was ist erledigt, und bei lane review was er pruefen oder entscheiden soll (review ist seine Abnahme); Pfade, Hashes und Testzahlen helfen ihm dort nicht; den Worker-Bericht nicht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
+    ' "text": "bei hands: dein Vorhaben; bei answer (Worker-Frage, die der Owner bereits sieht): die Antwort, genau ein angebotenes Label oder ein Satz - nur wenn die Frage trivial ist und Code oder fruehere Owner-Entscheidungen sie klaeren, sonst ignore und der Owner entscheidet; bei direct_task/machine_task: der Auftrag der neuen Karte; bei move: DEINE Antwort an den Owner, kurz und alltagssprachlich, auf dem Handy lesbar: was ist erledigt, und bei lane review was er pruefen oder entscheiden soll (review ist seine Abnahme); Pfade, Hashes und Testzahlen helfen ihm dort nicht; den Worker-Bericht nicht kopieren; sonst steer-anweisung bzw. owner-nachricht",\n'
     ' "ask": "bei move nach review, wenn der Owner etwas entscheiden soll: 2-4 kurze Antwort-Buttons als Liste, z.B. [Abnehmen, Nacharbeit, Auf echtem Jira testen]; sonst weglassen",\n'
     ' "at": "bei set_next: YYYY-MM-DD oder YYYY-MM-DD HH:MM",\n'
     ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
@@ -716,7 +716,7 @@ def _decide(esc):
     goal = d.get("goal") is True
     repo = (d.get("repo") or "").strip()      # the project new work belongs to - named, never defaulted
     if action in ("did", "direct_task", "machine_task", "accept_steps", "cancel_process",
-                  "finish_process", "set_next") \
+                  "finish_process", "set_next", "answer") \
             and not privileged:
         # Defense in depth: even if the model tried anyway, this card's
         # escalation does not get closed via "did" - stays open for a
@@ -742,7 +742,7 @@ def _decide(esc):
     # `did` (t=None there), the quiet verbs, and a machine card's DONE.
     _machine_done = action == "move" and lane == "done" and bool(
         (_find_track(card) or {}).get("machine"))
-    _reports = action in ("did", "ship", "restart", "rerun_deploy", "steer", "direct_task",
+    _reports = action in ("did", "ship", "restart", "rerun_deploy", "steer", "answer", "direct_task",
                           "machine_task") or (action == "move" and not _machine_done)
     if not (_reports and action != "did" and _find_track(card)):
         _audit(card, "HENRY entschieden (%s): %s - %s" % (
@@ -1018,6 +1018,32 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False, 
                 "move nach %s kam nicht an (blieb auf %s) - Grund: %s"
                 % (lane, (r or {}).get("lane"), str(reason)[:300]))
             return False           # stays open - the next attempt sees the real state fresh
+        return True
+    if action == "answer":
+        # Henry settles a TRIVIAL worker question himself (owner 2026-10-18); the
+        # owner saw the same question directly and may have answered first, so
+        # the request_id the escalation carries is the guard - a settled or
+        # replaced question is a quiet no-op, never a second steer.
+        import re
+        from cells.engineer.cards import sessions
+        if not t or not (text or "").strip():
+            escalations.record_note(esc["id"], "answer: Karte oder Antworttext fehlt - bleibt offen")
+            return False
+        m = re.search(r"request_id:\s*(\S+)", esc.get("detail") or "")
+        rid = m.group(1) if m else ""
+        q = t.get("question") or {}
+        if not q or (rid and rid != (q.get("id") or "")):
+            escalations.record_note(esc["id"], "answer: Frage schon beantwortet oder ersetzt - nichts gesendet")
+            return True
+        routed, answers, qid = sessions.reply_door(t, text.strip())
+        if routed != "answer":
+            escalations.record_note(esc["id"], "answer: mehrere Fragen oder keine gueltige Antwort - Owner entscheidet")
+            return True
+        try:
+            sessions.answer_question(t["id"], answers, request_id=qid, actor="henry")
+        except Exception as e:                               # noqa: BLE001
+            escalations.record_note(esc["id"], "answer nicht angekommen: %s" % str(e)[:200])
+            return True            # lost the race to the owner (or invalid) - not a retry case
         return True
     if action == "steer" and t and text:
         from cells.engineer.cards import sessions

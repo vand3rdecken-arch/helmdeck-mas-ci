@@ -534,7 +534,38 @@ def _finish_turn(tid, sid, result, meta, log):
     # turn_failed/turn_canceled + usage), woven into the card feed by `ta`.
     _log_turn_end(log, meta, box.get("cost"))
     _emit_delivered_parked(t, box.get("reason", "needs_you"), cleaned, meta)
+    _emit_worker_question(t, box.get("reason", "needs_you"))
     return t, box.get("reason", "needs_you")
+
+
+def _emit_worker_question(t, reason):
+    """A worker's question reaches the OWNER directly (card panel, mirrored chat
+    row, push) - that path is unchanged and never waits on anyone. In PARALLEL
+    Henry hears the fact here and may answer the trivial ones himself (broker
+    verb `answer`); everything that is the owner's call he leaves alone
+    (`ignore`). Owner 2026-10-18: "Henry soll triviale Fragen beantworten, ich
+    die wichtigen" - he asked for no wait, no hand-off step. The request id is
+    in the detail so the verb can refuse a question the owner already settled
+    (answer_question's request_id guard)."""
+    try:
+        q = (t or {}).get("question")
+        if reason != "question" or not q:
+            return
+        from spine.ops import ask
+        from spine.registry import escalations
+        if any(e.get("kind") == "worker-question" and e.get("card") == t["id"]
+               for e in escalations.list_open()):
+            return                      # Henry has not judged the previous one yet
+        lines = []
+        for item in q.get("questions") or []:
+            opts = [o.get("label") for o in (item.get("options") or []) if o.get("label")]
+            lines.append("- %s%s" % (item.get("question") or "", (" [%s]" % " | ".join(opts)) if opts else ""))
+        escalations.emit("worker-question", card=t["id"],
+                         detail="request_id: %s\nDer Worker fragt den Owner (die Frage steht ihm bereits direkt "
+                                "zur Verfuegung): %s\n%s" % (q.get("id") or "", ask.summary(q)[:200],
+                                                             "\n".join(lines)[:1500]))
+    except Exception:
+        pass                            # a cue is never worth failing a turn
 
 
 def _emit_delivered_parked(t, reason, cleaned, meta=None):
