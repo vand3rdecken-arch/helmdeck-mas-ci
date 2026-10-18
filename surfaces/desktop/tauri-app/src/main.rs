@@ -15,6 +15,7 @@
 //! first-run setup wizard (setup.js), the two updaters. See README.
 
 mod setup;
+mod store;
 mod ui_server;
 mod updater;
 
@@ -125,6 +126,11 @@ const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const RUN_NAME: &str = "HelmDeckDesktop";
 
 fn login_item() -> serde_json::Value {
+    if store::packaged() {
+        // the manifest declares a StartupTask (Enabled="false"); the toggle does not drive it yet -
+        // the owner enables it in Windows Settings > Apps > Startup (debt tauri-store-startuptask)
+        return serde_json::json!({ "openAtLogin": false, "status": "store-settings", "isMas": false });
+    }
     #[cfg(windows)]
     let on = {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
@@ -156,6 +162,10 @@ fn login_item_get() -> serde_json::Value {
 
 #[tauri::command]
 fn login_item_set(enabled: bool) -> serde_json::Value {
+    if store::packaged() {
+        let _ = enabled;
+        return login_item(); // a Store app must not write the Run key
+    }
     #[cfg(windows)]
     {
         use winreg::{enums::HKEY_CURRENT_USER, RegKey};
@@ -196,12 +206,21 @@ fn find_root() -> Option<PathBuf> {
 }
 
 fn daemon_data_dir() -> Option<PathBuf> {
+    if store::packaged() {
+        return Some(store::data_root()); // the package dir is read-only
+    }
     find_root().map(|r| std::env::var("HELMDECK_DATA_ROOT").ok().filter(|s| !s.trim().is_empty()).map(PathBuf::from).unwrap_or_else(|| r.join("daemon")))
 }
 
 /// Start `<python> -m daemon.swarm serve` hidden from the repo root (the tray does this for a
 /// running install; this is the first-run path, before any tray exists).
 fn start_daemon(python: &str) -> bool {
+    if store::packaged() {
+        return match find_root() {
+            Some(root) => store::spawn_daemon(python, &root, &store::data_root(), DAEMON_PORT).is_ok(),
+            None => false,
+        };
+    }
     let Some(root) = find_root() else { return false };
     let (program, lead) = setup::daemon_argv(python);
     if program.is_empty() {
@@ -248,9 +267,10 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![app_info, pick_folder, login_item_get, login_item_set, update_status, update_install])
         .setup(|app| {
-            let upd = updater::Updater::new();
+            let in_store = store::packaged();
+            let upd = updater::Updater::new(in_store);
             app.manage(upd.clone());
-            updater::start(app.handle().clone(), upd);
+            updater::start(app.handle().clone(), upd, in_store);
             let mut problem: Option<String> = None;
             if !ui_server::already_serving(ui_server::UI_PORT) {
                 match ui_server::resolve_app_dist() {
@@ -270,9 +290,17 @@ fn main() {
                 resources: resources.clone(),
                 daemon_root: find_root(),
                 daemon_log: daemon_data_dir().map(|d| d.join("daemon.out.log")),
+                store: in_store,
             };
-            let setup = setup::Setup::with_env(setup::Probes::real(DAEMON_PORT, resources), env);
+            let setup = setup::Setup::with_env(setup::Probes::real(DAEMON_PORT, resources.clone()), env);
             let started = setup::serve(setup.clone(), setup::SETUP_PORT, Arc::new(start_daemon));
+            // a Store install has no tray: the window starts the daemon itself (adopt-or-detach - one that
+            // already answers is adopted, never a second one spawned; a spawned one outlives the window)
+            if in_store && !setup::daemon_up(DAEMON_PORT) {
+                if let (Some(root), Some(py)) = (find_root(), setup::find_python(&resources)) {
+                    let _ = store::spawn_daemon(&py, &root, &store::data_root(), DAEMON_PORT);
+                }
+            }
             let url = match &problem {
                 Some(p) => error_page(p),
                 None => window_url(started.ok().map(|_| (setup::SETUP_PORT, setup.nonce.as_str()))),

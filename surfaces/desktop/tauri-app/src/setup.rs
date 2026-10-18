@@ -311,6 +311,8 @@ pub struct Env {
     pub resources: PathBuf,
     pub daemon_root: Option<PathBuf>,
     pub daemon_log: Option<PathBuf>,
+    /// a Microsoft Store install: DETECT prerequisites only, install nothing (policy 10.2.4)
+    pub store: bool,
 }
 
 pub struct Setup {
@@ -324,6 +326,7 @@ pub struct Setup {
 }
 
 impl Setup {
+    #[cfg(test)]
     pub fn new(probes: Probes) -> Arc<Setup> {
         Setup::with_env(probes, Env::default())
     }
@@ -452,6 +455,9 @@ impl Setup {
     }
 
     fn run(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env) -> bool {
+        if env.store {
+            return self.run_store(start_daemon, env);
+        }
         // 1) Claude Code
         let mut claude = self.claude();
         if claude.is_none() {
@@ -533,9 +539,55 @@ impl Setup {
         }
 
         // 3) Instance
+        self.start_instance(start_daemon, &py, env)
+    }
+
+    /// The Store build: Microsoft Store policy 10.2.4 forbids an app downloading or installing
+    /// executable code outside the Store, and an npm install, a winget call or a fetched runtime all
+    /// look exactly like that. So: report what is there, hand over the plain command for what is not,
+    /// and still start the daemon once everything is present (starting it installs nothing).
+    fn run_store(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env) -> bool {
+        self.say("Microsoft-Store-Version: prüfe vorhandene Voraussetzungen (keine automatische Installation).", "info");
+        let py = self.python();
+        let claude = self.claude();
+        let git = version_of("git", &[]);
+        let npm = find_npm();
+        let report = |label: &str, found: bool, hint: &str| {
+            if found {
+                self.say(&format!("✓ {label} gefunden"), "ok");
+            } else {
+                self.say(&format!("✗ {label} fehlt - {hint}"), "err");
+            }
+        };
+        report("Python 3.12+", py.is_some(), "installiere von https://python.org (3.12 oder neuer)");
+        report("git", git.is_some(), "installiere von https://git-scm.com");
+        report("Claude Code CLI", claude.is_some(), "installiere von https://claude.com/product/claude-code (oder, mit Node.js: npm install -g @anthropic-ai/claude-code)");
+        report("Node.js/npm (optional)", npm.is_some(), "installiere von https://nodejs.org - nur nötig, um Claude Code selbst per npm zu installieren");
+        let (Some(py), Some(claude), Some(_)) = (py, claude, git) else {
+            self.say("Bitte die fehlenden Voraussetzungen installieren, dann HelmDeck neu starten.", "hint");
+            return false;
+        };
+        if !claude_authed(&claude) {
+            self.say("Claude Code ist nicht angemeldet - öffne die Anmeldung im Browser…", "info");
+            if !self.open_login(&claude) {
+                self.say("Konnte die Anmeldung nicht starten - führe `claude` im Terminal aus und melde dich an.", "err");
+                return false;
+            }
+            self.say("Melde dich im Browser an - ich warte…", "hint");
+            if !wait_for_auth(&claude, Duration::from_secs(300)) {
+                self.say("Noch nicht angemeldet - melde dich an und drücke dann hier erneut Start.", "err");
+                return false;
+            }
+        }
+        self.say("Claude ist angemeldet.", "ok");
+        self.start_instance(start_daemon, &py, env)
+    }
+
+    /// Start the daemon unless one answers, wait for it, and on failure show its own last lines.
+    fn start_instance(&self, start_daemon: &dyn Fn(&str) -> bool, py: &str, env: &Env) -> bool {
         if !(self.probes.daemon_up)() {
             self.say("Starte HelmDeck-Instanz…", "info");
-            if !start_daemon(&py) {
+            if !start_daemon(py) {
                 self.say("Die Instanz ließ sich nicht starten.", "err");
             }
             for _ in 0..40 {
@@ -958,5 +1010,22 @@ mod tests {
         assert!(out.1.contains("3.12"), "{}", out.1);
         assert_eq!(pin_pth(&d.join("python"), std::path::Path::new("C:\\HelmDeck")), Ok(true));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn the_store_build_installs_nothing_and_says_what_is_missing() {
+        // nothing present: the Store path must stop with hints, never reach npm/winget/a download
+        let s = Setup::with_env(probes(None, false, Arc::new(AtomicUsize::new(0))), Env { store: true, ..Env::default() });
+        let started = Arc::new(AtomicUsize::new(0));
+        let st = started.clone();
+        let ok = s.run(&move |_| { st.fetch_add(1, Ordering::SeqCst); true }, &Env { store: true, ..Env::default() });
+        assert!(!ok);
+        assert_eq!(started.load(Ordering::SeqCst), 0, "no daemon start without the prerequisites");
+        let lines: Vec<String> = s.log_json()["log"].as_array().unwrap().iter().map(|l| l["line"].as_str().unwrap().to_string()).collect();
+        assert!(lines.iter().any(|l| l.contains("Microsoft-Store-Version")));
+        assert!(lines.iter().any(|l| l.contains("✗ Python")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("✗ Claude Code CLI")), "{lines:?}");
+        assert!(!lines.iter().any(|l| l.contains("npm install -g @anthropic-ai/claude-code:") || l.contains("winget") || l.contains("Lade Python")),
+                "the Store build must not try to install anything: {lines:?}");
     }
 }

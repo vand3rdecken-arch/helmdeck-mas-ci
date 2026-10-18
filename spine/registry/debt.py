@@ -5982,6 +5982,24 @@ DEBT = [
                "dropped frame with a 503 res so the phone fails fast instead of timing out.",
         "since": "2026-10-16",
     },
+    {
+        "id": "tauri-store-startuptask",
+        "order": 96,
+        "title": "Tauri Store build: the 'start at login' toggle does not drive the MSIX StartupTask",
+        "status": "open",
+        "what": "The Tauri MSIX declares a StartupTask (Enabled=false, Store review wants opt-in). Electron's Store "
+                "build flips it from the in-app toggle via app.setLoginItemSettings; the Tauri shell reports "
+                "status 'store-settings' and writes nothing, so the owner must enable it in Windows Settings > "
+                "Apps > Startup. The Store build's packaged run itself is also untested on a real install "
+                "(needs Developer Mode or a signed package).",
+        "why_it_bites": "A Store user who flips 'Beim Anmelden starten' in HelmDeck sees it stay off; the daemon "
+                        "then is not up after a reboot until the window is opened by hand.",
+        "trigger": "the first Store release of the Tauri package",
+        "fix": "Drive Windows.ApplicationModel.StartupTask (GetAsync('HelmDeckStartup') -> RequestEnableAsync / "
+               "Disable) from login_item_set when store::packaged(), via the windows crate; then install the "
+               "package once (Developer Mode: Add-AppxPackage -Register) and run the e2e against it.",
+        "since": "2026-10-18",
+    },
 ]
 
 def list_debt():

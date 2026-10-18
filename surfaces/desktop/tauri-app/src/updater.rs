@@ -33,9 +33,10 @@ pub struct Updater {
 }
 
 impl Updater {
-    pub fn new() -> Arc<Updater> {
+    /// `store`: the Store updates a packaged app itself - never check, never replace the package.
+    pub fn new(store: bool) -> Arc<Updater> {
         // a debug build has no installed location to replace and no release to compare with
-        let first = if cfg!(debug_assertions) { "unavailable" } else { "checking" };
+        let first = if cfg!(debug_assertions) || store { "unavailable" } else { "checking" };
         Arc::new(Updater { status: Mutex::new(status_json(first, None, None)), ready: Mutex::new(None) })
     }
 
@@ -90,8 +91,8 @@ impl Updater {
 }
 
 /// Start the periodic check (release builds only).
-pub fn start(app: AppHandle, u: Arc<Updater>) {
-    if cfg!(debug_assertions) {
+pub fn start(app: AppHandle, u: Arc<Updater>, store: bool) {
+    if cfg!(debug_assertions) || store {
         return;
     }
     std::thread::spawn(move || loop {
@@ -125,7 +126,8 @@ mod tests {
 
     #[test]
     fn a_debug_build_reports_unavailable_without_checking() {
-        let u = Updater::new();
+        let u = Updater::new(false);
+        assert_eq!(Updater::new(true).status()["state"], "unavailable", "a Store install never self-updates");
         assert_eq!(u.status()["state"], if cfg!(debug_assertions) { "unavailable" } else { "checking" });
     }
 }

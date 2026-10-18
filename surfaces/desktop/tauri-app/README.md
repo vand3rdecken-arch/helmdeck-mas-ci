@@ -75,3 +75,18 @@ Both shells coexist: nothing in `surfaces/desktop/main.js` was touched.
 "latest". The Electron feed follows the newest release of the same repo, so Tauri installers go to their own
 `v<version>` releases (`--latest=false`) and only `latest.json` on `tauri-feed` is replaced each time
 (`ops/deploy/release_tauri.py --publish`; not run yet).
+
+## Microsoft Store build (2026-10-18)
+
+    py -3.12 ops/deploy/build_msix_tauri.py --version 0.3.0      # unsigned .msix, 10.5 MB; never submits
+
+Store mode is DERIVED from the runtime (`store.rs`: the process has a package identity), never configured:
+no self-update (the Store updates the package), setup only DETECTS prerequisites (policy 10.2.4: no npm,
+winget or Python download), the daemon's data lives in `%LOCALAPPDATA%\HelmDeck\daemon-data` (the package is
+read-only), and the window starts the daemon itself (adopt if one answers, else spawn it detached with
+pythonw). The package carries the electron-builder ALLOWLIST (209 source files + the web app) and the
+build refuses to package if a secret-shaped file is staged (`ops/tests/test_msix_tauri_allowlist.py`).
+Identity comes from the git-ignored `surfaces/desktop/build/appx-identity.json`.
+
+Not verified yet: a packaged run on a real install (needs Developer Mode for `Add-AppxPackage -Register`, or a
+signed package); the "start at login" toggle in a Store install (debt `tauri-store-startuptask`).
