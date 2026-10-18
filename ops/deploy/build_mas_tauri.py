@@ -71,6 +71,31 @@ def main():
         sys.exit("REFUSING to build - secret-shaped files in the payload:\n  " + "\n  ".join(hits))
     print("payload: %d source files + web app" % n)
 
+    # The signature must carry the App ID the provisioning profile names (Apple 90886: without it no
+    # TestFlight) - electron-builder did this implicitly. Read it FROM the profile, never hand-typed, and
+    # merge it into the sandbox entitlements this build signs with.
+    import plistlib
+    prof = subprocess.run(["security", "cms", "-D", "-i", PROFILE], capture_output=True, check=True).stdout
+    ent_prof = plistlib.loads(prof).get("Entitlements") or {}
+    app_ident = ent_prof.get("com.apple.application-identifier") or ent_prof.get("application-identifier")
+    team = ent_prof.get("com.apple.developer.team-identifier")
+    if not (app_ident and team):
+        sys.exit("the provisioning profile names no application-identifier/team-identifier")
+    base_ent = plistlib.load(open(os.path.join(APP, "entitlements.mas.plist"), "rb"))
+    base_ent["com.apple.application-identifier"] = app_ident
+    base_ent["com.apple.developer.team-identifier"] = team
+    gen_ent = os.path.join(APP, "target", "entitlements.mas.generated.plist")
+    os.makedirs(os.path.dirname(gen_ent), exist_ok=True)
+    with open(gen_ent, "wb") as f:
+        plistlib.dump(base_ent, f)
+    mac_conf = os.path.join(APP, "tauri.macos.conf.json")
+    mc = json.load(open(mac_conf, encoding="utf-8"))
+    if app_ident.split(".", 1)[-1] != mc.get("identifier"):
+        sys.exit("bundle id %s does not match the profile's App ID %s" % (mc.get("identifier"), app_ident))
+    mc["bundle"]["macOS"]["entitlements"] = "target/entitlements.mas.generated.plist"
+    json.dump(mc, open(mac_conf, "w", encoding="utf-8"), indent=2)
+    print("signing as %s (team %s)" % (app_ident, team))
+
     conf = os.path.join(APP, "tauri.conf.json")
     c = json.load(open(conf, encoding="utf-8"))
     c["version"] = a.version
@@ -87,6 +112,11 @@ def main():
     ent = subprocess.run(["codesign", "-d", "--entitlements", ":-", app], capture_output=True, text=True).stdout
     if "com.apple.security.app-sandbox" not in ent:
         sys.exit("the signed .app carries no App Sandbox entitlement - the Mac App Store would reject it")
+    if app_ident not in ent:
+        sys.exit("the signed .app does not carry its application-identifier - TestFlight would refuse it (90886)")
+    info = plistlib.load(open(os.path.join(app, "Contents", "Info.plist"), "rb"))
+    if info.get("CFBundleIdentifier") != mc.get("identifier") or not info.get("LSApplicationCategoryType"):
+        sys.exit("Info.plist: bundle id %s / category %s" % (info.get("CFBundleIdentifier"), info.get("LSApplicationCategoryType")))
     if not os.path.isfile(os.path.join(app, "Contents", "embedded.provisionprofile")):
         sys.exit("embedded.provisionprofile is not inside the .app")
     if not os.path.isfile(os.path.join(app, "Contents", "Resources", "daemon", "swarm.py")):

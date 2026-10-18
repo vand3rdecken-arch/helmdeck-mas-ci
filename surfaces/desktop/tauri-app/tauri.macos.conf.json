@@ -1,7 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "12.0",
@@ -9,6 +11,8 @@
       "files": {
         "embedded.provisionprofile": "../build/embedded.provisionprofile"
       }
-    }
-  }
+    },
+    "category": "DeveloperTool"
+  },
+  "identifier": "app.helmdeck"
 }
