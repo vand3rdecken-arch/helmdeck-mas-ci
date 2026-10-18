@@ -17,9 +17,10 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-winreg = "0.56.0"
 
 [target.'cfg(windows)'.dependencies]
+# the Run key login item (Windows only; a Store build uses the StartupTask below)
+winreg = "0.56.0"
 # the Store build's "start at login": Windows.ApplicationModel.StartupTask (WinRT)
 windows = { version = "0.62", features = ["ApplicationModel"] }
 
