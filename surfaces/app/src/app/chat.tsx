@@ -99,6 +99,10 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // Henry filed/steered a card: the topic continues in that card's thread -
   // draw the hand-over as a tile, not as a sentence about plumbing.
   // A delegated RUN (hands / background agent): a live tile, not a sentence.
+  // An IMAGE from Henry's own tools or his hands (a screenshot): a thumbnail, tap for full size
+  if (m.cls === "image" && m.url) {
+    return { role: "assistant", kind: "image", url: m.url, name: m.name, ts: m.ts, seq: m.seq, by: "Henry", byKind: "henry" };
+  }
   // An ANSWERED card question (owner 2026-10-18: "Fragen laufen weg sobald die beantwortet werden"):
   // the question, its options and the pick, drawn by the shared transcript - never just the bare pick.
   if (m.answered) {

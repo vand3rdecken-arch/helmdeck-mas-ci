@@ -767,6 +767,18 @@ def fold_timeline_event(run_dir, ev):
                 timeline_store.append(run_dir, "tool:" + uid,
                     {"result": text[:_TL_MAX_RESULT], "ok": ok, "status": status,
                      "error": err, "running": False})
+                # an image the tool produced or read (a screenshot, a Read on a .png) used to be dropped
+                # here with the rest of the non-text blocks - keep it as a file and show it (spine/agent/images.py)
+                try:
+                    from spine.agent import images
+                    tid = os.path.basename(os.path.normpath(run_dir))
+                    for im in images.save_tool_images(p.get("content"), run_dir):
+                        timeline_store.append(run_dir, "img:%s:%s" % (uid, im["name"]),
+                            {"kind": "image", "name": im["name"], "mime": im["mime"], "bytes": im["bytes"],
+                             "url": "/tracks/%s/image/%s" % (tid, im["name"]), "tool": uid,
+                             "byKind": "worker", "ts": _time.strftime("%H:%M:%S"), "ta": _time.time()})
+                except Exception:                                # noqa: BLE001
+                    pass
 
 
 class _ClaudeSession:

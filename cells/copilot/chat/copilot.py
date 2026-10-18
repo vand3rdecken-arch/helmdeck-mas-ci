@@ -2371,6 +2371,23 @@ def _readable(m):
     return m
 
 
+def henry_image_dir(user):
+    """Where an image from Henry's own turn (or his hands) is kept: his attachment folder for that account."""
+    return os.path.join(ROOT, ".copilot_attachments", user)
+
+
+def _henry_images(user, content):
+    """An image in a tool_result of Henry's turn becomes a chat entry the owner can see (spine/agent/images.py).
+    Best-effort: a chat write must never break the turn that produced it."""
+    try:
+        from spine.agent import images
+        for im in images.save_tool_images(content, henry_image_dir(user)):
+            _append_log(user, [{"cls": "image", "text": "", "ts": time.strftime("%H:%M"), "name": im["name"],
+                                "mime": im["mime"], "bytes": im["bytes"], "url": "/chat/image/" + im["name"]}])
+    except Exception:                                        # noqa: BLE001
+        pass
+
+
 def say(text, cls="pm", card=None, extra=None):
     """THE harness's voice in the owner's board chat - the one place anything
     non-interactive speaks to the owner (pm._say and the lane pipeline both go
@@ -3640,6 +3657,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                             if user in _inject:
                                 _inject[user]["tools"].discard(_b.get("tool_use_id"))
                         _rc = _b.get("content")
+                        _henry_images(user, _rc)
                         if isinstance(_rc, list):
                             _rc = "\n".join(str(x.get("text") or "") for x in _rc if isinstance(x, dict))
                         for _s in _live_steps:

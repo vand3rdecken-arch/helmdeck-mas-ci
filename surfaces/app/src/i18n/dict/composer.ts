@@ -116,6 +116,8 @@ export const composer: Dict = {
   "chat.latest": { de: "Neueste", en: "Latest" },
   // Day separators + loading older history (owner 2026-10-18: the desktop chat stopped at 80 entries)
   "chat.today": { de: "Heute", en: "Today" },
+  "chat.image": { de: "Bild", en: "Image" },
+  "chat.imageUnavailable": { de: "Bild nicht verfügbar", en: "Image unavailable" },
   "chat.answered": { de: "Frage beantwortet", en: "Question answered" },
   "chat.answeredOwn": { de: "Eigene Antwort", en: "Own answer" },
   "chat.yesterday": { de: "Gestern", en: "Yesterday" },

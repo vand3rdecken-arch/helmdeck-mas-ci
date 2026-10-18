@@ -361,6 +361,14 @@ def _pump(hid, p):
                 if isinstance(b, dict) and b.get("type") == "tool_result":
                     _step(hid, tool_result=b)
                     _room_steps(hid, room_id)
+                    # a browser screenshot the hands took is shown in the owner's chat, not lost
+                    try:
+                        from cells.copilot.chat import copilot as _cp
+                        _owner = (_tasks.get(hid) or {}).get("user") or _cp.owner_name()
+                        if _owner:
+                            _cp._henry_images(_owner, b.get("content"))
+                    except Exception:                    # noqa: BLE001
+                        pass
         elif ev.get("type") == "stream_event" and room_id:
             from cells.copilot.chat import room_henry
             room_henry.live_event(room_id, ev, parts, think)

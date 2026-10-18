@@ -248,6 +248,24 @@ def tracks_attachments_get(self, user, tid):
     return self._send(200, json.dumps(out))
 
 
+def tracks_image_get(self, user, tid, name):
+    """GET /tracks/<id>/image/<name> -> {mime, data}: an image stored for this card (a tool's screenshot or an
+    attached picture). JSON, because the phone reaches the daemon only through the relay's JSON envelope."""
+    from cells.engineer.cards import sessions
+    from spine.agent import images
+    from spine.auth import auth
+    t = sessions.get_track(tid)
+    if not t or not auth.owns_card(user, t):
+        return self._send(403, json.dumps({"error": "not your card"}))
+    name = unquote(name)
+    for base in (t.get("run_dir"), t.get("worktree")):
+        if base:
+            got = images.read_image(base, name)
+            if got:
+                return self._send(200, json.dumps(got))
+    return self._send(404, json.dumps({"error": "no such image"}))
+
+
 def tracks_attachment_get(self, user, tid, name):
     import mimetypes
     from cells.engineer.cards import sessions

@@ -325,6 +325,8 @@ export interface AnsweredRecord { id: string; items: { question: string; header:
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
   /** an answered card question - drawn as the question with the chosen option marked */
   answered?: AnsweredRecord;
+  /** `cls: "image"` - an image from Henry's tools or his hands, served at `url` as {mime, data} */
+  url?: string; name?: string;
   /** the message this one answers (see ReplyRef) */
   reply_to?: ReplyRef;
   /** a delegated run this row started: `hands` = a hands id, `run` = "bg:<uid>"

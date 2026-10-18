@@ -393,6 +393,11 @@ class H(BaseHTTPRequestHandler):
                 return routes_tracks.tracks_attachments_get(self, user, parts[1])
             if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "attachment":
                 return routes_tracks.tracks_attachment_get(self, user, parts[1], parts[3])
+            # images in the chat (spine/agent/images.py) - JSON {mime, data}, relay-safe
+            if len(parts) == 4 and parts[0] == "tracks" and parts[2] == "image":
+                return routes_tracks.tracks_image_get(self, user, parts[1], parts[3])
+            if len(parts) == 3 and parts[0] == "chat" and parts[1] == "image":
+                return routes_copilot.chat_image_get(self, user, parts[2])
             self._send(404, b"?", "text/plain")
         except (ConnectionAbortedError, BrokenPipeError):
             pass

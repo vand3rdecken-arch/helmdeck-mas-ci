@@ -10,6 +10,7 @@ import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
 import { RunTile, type RunLive } from "./run_tile";
+import { ChatImage } from "./chat_image";
 import { CompactionMarker, type CompactionEvent, type CompactionFields } from "./compaction_marker";
 import type { AnsweredRecord, ReplyRef } from "@/data/client";
 
@@ -59,6 +60,8 @@ export interface TStep extends Omit<CompactionFields, "event"> {
   seq?: number;        // the chat row's identity - what a reply's quote jumps back to
   date?: string;       // YYYY-MM-DD the row was written (chat log) - the day separators read it
   answered?: AnsweredRecord;   // kind "answered": the question as it was answered (never vanishes)
+  url?: string;        // kind "image": where the daemon serves it ({mime, data}, spine/agent/images.py)
+  name?: string;       // kind "image": its stored file name
   quote?: ReplyRef;    // this message answers that one (messenger-style reply)
 }
 
@@ -512,6 +515,11 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         // nothing (the owner's message right above it already marks the turn),
         // `completed` is a quiet usage line, `canceled` a centered marker,
         // `failed` a real error card with the error text + usage.
+        if (kind === "image" && s.url) return wrap(s, key, (
+          <View style={{ alignSelf: s.byKind === "human" ? "flex-end" : "flex-start", gap: 3 }}>
+            <ChatImage url={s.url} alt={s.name} />
+            {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+          </View>));
         if (kind === "answered" && s.answered) return wrap(s, key, (
           <View testID="answered-question" style={{ alignSelf: "flex-end", maxWidth: "88%", borderWidth: 1, borderColor: t.borderSubtle,
             borderRadius: 12, padding: 10, gap: 8, backgroundColor: t.surface1 }}>

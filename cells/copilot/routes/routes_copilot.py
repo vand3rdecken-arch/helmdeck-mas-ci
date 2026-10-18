@@ -14,6 +14,18 @@ from urllib.parse import parse_qs, urlparse
 from spine.auth.auth import is_restricted
 
 
+def chat_image_get(self, user, name):
+    """GET /chat/image/<name> -> {mime, data}: an image from THIS account's Henry chat (his tools, his hands,
+    or a picture the account attached). Only the caller's own folder - another account's images are unreachable."""
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from urllib.parse import unquote
+    from cells.copilot.chat import copilot
+    from spine.agent import images
+    got = images.read_image(copilot.henry_image_dir(user["name"]), unquote(name))
+    return self._send(200 if got else 404, json.dumps(got or {"error": "no such image"}))
+
+
 def chat_history_older_get(self, user):
     """GET /chat/history/older?before=SEQ[&after=SEQ][&limit=N] - the page above what the chat shows."""
     if is_restricted(user):
