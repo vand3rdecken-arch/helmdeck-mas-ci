@@ -152,6 +152,9 @@ def _list_sessions(limit):
     out = []
     if not os.path.isdir(PROJECTS):
         return out
+    # stat everything (cheap), then open transcripts NEWEST FIRST and stop at `limit` rows: a cold daemon
+    # used to peek all ~3,000 files to show the newest few (55 s on the first call, 2026-10-18).
+    cands = []
     for proj in os.listdir(PROJECTS):
         pdir = os.path.join(PROJECTS, proj)
         if not os.path.isdir(pdir):
@@ -161,27 +164,29 @@ def _list_sessions(limit):
                 continue
             path = os.path.join(pdir, fn)
             try:
-                mtime = os.path.getmtime(path)
-                size = os.path.getsize(path)
+                st = os.stat(path)
             except OSError:
                 continue
-            if size < 200:              # empty/aborted transcript
+            if st.st_size < 200:        # empty/aborted transcript
                 continue
-            cwd, first = _peek_cached(path, mtime, size)
-            if cwd and "helmdeck-worktrees" in cwd.replace("/", "\\"):
-                continue                # HelmDeck-managed - already a card
-            if first and first.startswith(_INTERNAL):
-                continue                # HelmDeck's own copilot/process session
-            out.append({
-                "id": fn[:-6],          # strip .jsonl -> the session uuid
-                "cwd": cwd or "",
-                "project": os.path.basename(cwd) if cwd else proj,
-                "first": (first or "")[:160],
-                "last_active": time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)),
-                "mtime": mtime,
-            })
-    out.sort(key=lambda s: s["mtime"], reverse=True)
-    out = out[:limit]
+            cands.append((st.st_mtime, st.st_size, proj, fn, path))
+    cands.sort(reverse=True)
+    for mtime, size, proj, fn, path in cands:
+        if len(out) >= limit:
+            break
+        cwd, first = _peek_cached(path, mtime, size)
+        if cwd and "helmdeck-worktrees" in cwd.replace("/", "\\"):
+            continue                    # HelmDeck-managed - already a card
+        if first and first.startswith(_INTERNAL):
+            continue                    # HelmDeck's own copilot/process session
+        out.append({
+            "id": fn[:-6],              # strip .jsonl -> the session uuid
+            "cwd": cwd or "",
+            "project": os.path.basename(cwd) if cwd else proj,
+            "first": (first or "")[:160],
+            "last_active": time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)),
+            "mtime": mtime,
+        })
     # Annotate sessions ALREADY BOUND to a card (derived from the track store -
     # the one owner of that binding - never guessed from paths). The worktree
     # filter above misses machine/adopted cards (their cwd is a real folder,

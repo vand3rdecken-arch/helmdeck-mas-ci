@@ -93,6 +93,12 @@ def main():
     cs._scan_done.wait(10)
     check(peeks[0] == first + 1, "a changed transcript is re-read exactly once (%d)" % (peeks[0] - first))
 
+    # a cold scan opens only as many transcripts as it returns, newest first (was: all of them, 55 s live)
+    cs._peek_cache.clear()
+    before = peeks[0]
+    few = cs._list_sessions(5)
+    check(peeks[0] - before == 5 and len(few) == 5, "a cold scan for 5 rows opens 5 transcripts, not 31 (%d)" % (peeks[0] - before))
+
     cs._last_scan.update(at=0, out=None)    # a daemon's first call: nothing to hand out yet
     scans = [0]
     real_list = cs._list_sessions
