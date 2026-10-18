@@ -170,8 +170,8 @@ def _lay_dates(p):
 def create(request_text, client="", due="", actor="owner", steps=None, template_id=None,
            open_ended=False, repo=None):
     """File a process. With `steps` (or a `template_id`) the steps START: each
-    becomes a card at once (accept_all into `repo`, default_repo when not
-    given) and the chain runs them - nobody signs them off first. Without
+    becomes a card at once (accept_all into `repo`; with no repo the steps stay
+    proposed until someone names the project) and the chain runs them - nobody signs them off first. Without
     steps the process is born EMPTY and running, a folder the work fills
     (attach_card / Henry's cards with "process"); process_drive wakes Henry
     to file the first ones. There is no LLM proposer any more.
@@ -201,6 +201,8 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
         _lay_dates(p)
     if open_ended:
         p["open_ended"] = True
+    if repo:
+        p["repo"] = repo        # the project the work belongs to - later steps land there, never in default_repo
     with _lock:
         ps = _load()
         # the ms suffix still collides for two creates in the same millisecond
@@ -216,8 +218,8 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
     from spine.storage import events
     events.emit("process", pid, action="filed", actor=actor)
     if steps:
-        if repo is None:
-            repo = events.settings().get("default_repo") or ""
+        # no default_repo fallback: a process that names no project keeps its steps PROPOSED until someone
+        # says where the work belongs (projects.project_question) - it never lands in the HelmDeck repo
         if repo:
             p, _made = accept_all(pid, repo, actor=actor)
     return p
@@ -390,8 +392,7 @@ def add_step(pid, title, mode="do", desktop=False, repo=None, actor="owner"):
         else:
             raise RuntimeError("no such process")
     if repo is None:
-        from spine.storage import events
-        repo = events.settings().get("default_repo") or ""
+        repo = p.get("repo") or ""          # the process's own project, never the default_repo preset
     if repo and p.get("status") not in ("cancelled",):
         return accept_step(pid, idx, repo, actor=actor)
     return get(pid)

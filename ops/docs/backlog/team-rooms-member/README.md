@@ -1,6 +1,6 @@
 # Team-Konten: Rolle `member`, Räume, Gedächtnis-Bereiche
 
-Owner-Auftrag (2026-10-04, Chat): Die *** nutzt HelmDeck mit
+Owner-Auftrag (2026-10-04, Chat): Ein zweites Konto (Mitglied) nutzt HelmDeck mit
 eigenem Konto, hauptsächlich für Team und Arbeit. Anforderungen aus dem Chat:
 
 - eigenes Konto statt Pairing (ein gekoppeltes Gerät erbt die Rolle des
@@ -35,7 +35,7 @@ Vorbilder, die wiederverwendet werden (nicht neu erfinden):
 
 ## Sofort-Check (vor allem anderen, kein Code)
 
-Steht das *** in `push.devices`? Bekommt es Pushes zu Henry-Antworten
+Steht das Handy des Mitglieds in `push.devices`? Bekommt es Pushes zu Henry-Antworten
 des Owners? Das Leck existiert bereits mit `client`. Ergebnis hier notieren.
 
 ## Modell

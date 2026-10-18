@@ -714,6 +714,7 @@ def _decide(esc):
     why = (d.get("why") or "").strip()
     at = (d.get("at") or "").strip()
     goal = d.get("goal") is True
+    repo = (d.get("repo") or "").strip()      # the project new work belongs to - named, never defaulted
     if action in ("did", "direct_task", "machine_task", "accept_steps", "cancel_process",
                   "finish_process", "set_next") \
             and not privileged:
@@ -725,7 +726,7 @@ def _decide(esc):
             "Henry versuchte '%s' auf einer client-Karte ohne Haende - "
             "abgelehnt, bleibt offen" % action)
         return False
-    if not _execute(action, card, lane, text, esc, kind=kind, why=why, at=at, goal=goal):
+    if not _execute(action, card, lane, text, esc, kind=kind, why=why, at=at, goal=goal, repo=repo):
         return False   # malformed verb - stays open for the next attempt
     escalations.record_decision(esc["id"], action, card=card, why=why,
                                 kind=kind if action == "ship" else "")
@@ -840,7 +841,7 @@ def _esc_process(esc, goal=False):
     return ""
 
 
-def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
+def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False, repo=""):
     from spine.auth import gxp
     from spine.storage.trackstore import _load, _find
     t = _find(_load(), card) if card else None
@@ -858,9 +859,11 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
             return False
         try:
             if action == "accept_steps":
-                repo = events.settings().get("default_repo") or ""
+                repo = repo or (processes.get(pid) or {}).get("repo") or ""
                 if not repo:
-                    escalations.record_note(esc["id"], "accept_steps: kein default_repo gesetzt")
+                    # no silent fallback into the HelmDeck repo (projects.project_question)
+                    escalations.record_note(esc["id"], "accept_steps: der Prozess nennt kein Projekt - "
+                                                       "Henry fragt den Owner, wo die Arbeit hingehört")
                     return False
                 _p, made = processes.accept_all(pid, repo, actor="henry")
                 escalations.record_note(esc["id"], "accept_steps: %s -> %s" % (
@@ -1099,9 +1102,14 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False):
                 nt = sessions.new_machine_task(_os.path.expanduser("~"), text,
                                                actor="henry", priority="high")
             else:
-                repo = events.settings().get("default_repo") or ""
+                # the judgement names it, else the card's or the process's own project - never default_repo
+                from cells.engineer.chains import processes as _procs
+                pid_ = _esc_process(esc)
+                card_repo = next((x.get("repo") for x in sessions._load() if card and x.get("id") == card), "")
+                repo = (repo or card_repo or ((_procs.get(pid_) or {}).get("repo") if pid_ else "") or "").strip()
                 if not repo:
-                    escalations.record_note(esc["id"], "direct_task: kein default_repo gesetzt")
+                    escalations.record_note(esc["id"], "direct_task: kein Projekt bekannt - "
+                                                       "Henry fragt den Owner, wo die Arbeit hingehört")
                     return False
                 nt = sessions.new_direct_task(repo, text, actor="henry", priority="high")
         except Exception as e:

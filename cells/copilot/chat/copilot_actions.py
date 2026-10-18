@@ -580,10 +580,11 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         task = (a.get("task") or "").strip()
         if not task:
             return "direct_task: sag mir in einem Satz, was direkt gebaut werden soll."
-        repo = a.get("repo") or events.settings().get("default_repo")
+        # the project is NAMED or asked for - never defaulted (projects.project_question)
+        repo = (a.get("repo") or "").strip()
         if not repo:
-            return ("direct_task: kein Repo bekannt - settings default_repo setzen "
-                    "(configure) oder das Repo explizit mitgeben.")
+            from spine.ops import projects
+            return projects.project_question("direct_task")
         try:
             t = sessions.new_direct_task(
                 repo, task, actor=actor,
@@ -604,11 +605,10 @@ def _run_action(a, actor, role="operator", owner_msg=""):
     if kind == "file_card":
         # the PROJECT is the repo: honoured when Henry names one (it was
         # silently dropped - every worktree card landed in default_repo)
-        repo = a.get("repo") or events.settings().get("default_repo")
+        repo = (a.get("repo") or "").strip()
         if not repo:
-            return ("file_card: es ist kein default_repo gesetzt. Entweder settings "
-                    "default_repo auf das Projekt setzen (configure), oder ich mache es "
-                    "als machine_task auf dem Rechner - sag mir welches.")
+            from spine.ops import projects
+            return projects.project_question("file_card")
         # Hand new_track the human STEM only - it owns the real branch name
         # (slug + card id, verified free). This used to slug the task here and
         # ship it verbatim, so two cards opening with the same sentence shared a

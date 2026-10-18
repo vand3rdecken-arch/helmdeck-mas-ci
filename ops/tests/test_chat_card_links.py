@@ -75,7 +75,7 @@ check(t1 and os.path.normcase(t1["repo"]) == os.path.normcase(OTHER),
 
 # 2) process pointer at filing
 p = processes.create("Investing-Radar v2", actor="tien", steps=[])
-a = {"type": "file_card", "task": "Radar Datenquelle", "process": p["id"]}
+a = {"type": "file_card", "task": "Radar Datenquelle", "process": p["id"], "repo": OTHER}
 copilot_actions._run_action(a, "tien", "owner")
 t2 = card(a["_card"])
 p2 = processes.get(p["id"])
@@ -88,7 +88,7 @@ a = {"type": "attach_process", "card": t1["id"], "process": "Radar v2"}
 r = copilot_actions._run_action(a, "tien", "owner")
 check(card(t1["id"]).get("process") == p["id"], "3. attach_process joins an existing card (%s)" % r)
 check(a.get("_card") == t1["id"], "3. ... and tags the action so the chat draws its tile")
-a3 = {"type": "file_card", "task": "Einzelkarte"}
+a3 = {"type": "file_card", "task": "Einzelkarte", "repo": OTHER}
 copilot_actions._run_action(a3, "tien", "owner")
 a = {"type": "new_process", "request": "Onboarding-Flow", "cards": [a3["_card"]]}
 r = copilot_actions._run_action(a, "tien", "owner")
@@ -98,7 +98,7 @@ check(card(a3["_card"]).get("process") and "Karten drin" in r, "3. new_process t
 SPAWNED = []
 hands.spawn = lambda actor, task, skey, card=None, why="": SPAWNED.append(card) or "h-1"
 SCRIPT = ("Mach ich.\n```actions\n" + json.dumps([
-    {"type": "file_card", "task": "Folgekarte aus dem Karten-Chat"},
+    {"type": "file_card", "task": "Folgekarte aus dem Karten-Chat", "repo": OTHER},
     {"type": "hands", "task": "Screenshot vom Dashboard"}]) + "\n```")
 
 

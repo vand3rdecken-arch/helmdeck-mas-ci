@@ -308,6 +308,24 @@ def for_repo(path):
     return None
 
 
+def project_question(kind):
+    """What an agent hears when it starts NEW work without naming the project (owner 2026-10-18: "soll nach
+    projekt fragen falls unklar").
+
+    There is deliberately no fallback to settings.default_repo for new work: that preset is the HelmDeck
+    repo itself on the owner's machine, and work that named no project silently landed IN the product
+    repo - a private side project's landing page, ad plan and worker code were committed to swarmdeck on
+    2026-09-29 by cards that never said where they belonged. default_repo still answers board QUESTIONS
+    (projectconfig.for_chat); it no longer decides where new work is written."""
+    names = []
+    for p in db.projects_all():
+        if p.get("repo"):
+            names.append("%s (%s)" % (p.get("name") or os.path.basename(p["repo"].rstrip("/\\")), p["repo"]))
+    known = ("; bekannt: " + ", ".join(sorted(names)[:12])) if names else ""
+    return ("%s: in welchem Projekt? Gib repo (Pfad) mit%s. Ist es aus dem Gespräch nicht eindeutig, frag den "
+            "Owner - neue Arbeit landet nie stillschweigend im HelmDeck-Repo." % (kind, known))
+
+
 def known_repos():
     """Every repo HelmDeck actually knows, from the registry - not synthesised.
 

@@ -131,7 +131,11 @@ sessions.new_direct_task = fake_direct
 events.settings = lambda: dict(real_settings(), default_repo=repo)
 try:
     esc = {"id": escalations.emit("goal-move", None, "x"), "kind": "goal-move", "card": None}
-    ok = henry_broker._execute("direct_task", "", "", "PH-Eintrag vorbereiten", esc)
+    # new work names its project (projects.project_question): without one the broker refuses ...
+    check(not henry_broker._execute("direct_task", "", "", "PH-Eintrag vorbereiten", esc) and not started,
+          "direct_task WITHOUT a project is refused - no silent fallback into default_repo")
+    # ... and with the project the judgement named it starts
+    ok = henry_broker._execute("direct_task", "", "", "PH-Eintrag vorbereiten", esc, repo=repo)
     check(ok and started and started[0][1] == "henry", "direct_task starts a card as henry (%r)" % started)
     mine = [t for t in sessions._load() if t.get("task") == "PH-Eintrag vorbereiten"]
     gpid = pm_push.goal_process_id()

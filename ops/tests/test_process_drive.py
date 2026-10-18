@@ -234,7 +234,12 @@ check(processes.get(gpid).get("open_ended") and processes.get(gpid)["status"] ==
 check(pm.brief().get("planning") == gpid, "/pm/report is the same move, no PM model turn")
 
 print("6. steps start")
-q = processes.create("Launch", actor="tien", steps=[
+# a process that names NO project keeps its steps proposed - nothing lands in default_repo
+q0 = processes.create("Ohne Projekt", actor="tien", steps=[
+    {"title": "Etwas bauen", "mode": "do", "status": "proposed", "track": None}])
+check(not any(s.get("track") for s in q0["steps"]) and not q0.get("repo"),
+      "create with steps but no project: steps stay PROPOSED, no card in the default_repo")
+q = processes.create("Launch", actor="tien", repo=repo, steps=[
     {"title": "Landing bauen", "mode": "do", "status": "proposed", "track": None},
     {"title": "Store-Formular ausfuellen", "mode": "prepare", "desktop": True, "status": "proposed", "track": None},
     {"title": "Notar", "mode": "teach", "status": "proposed", "track": None}])
@@ -265,7 +270,7 @@ try:
         ps = processes._load()
         ps.insert(0, {"id": "p-x", "request": "Studie planen", "status": "ready", "steps": [
             {"title": "Quellen", "mode": "do", "status": "proposed", "track": None}],
-            "created": ts(1), "client": "", "due": ""})
+            "created": ts(1), "client": "", "due": "", "repo": repo})   # the process's own project
         processes._save(ps)
     esc = {"id": escalations.emit("process-move", None, "x", process="p-x"),
            "kind": "process-move", "card": None}
@@ -287,11 +292,13 @@ try:
     lone = {"id": escalations.emit("idle-check", None, "x"), "kind": "idle-check", "card": None}
     check(not henry_broker._execute("accept_steps", "", "", "", lone),
           "an escalation without a process refuses process verbs")
-    check(henry_broker._execute("direct_task", "", "", "Nachfrage messen", lone, goal=True),
+    check(not henry_broker._execute("direct_task", "", "", "Ohne Projekt", lone),
+          "an idle-check direct_task naming NO project is refused (no default_repo fallback)")
+    check(henry_broker._execute("direct_task", "", "", "Nachfrage messen", lone, goal=True, repo=repo),
           "direct_task with goal=true from an idle-check executes")
     gt = [t for t in sessions._load() if t.get("task") == "Nachfrage messen"]
     check(gt and gt[0].get("process") == gpid, "... and the card is a step of the goal's process")
-    henry_broker._execute("direct_task", "", "", "Nebenbei", lone)
+    henry_broker._execute("direct_task", "", "", "Nebenbei", lone, repo=repo)
     nb = [t for t in sessions._load() if t.get("task") == "Nebenbei"]
     check(nb and not nb[0].get("process"), "without goal=true it is not goal work")
 finally:
