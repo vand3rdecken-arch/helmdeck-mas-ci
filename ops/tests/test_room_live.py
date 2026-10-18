@@ -51,9 +51,9 @@ def check(cond, msg):
         _fails.append(msg)
 
 
-for n, r in (("tien", "owner"), ("***", "client"), ("fremd", "client")):
+for n, r in (("tien", "owner"), ("member", "client"), ("fremd", "client")):
     auth.create_user(n, "Correct-Horse-Battery-9", r, actor="test")
-room = rooms.create("Team Alpha", "tien", ["***"])
+room = rooms.create("Team Alpha", "tien", ["member"])
 RID = room["id"]
 
 GATE = os.path.join(SANDBOX, "go")
@@ -69,10 +69,10 @@ frames = [
     _ev(type="stream_event", event={"type": "content_block_start", "content_block": {"type": "thinking"}}),
     _ev(type="stream_event", event={"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "ich ueberlege"}}),
     _ev(type="stream_event", event={"type": "content_block_start", "content_block": {"type": "text"}}),
-    _ev(type="stream_event", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hallo ***. "}}),
+    _ev(type="stream_event", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hallo member. "}}),
     _ev(type="stream_event", event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": "<memory-save name=\"x\">halb"}}),
 ]
-final = _ev(type="result", result="Hallo ***.", is_error=False, usage={}, modelUsage={})
+final = _ev(type="result", result="Hallo member.", is_error=False, usage={}, modelUsage={})
 with open(CHILD, "w", encoding="utf-8") as f:
     f.write("import sys, time, os\nsys.stdin.read()\n")
     for fr in frames:
@@ -105,7 +105,7 @@ while time.time() - t0 < 20 and not room_henry.live(RID)["text"]:
 L = room_henry.live(RID)
 check(th.is_alive() and L["running"], "1. running while the child is still alive")
 check(L["thinking"] == "ich ueberlege", "1. the reasoning tail is live")
-check(L["text"] == "Hallo ***.", "1/2. prose is live and the half-typed <memory-save> is cut: %r" % L["text"])
+check(L["text"] == "Hallo member.", "1/2. prose is live and the half-typed <memory-save> is cut: %r" % L["text"])
 check(isinstance(L["since"], float), "3. since = the daemon's clock for the counter")
 
 st, body = None, None
@@ -126,14 +126,14 @@ def call(who, rid):
     return h.sent[0][0], json.loads(h.sent[0][1])
 
 
-st, b = call("***", RID)
-check(st == 200 and b["text"] == "Hallo ***.", "4. a member reads the live turn")
+st, b = call("member", RID)
+check(st == 200 and b["text"] == "Hallo member.", "4. a member reads the live turn")
 st, b = call("fremd", RID)
 check(st == 404, "4. a stranger gets 404, same as an unknown room")
 
 open(GATE, "w").close()
 th.join(30)
-check(not th.is_alive() and box["out"][0] == "Hallo ***." and box["out"][1].get("type") == "result",
+check(not th.is_alive() and box["out"][0] == "Hallo member." and box["out"][1].get("type") == "result",
       "1. the result event is the return value")
 L = room_henry.live(RID)
 check(not L["running"] and L["text"] == "" and L["since"] is None, "3. ended: not running, buffer cleared")

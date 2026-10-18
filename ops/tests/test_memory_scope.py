@@ -49,54 +49,54 @@ def check(cond, msg):
 
 
 # the owner's private store - words a guest's turn must never surface
-db.memory_put("depot", "Das Depot enthaelt Aktien *** und ***, Summe ***", actor="henry")
+db.memory_put("depot", "Das Depot enthaelt Aktien AAA und BBB, Summe 50k", actor="henry")
 db.memory_put("preferences", "OWNERPREF Antworten kurz und auf Deutsch", actor="henry")
 
 # -- 4. legacy view unchanged -------------------------------------------------
 check(cm.viewer_for("owner", "owner") is None,
       "the owner keeps the legacy (unrestricted) view")
-check(cm.viewer_for("op", "operator") is not None and cm.viewer_for("***", "client") is not None,
+check(cm.viewer_for("op", "operator") is not None and cm.viewer_for("member", "client") is not None,
       "the operator is restricted like a guest since the assignment model (2026-10-05)")
 check(set(db.memory_all()) == {"depot", "preferences"},
       "memory_all() is the owner's person scope")
 
 # -- 1. a guest sees none of it ----------------------------------------------
-*** = cm.viewer_for("***", "client", rooms=("room-a",))
-check(*** is not None and cm.all_notes(***) == {},
+member = cm.viewer_for("member", "client", rooms=("room-a",))
+check(member is not None and cm.all_notes(member) == {},
       "a guest with no notes of her own sees an EMPTY store, not the owner's")
-check(cm.recall_block("Wie steht das Depot mit *** und ***", rows=cm.all_notes(***)) == "",
+check(cm.recall_block("Wie steht das Depot mit AAA und BBB", rows=cm.all_notes(member)) == "",
       "the recall block for her turn carries nothing from the owner's depot note")
-check(cm.overview(rows=cm.all_notes(***), viewer=***) == "",
+check(cm.overview(rows=cm.all_notes(member), viewer=member) == "",
       "and the overview does not even count the owner's notes")
 
 # -- 2. same name, two scopes -------------------------------------------------
 done = cm.apply([{"op": "save", "name": "preferences", "content": "WIFEPREF immer Englisch",
-                  "declared_kind": None}], actor="henry", source="chat:***",
-                scope=cm.scope_for(***), viewer=***)
+                  "declared_kind": None}], actor="henry", source="chat:member",
+                scope=cm.scope_for(member), viewer=member)
 check(len(done) == 1, "her save landed")
 check(db.memory_all()["preferences"]["content"].startswith("OWNERPREF"),
       "her save of the SAME name did NOT overwrite the owner's note")
-check(cm.all_notes(***).get("preferences", {}).get("content", "").startswith("WIFEPREF"),
+check(cm.all_notes(member).get("preferences", {}).get("content", "").startswith("WIFEPREF"),
       "she reads back her own note")
 check("WIFEPREF" not in " ".join(r["content"] for r in db.memory_all().values()),
       "the owner side never reads her note")
 
 cm.apply([{"op": "delete", "name": "preferences"}], actor="henry",
-         source="chat:***", scope=cm.scope_for(***), viewer=***)
+         source="chat:member", scope=cm.scope_for(member), viewer=member)
 check("preferences" in db.memory_all(),
       "her delete did NOT delete the owner's same-named note")
-check("preferences" not in cm.all_notes(***), "it deleted her own")
+check("preferences" not in cm.all_notes(member), "it deleted her own")
 
 # -- 3./5. rooms and cards ----------------------------------------------------
 db.memory_put("raum-regel", "ROOMA Standups um 9", actor="henry", scope="room", scope_id="room-a")
 db.memory_put("raum-regel", "ROOMB geheim", actor="henry", scope="room", scope_id="room-b")
 db.memory_put("karten-stand", "CARD1 wartet auf Freigabe", actor="henry", scope="card", scope_id="c1")
-notes = cm.all_notes(***)
+notes = cm.all_notes(member)
 check("room:room-a/raum-regel" in notes and "room:room-b/raum-regel" not in notes,
       "she reads the room she is in and NOT another room's note of the same name")
 check("card:c1/karten-stand" not in notes,
       "a card she is not a member of stays invisible")
-wife2 = cm.viewer_for("***", "client", rooms=("room-a",), cards=("c1",))
+wife2 = cm.viewer_for("member", "client", rooms=("room-a",), cards=("c1",))
 check("card:c1/karten-stand" in cm.all_notes(wife2), "adding the card makes its note visible")
 
 sc = cm.scope_for(wife2, room="room-a")

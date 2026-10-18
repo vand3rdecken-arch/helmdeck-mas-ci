@@ -184,18 +184,18 @@ check(st == 400, "an empty token is refused before anything is written")
 # The leak this pins: push devices were workspace-global and chat_reply sent to
 # ALL of them, so a second account's phone received the OWNER's Henry replies.
 notify.owner_name = lambda: "owner"      # no users in the sandbox db
-*** = {"name": "***", "role": "client"}
-WIFE_PUB = "***-pub-dddddddddddddddddddddddddddd="
+MEMBER = {"name": "member", "role": "client"}
+WIFE_PUB = "member-pub-dddddddddddddddddddddddddddd="
 set_state([PHONE_PUB, WATCH_PUB, WIFE_PUB], fcm_token="tok-phone",
           devices={WATCH_PUB: {"token": "tok-watch", "label": "Watch"}})
 
-st, _b = register({"token": "tok-***", "pub": WIFE_PUB, "label": "***"}, user=***)
+st, _b = register({"token": "tok-member", "pub": WIFE_PUB, "label": "Member"}, user=MEMBER)
 check(st == 200, "a second account registers its own device under its own key")
 devs = (events.settings().get("push") or {}).get("devices") or {}
-check(devs.get(WIFE_PUB, {}).get("account") == "***",
+check(devs.get(WIFE_PUB, {}).get("account") == "member",
       "the device records WHO registered it")
 
-st, _b = register({"token": "tok-hijack"}, user=***)
+st, _b = register({"token": "tok-hijack"}, user=MEMBER)
 check(st == 400, "a non-owner cannot take the legacy slot (would hijack the owner's push)")
 check((events.settings().get("push") or {}).get("fcm_token") == "tok-phone",
       "the owner's legacy phone token survived the attempt")
@@ -203,15 +203,15 @@ check((events.settings().get("push") or {}).get("fcm_token") == "tok-phone",
 owner_r = notify.recipients(events.settings(), account="owner")
 check(labels_of(owner_r) == ["Watch", "phone"],
       "owner reaches phone + watch (devices without an account are the owner's) and NOT her phone")
-wife_r = notify.recipients(events.settings(), account="***")
-check(labels_of(wife_r) == ["***"],
+wife_r = notify.recipients(events.settings(), account="member")
+check(labels_of(wife_r) == ["Member"],
       "she reaches ONLY her own device - never the owner's phone or watch")
 check(len(notify.recipients(events.settings())) == 3,
       "the default still means every paired device (readiness checks)")
 
 # a handed-over phone: same key, other login -> the device moves with the login
-st, _b = register({"token": "tok-***", "pub": WIFE_PUB, "label": "***"}, user=USER)
-check(labels_of(notify.recipients(events.settings(), account="***")) == [],
+st, _b = register({"token": "tok-member", "pub": WIFE_PUB, "label": "Member"}, user=USER)
+check(labels_of(notify.recipients(events.settings(), account="member")) == [],
       "re-registering a key under another login moves it - no stale delivery")
 
 print()

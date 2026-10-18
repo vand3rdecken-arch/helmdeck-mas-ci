@@ -48,10 +48,10 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client")):
+for n, r in (("tien", "owner"), ("ops", "operator"), ("member", "client"), ("fremd", "client")):
     auth.create_user(n, PW, r, actor="test")
 U = {n: {"name": n, "role": r} for n, r in
-     (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client"))}
+     (("tien", "owner"), ("ops", "operator"), ("member", "client"), ("fremd", "client"))}
 
 
 def card(cid, client="", **kw):
@@ -66,7 +66,7 @@ def card(cid, client="", **kw):
     return t
 
 
-card("mine", client="***")
+card("mine", client="member")
 card("owners")                       # the owner's private card
 card("shared")                       # the owner's card, to be shared
 card("theirs", client="fremd")
@@ -101,40 +101,40 @@ def share(user, body):
 
 ids = lambda rows: sorted(r["id"] for r in rows)
 
-check(ids(lst("***")) == ["mine"], "before any share she sees only her own card")
+check(ids(lst("member")) == ["mine"], "before any share she sees only her own card")
 
 # -- 4. who may share -------------------------------------------------------------
-st, _b = share("***", {"id": "shared", "add": ["***"]})
+st, _b = share("member", {"id": "shared", "add": ["member"]})
 check(st == 403, "a guest cannot share a card with herself")
 st, _b = share("tien", {"id": "shared", "add": ["nobody"]})
 check(st == 400, "an unknown account cannot be added")
-st, _b = share("ops", {"id": "gibtsnicht", "add": ["***"]})
+st, _b = share("ops", {"id": "gibtsnicht", "add": ["member"]})
 check(st == 404, "an unknown card answers 404")
-st, _b = share("ops", {"id": "shared", "add": ["***"]})
+st, _b = share("ops", {"id": "shared", "add": ["member"]})
 check(st == 404, "an OPERATOR cannot share a card that is neither theirs nor assigned to them")
-st, out = share("tien", {"id": "shared", "add": ["***"]})
-check(st == 200 and out["geteilt_mit"] == ["***"], "the owner shares the card")
+st, out = share("tien", {"id": "shared", "add": ["member"]})
+check(st == 200 and out["geteilt_mit"] == ["member"], "the owner shares the card")
 
 # -- 1. visibility ------------------------------------------------------------------
-check(ids(lst("***")) == ["mine", "shared"],
+check(ids(lst("member")) == ["mine", "shared"],
       "she now sees her own card and the shared one - not the owner's private one")
 check(ids(lst("fremd")) == ["theirs"], "another guest is unaffected by the share")
 check(len(lst("tien")) == 4, "the owner still sees every card")
 
 # -- 2. summary only ------------------------------------------------------------------
-row = next(r for r in lst("***") if r["id"] == "shared")
+row = next(r for r in lst("member") if r["id"] == "shared")
 check(set(row) <= set(auth.SHARED_FIELDS) | {"summary"} and row.get("summary") is True,
       "the list row of a shared card carries only whitelisted fields, flagged summary by the daemon")
 for leak in ("repo", "worktree", "run_dir", "session_id", "ai_cost", "branch"):
     check(leak not in row, "shared list row has no %s" % leak)
-st, one = get("***", "shared")
+st, one = get("member", "shared")
 check(st == 200 and one["task"] == "Aufgabe shared" and one["last_reply"] == "Ergebnis shared",
       "the card GET shows title and result")
 check("repo" not in one and "run_dir" not in one and "session_id" not in one,
       "the card GET of a shared card leaks no machine path or session")
 
 # -- 6. her own card keeps the full view; owner unchanged -------------------------------
-st, own = get("***", "mine")
+st, own = get("member", "mine")
 check(own.get("repo") and own.get("run_dir"), "her OWN card keeps the full record")
 st, full = get("tien", "shared")
 check(full.get("repo") and full.get("session_id"), "the owner sees the full record")
@@ -142,15 +142,15 @@ st, _b = get("fremd", "shared")
 check(st == 404, "a guest it was NOT shared with gets 404")
 
 # -- 3. seeing is not acting ---------------------------------------------------------------
-check(auth.owns_card(U["***"], {"id": "shared", "client": "", "geteilt_mit": ["***"]}) is False,
+check(auth.owns_card(U["member"], {"id": "shared", "client": "", "geteilt_mit": ["member"]}) is False,
       "owns_card is still False for a shared card - transcript, live, steer stay closed")
-check(auth.sees_card(U["***"], {"id": "shared", "client": "", "geteilt_mit": ["***"]}) is True,
+check(auth.sees_card(U["member"], {"id": "shared", "client": "", "geteilt_mit": ["member"]}) is True,
       "sees_card is True")
 
 # -- 5. unshare ------------------------------------------------------------------------------
-st, out = share("tien", {"id": "shared", "remove": ["***"]})
+st, out = share("tien", {"id": "shared", "remove": ["member"]})
 check(st == 200 and out["geteilt_mit"] == [], "the owner withdraws the share")
-check(ids(lst("***")) == ["mine"] and get("***", "shared")[0] == 404,
+check(ids(lst("member")) == ["mine"] and get("member", "shared")[0] == 404,
       "it takes effect on the very next request")
 
 # -- 7. ASSIGNMENT (owner decree 2026-10-05: the operator, too, works only on what is
@@ -171,7 +171,7 @@ def assign(user, body):
     return q.sent
 
 check(assign("ops", {"id": "owners", "add": ["ops"]})[0] == 403, "an operator cannot assign cards (not even to themselves)")
-check(assign("tien", {"id": "owners", "add": ["***"]})[0] == 400, "only operator accounts can be assigned (a guest gets the summary via share)")
+check(assign("tien", {"id": "owners", "add": ["member"]})[0] == 400, "only operator accounts can be assigned (a guest gets the summary via share)")
 st, out = assign("tien", {"id": "owners", "add": ["ops"]})
 check(st == 200 and out["zugewiesen_an"] == ["ops"], "the owner assigns the card to the operator")
 st, full = get("ops", "owners")

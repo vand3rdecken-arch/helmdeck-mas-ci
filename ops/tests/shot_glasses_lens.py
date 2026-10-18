@@ -52,7 +52,7 @@ GLANCE = {
          "question": {"id": "q1", "questions": [{"header": "Link-Dauer", "question": "Wie lange soll der Reset-Link gültig sein?",
                       "options": [{"label": "1 Stunde", "description": "sicher, knapp"}, {"label": "24 Stunden", "description": "bequem"}]}]}},
         {"id": "c2", "task": "Export-Button im Dashboard", "client": "", "reason": "delivered"},
-        {"id": "c3", "task": "Gate für ***-Radar", "client": "intern", "reason": "gate"},
+        {"id": "c3", "task": "Gate für DDD-Radar", "client": "intern", "reason": "gate"},
     ],
     "yours": [{"id": "y1", "task": "Domain verlängern", "mode": "manuell", "client": ""}],
     "econ": {"needs_you": 3, "yours": 1},
@@ -61,14 +61,14 @@ MSGS = [
     {"mine": True, "text": "Was steht heute an?"},
     {"mine": False, "text": "Zwei Karten warten auf dich, eine davon hat ein rotes Gate."},
     {"mine": True, "text": "Welche zuerst?"},
-    {"mine": False, "text": "Das Gate bei ***-Radar: Es blockiert den Export."},
-    {"mine": True, "text": "Wie ist der Stand bei ***?"},
-    {"mine": False, "text": "*** wächst 20 %, ist aber 9 % gefallen. Warum, wissen wir nicht. Das klären wir, bevor du nachkaufst."},
+    {"mine": False, "text": "Das Gate bei DDD-Radar: Es blockiert den Export."},
+    {"mine": True, "text": "Wie ist der Stand bei DDD?"},
+    {"mine": False, "text": "DDD wächst 20 %, ist aber 9 % gefallen. Warum, wissen wir nicht. Das klären wir, bevor du nachkaufst."},
 ]
 STATE = {"turn": {"state": "listening", "text": "", "mic": "glasses", "seq": 1, "age": 0}}
 ROOMS = {"rooms": [
     {"id": "r1", "name": "Acme Projekt", "unread": 3, "mentions": 1, "by": "Lena", "preview": "Können wir den Reset-Link auf 24 h stellen?", "at": "2026-10-08 07:51"},
-    {"id": "r2", "name": "Familie", "unread": 0, "mentions": 0, "by": "***", "preview": "Bin gleich da", "at": "2026-10-07 18:02"}]}
+    {"id": "r2", "name": "Familie", "unread": 0, "mentions": 0, "by": "Guest", "preview": "Bin gleich da", "at": "2026-10-07 18:02"}]}
 ROOM = {"id": "r1", "name": "Acme Projekt", "messages": [
     {"by": "Lena", "mine": False, "henry": False, "text": "Hast du den Link schon angeschaut?", "ts": "07:40"},
     {"by": "Duy", "mine": True, "henry": False, "text": "Gleich, ich schaue heute Vormittag drauf.", "ts": "07:44"},
@@ -122,7 +122,7 @@ with sync_playwright() as pw:
     # 1: Henry home while listening
     check("Henry is the first screen", pg.locator("#talk:not(.hidden)").count() == 1)
     check("the rail: Board / orb / Mehr", pg.locator("#talk .rail-btn").all_inner_texts() == ["Board", "Rooms"] and pg.locator("#talk .orb").count() == 1, pg.locator("#talk .rail-btn").all_inner_texts())
-    check("Henry's newest message is the hero card", pg.locator(".msg.latest").count() == 1 and pg.inner_text(".msg.latest").count("***") >= 1)
+    check("Henry's newest message is the hero card", pg.locator(".msg.latest").count() == 1 and pg.inner_text(".msg.latest").count("DDD") >= 1)
     check("the phone mic is opt-in: nothing asked on open by default", len(LISTEN_CALLS) == 0, LISTEN_CALLS)
     check("the orb is a real text field (Meta composer)", pg.evaluate("document.getElementById('speak').tagName") == "INPUT")
     check("rail buttons carry icons", pg.locator("#talk .rail-btn svg").count() == 2)
@@ -140,10 +140,10 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(900)
     check("after an answer the label is Sprechen · Schreiben again", pg.inner_text("#speak-label") == "Sprechen · Schreiben", pg.inner_text("#speak-label"))
     # what Meta's composer does: the text lands in the field and a change event fires
-    pg.fill("#speak", "Zeig mir das ***-Radar")
+    pg.fill("#speak", "Zeig mir das DDD-Radar")
     pg.dispatch_event("#speak", "change")
     pg.wait_for_timeout(400)
-    check("composer text goes to Henry (POST /glance/talk)", len(TALK_CALLS) == 1 and "***-Radar" in (TALK_CALLS[0] or ""), TALK_CALLS)
+    check("composer text goes to Henry (POST /glance/talk)", len(TALK_CALLS) == 1 and "DDD-Radar" in (TALK_CALLS[0] or ""), TALK_CALLS)
     check("the field is empty again afterwards", pg.input_value("#speak") == "")
     shot("2-henry-answer")
 

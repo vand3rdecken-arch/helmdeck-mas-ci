@@ -41,14 +41,14 @@ def check(cond, msg):
 
 PW = "Correct-Horse-Battery-9"
 auth.create_user("tien", PW, "owner", actor="test")
-auth.create_user("***", PW, "operator", actor="test")
-room = rooms.create("Family", "tien", ["***"])
+auth.create_user("guest", PW, "operator", actor="test")
+room = rooms.create("Family", "tien", ["guest"])
 rid = room["id"]
 repo = os.path.join(SANDBOX, "immobilien")
 os.makedirs(repo)
 p = projects.sight_repo(repo, name="Immobilien")
 other = projects.sight_repo(os.path.join(SANDBOX, "privat"), name="Privat")
-projects.share(p["id"], add=["***"])
+projects.share(p["id"], add=["guest"])
 
 calls = {"spawn": [], "chat": 0}
 room_henry.run_claude = lambda *a, **k: (_ for _ in ()).throw(AssertionError("real model call"))
@@ -66,7 +66,7 @@ check("Immobilien" in a[1] and repo in a[1], "4. the task names the project shar
 check("Privat" not in a[1], "4. a project shared with nobody in the room is not offered")
 
 seen = []
-room_henry.answer(rid, "***", "@henry hi", runner=lambda system, prompt: (seen.append(prompt) or "ok", {}))
+room_henry.answer(rid, "guest", "@henry hi", runner=lambda system, prompt: (seen.append(prompt) or "ok", {}))
 check(len(calls["spawn"]) == 1 and seen, "2. non-owner: isolated runner, no spawn")
 
 t = {"room": {"id": rid, "to": "tien"}, "user": "tien"}

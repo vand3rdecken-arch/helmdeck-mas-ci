@@ -53,10 +53,10 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client")):
+for n, r in (("tien", "owner"), ("ops", "operator"), ("member", "client"), ("fremd", "client")):
     auth.create_user(n, PW, r, actor="test")
 U = {n: {"name": n, "role": r} for n, r in
-     (("tien", "owner"), ("ops", "operator"), ("***", "client"), ("fremd", "client"))}
+     (("tien", "owner"), ("ops", "operator"), ("member", "client"), ("fremd", "client"))}
 
 
 class Req(object):
@@ -81,21 +81,21 @@ def gated(path, user):
 
 
 # -- 3. who may create / change members ----------------------------------------
-check(gated("/rooms/new", "***") is not None and gated("/rooms/members", "***") is not None,
+check(gated("/rooms/new", "member") is not None and gated("/rooms/members", "member") is not None,
       "a client is refused room creation and member changes by the permission gate")
 check(gated("/rooms/new", "tien") is None and gated("/rooms/new", "ops") is None,
       "owner and operator hold rooms.manage")
-check(gated("/rooms/post", "***") is None, "posting needs no capability - membership decides")
+check(gated("/rooms/post", "member") is None, "posting needs no capability - membership decides")
 
-st, room = call(routes_rooms.rooms_new_post, "ops", {"name": "Team Alpha", "members": ["***"]})
-check(st == 200 and set(room["members"]) == {"ops", "***"},
+st, room = call(routes_rooms.rooms_new_post, "ops", {"name": "Team Alpha", "members": ["member"]})
+check(st == 200 and set(room["members"]) == {"ops", "member"},
       "the operator creates a room; the creator is a member automatically")
 RID = room["id"]
 st, _b = call(routes_rooms.rooms_new_post, "ops", {"name": "x", "members": ["nobody"]})
 check(st == 400, "an unknown account cannot be added")
 
 # -- 1. membership gates read and post -----------------------------------------
-st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+st, lst = call(routes_rooms.rooms_get, "member", path="/rooms")
 check(st == 200 and [r["id"] for r in lst] == [RID], "she sees the room she is in")
 st, lst = call(routes_rooms.rooms_get, "fremd", path="/rooms")
 check(st == 200 and lst == [], "an account outside the room sees no rooms")
@@ -115,32 +115,32 @@ st, _b = call(routes_rooms.rooms_messages_get, "fremd", path="/rooms/messages?ro
 check(st == 404, "an unknown id answers the same 404 - no existence leak")
 
 # -- 2. author = authenticated account -------------------------------------------
-st, msg = call(routes_rooms.rooms_post_post, "***",
+st, msg = call(routes_rooms.rooms_post_post, "member",
                {"room": RID, "text": "Status?", "by": "ops", "byKind": "henry"})
-check(st == 200 and msg["by"] == "***" and msg["byKind"] == "human",
+check(st == 200 and msg["by"] == "member" and msg["byKind"] == "human",
       "the author is the logged-in account; a forged `by`/`byKind` is ignored")
 
 # -- 4. mentions -------------------------------------------------------------------
 st, msg = call(routes_rooms.rooms_post_post, "ops",
-               {"room": RID, "text": "@*** schau mal, @henry fasse zusammen. cc @fremd"})
-check(msg["mentions"] == ["***"] and msg["henry"] is True,
-      "@*** (case-insensitive) and @henry resolve; @fremd (not a member) is NOT a mention")
-st, msg = call(routes_rooms.rooms_post_post, "***", {"room": RID, "text": "mail an a@***.de"})
+               {"room": RID, "text": "@Member schau mal, @henry fasse zusammen. cc @fremd"})
+check(msg["mentions"] == ["member"] and msg["henry"] is True,
+      "@member (case-insensitive) and @henry resolve; @fremd (not a member) is NOT a mention")
+st, msg = call(routes_rooms.rooms_post_post, "member", {"room": RID, "text": "mail an a@member.de"})
 check(msg["mentions"] == [], "an e-mail address is not a mention")
 
-st, hist = call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + RID)
-check(st == 200 and [m["by"] for m in hist["messages"]] == ["***", "ops", "***"],
+st, hist = call(routes_rooms.rooms_messages_get, "member", path="/rooms/messages?room=" + RID)
+check(st == 200 and [m["by"] for m in hist["messages"]] == ["member", "ops", "member"],
       "members read the whole history with authors, oldest first")
-st, hist2 = call(routes_rooms.rooms_messages_get, "***",
+st, hist2 = call(routes_rooms.rooms_messages_get, "member",
                  path="/rooms/messages?room=%s&after=%d" % (RID, hist["messages"][0]["seq"]))
 check(len(hist2["messages"]) == 2, "?after= returns only newer messages")
 
 # -- 5. removal cuts access at once --------------------------------------------------
-st, room = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["***"]})
+st, room = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["member"]})
 check(st == 200 and room["members"] == ["ops"], "the operator removes her")
-st, _b = call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + RID)
+st, _b = call(routes_rooms.rooms_messages_get, "member", path="/rooms/messages?room=" + RID)
 check(st == 404, "she can no longer read - access is derived from the record, not cached")
-st, _b = call(routes_rooms.rooms_post_post, "***", {"room": RID, "text": "noch da?"})
+st, _b = call(routes_rooms.rooms_post_post, "member", {"room": RID, "text": "noch da?"})
 check(st == 404, "nor post")
 st, _b = call(routes_rooms.rooms_members_post, "ops", {"room": RID, "remove": ["ops"]})
 check(st == 400, "the last member cannot be removed (a room is never orphaned)")
@@ -149,36 +149,36 @@ check(st == 400, "the last member cannot be removed (a room is never orphaned)")
 from spine.comms import notify
 pushed = []
 notify.push_fcm = lambda *a, **k: pushed.append(k) or True
-st, room2 = call(routes_rooms.rooms_new_post, "ops", {"name": "Team B", "members": ["***", "tien"]})
+st, room2 = call(routes_rooms.rooms_new_post, "ops", {"name": "Team B", "members": ["member", "tien"]})
 R2 = room2["id"]
 call(routes_rooms.rooms_post_post, "ops", {"room": R2, "text": "hallo zusammen"})
 check(pushed == [], "a plain message buzzes nobody")
-call(routes_rooms.rooms_post_post, "ops", {"room": R2, "text": "@*** kannst du das pruefen"})
-check(len(pushed) == 1 and pushed[0]["account"] == "***" and pushed[0]["extra"] == {"room": R2}
+call(routes_rooms.rooms_post_post, "ops", {"room": R2, "text": "@member kannst du das pruefen"})
+check(len(pushed) == 1 and pushed[0]["account"] == "member" and pushed[0]["extra"] == {"room": R2}
       and pushed[0]["kind"] == "room",
       "an @mention pushes ONLY the mentioned account, carrying the room id in the sealed payload")
 n = len(pushed)
-call(routes_rooms.rooms_post_post, "***", {"room": R2, "text": "@*** ich selbst"})
+call(routes_rooms.rooms_post_post, "member", {"room": R2, "text": "@member ich selbst"})
 check(len(pushed) == n, "mentioning yourself buzzes nobody")
-rooms.post(R2, "Henry", "Antwort fuer dich", by_kind="henry", extra={"to": "***"})
-check(len(pushed) == n + 1 and pushed[-1]["account"] == "***",
+rooms.post(R2, "Henry", "Antwort fuer dich", by_kind="henry", extra={"to": "member"})
+check(len(pushed) == n + 1 and pushed[-1]["account"] == "member",
       "Henry's reply buzzes the person he answered")
 
-st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+st, lst = call(routes_rooms.rooms_get, "member", path="/rooms")
 mine = next(r for r in lst if r["id"] == R2)
 check(mine["unread"] == 3 and mine["unread_mentions"] == 1,
       "unread = messages by OTHERS past her cursor (3), of which 1 mentions her")
 st, lst = call(routes_rooms.rooms_get, "tien", path="/rooms")
 check(next(r for r in lst if r["id"] == R2)["unread"] == 4,
       "another member's unread is counted from HIS own cursor (4 - nothing of his own)")
-call(routes_rooms.rooms_messages_get, "***", path="/rooms/messages?room=" + R2)
-st, lst = call(routes_rooms.rooms_get, "***", path="/rooms")
+call(routes_rooms.rooms_messages_get, "member", path="/rooms/messages?room=" + R2)
+st, lst = call(routes_rooms.rooms_get, "member", path="/rooms")
 check(next(r for r in lst if r["id"] == R2)["unread"] == 0,
       "opening the room (fetching its messages) advances HER cursor only")
 check(next(r for r in call(routes_rooms.rooms_get, "tien", path="/rooms")[1] if r["id"] == R2)["unread"] == 4,
       "and leaves his untouched")
-db.room_read_set(R2, "***", 1)
-check(next(r for r in call(routes_rooms.rooms_get, "***", path="/rooms")[1] if r["id"] == R2)["unread"] == 0,
+db.room_read_set(R2, "member", 1)
+check(next(r for r in call(routes_rooms.rooms_get, "member", path="/rooms")[1] if r["id"] == R2)["unread"] == 0,
       "a cursor never moves backwards")
 try:
     rooms.mark_read(R2, "fremd", 99)
@@ -193,24 +193,24 @@ dispatch.REC = os.path.join(SANDBOX, "recordings")          # never the live rec
 REPO = os.path.join(SANDBOX, "repo")
 os.makedirs(REPO)
 subprocess.run(["git", "init", "-q", REPO], check=True)
-st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "Angebot Kunde X"})
+st, out = call(routes_rooms.rooms_card_post, "member", {"room": R2, "task": "Angebot Kunde X"})
 check(st == 400, "without a default repo the card is refused with a clear error")
 events.save_settings({"default_repo": REPO})
 st, out = call(routes_rooms.rooms_card_post, "fremd", {"room": R2, "task": "x"})
 check(st == 404, "a non-member cannot file a card into a room")
-st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "  "})
+st, out = call(routes_rooms.rooms_card_post, "member", {"room": R2, "task": "  "})
 check(st == 400, "an empty task is refused")
 _wakes_before = len(room_henry_calls)
-st, out = call(routes_rooms.rooms_card_post, "***", {"room": R2, "task": "Angebot Kunde X"})
+st, out = call(routes_rooms.rooms_card_post, "member", {"room": R2, "task": "Angebot Kunde X"})
 check(st == 200 and out["zugewiesen_an"] == ["ops"] and out["geteilt_mit"] == [],
       "a guest files a card: the operator in the room is ASSIGNED (works on it), the owner needs no share")
 card = sessions.get_track(out["id"])
-check(card["lane"] == "backlog" and card["client"] == "***" and card["dispatched_by"] == "***",
+check(card["lane"] == "backlog" and card["client"] == "member" and card["dispatched_by"] == "member",
       "it lands in the backlog, billed/owned by her, nothing started")
 check(card["branch"] != "(direct)" and not card.get("direct") and not card.get("machine"),
       "and as a worktree card - never a live-tree/machine card, whatever the repo template says")
 check(card["zugewiesen_an"] == ["ops"], "zugewiesen_an is recorded on the card")
-hist = rooms.history(R2, "***")
+hist = rooms.history(R2, "member")
 check(hist[-1]["byKind"] == "system" and hist[-1]["card"] == out["id"]
       and "Angebot Kunde X" in hist[-1]["text"],
       "the room gets a system line carrying the card id (the app links it)")
@@ -218,11 +218,11 @@ check(len(room_henry_calls) == _wakes_before, "a card line never wakes Henry")
 
 # -- 9. the member picker ----------------------------------------------------------------
 cap = permissions.cap_for("GET", "/rooms/accounts", ["rooms", "accounts"])
-check(cap == "rooms.manage" and permissions.require(U["***"], cap) is not None
+check(cap == "rooms.manage" and permissions.require(U["member"], cap) is not None
       and permissions.require(U["ops"], cap) is None,
       "the account list is for rooms.manage holders only")
 st, accts = call(routes_rooms.rooms_accounts_get, "ops", path="/rooms/accounts")
-check(st == 200 and {a["name"] for a in accts} == {"tien", "ops", "***", "fremd"}
+check(st == 200 and {a["name"] for a in accts} == {"tien", "ops", "member", "fremd"}
       and all(set(a) == {"name", "role"} for a in accts),
       "it lists names and roles only - no tokens, no hashes")
 

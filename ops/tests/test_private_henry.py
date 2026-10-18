@@ -50,10 +50,10 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("***", "client")):
+for n, r in (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("member", "client")):
     auth.create_user(n, PW, r, actor="test")
 U = {n: {"name": n, "role": r} for n, r in
-     (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("***", "client"))}
+     (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("member", "client"))}
 
 
 def card(cid, **kw):
@@ -71,7 +71,7 @@ card("shared", geteilt_mit=["ops"])
 card("foreign-owner")
 card("foreign-ops2", client="ops2", dispatched_by="ops2")
 
-db.memory_put("depot", "GEHEIM Depot *** ***", actor="henry")                       # the owner's
+db.memory_put("depot", "GEHEIM Depot 50k AAA", actor="henry")                       # the owner's
 db.memory_put("ops2-note", "OPS2PRIVAT mag keine Meetings", actor="henry", account="ops2")
 db.memory_put("ops-pref", "OPSPREF immer kurze Antworten", actor="henry", account="ops")
 
@@ -99,11 +99,11 @@ def call(handler, user, body=None):
 
 
 # -- 1. who gets one --------------------------------------------------------------------
-for who in ("tien", "***"):
+for who in ("tien", "member"):
     check(call(routes_henry.henry_history_get, who)[0] == 403
           and call(routes_henry.henry_post_post, who, {"text": "hi"})[0] == 403,
           "%s has no private Henry (the owner has the full chat, a guest has rooms)" % who)
-check(auth.restricted_post_allowed(U["ops"], "/henry/post") and not auth.restricted_post_allowed(U["***"], "/henry/post"),
+check(auth.restricted_post_allowed(U["ops"], "/henry/post") and not auth.restricted_post_allowed(U["member"], "/henry/post"),
       "the operator may POST /henry/post, the guest may not")
 
 # -- 2./3. the turn ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ sysmsg, p = prompts[0]
 for need in ("[own]", "[assigned]", "[shared]", "OPSPREF", "Wo stehe ich mit meinen Karten?"):
     check(need in p, "the prompt holds %s" % need)
 check("[nur geteilt]" in p.split("[shared]")[1].split("\n")[0], "a merely shared card is marked as such")
-for leak in ("foreign-owner", "foreign-ops2", "C:/secret", "C:/wt", "C:/rec", "sess-", "GEHEIM", "***", "OPS2PRIVAT"):
+for leak in ("foreign-owner", "foreign-ops2", "C:/secret", "C:/wt", "C:/rec", "sess-", "GEHEIM", "AAA", "OPS2PRIVAT"):
     check(leak not in p, "the prompt never holds %r" % leak)
 check("Du bist Henry und hilfst genau einer Person" in sysmsg, "the system brief is the PRIVATE brief")
 

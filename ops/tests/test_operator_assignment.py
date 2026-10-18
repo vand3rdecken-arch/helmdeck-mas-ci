@@ -56,9 +56,9 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("ops", "operator"), ("***", "client")):
+for n, r in (("tien", "owner"), ("ops", "operator"), ("member", "client")):
     auth.create_user(n, PW, r, actor="test")
-U = {n: {"name": n, "role": r} for n, r in (("tien", "owner"), ("ops", "operator"), ("***", "client"))}
+U = {n: {"name": n, "role": r} for n, r in (("tien", "owner"), ("ops", "operator"), ("member", "client"))}
 
 
 class Req(object):
@@ -98,14 +98,14 @@ for d in (REPO, OTHER):
 events.save_settings({"default_repo": REPO})
 body = {"task": "Angriff auf anderes Repo", "repo": OTHER, "perm": "bypassPermissions", "lane": "working",
         "value": 999, "billing": "tm", "rate": 500, "project_id": "p-x", "client": "someone-else", "driver": "claude"}
-st, card = run(routes_tracks.tracks_new_post, "***", dict(body))
+st, card = run(routes_tracks.tracks_new_post, "member", dict(body))
 check(st == 200 and os.path.abspath(card["repo"]) == os.path.abspath(REPO),
       "a guest cannot aim a card at another repo - the server uses default_repo")
 check(card["perm"] == sessions.DEFAULT_PERM, "nor choose the agent's permission mode (bypassPermissions ignored)")
 check(card["lane"] == "backlog", "a guest's card waits in the backlog even when she asks for 'working'")
 check(card["value"] != 999 and card["billing"] == "fixed" and card["rate"] is None and not card.get("project_id"),
       "nor set value, billing, rate or project")
-check(card["client"] == "***" and card["dispatched_by"] == "***", "and the card is hers (client + dispatched_by)")
+check(card["client"] == "member" and card["dispatched_by"] == "member", "and the card is hers (client + dispatched_by)")
 st, card2 = run(routes_tracks.tracks_new_post, "ops", dict(body, lane="backlog"))
 check(st == 200 and os.path.abspath(card2["repo"]) == os.path.abspath(REPO) and card2["perm"] == sessions.DEFAULT_PERM
       and card2["client"] == "ops",
@@ -117,11 +117,11 @@ check(st == 200 and os.path.abspath(card3["repo"]) == os.path.abspath(OTHER)
 
 # -- 3. rooms ------------------------------------------------------------------------------------
 r_mine = rooms.create("Ops Raum", "ops", [])
-r_other = rooms.create("Owner Raum", "tien", ["***"])
+r_other = rooms.create("Owner Raum", "tien", ["member"])
 st, out = run(routes_rooms.rooms_members_post, "ops", {"room": r_other["id"], "add": ["ops"]})
 check(st == 404, "an operator cannot add THEMSELVES to a room they are not in")
-st, out = run(routes_rooms.rooms_members_post, "ops", {"room": r_mine["id"], "add": ["***"]})
-check(st == 200 and "***" in out["members"], "but manages a room they are in")
+st, out = run(routes_rooms.rooms_members_post, "ops", {"room": r_mine["id"], "add": ["member"]})
+check(st == 200 and "member" in out["members"], "but manages a room they are in")
 st, lst = run(routes_rooms.rooms_get, "ops", path="/rooms?all=1")
 check([r["id"] for r in lst] == [r_mine["id"]], "?all=1 gives an operator only THEIR rooms")
 st, lst = run(routes_rooms.rooms_get, "tien", path="/rooms?all=1")
@@ -145,9 +145,9 @@ check(not ok_(U["ops"], "/processes/abc/step") and not ok_(U["ops"], "/tracks/as
       "nor operate processes, assign cards or use the private chat")
 check(ok_(U["ops"], "/tracks/x/lane") and ok_(U["ops"], "/tracks/x/steer") and ok_(U["ops"], "/rooms/post"),
       "but does their card work and posts in rooms")
-check(ok_(U["***"], "/push/register") and ok_(U["***"], "/rooms/post") and not ok_(U["***"], "/tracks/x/lane"),
+check(ok_(U["member"], "/push/register") and ok_(U["member"], "/rooms/post") and not ok_(U["member"], "/tracks/x/lane"),
       "a guest can register her push device (it was blocked: no pushes ever reached a guest) but not move cards")
-check(not ok_(U["***"], "/control/teach/start") and not ok_(U["***"], "/tracks/assign"),
+check(not ok_(U["member"], "/control/teach/start") and not ok_(U["member"], "/tracks/assign"),
       "and nothing else outside the list")
 
 print()

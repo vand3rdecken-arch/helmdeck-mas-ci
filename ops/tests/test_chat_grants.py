@@ -51,10 +51,10 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("***", "client")):
+for n, r in (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("member", "client")):
     auth.create_user(n, PW, r, actor="test")
 U = {n: {"name": n, "role": r} for n, r in
-     (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("***", "client"))}
+     (("tien", "owner"), ("ops", "operator"), ("ops2", "operator"), ("member", "client"))}
 
 db.chat_append("ops", [{"role": "user", "kind": "text", "text": "privat: Gehaltsfrage", "ts": "09:00", "date": "2026-10-05"},
                        {"role": "assistant", "kind": "text", "text": "Antwort", "ts": "09:01", "date": "2026-10-05"}])
@@ -88,7 +88,7 @@ st2, b2 = get(routes_grants.chat_admin_get, "tien", "/chat/admin?account=nobody"
 check(st2 == 403 and b2 == _b, "same answer for an account that does not exist (no enumeration)")
 
 # -- 6. who may be named ------------------------------------------------------------------
-check(post(routes_grants.grants_post, "ops", {"grantee": "***", "hours": 2})[0] == 400,
+check(post(routes_grants.grants_post, "ops", {"grantee": "member", "hours": 2})[0] == 400,
       "a grant to a non-admin (a guest) is refused")
 check(post(routes_grants.grants_post, "ops", {"grantee": "ops", "hours": 2})[0] == 400,
       "you cannot grant yourself")
@@ -106,7 +106,7 @@ check(st == 200 and [e["text"] for e in out["entries"]] == ["privat: Gehaltsfrag
       "the named admin now reads that chat")
 check(get(routes_grants.chat_admin_get, "ops2", "/chat/admin?account=ops")[0] == 403,
       "ANOTHER admin is still refused")
-check(get(routes_grants.chat_admin_get, "tien", "/chat/admin?account=***")[0] == 403,
+check(get(routes_grants.chat_admin_get, "tien", "/chat/admin?account=member")[0] == 403,
       "and the grant covers only that account")
 
 # -- 5. the account sees who read what -----------------------------------------------------

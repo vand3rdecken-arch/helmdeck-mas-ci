@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Headless test for PROJECT SHARING (the Family room's Immobilien / Aktien folders).
+"""Headless test for PROJECT SHARING (a shared room's project folders).
 
 A project shared with an account shows that account its cards as the SUMMARY
 view and nothing else. Through the real route handlers and the real db:
@@ -45,10 +45,10 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("***", "operator")):
+for n, r in (("tien", "owner"), ("guest", "operator")):
     auth.create_user(n, PW, r, actor="test")
 OWNER = {"name": "tien", "role": "owner"}
-*** = {"name": "***", "role": "operator"}
+GUEST = {"name": "guest", "role": "operator"}
 
 REPO_A = os.path.join(SANDBOX, "immobilien")
 REPO_B = os.path.join(SANDBOX, "privat")
@@ -88,11 +88,11 @@ def shared_get(user):
     return r.sent[1]
 
 
-check(shared_get(***) == [], "1. nothing shared: the guest's project list is empty")
-check(not auth.sees_card(***, ca), "1. nothing shared: the card is not visible")
+check(shared_get(GUEST) == [], "1. nothing shared: the guest's project list is empty")
+check(not auth.sees_card(GUEST, ca), "1. nothing shared: the card is not visible")
 
-projects.share(pa["id"], add=["***"], actor="tien")
-got = shared_get(***)
+projects.share(pa["id"], add=["guest"], actor="tien")
+got = shared_get(GUEST)
 check([p["name"] for p in got] == ["Immobilien"], "2. shared: only the shared project is listed")
 cards = got[0]["cards"] if got else []
 check([c["id"] for c in cards] == ["immo1"], "2. shared: its card is listed")
@@ -101,13 +101,13 @@ check(not leak, "2. the card is the whitelisted summary (leaked: %s)" % leak)
 check(cards and cards[0].get("summary") is True and cards[0].get("last_reply") == "Ergebnis immo1",
       "2. summary flag and result are there")
 check("repo" not in got[0], "2. the project itself carries no repo path")
-check(auth.sees_card(***, ca), "2. sees_card is true for a card of the shared project")
+check(auth.sees_card(GUEST, ca), "2. sees_card is true for a card of the shared project")
 
-check(not auth.sees_card(***, cb), "3. a card of another project stays hidden")
-check(not auth.owns_card(***, ca), "3. seeing is not owning (no steering, no transcript)")
+check(not auth.sees_card(GUEST, cb), "3. a card of another project stays hidden")
+check(not auth.owns_card(GUEST, ca), "3. seeing is not owning (no steering, no transcript)")
 
-projects.share(pa["id"], remove=["***"], actor="tien")
-check(shared_get(***) == [] and not auth.sees_card(***, ca),
+projects.share(pa["id"], remove=["guest"], actor="tien")
+check(shared_get(GUEST) == [] and not auth.sees_card(GUEST, ca),
       "4. unshare takes effect on the next request")
 
 try:
@@ -115,11 +115,11 @@ try:
     check(False, "5. unknown account refused")
 except ValueError:
     check(True, "5. unknown account refused")
-check(projects.share("gibts-nicht", add=["***"]) is None, "5. unknown project -> None")
-projects.share(pb["id"], add=["***"], actor="tien")
+check(projects.share("gibts-nicht", add=["guest"]) is None, "5. unknown project -> None")
+projects.share(pb["id"], add=["guest"], actor="tien")
 own = shared_get(OWNER)
 check({p["name"] for p in own} == {"Immobilien", "Privat"}, "5. the owner sees every project")
-check([p["geteilt_mit"] for p in own if p["name"] == "Privat"] == [["***"]],
+check([p["geteilt_mit"] for p in own if p["name"] == "Privat"] == [["guest"]],
       "5. the owner's list carries the share list")
 
 # 6. a folder becomes a project through the one door (sight_repo), and only if it exists

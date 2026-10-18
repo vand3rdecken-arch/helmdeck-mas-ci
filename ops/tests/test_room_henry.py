@@ -51,13 +51,13 @@ def check(cond, msg):
 
 
 PW = "Correct-Horse-Battery-9"
-for n, r in (("tien", "owner"), ("***", "client")):
+for n, r in (("tien", "owner"), ("member", "client")):
     auth.create_user(n, PW, r, actor="test")
 
 # the owner's PRIVATE store - must never reach a room turn
-db.memory_put("depot", "GEHEIM Depot *** *** ***", actor="henry")
+db.memory_put("depot", "GEHEIM Depot 50k AAA BBB", actor="henry")
 
-room = rooms.create("Team Alpha", "tien", ["***"])
+room = rooms.create("Team Alpha", "tien", ["member"])
 RID = room["id"]
 other = rooms.create("Team Beta", "tien", [])
 db.memory_put("beta-regel", "BETA nur fuer Beta", actor="henry", scope="room", scope_id=other["id"])
@@ -72,32 +72,32 @@ def stub(system, prompt):
 
 
 # -- 1. who triggers him ------------------------------------------------------------
-m_plain = rooms.post(RID, "***", "wann ist standup?")
+m_plain = rooms.post(RID, "member", "wann ist standup?")
 check(room_henry.maybe_answer(m_plain, background=False, runner=stub) is False and not calls,
       "an ordinary message does not wake Henry")
-m_ask = rooms.post(RID, "***", "@henry wann ist standup?")
+m_ask = rooms.post(RID, "member", "@henry wann ist standup?")
 check(room_henry.maybe_answer(m_ask, background=False, runner=stub) is True and len(calls) == 1,
       "@henry wakes him exactly once")
-last = rooms.history(RID, "***")[-1]
-check(last["byKind"] == "henry" and last["by"] == "Henry" and last["to"] == "***",
+last = rooms.history(RID, "member")[-1]
+check(last["byKind"] == "henry" and last["by"] == "Henry" and last["to"] == "member",
       "his reply is stored as Henry's, addressed to the person who asked")
 check(room_henry.maybe_answer(last, background=False, runner=stub) is False,
       "his own message can never trigger him (no loop)")
 off = dict(room, henry_on_mention=False)
 db.room_put(off)
-check(room_henry.maybe_answer(rooms.post(RID, "***", "@henry hallo"), background=False,
+check(room_henry.maybe_answer(rooms.post(RID, "member", "@henry hallo"), background=False,
                               runner=stub) is False,
       "a room with Henry switched off ignores @henry")
 db.room_put(room)
 
 # -- 2. what goes in ---------------------------------------------------------------------
 p = calls[0]["prompt"]
-check("***: wann ist standup?" in p and "***: @henry wann ist standup?" in p,
+check("member: wann ist standup?" in p and "member: @henry wann ist standup?" in p,
       "the turn carries the history with each line's AUTHOR")
-check("tien, ***" in p or "***, tien" in p or ("tien" in p and "MITGLIEDER" in p),
+check("tien, member" in p or "member, tien" in p or ("tien" in p and "MITGLIEDER" in p),
       "and the member list")
 check("ALPHA Standup um 9 Uhr" in p, "the room's own note is recalled")
-check("GEHEIM" not in p and "***" not in p and "depot" not in p.lower(),
+check("GEHEIM" not in p and "AAA" not in p and "depot" not in p.lower(),
       "the owner's private notes never ride into a room turn")
 check("BETA" not in p, "another room's notes do not either")
 check("Du bist Henry in einem Team-Raum" in calls[0]["system"],
@@ -134,7 +134,7 @@ def slow(system, prompt):
     return "Antwort %d" % len(order), {}
 
 
-a = rooms.post(RID, "***", "@henry erste Frage")
+a = rooms.post(RID, "member", "@henry erste Frage")
 b = rooms.post(RID, "tien", "@henry zweite Frage")
 ts = [threading.Thread(target=room_henry.answer, args=(RID, m["by"], m["text"], slow)) for m in (a, b)]
 for t in ts:
@@ -157,7 +157,7 @@ def blocked(system, prompt):
 
 
 results = []
-msgs = [rooms.post(RID, "***", "@henry flut %d" % i) for i in range(4)]
+msgs = [rooms.post(RID, "member", "@henry flut %d" % i) for i in range(4)]
 ths = [threading.Thread(target=lambda m=m: results.append(
     room_henry.answer(RID, m["by"], m["text"], blocked))) for m in msgs]
 for t in ths:
