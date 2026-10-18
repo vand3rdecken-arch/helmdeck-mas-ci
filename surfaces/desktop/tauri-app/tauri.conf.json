@@ -24,8 +24,12 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "nsis-hooks.nsh"
       }
+    },
+    "resources": {
+      "target/payload/": ""
     }
   },
   "plugins": {

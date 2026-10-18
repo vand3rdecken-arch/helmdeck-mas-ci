@@ -56,6 +56,34 @@ def set_version(version):
     open(toml, "w", encoding="utf-8", newline="").write(t)
 
 
+def stage_payload():
+    """What the installer puts next to the window, like the Electron installer's extraResources: the web
+    app, the daemon sources (the SAME allowlist + secret scan as the Store build), the tray that
+    supervises the daemon, the relay bridge. tauri.conf.json maps target/payload/ into $INSTDIR."""
+    import importlib.util
+    import shutil
+    spec = importlib.util.spec_from_file_location("bmt", os.path.join(ROOT, "ops", "deploy", "build_msix_tauri.py"))
+    bmt = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bmt)
+    payload = os.path.join(APP, "target", "payload")
+    shutil.rmtree(payload, ignore_errors=True)
+    os.makedirs(payload)
+    bmt.STAGE = payload
+    n = bmt.copy_allowlist()
+    dist = os.path.join(ROOT, "surfaces", "app", "dist")
+    if not os.path.isfile(os.path.join(dist, "index.html")):
+        sys.exit("no web build at surfaces/app/dist")
+    shutil.copytree(dist, os.path.join(payload, "app-dist"))
+    for crate, exe in (("surfaces/desktop/tray-rs", "helmdeck-tray.exe"), ("surfaces/relay/bridge-rs", "helmdeck-relay-bridge.exe")):
+        d = os.path.join(ROOT, *crate.split("/"))
+        subprocess.run(["cargo", "build", "--release"], cwd=d, check=True)
+        shutil.copy2(os.path.join(d, "target", "release", exe), os.path.join(payload, exe))
+    hits = bmt.scan_for_secrets()
+    if hits:
+        sys.exit("REFUSING to build - secret-shaped files in the payload:\n  " + "\n  ".join(hits))
+    print("payload: %d source files, web app, tray, bridge" % n)
+
+
 def feed(version, notes, installer_name, signature):
     url = "https://github.com/%s/releases/download/v%s/%s" % (REPO, version, installer_name)
     return {
@@ -79,6 +107,7 @@ def main():
         sys.exit("no updater key in %s (see the header of this file)" % KEYS)
     env = dict(os.environ, TAURI_SIGNING_PRIVATE_KEY=open(key, encoding="utf-8").read().strip(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD=dpapi_unprotect(open(pw_blob, "rb").read()))
     set_version(a.version)
+    stage_payload()
     r = subprocess.run(["cargo", "tauri", "build"], cwd=APP, env=env)
     if r.returncode != 0:
         sys.exit("build failed")

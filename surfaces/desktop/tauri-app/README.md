@@ -90,3 +90,12 @@ Identity comes from the git-ignored `surfaces/desktop/build/appx-identity.json`.
 
 Not verified yet: a packaged run on a real install (needs Developer Mode for `Add-AppxPackage -Register`, or a
 signed package); the "start at login" toggle in a Store install (debt `tauri-store-startuptask`).
+
+## Full installer (2026-10-18)
+
+`ops/deploy/release_tauri.py` now builds what the Electron NSIS installer is: one 9.5 MB setup.exe with the
+window, the web app, the daemon sources (the Store build's allowlist + secret scan), `helmdeck-tray.exe` (it
+supervises the daemon) and `helmdeck-relay-bridge.exe`. It installs per user to `%LOCALAPPDATA%\Programs\HelmDeck`,
+registers the tray for login and starts it (`nsis-hooks.nsh`). Measured with a silent install + uninstall on
+this machine: 181 .py files, no secret-shaped file, running trays/bridges of OTHER installs untouched, the
+HelmDeck profile folder untouched, autostart removed only when it is the installer's own value.
