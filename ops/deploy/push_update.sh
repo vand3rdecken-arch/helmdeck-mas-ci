@@ -110,6 +110,21 @@ OTA_PLATFORMS="android ios"
 # protection never fires (see relay.py _bundle_rtv). Packed with the export.
 RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)}"
 
+# NO OTA FOR A RUNTIME NO ANDROID PHONE CAN RUN (2026-10-18): app.json went to 1.0.53 on 10-10 for an iOS
+# fix, no 1.0.53 APK was ever released, and eight days of OTAs went to a runtime no Android phone had -
+# while apk/version.json still said 1.0.52, so the in-app "new APK" banner never fired either. The
+# released APK (the relay's version.json, the same file the banner reads) must BE this runtime before
+# any phone OTA ships for it: release the native build first (build_apk.sh + push_apk.sh).
+if [ "$DESKTOP_ONLY" != "1" ] && [ -z "$RUNTIME" ] && [ "${ALLOW_NO_APK:-0}" != "1" ]; then
+  LIVE_APK=$(curl -s -m20 "https://$RELAY_DOMAIN/apk/version.json" | py -3.12 -c "import json,sys;print(json.load(sys.stdin).get('versionName',''),end='')" 2>/dev/null)
+  if [ "$LIVE_APK" != "$RTV" ]; then
+    echo "!!! REFUSING: this OTA targets runtime $RTV, the released Android APK is '${LIVE_APK:-unreadable}'."
+    echo "!!! No Android phone could receive it. Release the APK first: bash ops/deploy/build_apk.sh && bash ops/deploy/push_apk.sh"
+    echo "!!! (ALLOW_NO_APK=1 overrides - only when no Android install exists.)"
+    exit 1
+  fi
+fi
+
 if [ "$DESKTOP_ONLY" != "1" ]; then
 if [ "$NO_BUILD" != "1" ]; then
   echo "==> expo export ($OTA_PLATFORMS)"
