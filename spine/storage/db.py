@@ -1266,9 +1266,17 @@ def events_all():
         cached_sig, blob = _events_cache
     if sig is not None and sig == cached_sig:
         return marshal.loads(blob)
+    # INCREMENTAL (measured 2026-10-18: GET /dashboard/data took 14-29 s on the live daemon). The log is
+    # append-only by law - no row is ever updated or deleted - and every relay note, memory sample and card
+    # event appends one, so the old "new max(seq) -> re-parse all ~30,000 rows" ran on nearly every read.
+    # Now a cache at seq N only parses the rows after N.
+    base, since = [], None
+    if cached_sig is not None and sig is not None and sig > cached_sig and blob is not None:
+        base, since = marshal.loads(blob), cached_sig
     rows = c.execute(
-        "SELECT ts,kind,track,data FROM events ORDER BY seq").fetchall()
-    out = []
+        "SELECT ts,kind,track,data FROM events" + (" WHERE seq>?" if since is not None else "") + " ORDER BY seq",
+        (since,) if since is not None else ()).fetchall()
+    out = base
     for ts, kind, track, data in rows:
         r = {"ts": ts, "kind": kind, "track": track}
         try:
