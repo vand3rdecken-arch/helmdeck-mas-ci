@@ -83,11 +83,9 @@ def history_get(self, user):
         br = br.strip()
         if not br or br == head:
             continue
-        commits = parse(git("log", "--date=short", fmt, "-n", "20",
-                            "%s..%s" % (head, br)))
         t = tmap.get(br)
         branches.append({
-            "name": br, "commits": commits,
+            "name": br,
             "track": t["id"] if t else None,
             "task": t["task"][:70] if t else "",
             "lane": t.get("lane") if t else None,
@@ -95,9 +93,16 @@ def history_get(self, user):
         })
     branches.sort(key=lambda b: (b["track"] is None, b["name"]))
     from spine.auth import auth
-    branches = [b for b in branches if auth.owns_card(user, b)]
+    branches = [b for b in branches if auth.owns_card(user, b)][:40]
+    # One `git log` per SHOWN branch, in parallel - it was one per branch in the repo, serially, before the
+    # cut to 40 (81 branches: 7-14 s per GET /history, measured 2026-10-18).
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(8) as ex:
+        logs = ex.map(lambda b: parse(git("log", "--date=short", fmt, "-n", "20", "%s..%s" % (head, b["name"]))), branches)
+        for b, commits in zip(branches, logs):
+            b["commits"] = commits
     return self._send(200, json.dumps(
-        {"head": head, "main": main, "branches": branches[:40]}))
+        {"head": head, "main": main, "branches": branches}))
 
 
 def dashboard_data_get(self, user):
