@@ -98,7 +98,7 @@ def seen(*pids):
 
 
 print("1. decide wakes Henry - at a slot")
-PROP = {"id": "p-prop", "status": "ready", "created": ts(30), "request": "***-Test\nlang",
+PROP = {"id": "p-prop", "status": "ready", "created": ts(30), "request": "Beispielprojekt-Test\nlang",
         "steps": [{"title": "a", "mode": "do", "state": "proposed", "track": None}] * 3}
 decide = [x for x in pm_push.derive(NOW, [PROP], [], "") if x["who"] == "henry"]
 check([x["kind"] for x in decide] == ["proposal"], "derive calls unstarted steps Henry's (%r)" % decide)
@@ -110,7 +110,7 @@ r = run(st, now=NOON, procs=[PROP], decide=decide)
 check(len(r) == 1 and emitted[-1]["kind"] == "process-move" and emitted[-1]["process"] == "p-prop"
       and emitted[-1]["card"] is None, "the 14:00 slot: one process-move naming the process as a record")
 d = emitted[-1]["detail"]
-check("decide: 3 Schritte vorgeschlagen" in d and "PROZESS p-prop: ***-Test" in d
+check("decide: 3 Schritte vorgeschlagen" in d and "PROZESS p-prop: Beispielprojekt-Test" in d
       and "Login" in d and "machine_task" in d, "detail = evidence + reason + the one owner line")
 n = len(emitted)
 run(st, now=NOON + 60, procs=[PROP], decide=decide, open_ids=[r[0]])
@@ -201,7 +201,7 @@ os.makedirs(repo)
 subprocess.run(["git", "init", "-q", repo], check=True)
 real_settings = events.settings
 events.settings = lambda: dict(real_settings(), default_repo=repo)
-p = processes.create("*** Preistest", actor="tien")
+p = processes.create("Beispielprojekt Preistest", actor="tien")
 check(p["status"] == "running" and p["steps"] == [], "create without steps: empty + running, no proposer")
 r = copilot_actions._run_action({"type": "set_next", "process": "Preistest",
                                  "what": "Zahlen der ersten 3 Tage auswerten", "at": "2026-10-03 09:00"},
