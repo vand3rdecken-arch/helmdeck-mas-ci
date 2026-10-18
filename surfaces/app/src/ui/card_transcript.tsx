@@ -11,7 +11,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
 import { RunTile, type RunLive } from "./run_tile";
 import { CompactionMarker, type CompactionEvent, type CompactionFields } from "./compaction_marker";
-import type { ReplyRef } from "@/data/client";
+import type { AnsweredRecord, ReplyRef } from "@/data/client";
 
 const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
 
@@ -58,6 +58,7 @@ export interface TStep extends Omit<CompactionFields, "event"> {
   todos?: { content: string; status: string }[];
   seq?: number;        // the chat row's identity - what a reply's quote jumps back to
   date?: string;       // YYYY-MM-DD the row was written (chat log) - the day separators read it
+  answered?: AnsweredRecord;   // kind "answered": the question as it was answered (never vanishes)
   quote?: ReplyRef;    // this message answers that one (messenger-style reply)
 }
 
@@ -511,6 +512,34 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         // nothing (the owner's message right above it already marks the turn),
         // `completed` is a quiet usage line, `canceled` a centered marker,
         // `failed` a real error card with the error text + usage.
+        if (kind === "answered" && s.answered) return wrap(s, key, (
+          <View testID="answered-question" style={{ alignSelf: "flex-end", maxWidth: "88%", borderWidth: 1, borderColor: t.borderSubtle,
+            borderRadius: 12, padding: 10, gap: 8, backgroundColor: t.surface1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name="checkmark-circle" size={14} color={t.ok} />
+              <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontWeight: "700", flex: 1 }}>{tr("chat.answered")}</Text>
+              {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
+            </View>
+            {s.answered.items.map((it, j) => (
+              <View key={j} style={{ gap: 4 }}>
+                <Text style={{ color: t.txtPrimary, fontSize: 13, lineHeight: 18 }}>{it.question}</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {it.options.map((o) => {
+                    const on = it.chosen.includes(o);
+                    return (
+                      <View key={o} style={{ flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3,
+                        borderWidth: 1, borderColor: on ? t.accent : t.borderSubtle, backgroundColor: on ? t.accent + "22" : "transparent" }}>
+                        {on ? <Ionicons name="checkmark" size={11} color={t.accent} /> : null}
+                        <Text style={{ color: on ? t.accent : t.txtTertiary, fontSize: 12, fontWeight: on ? "700" : "400" }}>{o}</Text>
+                      </View>);
+                  })}
+                </View>
+                {it.custom.map((c) => (
+                  <Text key={c} style={{ color: t.accent, fontSize: 12.5 }}>{tr("chat.answeredOwn")}: „{c}"</Text>
+                ))}
+              </View>
+            ))}
+          </View>));
         if (kind === "day") return (
           <View key={`day-${s.text}`} accessibilityRole="header" testID="day-separator"
             style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 }}>

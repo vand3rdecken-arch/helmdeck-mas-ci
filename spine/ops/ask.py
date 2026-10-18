@@ -398,6 +398,25 @@ def chat_answer_text(picks):
     return "; ".join("%s: %s" % (p["header"], ", ".join(parts(p))) for p in picks)
 
 
+def answered_record(question, picks):
+    """What stays visible after a question is answered (owner 2026-10-18: "Fragen laufen weg sobald die
+    beantwortet werden"): every asked question with its options and what was chosen. The pending question
+    itself is popped on answer (one owner of "open" state); THIS is the durable trace of it, written once
+    into the chat and into the card's timeline."""
+    by_header = {p.get("header"): p for p in picks}
+    items = []
+    for q in (question or {}).get("questions") or []:
+        p = by_header.get(q.get("header")) or {}
+        items.append({
+            "question": q.get("question") or "",
+            "header": q.get("header") or "",
+            "options": [o.get("label") for o in (q.get("options") or []) if isinstance(o, dict) and o.get("label")],
+            "chosen": list(p.get("labels") or []),
+            "custom": list(p.get("custom") or []),
+        })
+    return {"id": (question or {}).get("id") or "", "items": items}
+
+
 def answer_note(picks):
     """The audit line recorded in the card's flight recorder."""
     return "FRAGE beantwortet: " + "; ".join(

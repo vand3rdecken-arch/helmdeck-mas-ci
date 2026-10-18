@@ -2414,9 +2414,14 @@ def say(text, cls="pm", card=None, extra=None):
             run_dir = ct.get("run_dir") if ct and not isinstance(ct, list) else None
             if run_dir:
                 from spine.agent import timeline_store
-                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex,
-                    {"kind": "note", "text": text, "byKind": "henry",
-                     "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
+                item = {"kind": "note", "text": text, "byKind": "henry",
+                        "ts": time.strftime("%H:%M:%S"), "ta": time.time()}
+                if extra and extra.get("answered"):
+                    # an answered question is the OWNER's act on the card, kept with its question
+                    item = {"kind": "answered", "answered": extra["answered"], "text": text,
+                            "byKind": "human", "by": extra.get("by") or owner,
+                            "ts": time.strftime("%H:%M:%S"), "ta": time.time()}
+                timeline_store.append(run_dir, "s:" + uuid.uuid4().hex, item)
     except Exception:
         pass
 

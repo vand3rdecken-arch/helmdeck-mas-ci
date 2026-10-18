@@ -1517,11 +1517,24 @@ def answer_question(tid, answers, request_id="", actor="owner", echo_chat=True):
     # _pick_parts) would both duplicate the message and leave the owner's
     # original bubble pinned to the bottom of the chat forever, because it would
     # never find its own text again.
+    answered = ask.answered_record(q, picks)
     if echo_chat:
         try:
             from cells.copilot.chat import copilot
             copilot.say(", ".join(", ".join(ask._pick_parts(p)) for p in picks),
-                        cls="you", card=tid)
+                        cls="you", card=tid, extra={"answered": answered, "by": actor})
+        except Exception:
+            pass
+    else:
+        # the chat line exists already (an inline reply, logged with its own mid) - the CARD's timeline
+        # still gets the durable answered record, so the thread never loses the question
+        try:
+            from spine.agent import timeline_store
+            import uuid as _uuid
+            timeline_store.append(t["run_dir"], "s:" + _uuid.uuid4().hex,
+                {"kind": "answered", "answered": answered, "byKind": "human", "by": actor,
+                 "text": ", ".join(", ".join(ask._pick_parts(p)) for p in picks),
+                 "ts": time.strftime("%H:%M:%S"), "ta": time.time()})
         except Exception:
             pass
     # steer() clears the pending question itself and runs the turn under the

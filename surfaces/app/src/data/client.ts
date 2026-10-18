@@ -318,7 +318,13 @@ export interface Step {
  *  `card` = it was a card's mirrored message, so the reply goes to that card. */
 export interface ReplyRef { text: string; by?: string; seq?: number; card?: string }
 
+/** A question as it stood when it was answered (spine/ops/ask.answered_record): kept so it never vanishes. */
+export interface AnsweredRecord { id: string; items: { question: string; header: string; options: string[];
+  chosen: string[]; custom: string[] }[] }
+
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
+  /** an answered card question - drawn as the question with the chosen option marked */
+  answered?: AnsweredRecord;
   /** the message this one answers (see ReplyRef) */
   reply_to?: ReplyRef;
   /** a delegated run this row started: `hands` = a hands id, `run` = "bg:<uid>"
