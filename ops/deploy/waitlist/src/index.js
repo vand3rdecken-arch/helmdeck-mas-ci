@@ -1601,8 +1601,8 @@ const IMPRESSUM_HTML = `<!doctype html><html lang=de><meta charset=utf-8>
 
 <h2>Angaben gemäß § 5 DDG</h2>
 <p>Tien Duy Vo<br>
-*** 6<br>
-*** Frankfurt am Main<br>
+{{ADDR_STREET}}<br>
+{{ADDR_ZIP}} Frankfurt am Main<br>
 Deutschland</p>
 
 <h2>Kontakt</h2>
@@ -1617,8 +1617,8 @@ Deutschland</p>
 
 <h2>Provider identification under section 5 DDG</h2>
 <p>Tien Duy Vo<br>
-*** 6<br>
-*** Frankfurt am Main<br>
+{{ADDR_STREET}}<br>
+{{ADDR_ZIP}} Frankfurt am Main<br>
 Germany</p>
 
 <h2>Contact</h2>
@@ -1634,6 +1634,11 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+// Postal address is private data: the source only carries {{ADDR_STREET}} / {{ADDR_ZIP}}; the values are Worker secrets (local: .env, gitignored).
+function fill(body, env) {
+  return body.replace(/\{\{ADDR_(STREET|ZIP)\}\}/g, (m, k) => env["ADDR_" + k] || m);
 }
 
 function html(body, status = 200) {
@@ -1860,16 +1865,17 @@ export default {
         product: PRODUCTS[url.searchParams.get("p")] ? url.searchParams.get("p") : "wearables",
       }));
     }
-    if ((p === "/datenschutz" || p === "/privacy") && req.method === "GET") return html(DATENSCHUTZ_HTML);
-    if ((p === "/impressum" || p === "/imprint") && req.method === "GET") return html(IMPRESSUM_HTML);
+    if ((p === "/datenschutz" || p === "/privacy") && req.method === "GET") return html(fill(DATENSCHUTZ_HTML, env));
+    if ((p === "/impressum" || p === "/imprint") && req.method === "GET") return html(fill(IMPRESSUM_HTML, env));
     // Public pages the Atlassian Marketplace requires a paid app to point at.
     // Old /apps/<product>/... URLs (already in the Marketplace draft) move permanently.
-    const oldApp = /^\/apps\/(label-doktor|lesenachweis|seiten-review|ticket-merge)(\/.*)?$/.exec(p);
+    const oldApp = /^\/apps\/(label-doktor|lesenachweis|seiten-review|ticket-merge)(\/.*)?$/.exec(p)
+      || /^\/(lesenachweis)(\/.*)?$/.exec(p);
     if (oldApp && (req.method === "GET" || req.method === "HEAD")) {
-      return Response.redirect(url.origin + "/" + oldApp[1] + (oldApp[2] || "/"), 301);
+      return Response.redirect(url.origin + "/" + (oldApp[1] === "lesenachweis" ? "readproof" : oldApp[1]) + (oldApp[2] || "/"), 301);
     }
-    if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(LABEL_DOKTOR_PAGES[p]);
-    if (req.method === "GET" && APP_PAGES[p]) return html(APP_PAGES[p]);
+    if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(fill(LABEL_DOKTOR_PAGES[p], env));
+    if (req.method === "GET" && APP_PAGES[p]) return html(fill(APP_PAGES[p], env));
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);
     if (p === "/api/ev" && req.method === "POST") return handleEvent(req, env, ctx);
     if (p === "/export.csv" && req.method === "GET") return handleExport(req, env);

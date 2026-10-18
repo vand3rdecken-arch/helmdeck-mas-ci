@@ -1,5 +1,5 @@
 // Public pages for three more Atlassian Marketplace apps, served under
-// /lesenachweis/, /seiten-review/ and /ticket-merge/. Same shape
+// /readproof/, /seiten-review/ and /ticket-merge/. Same shape
 // as label_doktor.js: one HTML string per page, no <script>, no analytics, no
 // noindex (the live Label-Doktor pages carry none either).
 //
@@ -32,8 +32,7 @@ ${body}
 </html>`;
 }
 
-const LESENACHWEIS_INDEX = page("lesenachweis", "Lesenachweis", "Lesenachweis (Read Confirmation) for Confluence Cloud", `
-<h1>Lesenachweis (Read Confirmation)</h1>
+const LESENACHWEIS_INDEX = page("readproof", "ReadProof", "ReadProof for Confluence Cloud", `<h1>ReadProof</h1>
 <p><strong>EN:</strong> Who confirmed which page version by when: deadlines, escalation, CSV and PDF export. An Atlassian Forge app for Confluence Cloud.</p>
 <p><strong>DE:</strong> Wer hat welche Seitenversion bis wann bestätigt: Frist, Eskalation, Export als CSV und PDF. Eine Atlassian-Forge-App für Confluence Cloud.</p>
 <ul>
@@ -45,17 +44,13 @@ const LESENACHWEIS_INDEX = page("lesenachweis", "Lesenachweis", "Lesenachweis (R
 </ul>
 <h2>Price / Preis</h2>
 <p>Free up to 10 users. From 11 users USD 0.50 per user and month, 30-day trial via the Atlassian Marketplace. / Gratis bis 10 Nutzer. Ab 11 Nutzern 0,50 USD je Nutzer und Monat, 30 Tage Testphase über den Atlassian Marketplace.</p>
-<p>The app records confirmations; it does not make an organisation compliant with any regulation. / Die App hält Bestätigungen fest; sie macht keine Organisation konform mit einer Vorschrift.</p>
-<hr><p class=muted>Provider / Anbieter: Tien Duy Vo, *** 6, *** Frankfurt am Main, Deutschland, support@helmdeck.de. Siehe <a href="/impressum">Impressum</a></p>
-`);
-
-const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, Lesenachweis", `
-<h1>Documentation / Dokumentation</h1>
+<p>The app records confirmations; it does not make an organisation compliant with any regulation. / Die App hält Bestätigungen fest; sie macht keine Organisation konform mit einer Vorschrift.</p>`);
+const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadProof", `<h1>Documentation / Dokumentation</h1>
 <p>English first, deutsch darunter.</p>
 
 <h2>English</h2>
 <h3>1. What the app does</h3>
-<p>Lesenachweis records one confirmation per person and page version. Administrators assign pages to a Confluence group with a deadline; people confirm with one click in the page byline; when the page changes, everyone confirms the new version. Requires Confluence Cloud and at least one Confluence group.</p>
+<p>ReadProof records one confirmation per person and page version. Administrators assign pages to a Confluence group with a deadline; people confirm at the very bottom of the page (ReadProof macro, required tick); when the page changes, everyone confirms the new version. Requires Confluence Cloud and at least one Confluence group.</p>
 <h3>2. Installation and permissions</h3>
 <p>Install from the Atlassian Marketplace. The app asks for read access only; it writes nothing into pages and sends no e-mails.</p>
 <table>
@@ -67,11 +62,11 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <tr><td>App storage</td><td>Store assignments and confirmations</td></tr>
 </table>
 <h3>3. Assign one page</h3>
-<p>Open <em>Apps → Lesenachweis</em> (administrators only). Choose the page, the group and a deadline. Optional: re-confirmation after N days, escalation after N days with an escalation group.</p>
+<p>Open <em>Apps → ReadProof</em> (Confluence administrators, ReadProof managers and space administrators for their space; see Roles below). Choose the page, the group and a deadline. Optional: re-confirmation after N days, escalation after N days with an escalation group.</p>
 <h3>4. Assign a page tree</h3>
 <p>Choose a parent page and a group. The preview shows how many pages and people are covered. Check it, then confirm. Pages that fail are reported; the rest is assigned.</p>
 <h3>5. Confirm as a reader</h3>
-<p>On an assigned page, click "Lesenachweis" in the byline and confirm. When the page gets a new version, the confirmation of the old version stays as evidence and you confirm the new one.</p>
+<p>On an assigned page, scroll to the very bottom to the ReadProof box (the author inserts the macro "ReadProof" there). Tick "I have read the whole page and understood it" and click "Read and understood". The page byline only shows your status. The proof (version, date, tick) appears in the CSV and PDF export; admins can switch the required tick off per assignment. This supports the evidence of policy acknowledgement (ISO 27001 awareness, NIS2 training). When the page gets a new version, the confirmation of the old version stays as evidence and you confirm the new one.</p>
 <h3>6. Read the overview</h3>
 <p>The overview lists page, group, deadline and "x of y confirmed" and marks overdue assignments.</p>
 <h3>7. Deadlines and escalation</h3>
@@ -79,7 +74,8 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <h3>8. Export</h3>
 <p>CSV (semicolon-separated, UTF-8) and PDF as downloads. The PDF has a summary and a checksum (names are not part of the checksum). Cells starting with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code> are neutralised in the CSV. Exports contain names and account IDs; handle them accordingly.</p>
 <h3>9. Licence</h3>
-<p>Sites with up to 10 users use the app for free. Without an active licence (for example an expired trial) new assignments are blocked; existing assignments, confirmations, overview, deadlines and exports keep working.</p>
+<p>Sites with up to 10 users use the app for free. Without an active licence (for example an expired trial) only new assignments are blocked (read-only mode); existing assignments, confirmations, overview, deadlines, removal and exports keep working.</p>
+<p><strong>Roles.</strong> Confluence administrators set up ReadProof and choose the groups of "ReadProof managers" (only they can change this). Managers may assign, report and export on every page; space administrators do the same for their own space; page authors can only request a confirmation for their own page. Everyone else can only confirm. Every request is checked on the server.</p>
 <h3>10. Known limits</h3>
 <ul>
 <li>Group membership is read when you open or assign; later changes show up the next time.</li>
@@ -88,19 +84,19 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <li>No e-mail reminders. The app does not prove compliance with NIS2 or ISO 27001; it records confirmations.</li>
 </ul>
 <h3>11. Privacy, deletion, troubleshooting</h3>
-<p>See the <a href="/lesenachweis/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/lesenachweis/support">Support</a>.</p>
+<p>See the <a href="/readproof/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/readproof/support">Support</a>.</p>
 
 <h2>Deutsch</h2>
 <h3>1. Was die App tut</h3>
-<p>Lesenachweis speichert eine Bestätigung je Person und Seitenversion. Administratoren weisen Seiten einer Confluence-Gruppe mit Frist zu; alle bestätigen mit einem Klick in der Seitenzeile; ändert sich die Seite, bestätigt jede Person die neue Version. Voraussetzung: Confluence Cloud und mindestens eine Gruppe.</p>
+<p>ReadProof speichert eine Bestätigung je Person und Seitenversion. Administratoren weisen Seiten einer Confluence-Gruppe mit Frist zu; alle bestätigen ganz unten auf der Seite (Makro „ReadProof“, Pflicht-Haken); ändert sich die Seite, bestätigt jede Person die neue Version. Voraussetzung: Confluence Cloud und mindestens eine Gruppe.</p>
 <h3>2. Installation und Berechtigungen</h3>
 <p>Installation über den Atlassian Marketplace. Die App fragt nur Leserechte ab; sie schreibt nichts in Seiten und versendet keine E-Mails. Die Tabelle oben nennt, wofür jede Berechtigung gebraucht wird (Seiten und Bereiche lesen, Seitenbaum, Gruppen, Nutzernamen, App-Speicher).</p>
 <h3>3. Eine Seite zuweisen</h3>
-<p><em>Apps → Lesenachweis</em> öffnen (nur Administratoren). Seite, Gruppe und Frist wählen. Optional: Neu-Bestätigung nach N Tagen, Eskalation nach N Tagen mit Eskalationsgruppe.</p>
+<p><em>Apps → ReadProof</em> öffnen (Administratoren, ReadProof-Manager, Space-Administratoren für ihren Space). Seite, Gruppe und Frist wählen. Optional: Neu-Bestätigung nach N Tagen, Eskalation nach N Tagen mit Eskalationsgruppe.</p>
 <h3>4. Seitenbaum zuweisen</h3>
 <p>Elternseite und Gruppe wählen. Die Vorschau zeigt, wie viele Seiten und Personen betroffen sind. Prüfen, dann bestätigen. Fehlgeschlagene Seiten werden gemeldet, der Rest wird zugewiesen.</p>
 <h3>5. Als Leser bestätigen</h3>
-<p>Auf einer zugewiesenen Seite in der Seitenzeile "Lesenachweis" anklicken und bestätigen. Bei einer neuen Version bleibt die alte Bestätigung als Nachweis; du bestätigst die neue.</p>
+<p>Auf einer zugewiesenen Seite ganz nach unten zum ReadProof-Kasten scrollen (dort fügt der Autor das Makro „ReadProof“ ein). „Ich habe die Seite vollständig gelesen und verstanden“ ankreuzen und „Gelesen und verstanden“ klicken. Die Seitenzeile zeigt nur den Stand. Der Nachweis (Version, Datum, Haken) steht im CSV- und PDF-Export; Admins können den Pflicht-Haken je Zuweisung abschalten. Das unterstützt den Nachweis der Kenntnisnahme von Richtlinien (ISO 27001 Awareness, NIS2 Schulung). Bei einer neuen Version bleibt die alte Bestätigung als Nachweis; du bestätigst die neue.</p>
 <h3>6. Übersicht lesen</h3>
 <p>Die Übersicht zeigt Seite, Gruppe, Frist und "x von y bestätigt" und markiert Überfälliges.</p>
 <h3>7. Fristen und Eskalation</h3>
@@ -108,7 +104,8 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <h3>8. Export</h3>
 <p>CSV (Semikolon, UTF-8) und PDF als Download. Das PDF hat eine Zusammenfassung und eine Prüfsumme (Namen sind nicht Teil der Summe). Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code> beginnen, werden im CSV entschärft. Exporte enthalten Namen und Konto-IDs.</p>
 <h3>9. Lizenz</h3>
-<p>Seiten bis 10 Nutzer nutzen die App gratis. Ohne aktive Lizenz (z. B. Testphase abgelaufen) sind neue Zuweisungen gesperrt; bestehende Zuweisungen, Bestätigungen, Übersicht, Fristen und Exporte laufen weiter.</p>
+<p>Seiten bis 10 Nutzer nutzen die App gratis. Ohne aktive Lizenz (z. B. Testphase abgelaufen) sind nur neue Zuweisungen gesperrt (Nur-Lesen-Modus); bestehende Zuweisungen, Bestätigungen, Übersicht, Fristen, Entzug und Exporte laufen weiter.</p>
+<p><strong>Rollen.</strong> Confluence-Administratoren richten ReadProof ein und wählen die Gruppen der „ReadProof-Manager“ (nur sie können das ändern). Manager dürfen auf jeder Seite zuweisen, berichten und exportieren; Space-Administratoren dasselbe für ihren eigenen Space; Seitenautoren können nur für ihre eigene Seite eine Bestätigung anfordern. Alle anderen können nur bestätigen. Jede Anfrage wird auf dem Server geprüft.</p>
 <h3>10. Bekannte Grenzen</h3>
 <ul>
 <li>Die Gruppenmitgliedschaft wird beim Öffnen und Zuweisen gelesen; spätere Änderungen erscheinen beim nächsten Mal.</li>
@@ -117,43 +114,35 @@ const LESENACHWEIS_DOCS = page("lesenachweis", "Lesenachweis", "Documentation, L
 <li>Keine E-Mail-Erinnerungen. Die App belegt keine Konformität mit NIS2 oder ISO 27001; sie hält Bestätigungen fest.</li>
 </ul>
 <h3>11. Datenschutz, Löschung, Fehlersuche</h3>
-<p>Siehe <a href="/lesenachweis/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/lesenachweis/support">Support</a>.</p>
-<hr><p class=muted>Tien Duy Vo, *** 6, *** Frankfurt am Main, Deutschland, support@helmdeck.de. Siehe <a href="/impressum">Impressum</a></p>
-`);
-
-const LESENACHWEIS_SUPPORT = page("lesenachweis", "Lesenachweis", "Support, Lesenachweis", `
-<h1>Support</h1>
+<p>Siehe <a href="/readproof/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/readproof/support">Support</a>.</p>`);
+const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof", `<h1>Support</h1>
 <h2>English</h2>
-<p>E-mail: support@helmdeck.de</p>
+<p>E-mail: <strong>support@helmdeck.de</strong></p>
 <p>Please include: your Confluence site name, what you clicked, what you expected and what happened, and the language of your profile. Please do not send page content or personal data.</p>
 <table>
 <tr><th>Who</th><th>What you can expect</th></tr>
 <tr><td>Paying sites (11 or more users)</td><td>Answer within two business days (target, not a guarantee). </td></tr>
 <tr><td>Free tier (up to 10 users)</td><td>Documentation only; no response time promised.</td></tr>
 </table>
-<p>Security issues: security@helmdeck.de. Data processing agreement on request: privacy@helmdeck.de.</p>
-<p>First read the <a href="/lesenachweis/docs">documentation</a>, especially "Known limits".</p>
+<p>Security issues: <strong>security@helmdeck.de</strong>. Data processing agreement on request: privacy@helmdeck.de.</p>
+<p>First read the <a href="/readproof/docs">documentation</a>, especially "Known limits".</p>
 <h2>Deutsch</h2>
-<p>E-Mail: support@helmdeck.de</p>
+<p>E-Mail: <strong>support@helmdeck.de</strong></p>
 <p>Bitte angeben: Name deiner Confluence-Seite, was du geklickt hast, was du erwartet hast und was passiert ist, Sprache deines Profils. Bitte keine Seiteninhalte oder personenbezogenen Daten senden.</p>
 <table>
 <tr><th>Wer</th><th>Was du erwarten kannst</th></tr>
 <tr><td>Zahlende Seiten (ab 11 Nutzern)</td><td>Antwort innerhalb von zwei Werktagen (Ziel, keine Zusage). </td></tr>
 <tr><td>Gratis-Stufe (bis 10 Nutzer)</td><td>Nur Dokumentation; keine Antwortzeit zugesagt.</td></tr>
 </table>
-<p>Sicherheitsprobleme: security@helmdeck.de. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>
-<hr><p class=muted>Project Kaiser. Tien Duy Vo, *** 6, *** Frankfurt am Main, Deutschland, support@helmdeck.de. Siehe <a href="/impressum">Impressum</a></p>
-`);
-
-const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz / Privacy, Lesenachweis", `
-<h1>Datenschutzerklärung / Privacy Policy, Lesenachweis (Read Confirmation)</h1>
-<blockquote><strong>ENTWURF, JURISTISCH UNGEPRÜFT.</strong> KI-Entwurf, aus Code (<code>app/src</code>, <code>app/manifest.yml</code>) und <code>docs/04-datenmodell.md</code> abgeleitet. Kein Anwalt hat ihn gelesen. Vor der Veröffentlichung fachlich prüfen lassen (DSGVO, Impressum, Angaben als Privatperson). <code>[[ECKIGE KLAMMERN]]</code> sind Platzhalter, die der Owner füllt.  <strong>DRAFT, NOT LEGALLY REVIEWED.</strong> Derived from the code. Placeholders: <code>[[...]]</code>.</blockquote>
+<p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>`);
+const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Datenschutz / Privacy, ReadProof", `<h1>Datenschutzerklärung / Privacy Policy – ReadProof</h1>
+<blockquote><strong>ENTWURF – JURISTISCH UNGEPRÜFT.</strong> KI-Entwurf, aus Code (<code>app/src</code>, <code>app/manifest.yml</code>) und <code>docs/04-datenmodell.md</code> abgeleitet. Kein Anwalt hat ihn gelesen. Vor der Veröffentlichung fachlich prüfen lassen (DSGVO, Impressum, Angaben als Privatperson). <code>[[ECKIGE KLAMMERN]]</code> sind Platzhalter, die der Owner füllt.  <strong>DRAFT – NOT LEGALLY REVIEWED.</strong> Derived from the code. Placeholders: <code>[[...]]</code>.</blockquote>
 <p>Stand / Version: <code>[[DATUM]]</code></p>
 <h1>Deutsch</h1>
 <h2>1. Verantwortlicher</h2>
-<p><code>Project Kaiser</code>, *** 6, *** Frankfurt am Main, Deutschland, E-Mail: privacy@helmdeck.de. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
+<p><code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland – E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
 <h2>2. Was die App ist</h2>
-<p>Lesenachweis ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
+<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
 <h2>3. Wo die Daten verarbeitet werden</h2>
 <p>Die App läuft auf Atlassian Forge. Alle Daten liegen im Forge-Speicher (Key-Value-Store) deiner eigenen Confluence-Installation, also auf Atlassian-Infrastruktur. Es gibt <strong>keine eigenen Server, keine eigene Datenbank, kein Tracking, keine Analyse, keine Drittdienste</strong>. Das Manifest deklariert keine externen Hosts (<code>permissions.external</code> fehlt); die App ruft nur die Confluence-Schnittstelle auf. Der Anbieter erhält und speichert keine Daten deiner Seite bei sich.</p>
 <h2>4. Welche Daten die App verarbeitet</h2>
@@ -162,8 +151,8 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <tr><td>Zuweisung: Seiten-ID, Gruppen-ID und Gruppenname, Frist, Tage bis zur Neu-Bestätigung, Eskalationstage und -gruppe, Basisversion, Konto-ID des Erstellers, Zeitstempel</td><td>Wer muss was bis wann bestätigen</td><td>Forge-Speicher deiner Seite</td><td>Bis ein Administrator die Zuweisung entfernt oder die App deinstalliert wird</td></tr>
 <tr><td>Bestätigung: Seiten-ID, Version, Atlassian-Konto-ID der Person, Zeitpunkt</td><td>Nachweis</td><td>Forge-Speicher</td><td><strong>Keine automatische Löschung.</strong> Bestätigungen älterer Versionen bleiben absichtlich als Nachweis. Die Aufbewahrungsdauer entscheidest du; exportiere vorher</td></tr>
 <tr><td>Eskalationsvermerk: Seiten-ID, Version, Zeitpunkt</td><td>Eskalation je Seite und Version nur einmal melden</td><td>Forge-Speicher</td><td>wie oben</td></tr>
-<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>-</td></tr>
-<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>-</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>-</td></tr>
+<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>–</td></tr>
+<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>–</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>–</td></tr>
 </table>
 <p>Ausgetretene Personen: Ihr Name ist unter Umständen nicht mehr abrufbar; ihre Konto-ID bleibt im Nachweis. Exporte (CSV/PDF) enthalten Namen und Konto-IDs und werden von der App nicht gespeichert; sie landen in deinem Download-Ordner.</p>
 <h2>5. Berechtigungen (Scopes)</h2>
@@ -177,16 +166,16 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <h2>9. Löschung und Deinstallation</h2>
 <p>Du kannst Zuweisungen in der App entfernen. Bestätigungen werden von der App nicht gelöscht (Nachweis). Was Forge bei der Deinstallation mit den Daten tut, haben wir <strong>nicht geprüft</strong> <code>[[PRÜFEN: Forge-Doku zur Datenlöschung nach Deinstallation; erst dann eine Aussage ergänzen]]</code>. Auf Anfrage klären wir die Löschung mit Atlassian.</p>
 <h2>10. Deine Rechte</h2>
-<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an privacy@helmdeck.de. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
+<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an <code>privacy@helmdeck.de</code>. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
 <h2>11. Sicherheit</h2>
-<p>Anmeldung und Hosting liefert Atlassian Forge. Die App fragt nur die oben genannten Berechtigungen ab. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an security@helmdeck.de.</p>
+<p>Anmeldung und Hosting liefert Atlassian Forge. Die App fragt nur die oben genannten Berechtigungen ab. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
 <h2>12. Änderungen</h2>
-<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <a href="https://helmdeck.de/lesenachweis/privacy">https://helmdeck.de/lesenachweis/privacy</a>.</p>
+<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>[[https://helmdeck.de/readproof/privacy]]</code>.</p>
 <h1>English</h1>
 <h2>1. Who is responsible</h2>
-<p><code>Project Kaiser</code>, *** 6, *** Frankfurt am Main, Germany, e-mail privacy@helmdeck.de. The provider is a natural person, not a company.</p>
+<p><code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany – e-mail <code>privacy@helmdeck.de</code>. The provider is a natural person, not a company.</p>
 <h2>2. What the app is</h2>
-<p>Lesenachweis (Read Confirmation) is an Atlassian Forge app for Confluence Cloud. It records which person confirmed which version of a page and produces overviews, deadline lists and CSV/PDF exports. Administration is limited to Confluence administrators.</p>
+<p>ReadProof is an Atlassian Forge app for Confluence Cloud. It records which person confirmed which version of a page and produces overviews, deadline lists and CSV/PDF exports. Administration is limited to Confluence administrators.</p>
 <h2>3. Where data is processed</h2>
 <p>The app runs on Atlassian Forge. All data is in Forge storage (key-value store) of your own Confluence installation, on Atlassian infrastructure. There are <strong>no own servers, no own database, no tracking, no analytics and no third-party services</strong>. The manifest declares no external hosts (no <code>permissions.external</code>); the app only calls the Confluence API. The provider does not receive or store your site's data.</p>
 <h2>4. Data the app handles</h2>
@@ -195,8 +184,8 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <tr><td>Assignment: page ID, group ID and group name, deadline, days until re-confirmation, escalation days and group, base version, creator's account ID, timestamps</td><td>Who must confirm what by when</td><td>Forge storage of your site</td><td>Until an administrator removes the assignment or the app is uninstalled</td></tr>
 <tr><td>Confirmation: page ID, version, the person's Atlassian account ID, time</td><td>Evidence</td><td>Forge storage</td><td><strong>No automatic deletion.</strong> Confirmations of older versions are kept on purpose as evidence. You decide how long to keep them; export first</td></tr>
 <tr><td>Escalation note: page ID, version, time</td><td>Report an escalation only once per page and version</td><td>Forge storage</td><td>as above</td></tr>
-<tr><td>People's names</td><td>Display and export</td><td><strong>Not stored.</strong> Looked up live from Confluence</td><td>-</td></tr>
-<tr><td>Page titles, page content, e-mail addresses</td><td>-</td><td><strong>Not stored.</strong> The app reads page metadata (version, position in the page tree, title for display), not content</td><td>-</td></tr>
+<tr><td>People's names</td><td>Display and export</td><td><strong>Not stored.</strong> Looked up live from Confluence</td><td>–</td></tr>
+<tr><td>Page titles, page content, e-mail addresses</td><td>–</td><td><strong>Not stored.</strong> The app reads page metadata (version, position in the page tree, title for display), not content</td><td>–</td></tr>
 </table>
 <p>Departed people: their name may no longer be available; their account ID stays in the evidence. Exports (CSV/PDF) contain names and account IDs and are not stored by the app; they go to your download folder.</p>
 <h2>5. Permissions (scopes)</h2>
@@ -210,20 +199,17 @@ const LESENACHWEIS_PRIVACY = page("lesenachweis", "Lesenachweis", "Datenschutz /
 <h2>9. Deletion and uninstall</h2>
 <p>You can remove assignments in the app. The app does not delete confirmations (evidence). What Forge does with the data on uninstall has <strong>not been verified</strong> <code>[[CHECK: Forge documentation on data deletion after uninstall before adding a claim]]</code>. On request we clarify deletion with Atlassian.</p>
 <h2>10. Your rights</h2>
-<p>Access, rectification, erasure, restriction, objection, portability, complaint to a supervisory authority. Write to privacy@helmdeck.de. Because the provider holds no data itself, most requests are handled in your Confluence site or with Atlassian.</p>
+<p>Access, rectification, erasure, restriction, objection, portability, complaint to a supervisory authority. Write to <code>privacy@helmdeck.de</code>. Because the provider holds no data itself, most requests are handled in your Confluence site or with Atlassian.</p>
 <h2>11. Security</h2>
-<p>Authentication and hosting are provided by Atlassian Forge. The app asks only for the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: security@helmdeck.de.</p>
+<p>Authentication and hosting are provided by Atlassian Forge. The app asks only for the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: <code>security@helmdeck.de</code>.</p>
 <h2>12. Changes</h2>
-<p>We may update this policy. The current version is at <a href="https://helmdeck.de/lesenachweis/privacy">https://helmdeck.de/lesenachweis/privacy</a>.</p>
-`);
-
-const LESENACHWEIS_TERMS = page("lesenachweis", "Lesenachweis", "AGB / Terms, Lesenachweis", `
-<h1>Nutzungsbedingungen / Terms of Use (EULA), Lesenachweis (Read Confirmation)</h1>
-<blockquote><strong>ENTWURF, JURISTISCH UNGEPRÜFT.</strong> Gerüst, nach dem Muster des Label-Doktors. Der Originaltext der Atlassian-Standardvereinbarung für Marketplace-Apps ist <strong>nicht</strong> eingebunden. Einfachste und sicherste Variante: in der Listung die <strong>Atlassian-Standard-EULA</strong> (Marketplace End User Agreement) als Basis wählen und dieses Dokument nur als Ergänzung veröffentlichen <code>[[PRÜFEN: aktuelle Optionen im Partnerprofil]]</code>.  <strong>DRAFT, NOT LEGALLY REVIEWED.</strong> Skeleton only. Placeholders: <code>[[...]]</code>.</blockquote>
+<p>We may update this policy. The current version is at <code>[[https://helmdeck.de/readproof/privacy]]</code>.</p>`);
+const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "AGB / Terms, ReadProof", `<h1>Nutzungsbedingungen / Terms of Use (EULA) – ReadProof</h1>
+<blockquote><strong>ENTWURF – JURISTISCH UNGEPRÜFT.</strong> Gerüst, nach dem Muster des Label-Doktors. Der Originaltext der Atlassian-Standardvereinbarung für Marketplace-Apps ist <strong>nicht</strong> eingebunden. Einfachste und sicherste Variante: in der Listung die <strong>Atlassian-Standard-EULA</strong> (Marketplace End User Agreement) als Basis wählen und dieses Dokument nur als Ergänzung veröffentlichen <code>[[PRÜFEN: aktuelle Optionen im Partnerprofil]]</code>.  <strong>DRAFT – NOT LEGALLY REVIEWED.</strong> Skeleton only. Placeholders: <code>[[...]]</code>.</blockquote>
 <p>Version: <code>[[DATUM]]</code></p>
 <h1>English</h1>
 <h2>1. Parties</h2>
-<p>Provider: <code>Project Kaiser</code>, *** 6, *** Frankfurt am Main, Germany, support@helmdeck.de (natural person).</p>
+<p>Provider: <code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, <code>support@helmdeck.de</code> (natural person).</p>
 <p>Customer: the person or organization that installs the app on a Confluence Cloud site.</p>
 <h2>2. Base agreement</h2>
 <p><code>[[Option A: "The Atlassian Standard EULA (Marketplace End User Agreement) in its current version applies, with the additions below."]]</code></p>
@@ -245,13 +231,13 @@ const LESENACHWEIS_TERMS = page("lesenachweis", "Lesenachweis", "AGB / Terms, Le
 <p><code>[[LAWYER: review the limitation of liability under German law. Liability for intent, gross negligence, injury to life, body or health and for essential contractual duties cannot be excluded. Do not use any proposed wording unreviewed.]]</code></p>
 <p>The app is provided "as is" to the extent permitted by law.</p>
 <h3>3.6 Support</h3>
-<p>Support via <a href="https://helmdeck.de/lesenachweis/support">https://helmdeck.de/lesenachweis/support</a>. Target response for paying customers: two business days, no guaranteed availability. For the free tier (1-10 users): documentation only, no response time promised. <code></code></p>
+<p>Support via <code>[[https://helmdeck.de/readproof/support]]</code>. Target response for paying customers: two business days, no guaranteed availability. For the free tier (1–10 users): documentation only, no response time promised. \`\`</p>
 <h3>3.7 Term and termination</h3>
 <p>Subscription as per the Atlassian Marketplace. After uninstall the app processes nothing further.</p>
 <h3>3.8 Governing law and venue</h3>
 <p><code>[[LAWYER: governing law, venue, consumer protection rules.]]</code></p>
 <h3>3.9 Changes</h3>
-<p>The provider may update these terms for future versions. Material changes are announced at <a href="https://helmdeck.de/lesenachweis/terms">https://helmdeck.de/lesenachweis/terms</a>.</p>
+<p>The provider may update these terms for future versions. Material changes are announced at <code>[[https://helmdeck.de/readproof/terms]]</code>.</p>
 <h3>3.10 Contact / legal notice</h3>
 <p><code>[[Impressum is required for a public page: name, postal address, e-mail. As a private person the home address becomes public; see OWNER-CHECKLISTE.]]</code></p>
 <h1>Deutsch (Kurzfassung der Ergänzungen, nicht rechtsverbindlich)</h1>
@@ -265,8 +251,7 @@ const LESENACHWEIS_TERMS = page("lesenachweis", "Lesenachweis", "AGB / Terms, Le
 <li><strong>Haftung, Recht, Gerichtsstand:</strong> <code>[[ANWALT PRÜFEN]]</code>.</li>
 <li><strong>Support:</strong> zahlende Kunden Ziel zwei Werktage; Gratis-Stufe nur Dokumentation.</li>
 <li><strong>Impressum:</strong> <code>[[nötig, siehe OWNER-CHECKLISTE]]</code>.</li>
-</ul>
-`);
+</ul>`);
 
 const SEITEN_REVIEW_INDEX = page("seiten-review", "Seiten-Review", "Overview, Page Review / Seiten-Review", `
 <blockquote><p><b>DRAFT / ENTWURF, not published, not legally reviewed. Placeholders in [[ ]] are open.</b></p></blockquote>
@@ -285,7 +270,7 @@ const SEITEN_REVIEW_SUPPORT = page("seiten-review", "Seiten-Review", "Support, P
 
 const SEITEN_REVIEW_PRIVACY = page("seiten-review", "Seiten-Review", "Privacy, Page Review / Seiten-Review", `
 <blockquote><p><b>DRAFT / ENTWURF, not published, not legally reviewed. Placeholders in [[ ]] are open.</b></p></blockquote>
-<h1>Privacy / Datenschutz</h1><p>Summary of the draft in <code>docs/legal/datenschutzerklaerung.md</code>; the full reviewed text replaces this page.</p><h2>English</h2><ul><li>Runs on Atlassian Forge; no external servers, no tracking, no egress.</li><li>Stores per tracked page: page ID, owner account ID, interval, due date, last review, history of 20 confirmations; one "reminder sent" marker per owner per day (deleted after 3 days).</li><li>Does not read page content, attachments, names or e-mail addresses; only title and link for lists and reminders (not stored).</li><li>Reminders are footer comments by the app with an @mention, visible to everyone who can read the page.</li></ul><p>Controller: Project Kaiser (Tien Duy Vo), *** 6, *** Frankfurt am Main, Germany, privacy@helmdeck.de.</p><h2>Deutsch</h2><ul><li>Läuft auf Atlassian Forge; keine externen Server, kein Tracking, kein ausgehender Verkehr.</li><li>Gespeichert je Seite: Seiten-ID, Konto-ID des Besitzers, Intervall, Frist, letzte Prüfung, Verlauf von 20 Bestätigungen; je Besitzer und Tag eine Marke „Erinnerung gesendet“ (nach 3 Tagen gelöscht).</li><li>Liest keinen Seiteninhalt, keine Anhänge, Namen oder E-Mail-Adressen; nur Titel und Link für Listen und Erinnerungen (nicht gespeichert).</li><li>Erinnerungen sind Fußzeilen-Kommentare der App mit @-Erwähnung, sichtbar für alle Leser der Seite.</li></ul><p>Verantwortlicher: Project Kaiser (Tien Duy Vo), *** 6, *** Frankfurt am Main, Deutschland, privacy@helmdeck.de.</p>
+<h1>Privacy / Datenschutz</h1><p>Summary of the draft in <code>docs/legal/datenschutzerklaerung.md</code>; the full reviewed text replaces this page.</p><h2>English</h2><ul><li>Runs on Atlassian Forge; no external servers, no tracking, no egress.</li><li>Stores per tracked page: page ID, owner account ID, interval, due date, last review, history of 20 confirmations; one "reminder sent" marker per owner per day (deleted after 3 days).</li><li>Does not read page content, attachments, names or e-mail addresses; only title and link for lists and reminders (not stored).</li><li>Reminders are footer comments by the app with an @mention, visible to everyone who can read the page.</li></ul><p>Controller: Project Kaiser (Tien Duy Vo), {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany, privacy@helmdeck.de.</p><h2>Deutsch</h2><ul><li>Läuft auf Atlassian Forge; keine externen Server, kein Tracking, kein ausgehender Verkehr.</li><li>Gespeichert je Seite: Seiten-ID, Konto-ID des Besitzers, Intervall, Frist, letzte Prüfung, Verlauf von 20 Bestätigungen; je Besitzer und Tag eine Marke „Erinnerung gesendet“ (nach 3 Tagen gelöscht).</li><li>Liest keinen Seiteninhalt, keine Anhänge, Namen oder E-Mail-Adressen; nur Titel und Link für Listen und Erinnerungen (nicht gespeichert).</li><li>Erinnerungen sind Fußzeilen-Kommentare der App mit @-Erwähnung, sichtbar für alle Leser der Seite.</li></ul><p>Verantwortlicher: Project Kaiser (Tien Duy Vo), {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland, privacy@helmdeck.de.</p>
 `);
 
 const SEITEN_REVIEW_TERMS = page("seiten-review", "Seiten-Review", "Terms, Page Review / Seiten-Review", `
@@ -499,7 +484,7 @@ Abgeleitet aus dem Code (<code>app/src</code>, <code>app/manifest.yml</code>) / 
 <hr>
 <h2>English</h2>
 <h3>1. Who is responsible</h3>
-<p>Operator of the app: Project Kaiser (Tien Duy Vo), *** 6, *** Frankfurt am Main, Germany. Contact for privacy questions: privacy@helmdeck.de.
+<p>Operator of the app: Project Kaiser (Tien Duy Vo), {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany. Contact for privacy questions: privacy@helmdeck.de.
 You (the customer, owner of the Jira site) are the controller of the data in your Jira site. The app processes this data on your behalf, only to perform the actions you start.</p>
 <h3>2. What the app is</h3>
 <p>Ticket Merge is an Atlassian Forge app. It adds the action &quot;Merge into another ticket&quot; to Jira issues. It runs on Atlassian's Forge platform. The code contains no call to any server outside Atlassian: all requests go to the Jira REST API of your own site.</p>
@@ -548,7 +533,7 @@ Forge platform logs: the app logs only step IDs and error text of failed steps (
 <hr>
 <h2>Deutsch</h2>
 <h3>1. Verantwortlicher</h3>
-<p>Betreiber der App: Project Kaiser (Anschrift und Land: *** 6, *** Frankfurt am Main, Deutschland). Kontakt für Datenschutzfragen: privacy@helmdeck.de.
+<p>Betreiber der App: Project Kaiser (Anschrift und Land: {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland). Kontakt für Datenschutzfragen: privacy@helmdeck.de.
 Sie (der Kunde, Inhaber der Jira-Site) sind Verantwortlicher für die Daten in Ihrer Jira-Site. Die App verarbeitet diese Daten in Ihrem Auftrag, nur um die Aktionen auszuführen, die Sie starten.</p>
 <h3>2. Was die App ist</h3>
 <p>Ticket-Merge ist eine Atlassian-Forge-App. Sie ergänzt Jira-Tickets um die Aktion &quot;Merge into another ticket&quot;. Sie läuft auf der Forge-Plattform von Atlassian. Der Code ruft keinen Server außerhalb von Atlassian auf: Alle Anfragen gehen an die Jira-REST-API Ihrer eigenen Site.</p>
@@ -602,7 +587,7 @@ const TICKET_MERGE_TERMS = page("ticket-merge", "Ticket Merge", "Terms / AGB, Ti
 <hr>
 <h2>English</h2>
 <h3>1. Parties and scope</h3>
-<p>These terms apply between Project Kaiser (Tien Duy Vo), *** 6, *** Frankfurt am Main, Germany (&quot;we&quot;) and the organisation that installs Ticket Merge on its Atlassian Cloud site (&quot;you&quot;). They cover the app and its documentation. Atlassian's own terms for the Marketplace, Forge and your Atlassian products apply in addition.</p>
+<p>These terms apply between Project Kaiser (Tien Duy Vo), {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany (&quot;we&quot;) and the organisation that installs Ticket Merge on its Atlassian Cloud site (&quot;you&quot;). They cover the app and its documentation. Atlassian's own terms for the Marketplace, Forge and your Atlassian products apply in addition.</p>
 <h3>2. What the app does</h3>
 <p>The app merges one Jira ticket into another: it copies comments, attachments and links, links the tickets as duplicates, closes the duplicate and can undo this within 30 days. It does not delete tickets. Details: documentation page.</p>
 <h3>3. Licence</h3>
@@ -638,11 +623,11 @@ You are responsible for backups of your Jira data. Before the first productive u
 <h3>12. Law and courts</h3>
 <p>[Governing law and place of jurisdiction, to be set by the operator and lawyer.] Mandatory consumer rights remain unaffected (the app is meant for businesses).</p>
 <h3>13. Contact</h3>
-<p>Project Kaiser (Tien Duy Vo), *** 6, *** Frankfurt am Main, Germany, support@helmdeck.de</p>
+<p>Project Kaiser (Tien Duy Vo), {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany, support@helmdeck.de</p>
 <hr>
 <h2>Deutsch</h2>
 <h3>1. Parteien und Geltungsbereich</h3>
-<p>Diese Bedingungen gelten zwischen Project Kaiser (Anschrift: *** 6, *** Frankfurt am Main, Deutschland) (&quot;wir&quot;) und der Organisation, die Ticket-Merge auf ihrer Atlassian-Cloud-Site installiert (&quot;Sie&quot;). Sie umfassen die App und ihre Dokumentation. Zusätzlich gelten die Bedingungen von Atlassian für den Marketplace, Forge und Ihre Atlassian-Produkte.</p>
+<p>Diese Bedingungen gelten zwischen Project Kaiser (Anschrift: {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland) (&quot;wir&quot;) und der Organisation, die Ticket-Merge auf ihrer Atlassian-Cloud-Site installiert (&quot;Sie&quot;). Sie umfassen die App und ihre Dokumentation. Zusätzlich gelten die Bedingungen von Atlassian für den Marketplace, Forge und Ihre Atlassian-Produkte.</p>
 <h3>2. Was die App tut</h3>
 <p>Die App führt ein Jira-Ticket in ein anderes zusammen: Sie kopiert Kommentare, Anhänge und Links, verknüpft die Tickets als Duplikat, schließt das Duplikat und kann das 30 Tage lang rückgängig machen. Sie löscht keine Tickets. Einzelheiten: Seite Dokumentation.</p>
 <h3>3. Lizenz</h3>
@@ -678,16 +663,16 @@ Sie sind für Sicherungen Ihrer Jira-Daten verantwortlich. Testen Sie die App vo
 <h3>12. Recht und Gerichtsstand</h3>
 <p>[Anwendbares Recht und Gerichtsstand, vom Betreiber mit Jurist festzulegen.] Zwingende Verbraucherrechte bleiben unberührt (die App richtet sich an Unternehmen).</p>
 <h3>13. Kontakt</h3>
-<p>Project Kaiser, *** 6, *** Frankfurt am Main, Deutschland, support@helmdeck.de</p>
+<p>Project Kaiser, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland, support@helmdeck.de</p>
 `);
 
 export const APP_PAGES = {
-  "/lesenachweis": LESENACHWEIS_INDEX,
-  "/lesenachweis/": LESENACHWEIS_INDEX,
-  "/lesenachweis/docs": LESENACHWEIS_DOCS,
-  "/lesenachweis/support": LESENACHWEIS_SUPPORT,
-  "/lesenachweis/privacy": LESENACHWEIS_PRIVACY,
-  "/lesenachweis/terms": LESENACHWEIS_TERMS,
+  "/readproof": LESENACHWEIS_INDEX,
+  "/readproof/": LESENACHWEIS_INDEX,
+  "/readproof/docs": LESENACHWEIS_DOCS,
+  "/readproof/support": LESENACHWEIS_SUPPORT,
+  "/readproof/privacy": LESENACHWEIS_PRIVACY,
+  "/readproof/terms": LESENACHWEIS_TERMS,
   "/seiten-review": SEITEN_REVIEW_INDEX,
   "/seiten-review/": SEITEN_REVIEW_INDEX,
   "/seiten-review/docs": SEITEN_REVIEW_DOCS,

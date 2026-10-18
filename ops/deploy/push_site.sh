@@ -61,8 +61,19 @@ if [ "${1:-}" != "--skip-layout-check" ]; then
   fi
 fi
 
+# The postal address is private: the source carries {{ADDR_STREET}}/{{ADDR_ZIP}}, the values live in the
+# gitignored waitlist/.env and go to Cloudflare as Worker secrets (never into the bundle or the repo).
+ENVF="$ROOT/ops/deploy/waitlist/.env"
+for k in ADDR_STREET ADDR_ZIP; do
+  grep -q "^$k=." "$ENVF" 2>/dev/null || { echo "FAIL: $k missing in $ENVF, not deploying." >&2; exit 1; }
+done
+
 echo "== deploying ops/deploy/waitlist -> $ORIGIN =="
 ( cd "$ROOT/ops/deploy/waitlist" && npx wrangler deploy )
+for k in ADDR_STREET ADDR_ZIP; do
+  grep "^$k=" "$ENVF" | head -1 | cut -d= -f2- | tr -d '\r' \
+    | ( cd "$ROOT/ops/deploy/waitlist" && npx wrangler secret put "$k" >/dev/null )
+done
 
 # Cloudflare's global propagation is fast but not instant; give it a few tries
 # rather than declaring failure on the first stale edge response.

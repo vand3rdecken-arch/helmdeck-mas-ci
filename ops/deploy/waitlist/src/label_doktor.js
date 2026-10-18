@@ -435,8 +435,8 @@ see the <a href="/privacy">HelmDeck privacy policy</a>.</p>
 
 <h2>Controller</h2>
 <p>Tien Duy Vo<br>
-*** 6<br>
-*** Frankfurt am Main<br>
+{{ADDR_STREET}}<br>
+{{ADDR_ZIP}} Frankfurt am Main<br>
 Germany<br>
 Contact <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a></p>
 <p class=muted>Legal notice: <a href="/imprint">Imprint</a></p>
@@ -503,8 +503,8 @@ HelmDeck</a>.</p>
 
 <h2>Verantwortlich</h2>
 <p>Tien Duy Vo<br>
-*** 6<br>
-*** Frankfurt am Main<br>
+{{ADDR_STREET}}<br>
+{{ADDR_ZIP}} Frankfurt am Main<br>
 Deutschland<br>
 Kontakt <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a></p>
 <p class=muted>Anbieterkennzeichnung: <a href="/impressum">Impressum</a></p>
