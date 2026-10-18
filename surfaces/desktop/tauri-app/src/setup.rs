@@ -8,7 +8,7 @@
 //! every step idempotent and re-entrant; probes cached once positive, a miss retried no more than
 //! every MISS_TTL (a fresh machine misses everything, and the screen polls twice a second).
 //!
-//! NOT ported (still Electron-only, see README): the `claude -p`
+//! NOT ported (still Electron-only, see README): the
 //! hand-offs, optional engine installs (status only here), the Microsoft Store variant, the
 //! mac/linux login terminal.
 
@@ -254,6 +254,59 @@ pub fn find_npm() -> Option<String> {
     version_of(cmd, &[]).map(|_| cmd.to_string())
 }
 
+/// The daemon port named in the diagnosis prompt (main.rs owns the real constant; both are 8140).
+const DAEMON_PORT_FOR_DIAGNOSIS: u16 = 8140;
+
+/// argv after the claude executable for a one-shot task.
+pub fn claude_task_args(prompt: &str, mode: &str) -> Vec<String> {
+    vec!["-p".into(), prompt.into(), "--permission-mode".into(), mode.into()]
+}
+
+/// npm package of an `npm-install` engine.
+fn npm_package(id: &str) -> Option<&'static str> {
+    match id {
+        "codex" => Some("@openai/codex"),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct EnginePlan {
+    pub present: Vec<String>,
+    pub npm: Vec<(String, String)>, // (label, package)
+    pub agent: Vec<String>,
+    pub detect_only: Vec<String>,
+}
+
+/// What to do for each selected optional engine, by its tier.
+pub fn engine_plan(selected: &[String], installed: &dyn Fn(&str) -> bool) -> EnginePlan {
+    let mut plan = EnginePlan::default();
+    for (id, label, tier) in ENGINES {
+        if *id == "claude" || !selected.iter().any(|s| s == id) {
+            continue;
+        }
+        if installed(id) {
+            plan.present.push(label.to_string());
+            continue;
+        }
+        match *tier {
+            "npm-install" => plan.npm.push((label.to_string(), npm_package(id).unwrap_or_default().to_string())),
+            "agent-install" => plan.agent.push(label.to_string()),
+            _ => plan.detect_only.push(label.to_string()),
+        }
+    }
+    plan
+}
+
+/// The picker's `engines=a,b` query (claude is always included server-side).
+pub fn selected_engines(target: &str) -> Vec<String> {
+    let mut v: Vec<String> = query_param(target, "engines").unwrap_or_default().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    if !v.iter().any(|s| s == "claude") {
+        v.push("claude".into());
+    }
+    v
+}
+
 /// (id, label, tier) - what the picker shows; tier says exactly what is possible.
 pub const ENGINES: &[(&str, &str, &str)] = &[
     ("claude", "Claude Code", "full"),
@@ -437,7 +490,7 @@ impl Setup {
     }
 
     /// Start a provisioning run unless one is in flight. Returns whether THIS call started one.
-    pub fn provision(self: &Arc<Self>, start_daemon: Arc<dyn Fn(&str) -> bool + Send + Sync>, env: Env) -> bool {
+    pub fn provision(self: &Arc<Self>, start_daemon: Arc<dyn Fn(&str) -> bool + Send + Sync>, env: Env, selected: Vec<String>) -> bool {
         {
             let mut f = self.flags.lock().unwrap();
             if f.0 {
@@ -447,16 +500,21 @@ impl Setup {
         }
         let me = self.clone();
         std::thread::spawn(move || {
-            let ok = me.run(&*start_daemon, &env);
+            let ok = me.run_with(&*start_daemon, &env, &selected);
             let mut f = me.flags.lock().unwrap();
             *f = (false, ok);
         });
         true
     }
 
+    #[cfg(test)]
     fn run(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env) -> bool {
+        self.run_with(start_daemon, env, &[])
+    }
+
+    fn run_with(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env, selected: &[String]) -> bool {
         if env.store {
-            return self.run_store(start_daemon, env);
+            return self.run_store(start_daemon, env, selected);
         }
         // 1) Claude Code
         let mut claude = self.claude();
@@ -523,6 +581,24 @@ impl Setup {
                 }
             }
         }
+        if py.is_none() {
+            // the hand-off that can still rescue the run (and the only route off Windows): Claude installs
+            // a runtime with the machine's own package manager - this step must change the machine
+            self.say("Ich lasse Claude es übernehmen…", "info");
+            let prompt = if cfg!(windows) {
+                "Install a Python 3.12 runtime on this Windows machine so that `py -3.12 --version` works, using winget if available. Do not modify anything else. Report what you did."
+            } else if cfg!(target_os = "macos") {
+                "Install a Python 3.12 runtime on this macOS machine so that `python3 --version` reports 3.12 or newer, using Homebrew if available. Do not modify anything else. Report what you did."
+            } else {
+                "Install a Python 3.12 runtime on this Linux machine so that `python3 --version` reports 3.12 or newer, using the system package manager. Do not modify anything else. Report what you did."
+            };
+            self.claude_task(&claude, prompt, env.daemon_root.as_deref(), "acceptEdits", Duration::from_secs(600));
+            self.cache.lock().unwrap().missed.remove("python");
+            py = (self.probes.python)();
+            if let Some(p) = &py {
+                self.cache.lock().unwrap().python = Some(p.clone());
+            }
+        }
         let Some(py) = py else {
             self.say("Ohne Python-Laufzeit kann der Daemon nicht starten.", "err");
             self.say("Installiere Python 3.12 von https://python.org, dann hier erneut starten.", "hint");
@@ -539,14 +615,19 @@ impl Setup {
         }
 
         // 3) Instance
-        self.start_instance(start_daemon, &py, env)
+        if !self.start_instance(start_daemon, &py, env, Some(&claude)) {
+            return false;
+        }
+        // 4) optional engines the picker selected - never gates `done`
+        self.install_selected_engines(&claude, env, selected);
+        true
     }
 
     /// The Store build: Microsoft Store policy 10.2.4 forbids an app downloading or installing
     /// executable code outside the Store, and an npm install, a winget call or a fetched runtime all
     /// look exactly like that. So: report what is there, hand over the plain command for what is not,
     /// and still start the daemon once everything is present (starting it installs nothing).
-    fn run_store(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env) -> bool {
+    fn run_store(&self, start_daemon: &dyn Fn(&str) -> bool, env: &Env, selected: &[String]) -> bool {
         self.say("Microsoft-Store-Version: prüfe vorhandene Voraussetzungen (keine automatische Installation).", "info");
         let py = self.python();
         let claude = self.claude();
@@ -580,11 +661,21 @@ impl Setup {
             }
         }
         self.say("Claude ist angemeldet.", "ok");
-        self.start_instance(start_daemon, &py, env)
+        if !self.start_instance(start_daemon, &py, env, None) {
+            return false;
+        }
+        // the Store build installs no engine either - it says what is there and how to add the rest
+        for (id, label, _) in ENGINES.iter().filter(|(id, _, _)| *id != "claude" && selected.iter().any(|s| s == id)) {
+            match version_of(id, &[]) {
+                Some(_) => self.say(&format!("{label} bereits vorhanden."), "ok"),
+                None => self.say(&format!("{label} fehlt - in der Store-Version selbst installieren."), "hint"),
+            }
+        }
+        true
     }
 
     /// Start the daemon unless one answers, wait for it, and on failure show its own last lines.
-    fn start_instance(&self, start_daemon: &dyn Fn(&str) -> bool, py: &str, env: &Env) -> bool {
+    fn start_instance(&self, start_daemon: &dyn Fn(&str) -> bool, py: &str, env: &Env, claude: Option<&Claude>) -> bool {
         if !(self.probes.daemon_up)() {
             self.say("Starte HelmDeck-Instanz…", "info");
             if !start_daemon(py) {
@@ -608,11 +699,83 @@ impl Setup {
                 }
                 _ => self.say("daemon.out.log ist leer oder fehlt - der Start hat nichts geschrieben.", "err"),
             }
+            // the log tail comes FIRST (instant, the actual traceback); then Claude looks, read-only
+            if let (Some(c), false) = (claude, env.store) {
+                self.say("Lasse Claude nachsehen… (bis zu 3 Minuten, Ausgabe kommt am Stück)", "info");
+                let prompt = format!(
+                    "The HelmDeck python daemon in this directory does not come up on port {}. Diagnose why (port already in use, \
+                     missing runtime, traceback on start) and report the root cause plus the exact command the user should run. \
+                     Do not change any files.",
+                    DAEMON_PORT_FOR_DIAGNOSIS
+                );
+                self.claude_task(c, &prompt, env.daemon_root.as_deref(), "plan", Duration::from_secs(180));
+            }
             return false;
         }
         self.say("Instanz läuft.", "ok");
         self.say("Fertig - jetzt anmelden.", "ok");
         true
+    }
+
+    /// `claude -p <task>` as the installer/diagnostician of last resort (setup.js claudeTask). `plan` is
+    /// read-only - onboarding may diagnose freely but never silently rewrite the install; only a step
+    /// that has to change the machine gets `acceptEdits`. Output arrives in one piece at the end.
+    fn claude_task(&self, claude: &Claude, prompt: &str, cwd: Option<&Path>, mode: &str, limit: Duration) -> bool {
+        self.say("Claude richtet ein…", "info");
+        let (program, mut args) = spawn_form(claude);
+        args.extend(claude_task_args(prompt, mode));
+        let mut c = command(&program);
+        c.args(&args);
+        if let Some(d) = cwd {
+            c.current_dir(d);
+        }
+        match run_capture(c, limit) {
+            Some((code, out)) => {
+                for l in out.lines().filter(|l| !l.trim().is_empty()).rev().take(30).collect::<Vec<_>>().into_iter().rev() {
+                    self.say(l.trim(), "info");
+                }
+                code == 0
+            }
+            None => {
+                self.say(&format!("Claude hat nach {}s nicht geantwortet - abgebrochen.", limit.as_secs()), "err");
+                false
+            }
+        }
+    }
+
+    /// The optional engines the picker asked for (never `claude` - step 1 owns that). Best-effort, never
+    /// blocks `done`; getting a CLI onto PATH is not a claim that its driver works (GET /engines marks
+    /// it untested until it has run a real turn).
+    fn install_selected_engines(&self, claude: &Claude, env: &Env, selected: &[String]) {
+        let plan = engine_plan(selected, &|id| version_of(id, &[]).is_some());
+        for label in &plan.present {
+            self.say(&format!("{label} bereits vorhanden."), "ok");
+        }
+        if !plan.npm.is_empty() {
+            match find_npm() {
+                None => self.say(&format!("Ohne npm kann ich {} nicht installieren.", plan.npm.iter().map(|(l, _)| l.as_str()).collect::<Vec<_>>().join(", ")), "err"),
+                Some(npm) => {
+                    for (label, pkg) in &plan.npm {
+                        self.npm_install_global(&npm, pkg, label);
+                    }
+                }
+            }
+        }
+        if !plan.agent.is_empty() {
+            self.say(&format!("Richte über Claude ein: {}…", plan.agent.join(", ")), "info");
+            let list = plan.agent.iter().map(|l| format!("{l} (official installer, e.g. https://opencode.ai for OpenCode)")).collect::<Vec<_>>().join("; ");
+            let ok = self.claude_task(
+                claude,
+                &format!("Install these optional coding-agent CLIs, skipping any already installed, so their `--version` command works: {list}. Do not modify anything else on this machine. Report which succeeded and which failed."),
+                env.daemon_root.as_deref(),
+                "acceptEdits",
+                Duration::from_secs(600),
+            );
+            self.say(if ok { "Eingerichtet." } else { "Nicht alle erfolgreich - siehe oben." }, if ok { "ok" } else { "hint" });
+        }
+        for label in &plan.detect_only {
+            self.say(&format!("{label}: keine bekannte Installationsmethode - nur Status wird angezeigt."), "hint");
+        }
     }
 
     fn install_node_via_winget(&self) -> bool {
@@ -787,7 +950,7 @@ fn handle(mut s: TcpStream, setup: &Arc<Setup>, start_daemon: &Arc<dyn Fn(&str) 
         "/setup/log" => respond(&mut s, 200, &setup.log_json()),
         "/setup/engines" => respond(&mut s, 200, &setup.engines_json()),
         "/setup/provision" => {
-            let started = setup.provision(start_daemon.clone(), setup.env.clone());
+            let started = setup.provision(start_daemon.clone(), setup.env.clone(), selected_engines(&target));
             respond(&mut s, 200, &serde_json::json!({"started": started, "alreadyRunning": !started}));
         }
         _ => respond(&mut s, 404, &serde_json::json!({"error": "not found"})),
@@ -920,7 +1083,7 @@ mod tests {
     fn a_second_provision_call_does_not_start_a_second_run() {
         let s = Setup::new(probes(None, false, Arc::new(AtomicUsize::new(0))));
         s.flags.lock().unwrap().0 = true; // a run is in flight
-        assert!(!s.provision(Arc::new(|_| false), Env::default()), "the reload mid-provision must not claim it started a run");
+        assert!(!s.provision(Arc::new(|_| false), Env::default(), vec![]), "the reload mid-provision must not claim it started a run");
     }
 
     #[test]
@@ -1027,5 +1190,42 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("✗ Claude Code CLI")), "{lines:?}");
         assert!(!lines.iter().any(|l| l.contains("npm install -g @anthropic-ai/claude-code:") || l.contains("winget") || l.contains("Lade Python")),
                 "the Store build must not try to install anything: {lines:?}");
+    }
+
+    #[test]
+    fn a_task_is_a_one_shot_prompt_with_an_explicit_permission_mode() {
+        assert_eq!(claude_task_args("diagnose it", "plan"), vec!["-p", "diagnose it", "--permission-mode", "plan"]);
+        // the prompt stays ONE argument however many spaces it has (the "The" truncation of 2026-09-08)
+        assert_eq!(claude_task_args("a b c", "acceptEdits")[1], "a b c");
+    }
+
+    #[test]
+    fn the_engine_plan_follows_each_tier() {
+        let sel: Vec<String> = ["claude", "codex", "opencode", "omp", "pi"].iter().map(|s| s.to_string()).collect();
+        let p = engine_plan(&sel, &|id| id == "pi");
+        assert_eq!(p.npm, vec![("Codex".to_string(), "@openai/codex".to_string())]);
+        assert_eq!(p.agent, vec!["OpenCode".to_string()]);
+        assert_eq!(p.detect_only, vec!["OMP".to_string()]);
+        assert_eq!(p.present, vec!["Pi".to_string()]);
+        let none = engine_plan(&["claude".to_string()], &|_| false);
+        assert_eq!(none, EnginePlan::default(), "claude alone needs nothing extra");
+    }
+
+    #[test]
+    fn the_picker_selection_always_includes_claude() {
+        assert_eq!(selected_engines("/setup/provision?n=x&engines=codex,opencode"), vec!["codex", "opencode", "claude"]);
+        assert_eq!(selected_engines("/setup/provision?n=x"), vec!["claude"]);
+    }
+
+    /// Real `claude -p` (needs a logged-in CLI, costs one tiny turn): `cargo test -- --ignored`.
+    #[test]
+    #[ignore]
+    fn a_real_read_only_hand_off_reaches_claude_and_its_answer_lands_in_the_log() {
+        let s = Setup::new(probes(None, true, Arc::new(AtomicUsize::new(0))));
+        let c = find_claude().expect("claude on PATH");
+        let ok = s.claude_task(&c, "Reply with exactly the text HD-HANDOFF-OK and nothing else. Do not use any tools.", None, "plan", Duration::from_secs(180));
+        let lines: Vec<String> = s.log_json()["log"].as_array().unwrap().iter().map(|l| l["line"].as_str().unwrap().to_string()).collect();
+        assert!(ok, "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("HD-HANDOFF-OK")), "{lines:?}");
     }
 }
