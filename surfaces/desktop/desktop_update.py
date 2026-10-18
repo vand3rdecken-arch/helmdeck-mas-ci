@@ -219,7 +219,9 @@ def sync_target(base, app_dist, allow_swap):
 
 
 def packaged_appdist():
-    """Where the installed Electron shell keeps the bundle it serves. Derived
+    """Where the installed desktop shell keeps the bundle it serves - Electron (<dir>/resources/app-dist)
+    or, since 2026-10-18, Tauri (<dir>/app-dist, next to helmdeck-desktop.exe; the Electron shell was
+    uninstalled and the tray had been logging "keine Desktop-App installiert" ever since). Derived
     from the NSIS installer's own uninstall registration (evidence, not a
     guessed path). electron-builder's NSIS omits InstallLocation and the owner
     installs to a custom dir (allowToChangeInstallationDirectory), so the
@@ -260,7 +262,8 @@ def packaged_appdist():
                                 path = str(v).strip().strip('"').split('"')[0].strip()
                                 d = path if val == "InstallLocation" else os.path.dirname(path)
                                 if d:
-                                    cands.append(os.path.join(d, "resources", "app-dist"))
+                                    cands.append(os.path.join(d, "resources", "app-dist"))   # Electron
+                                    cands.append(os.path.join(d, "app-dist"))                # Tauri
                     except OSError:
                         continue
             finally:
@@ -268,6 +271,7 @@ def packaged_appdist():
     local = os.environ.get("LOCALAPPDATA")
     if local:
         cands.append(os.path.join(local, "Programs", "HelmDeck", "resources", "app-dist"))
+        cands.append(os.path.join(local, "Programs", "HelmDeck", "app-dist"))
     for c in cands:
         if os.path.isdir(c):
             return c
