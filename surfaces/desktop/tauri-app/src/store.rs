@@ -1,4 +1,5 @@
-//! The Microsoft Store build: what changes when this exe runs from an MSIX package.
+//! The store builds: what changes when this exe runs from an MSIX package (Microsoft Store) or inside
+//! the App Sandbox (Mac App Store - every MAS app is sandboxed, a direct-distribution build is not).
 //!
 //! Store mode is DERIVED from the runtime - the process has a package identity
 //! (`GetCurrentPackageFullName`) - never configured. Same split as Electron's `process.windowsStore`:
@@ -23,7 +24,12 @@ pub fn packaged() -> bool {
         let rc = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
         rc != APPMODEL_ERROR_NO_PACKAGE
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        // the sandbox hands every sandboxed process its container id; nothing else sets it
+        std::env::var_os("APP_SANDBOX_CONTAINER_ID").is_some()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     false
 }
 
@@ -31,6 +37,12 @@ pub fn packaged() -> bool {
 /// %LOCALAPPDATA% of a packaged app is redirected into the package's own storage by Windows,
 /// so this is also removed with the app.
 pub fn data_root() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        // inside the sandbox HOME is the app's container, so this lands in
+        // ~/Library/Containers/<id>/Data/Library/Application Support/HelmDeck
+        let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir());
+        return home.join("Library").join("Application Support").join("HelmDeck").join("daemon-data");
+    }
     let base = std::env::var("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|_| std::env::temp_dir());
     base.join("HelmDeck").join("daemon-data")
 }
@@ -78,6 +90,12 @@ pub fn spawn_daemon(py: &str, root: &Path, data: &Path, port: u16) -> std::io::R
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         c.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    }
+    #[cfg(unix)]
+    {
+        // its own process group: quitting the window (or a signal to its group) must not take the daemon down
+        use std::os::unix::process::CommandExt;
+        c.process_group(0);
     }
     Ok(c.spawn()?.id())
 }
@@ -164,7 +182,7 @@ mod tests {
     #[test]
     fn the_data_root_is_outside_any_package_dir() {
         let r = data_root();
-        assert!(r.ends_with("HelmDeck\\daemon-data") || r.ends_with("HelmDeck/daemon-data"));
+        assert!(r.ends_with(std::path::Path::new("HelmDeck").join("daemon-data")), "{}", r.display());
         assert!(!r.to_string_lossy().contains("WindowsApps"));
     }
 

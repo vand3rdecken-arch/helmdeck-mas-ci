@@ -30,9 +30,11 @@ pub fn resolve_app_dist() -> Option<PathBuf> {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(d) = exe.parent() {
-            let p = d.join("app-dist");
-            if ok(&p) {
-                return Some(p);
+            // next to the exe (Windows installs), or Contents/Resources of a macOS .app (exe in Contents/MacOS)
+            for p in [d.join("app-dist"), d.join("..").join("Resources").join("app-dist")] {
+                if ok(&p) {
+                    return Some(p);
+                }
             }
         }
     }

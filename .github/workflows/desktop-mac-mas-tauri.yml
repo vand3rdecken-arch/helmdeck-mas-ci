@@ -1,0 +1,108 @@
+# Build the Mac App Store .pkg of the TAURI desktop shell on a real macOS runner.
+#
+# The Tauri twin of desktop-mac-mas.yml (Electron): same trigger discipline (workflow_dispatch ONLY - an
+# unsigned mas build is meaningless), the SAME repository secrets (same app id work.21stgen.helmdeck, same
+# certificates, same MAC_APP_STORE profile), but no electron-builder: the certificates are imported into a
+# throw-away keychain here and ops/deploy/build_mas_tauri.py signs with codesign/productbuild directly.
+#
+# Required repository secrets (shared with desktop-mac-mas.yml):
+#   MAC_MAS_CSC_LINK / MAC_MAS_CSC_KEY_PASSWORD                     Mac App Distribution .p12 (base64)
+#   MAC_MAS_INSTALLER_CSC_LINK / MAC_MAS_INSTALLER_CSC_KEY_PASSWORD  Mac Installer Distribution .p12 (base64)
+#   MAC_MAS_PROVISIONING_PROFILE_B64                                 base64 of the .provisionprofile
+#
+# Never uploads to App Store Connect: that stays a deliberate step (asc_mac_build_upload.py / Transporter).
+name: desktop-mac-mas-tauri
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (x.y.z, must be higher than the listing's current build)"
+        required: true
+      release_tag:
+        description: "Attach the .pkg to this (pre-existing) release tag instead of Actions artifact storage"
+        required: false
+        default: ""
+
+concurrency:
+  group: desktop-mac-mas-tauri-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: surfaces/app/package-lock.json
+
+      - name: Rust (both mac architectures for the universal binary)
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo install tauri-cli --version "^2" --locked
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            surfaces/desktop/tauri-app/target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('surfaces/desktop/tauri-app/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-tauri-
+
+      - name: Install app dependencies
+        run: cd surfaces/app && npm ci
+
+      - name: Signing keychain (throw-away, this job only)
+        env:
+          APP_P12: ${{ secrets.MAC_MAS_CSC_LINK }}
+          APP_P12_PW: ${{ secrets.MAC_MAS_CSC_KEY_PASSWORD }}
+          PKG_P12: ${{ secrets.MAC_MAS_INSTALLER_CSC_LINK }}
+          PKG_P12_PW: ${{ secrets.MAC_MAS_INSTALLER_CSC_KEY_PASSWORD }}
+          PROFILE_B64: ${{ secrets.MAC_MAS_PROVISIONING_PROFILE_B64 }}
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/helmdeck-signing.keychain-db"
+          KC_PW="$(openssl rand -hex 24)"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          printf '%s' "$APP_P12" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          printf '%s' "$PKG_P12" | base64 --decode > "$RUNNER_TEMP/pkg.p12"
+          security import "$RUNNER_TEMP/app.p12" -k "$KC" -P "$APP_P12_PW" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security import "$RUNNER_TEMP/pkg.p12" -k "$KC" -P "$PKG_P12_PW" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PW" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/pkg.p12"
+          mkdir -p surfaces/desktop/build
+          printf '%s' "$PROFILE_B64" | base64 --decode > surfaces/desktop/build/embedded.provisionprofile
+          security find-identity -v | sed 's/[0-9A-F]\{40\}/<hash>/'
+
+      - name: Build + sign (.app universal -> .pkg)
+        run: python3 ops/deploy/build_mas_tauri.py --version "${{ inputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.release_tag == ''
+        with:
+          name: helmdeck-macos-mas-tauri
+          if-no-files-found: error
+          retention-days: 7
+          path: surfaces/desktop/tauri-app/target/mas/*.pkg
+
+      - name: Attach to a release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.release_tag }}" --clobber surfaces/desktop/tauri-app/target/mas/*.pkg
+
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/helmdeck-signing.keychain-db" || true

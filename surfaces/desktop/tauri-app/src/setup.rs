@@ -39,6 +39,13 @@ pub fn nonce() -> String {
             return b.iter().map(|x| format!("{x:02x}")).collect();
         }
     }
+    #[cfg(unix)]
+    {
+        let mut b = [0u8; 16];
+        if std::fs::File::open("/dev/urandom").and_then(|mut f| f.read_exact(&mut b)).is_ok() {
+            return b.iter().map(|x| format!("{x:02x}")).collect();
+        }
+    }
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     format!("{:032x}", t ^ ((std::process::id() as u128) << 64))
 }

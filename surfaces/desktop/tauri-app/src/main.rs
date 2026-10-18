@@ -192,6 +192,12 @@ fn find_root() -> Option<PathBuf> {
             return Some(p);
         }
     }
+    // a macOS .app keeps the daemon sources in Contents/Resources (the exe is in Contents/MacOS)
+    if let Some(res) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("..").join("Resources"))) {
+        if ok(&res) {
+            return Some(res);
+        }
+    }
     for start in [std::env::current_exe().ok(), std::env::current_dir().ok()].into_iter().flatten() {
         let mut d = start.parent().map(|p| p.to_path_buf());
         while let Some(cur) = d {
@@ -295,7 +301,8 @@ fn main() {
             let started = setup::serve(setup.clone(), setup::SETUP_PORT, Arc::new(start_daemon));
             // a Store install has no tray: the window starts the daemon itself (adopt-or-detach - one that
             // already answers is adopted, never a second one spawned; a spawned one outlives the window)
-            if in_store && !setup::daemon_up(DAEMON_PORT) {
+            // macOS has no tray at all (tray-rs is Windows-only), so there the window always owns the start
+            if (in_store || cfg!(target_os = "macos")) && !setup::daemon_up(DAEMON_PORT) {
                 if let (Some(root), Some(py)) = (find_root(), setup::find_python(&resources)) {
                     let _ = store::spawn_daemon(&py, &root, &store::data_root(), DAEMON_PORT);
                 }
