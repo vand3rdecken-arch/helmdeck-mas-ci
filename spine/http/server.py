@@ -695,6 +695,14 @@ class _Daemon(ThreadingHTTPServer):
     EADDRINUSE - the OS states the invariant instead of us checking it."""
     allow_reuse_address = False
 
+    def handle_error(self, request, client_address):
+        # A client that hung up mid-reply (a liveness probe, an aborted long-poll, a phone that lost signal)
+        # is not a daemon error: 3,740 of these 22-line tracebacks were the whole stderr log on 2026-10-18.
+        import sys
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def serve(port=8140, takeover=False):
     _hydrate_windows_path()      # bash-launched daemons lack Windows dirs on PATH -> gate/py/cmd fail

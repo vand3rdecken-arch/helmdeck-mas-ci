@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { Animated, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { isWeb } from "@/ui/responsive";
 import { api, type ChatThread, type ChatThreads } from "@/data/client";
 import { useT } from "@/i18n";
@@ -56,9 +56,30 @@ function timeAgo(at: number, nowS: number, nowLabel: string): string {
 
 /** Paseo's StatusRing: a 9px ring rotating with a 900ms period. */
 export function StatusRing({ color }: { color: string }) {
+  // WEB: a CSS animation (compositor). Animated on web has no native driver, so the loop re-rendered the
+  // style 60x/s per ring - three running tiles kept the desktop window at ~80% CPU (measured 2026-10-18).
+  if (isWeb) return <WebSpinRing color={color} />;
+  return <NativeStatusRing color={color} />;
+}
+
+// react-native-web compiles animationKeyframes into a real @keyframes rule ONLY through StyleSheet.create
+// (inline it is dropped silently - measured: animation-name "none").
+const webSpin = StyleSheet.create({
+  ring: {
+    width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5, borderTopColor: "transparent", opacity: 0.9,
+    ...({ animationKeyframes: [{ "0%": { transform: [{ rotate: "0deg" }] }, "100%": { transform: [{ rotate: "360deg" }] } }],
+          animationDuration: "900ms", animationIterationCount: "infinite", animationTimingFunction: "linear" } as object),
+  },
+});
+
+function WebSpinRing({ color }: { color: string }) {
+  return <View style={[webSpin.ring, { borderColor: color, borderTopColor: "transparent" }]} />;
+}
+
+function NativeStatusRing({ color }: { color: string }) {
   const spin = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: !isWeb }));
+    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 900, useNativeDriver: true }));
     a.start();
     return () => a.stop();
   }, [spin]);
