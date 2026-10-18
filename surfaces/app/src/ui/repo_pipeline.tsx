@@ -6,6 +6,8 @@ import type { CellTrack, LoopMap, LoopNode, RepoView } from "@/data/client";
 import { useT } from "@/i18n";
 import { laneColor, useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
+import { webMotion } from "@/ui/web_motion";
+import { isWeb } from "@/ui/responsive";
 
 /**
  * THE PIPELINE, as ONE component.
@@ -37,7 +39,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 function GateDot({ color, dim, size = 30 }: { color: string; dim: boolean; size?: number }) {
   const p = useRef(new RNAnimated.Value(0)).current;
   useEffect(() => {
-    if (dim) return;
+    if (dim || isWeb) return;   // web: webMotion.ping (CSS)
     const anim = RNAnimated.loop(RNAnimated.timing(p, {
       toValue: 1, duration: 1600, easing: Easing.out(Easing.quad), useNativeDriver: true,
     }));
@@ -49,9 +51,9 @@ function GateDot({ color, dim, size = 30 }: { color: string; dim: boolean; size?
   return (
     <View style={{ alignItems: "center", justifyContent: "center" }}>
       {!dim ? (
-        <RNAnimated.View style={{ position: "absolute", width: size, height: size,
+        <RNAnimated.View style={[{ position: "absolute", width: size, height: size,
           borderRadius: size / 2,
-          borderWidth: 2, borderColor: color, transform: [{ scale }], opacity: op }} />
+          borderWidth: 2, borderColor: color, transform: [{ scale }], opacity: op }, isWeb ? webMotion.ping : null]} />
       ) : null}
       <View style={{ width: size, height: size, borderRadius: size / 2, alignItems: "center",
         justifyContent: "center", backgroundColor: dim ? "transparent" : color,

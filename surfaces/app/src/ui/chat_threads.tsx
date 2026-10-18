@@ -2,8 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, Text, View } from "react-native";
 import { isWeb } from "@/ui/responsive";
+import { webMotion } from "@/ui/web_motion";
 import { api, type ChatThread, type ChatThreads } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -62,18 +63,8 @@ export function StatusRing({ color }: { color: string }) {
   return <NativeStatusRing color={color} />;
 }
 
-// react-native-web compiles animationKeyframes into a real @keyframes rule ONLY through StyleSheet.create
-// (inline it is dropped silently - measured: animation-name "none").
-const webSpin = StyleSheet.create({
-  ring: {
-    width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5, borderTopColor: "transparent", opacity: 0.9,
-    ...({ animationKeyframes: [{ "0%": { transform: [{ rotate: "0deg" }] }, "100%": { transform: [{ rotate: "360deg" }] } }],
-          animationDuration: "900ms", animationIterationCount: "infinite", animationTimingFunction: "linear" } as object),
-  },
-});
-
 function WebSpinRing({ color }: { color: string }) {
-  return <View style={[webSpin.ring, { borderColor: color, borderTopColor: "transparent" }]} />;
+  return <View style={[{ width: 9, height: 9, borderRadius: 4.5, borderWidth: 1.5, borderColor: color, borderTopColor: "transparent", opacity: 0.9 }, webMotion.spin900]} />;
 }
 
 function NativeStatusRing({ color }: { color: string }) {

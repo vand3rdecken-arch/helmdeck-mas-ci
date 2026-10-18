@@ -16,6 +16,7 @@ import type { ThemeTokens } from "@/theme/tokens";
 import { useAiFlat } from "@/ui/billing";
 import { Chip, Dot, Empty, Panel, ScreenHeader } from "@/ui/kit";
 import { isWeb, useResponsive } from "@/ui/responsive";
+import { webMotion } from "@/ui/web_motion";
 import { confirmAsync, promptText } from "@/ui/settings_sections";
 
 // Executor modes the daemon understands (daemon/processes.py MODES).
@@ -192,11 +193,11 @@ function PipeNode({ step, interactive, selected, onPress }: {
   // Subtle pulse on the step the chain is waiting on (up next / waiting-for-human).
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (state !== "ready") return;
+    if (state !== "ready" || isWeb) return;   // web: webMotion.wait (CSS) below
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: !isWeb }),
-        Animated.timing(pulse, { toValue: 0, duration: 800, useNativeDriver: !isWeb }),
+        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 800, useNativeDriver: true }),
       ]),
     );
     loop.start();
@@ -212,14 +213,14 @@ function PipeNode({ step, interactive, selected, onPress }: {
         borderColor: t.accent,
         backgroundColor: selected ? t.accent + "22" : "transparent",
       }}>
-        <Animated.View style={{
+        <Animated.View style={[{
           width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
           borderWidth: interactive ? 2.5 : 1.5, borderStyle: proposed && interactive ? "dashed" : "solid",
           borderColor: interactive ? (proposed ? t.borderStrong : colour) : t.borderSubtle,
           backgroundColor: interactive ? colour + "2E" : colour + "14",
-          opacity: state === "ready" ? opacity : (interactive ? 1 : 0.62),
+          opacity: state === "ready" ? (isWeb ? 1 : opacity) : (interactive ? 1 : 0.62),
           ...(isWeb && interactive ? ({ boxShadow: `0 1px 4px ${colour}55` } as any) : null),
-        }}>
+        }, isWeb && state === "ready" ? webMotion.wait : null]}>
           <Ionicons name={done ? "checkmark" : (MODE_ICON[step.mode ?? "do"] ?? "ellipse")}
             size={18} color={interactive ? (proposed ? t.borderStrong : colour) : t.txtTertiary} />
         </Animated.View>

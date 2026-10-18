@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Text, View } from "react-native";
 import { isWeb } from "@/ui/responsive";
+import { webMotion } from "@/ui/web_motion";
 
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
@@ -30,11 +31,12 @@ export function ThinkingIndicator({ preview, since }: { preview?: string; since?
     const pulse = (v: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
         Animated.delay(delay),
-        Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: !isWeb }),
-        Animated.timing(v, { toValue: 0.25, duration: 300, useNativeDriver: !isWeb }),
+        Animated.timing(v, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0.25, duration: 300, useNativeDriver: true }),
         Animated.delay(360 - delay),
       ]));
-    const anims = [pulse(d0, 0), pulse(d1, 160), pulse(d2, 320)];
+    // web: webMotion.dot (CSS) - an Animated loop here re-renders 60x/s from JS
+    const anims = isWeb ? [] : [pulse(d0, 0), pulse(d1, 160), pulse(d2, 320)];
     anims.forEach((a) => a.start());
     const iv = setInterval(() => setSecs((s) => (since ? Math.max(0, Math.floor(Date.now() / 1000 - since)) : s + 1)), 1000);
     return () => { anims.forEach((a) => a.stop()); clearInterval(iv); };
@@ -49,7 +51,9 @@ export function ThinkingIndicator({ preview, since }: { preview?: string; since?
         <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("chat.thinking")}</Text>
         <View style={{ flexDirection: "row", gap: 3, marginLeft: 1 }}>
           {[d0, d1, d2].map((d, i) => (
-            <Animated.View key={i} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2, opacity: d }} />
+            <Animated.View key={i} style={isWeb
+              ? [{ width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2 }, webMotion.dot, { animationDelay: `${i * 160}ms` } as object]
+              : { width: 4, height: 4, borderRadius: 2, backgroundColor: t.accent2, opacity: d }} />
           ))}
         </View>
         {secs >= 2 ? <Text style={{ color: t.txtTertiary, fontSize: 11 }}>· {secs}s</Text> : null}

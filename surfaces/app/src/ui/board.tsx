@@ -25,6 +25,7 @@ import { LiveThumb } from "./board_live";
 import { cardTitle } from "./card_title";
 import { Chip, Dot, Empty } from "./kit";
 import { isWeb, useResponsive } from "./responsive";
+import { webMotion } from "@/ui/web_motion";
 import { useActionSheet } from "./action_sheet";
 import { SignOff } from "./sign_off";
 import { SignOffBatch } from "./sign_off_batch";
@@ -175,11 +176,16 @@ function laneVerdict(res: LaneMove, lane: string): string | null {
  *  reanimated's useAnimatedStyle worklet (crashed with "undefined is not a
  *  function"); the classic Animated loop has no worklet and is immune. */
 function RunningPulse({ color }: { color: string }) {
+  if (isWeb) return <View style={[{ width: 8, height: 8, borderRadius: 4, backgroundColor: color }, webMotion.pulse]} />;
+  return <NativeRunningPulse color={color} />;
+}
+
+function NativeRunningPulse({ color }: { color: string }) {
   const o = useRef(new RNAnimated.Value(1)).current;
   useEffect(() => {
     const loop = RNAnimated.loop(RNAnimated.sequence([
-      RNAnimated.timing(o, { toValue: 0.28, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
-      RNAnimated.timing(o, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: !isWeb }),
+      RNAnimated.timing(o, { toValue: 0.28, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      RNAnimated.timing(o, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]));
     loop.start();
     return () => loop.stop();
