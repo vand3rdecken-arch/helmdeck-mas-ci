@@ -1947,6 +1947,25 @@ def _maybe_compact(user):
             "wieder richtig." % (why, pct, round(ctx / 1000), memo))
 
 
+def history_older(user, before, after=None, limit=_HISTORY_WINDOW):
+    """An older page of the transcript (db.chat_range), shaped like history()'s messages, plus whether
+    anything older still exists. Run tiles in it get their final descriptors from db.chat_runs, the same
+    as in the live window."""
+    from spine.storage import db
+    entries = db.chat_range(user, before, after=after, limit=limit)
+    followups = {}
+    try:
+        want = {m.get("run") or m.get("hands") for m in entries
+                if isinstance(m, dict) and (m.get("run") or m.get("hands"))}
+        if want:
+            followups = db.runs_get(list(want), account=user)
+    except Exception:                                        # noqa: BLE001
+        pass
+    first = entries[0].get("seq") if entries and isinstance(entries[0], dict) else None
+    more = bool(first) and after is None and bool(db.chat_range(user, first, limit=1))
+    return {"messages": [_readable(m) for m in entries], "followups": followups, "more": more}
+
+
 def history(user):
     """The user's persisted copilot transcript (the same Claude session the
     backend resumes - session id in copilot_sessions.json, resumable even from

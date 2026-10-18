@@ -5,7 +5,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { ASK_OPEN, stripAsk } from "@/data/ask";
 import { useRouter } from "expo-router";
-import { useT } from "@/i18n";
+import { useLang, useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import type { ThemeTokens } from "@/theme/tokens";
 import { Markdown } from "./card_markdown";
@@ -57,6 +57,7 @@ export interface TStep extends Omit<CompactionFields, "event"> {
                         // kind "text" (a mirrored worker message) draws a footer link - both open that card's chat
   todos?: { content: string; status: string }[];
   seq?: number;        // the chat row's identity - what a reply's quote jumps back to
+  date?: string;       // YYYY-MM-DD the row was written (chat log) - the day separators read it
   quote?: ReplyRef;    // this message answers that one (messenger-style reply)
 }
 
@@ -67,6 +68,45 @@ export function toolStatus(s: TStep): ToolStatus {
   if (s.running) return "running";
   if (s.abandoned) return "canceled";
   return s.ok === false ? "failed" : "completed";
+}
+
+/** The calendar day a row belongs to: its stored date, else its epoch, else unknown (no separator). */
+function dayOf(s: TStep): string | undefined {
+  if (s.date && /^\d{4}-\d{2}-\d{2}$/.test(s.date)) return s.date;
+  if (typeof s.ta === "number" && s.ta > 0) {
+    const d = new Date(s.ta * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return undefined;
+}
+
+/** "Heute" / "Gestern" / "Mo., 13. Okt." (+ year when not this year) - the messenger convention. */
+export function dayLabel(day: string, lang: string, tr: (k: string) => string, now = new Date()): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((today.getTime() - date.getTime()) / 86400000);
+  if (diff === 0) return tr("chat.today");
+  if (diff === 1) return tr("chat.yesterday");
+  const opts: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" };
+  if (y !== now.getFullYear()) opts.year = "numeric";
+  try { return date.toLocaleDateString(lang === "de" ? "de-DE" : "en-US", opts); } catch { return day; }
+}
+
+/** Insert a `day` row before the first row of every new calendar day (rows without a known day never
+ *  start one - entries written before the log carried dates simply sit under the previous day). */
+export function withDays(steps: TStep[]): TStep[] {
+  const out: TStep[] = [];
+  let last: string | undefined;
+  for (const s of steps) {
+    const d = dayOf(s);
+    if (d && d !== last) {
+      out.push({ kind: "day", text: d });
+      last = d;
+    }
+    out.push(s);
+  }
+  return out;
 }
 
 // Display timestamp: the daemon's HH:MM:SS is date-less, so a row from a prior
@@ -456,7 +496,8 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
     <Pressable hitSlop={8} onPress={() => onReply(s)} accessibilityLabel={tr("chat.reply")} testID="reply-btn">
       <Ionicons name="return-up-back-outline" size={13} color={t.txtTertiary} />
     </Pressable>) : null;
-  const steps = readable(rawSteps);
+  const lang = useLang();
+  const steps = withDays(readable(rawSteps));
   const keyFor = keyFactory();
   let lastToolIdx = -1;
   for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
@@ -470,6 +511,13 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         // nothing (the owner's message right above it already marks the turn),
         // `completed` is a quiet usage line, `canceled` a centered marker,
         // `failed` a real error card with the error text + usage.
+        if (kind === "day") return (
+          <View key={`day-${s.text}`} accessibilityRole="header" testID="day-separator"
+            style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.borderSubtle }} />
+            <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>{dayLabel(s.text || "", lang, tr)}</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.borderSubtle }} />
+          </View>);
         if (kind === "turn") {
           if (s.event === "failed") return (
             <View key={key} style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12", gap: 4 }}>

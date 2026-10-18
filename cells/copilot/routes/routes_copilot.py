@@ -14,6 +14,22 @@ from urllib.parse import parse_qs, urlparse
 from spine.auth.auth import is_restricted
 
 
+def chat_history_older_get(self, user):
+    """GET /chat/history/older?before=SEQ[&after=SEQ][&limit=N] - the page above what the chat shows."""
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from urllib.parse import parse_qs, urlparse
+    from cells.copilot.chat import copilot
+    q = parse_qs(urlparse(self.path).query)
+    try:
+        before = int((q.get("before") or [""])[0])
+        after = int(q["after"][0]) if q.get("after") else None
+        limit = int((q.get("limit") or ["80"])[0])
+    except ValueError:
+        return self._send(400, json.dumps({"error": "before (and after/limit) must be integers"}))
+    return self._send(200, json.dumps(copilot.history_older(user["name"], before, after=after, limit=limit)))
+
+
 def chat_history_get(self, user):
     if is_restricted(user):
         return self._send(403, json.dumps({"error": "owner only"}))
@@ -409,6 +425,7 @@ def notify_speak_post(self, user, body):
 
 GET_ROUTES = {
     "/chat/history": chat_history_get,
+    "/chat/history/older": chat_history_older_get,
     "/chat/live": chat_live_get,
     "/chat/threads": chat_threads_get,
 }

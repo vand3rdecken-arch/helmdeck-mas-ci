@@ -59,7 +59,9 @@ export const ChatScroll = forwardRef<ChatScrollHandle, {
   label: string;
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
-}>(function ChatScroll({ children, label, contentContainerStyle, style }, ref) {
+  /** the reader reached the top: load the page above (the chat's own history pagination) */
+  onReachTop?: () => void;
+}>(function ChatScroll({ children, label, contentContainerStyle, style, onReachTop }, ref) {
   const t = useTheme();
   const scroll = useRef<ScrollView>(null);
   // The pill's visibility is STATE (it renders); the same fact is mirrored in a
@@ -84,8 +86,21 @@ export const ChatScroll = forwardRef<ChatScrollHandle, {
   // The runtime says the content (or the viewport) moved. If the reader was at
   // the end, keep him there - unanimated, because this fires mid-stream and an
   // animation per token reads as a shudder.
-  const follow = useCallback(() => {
-    if (pinned.current) scroll.current?.scrollToEnd({ animated: false });
+  // Older history arrives ABOVE the reader. Without this the content grows over his head and the view
+  // jumps to some random older message; with it the message he was reading stays put (every messenger
+  // does this - Slack, WhatsApp, Claude). The prepend is recognised by its own runtime signal: the
+  // content got taller while a top load was in flight and the reader was not pinned to the bottom.
+  const offsetY = useRef(0);
+  const height = useRef(0);
+  const topLoad = useRef(false);
+  const follow = useCallback((_w?: number, h?: number) => {
+    const grown = typeof h === "number" && h > height.current ? h - height.current : 0;
+    if (typeof h === "number") height.current = h;
+    if (pinned.current) { scroll.current?.scrollToEnd({ animated: false }); return; }
+    if (topLoad.current && grown > 0) {
+      topLoad.current = false;
+      scroll.current?.scrollTo({ y: offsetY.current + grown, animated: false });
+    }
   }, []);
 
   const onScroll = (e: {
@@ -93,6 +108,13 @@ export const ChatScroll = forwardRef<ChatScrollHandle, {
                    layoutMeasurement: { height: number } };
   }) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    offsetY.current = contentOffset.y;
+    if (onReachTop && contentOffset.y < 120 && !topLoad.current && contentSize.height > layoutMeasurement.height) {
+      topLoad.current = true;
+      onReachTop();
+      // a load that adds nothing (the start of the history) must not leave the flag up forever
+      setTimeout(() => { topLoad.current = false; }, 1500);
+    }
     const next = contentSize.height - contentOffset.y - layoutMeasurement.height < PIN_SLACK;
     pinned.current = next;
     setAtBottom((prev) => (prev === next ? prev : next));
@@ -101,7 +123,7 @@ export const ChatScroll = forwardRef<ChatScrollHandle, {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView ref={scroll} onScroll={onScroll} scrollEventThrottle={16}
-        onContentSizeChange={follow} onLayout={follow}
+        onContentSizeChange={follow} onLayout={() => follow()}
         style={[{ flex: 1 }, style]} contentContainerStyle={contentContainerStyle}>
         {children}
       </ScrollView>

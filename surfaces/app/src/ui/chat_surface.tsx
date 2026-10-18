@@ -69,11 +69,14 @@ export interface ChatSurfaceProps {
   tabClear?: number;
   /** the screen may hold the scroll handle (pin to newest after its own send) */
   scrollRef?: React.RefObject<ChatScrollHandle | null>;
+  /** older history: called when the reader reaches the top; `topNote` sits above the transcript */
+  onReachTop?: () => void;
+  topNote?: React.ReactNode;
 }
 
 export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeholder, draftKey, recipients, error,
   top, afterTranscript, aboveComposer, minimal, busy, onStop, models, composer, ctxWindow, replies, onRewind, colMax, tabClear,
-  bottomInset, scrollPad, scrollRef }: ChatSurfaceProps) {
+  bottomInset, scrollPad, scrollRef, onReachTop, topNote }: ChatSurfaceProps) {
   const t = useTheme();
   // THE MESSAGE BEING ANSWERED (owner 2026-09-25): attached to exactly the next
   // send (or live steer) and cleared by it. A mirrored card message answers THAT card.
@@ -109,8 +112,9 @@ export function ChatSurface({ steps, me, loading, empty, isEmpty, onSend, placeh
     <View style={{ flex: 1 }}>
       {top}
       <View style={{ flex: 1 }}>
-        <ChatScroll ref={scroll} label={tr("chat.latest")}
+        <ChatScroll ref={scroll} label={tr("chat.latest")} onReachTop={onReachTop}
           contentContainerStyle={{ padding: 12, paddingBottom: scrollPad ?? 24, width: "100%", maxWidth: col, alignSelf: "center" }}>
+          {nothing ? null : topNote}
           {nothing
             ? (empty ?? <Empty text={tr("chat.empty")} />)
             : <Transcript me={me} steps={steps} ctxWindow={ctxWindow} onReply={onReply} onRewind={onRewind}

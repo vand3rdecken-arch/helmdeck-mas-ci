@@ -114,6 +114,11 @@ export const composer: Dict = {
   },
   "chat.reconnecting": { de: "Verbinde erneut… ({n})", en: "Reconnecting… ({n})" },
   "chat.latest": { de: "Neueste", en: "Latest" },
+  // Day separators + loading older history (owner 2026-10-18: the desktop chat stopped at 80 entries)
+  "chat.today": { de: "Heute", en: "Today" },
+  "chat.yesterday": { de: "Gestern", en: "Yesterday" },
+  "chat.loadingOlder": { de: "Ältere Nachrichten werden geladen…", en: "Loading older messages…" },
+  "chat.historyStart": { de: "Anfang des Verlaufs", en: "Start of the conversation" },
   "chat.close": { de: "Chat schließen", en: "Close chat" },
   // The floating launcher's accessibility label (ui/henry_chat.tsx). The button
   // itself is an icon on every screen that has one, so this is the ONLY name a

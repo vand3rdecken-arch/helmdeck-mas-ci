@@ -457,6 +457,36 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
   // so once the user text's occurrence count exceeds this turn's baseline the
   // whole optimistic pair is redundant and the persisted version takes over.
   const server = data?.messages;
+
+  // OLDER HISTORY (owner 2026-10-18: "Henry chat auf Desktop ist begrenzt kann nicht nach oben scrollen").
+  // /chat/history is a live window of the newest 80; pages above it are fetched by seq when the reader
+  // reaches the top and kept HERE, in front of the window - the window and its pending-turn anchors stay
+  // exactly as they were. If the window slides forward meanwhile, the rows between are fetched as a gap.
+  const [older, setOlder] = useState<ChatMsg[]>([]);
+  const [olderMore, setOlderMore] = useState(true);
+  const [olderBusy, setOlderBusy] = useState(false);
+  const windowFirst = server?.find((m) => typeof m.seq === "number")?.seq;
+  const loadOlder = useCallback(async () => {
+    if (olderBusy || !olderMore) return;
+    const before = older.find((m) => typeof m.seq === "number")?.seq ?? windowFirst;
+    if (typeof before !== "number") return;
+    setOlderBusy(true);
+    try {
+      const page = await api.chatOlder(before);
+      setOlder((cur) => [...(page.messages ?? []), ...cur]);
+      setOlderMore(!!page.more);
+    } catch { /* a failed page is retried on the next scroll to the top */ }
+    finally { setOlderBusy(false); }
+  }, [olderBusy, olderMore, older, windowFirst]);
+  useEffect(() => {
+    const lastOlder = [...older].reverse().find((m) => typeof m.seq === "number")?.seq;
+    if (typeof lastOlder !== "number" || typeof windowFirst !== "number" || windowFirst <= lastOlder + 1) return;
+    let alive = true;
+    api.chatOlder(windowFirst, lastOlder, 500)
+      .then((g) => { if (alive && g.messages?.length) setOlder((cur) => [...cur, ...g.messages]); })
+      .catch(() => { /* the gap is retried when the window moves again */ });
+    return () => { alive = false; };
+  }, [windowFirst, older]);
   const lastSeq = (list?: ChatMsg[]) => Math.max(0, ...(list ?? []).map((m) => m.seq ?? 0));
   // signature of the newest NON-owner row - the identity fallback for a
   // daemon that does not stamp seq (measured 2026-09-13 16:19: the stream
@@ -925,7 +955,9 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
 
   // The rows the shared transcript draws: the persisted log + the live turn.
   const surfaceSteps: TStep[] = (() => {
-                const s = foldCompaction(msgs.map((m) => withLive(toStep(m, me?.name, tr))));
+                const inWindow = new Set(msgs.map((m) => m.seq).filter((x) => typeof x === "number"));
+                const all = [...older.filter((m) => !(typeof m.seq === "number" && inWindow.has(m.seq))), ...msgs];
+                const s = foldCompaction(all.map((m): TStep => ({ ...withLive(toStep(m, me?.name, tr)), date: m.date })));
                 // STATIC, local-only greeting (no daemon call, no turn, no
                 // cost) - never persisted, so it renders again every time
                 // this stays true and disappears the moment either half
@@ -959,6 +991,10 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
       {header}
       <ChatSurface scrollRef={scroll} steps={surfaceSteps} me={me?.name} ctxWindow={stats?.ctx_window}
         colMax={colMax} tabClear={tabClear}
+        onReachTop={server && server.length >= 80 ? loadOlder : undefined}
+        topNote={olderBusy
+          ? <Text testID="chat-loading-older" style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center", paddingVertical: 6 }}>{tr("chat.loadingOlder")}</Text>
+          : (!olderMore ? <Text style={{ color: t.txtTertiary, fontSize: 11, textAlign: "center", paddingVertical: 6 }}>{tr("chat.historyStart")}</Text> : null)}
         isEmpty={msgs.length === 0 && !showWelcome && !(busy && stream.trim())}
         empty={<Empty text={tr("chat.empty")} />}
         replies

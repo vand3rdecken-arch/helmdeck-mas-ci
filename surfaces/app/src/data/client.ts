@@ -1255,6 +1255,11 @@ export const api = {
       "POST", "/takeout/restore", { path, dry }),
   takeoutVerify: (name: string) =>
     req<{ ok: boolean; problems?: string[] }>("POST", "/takeout/verify", { name }),
+  /** The page ABOVE what the chat shows (GET /chat/history/older): entries with seq < before (and > after
+   *  when closing a gap), oldest first; `more` = something older still exists. */
+  chatOlder: (before: number, after?: number, limit = 80) =>
+    req<{ messages: ChatMsg[]; followups?: Record<string, BgTask>; more?: boolean }>(
+      "GET", `/chat/history/older?before=${before}${after != null ? `&after=${after}` : ""}&limit=${limit}`),
   chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
     /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
      *  descriptors, rendered by the same BackgroundTasks line a card uses. */

@@ -45,13 +45,32 @@ def _first_text(content):
     return ""
 
 
+# MEASURED 2026-10-18 (py-spy on the live daemon): 31 request threads in GET /sessions/claude, each
+# re-reading the heads of 2,983 transcripts, plus everything else queued behind them on the GIL - the
+# Henry chat's /chat/history then hung for 90 s+ on the phone and the desktop. Two causes, both here:
+#  - _peek only stopped at HEAD_LINES once it had BOTH a cwd and a first user message, so a transcript
+#    without one (tool envelopes, HelmDeck's own sessions) was read to its END - some are hundreds of MB;
+#  - nothing was remembered: every call re-peeked every file, and N concurrent calls did it N times.
+# Now: a hard read bound, a per-file result cache keyed on (mtime, size) - a transcript that did not
+# change is never opened again - and ONE scan at a time (callers that arrive during a scan get its result).
+PEEK_MAX_LINES = HEAD_LINES * 4
+PEEK_MAX_BYTES = 512 * 1024
+_peek_cache = {}             # path -> (mtime, size, cwd, first)
+_PEEK_CACHE_MAX = 20000
+_scan_lock = threading.Lock()
+_last_scan = {"at": 0.0, "out": None, "limit": None}
+_SCAN_REUSE_S = 2.0          # a burst of callers inside this window shares one scan
+
+
 def _peek(path):
-    """Read the head of a transcript for cwd + first user message (cheap)."""
+    """Read the head of a transcript for cwd + first user message (cheap, bounded)."""
     cwd, first = None, None
+    read = 0
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             for i, line in enumerate(f):
-                if i >= HEAD_LINES and cwd and first:
+                read += len(line)
+                if (i >= HEAD_LINES and cwd and first) or i >= PEEK_MAX_LINES or read > PEEK_MAX_BYTES:
                     break
                 line = line.strip()
                 if not line:
@@ -71,9 +90,31 @@ def _peek(path):
     return cwd, first
 
 
+def _peek_cached(path, mtime, size):
+    hit = _peek_cache.get(path)
+    if hit and hit[0] == mtime and hit[1] == size:
+        return hit[2], hit[3]
+    cwd, first = _peek(path)
+    if len(_peek_cache) >= _PEEK_CACHE_MAX:
+        _peek_cache.clear()          # a crude bound; the next scan refills what still exists
+    _peek_cache[path] = (mtime, size, cwd, first)
+    return cwd, first
+
+
 def list_sessions(limit=MAX):
     """All Claude Code sessions, most-recently-active first. Skips HelmDeck's
-    own worktree sessions (those are already cards)."""
+    own worktree sessions (those are already cards). One scan at a time; a burst of
+    callers shares it (see the note above _peek)."""
+    with _scan_lock:
+        if (_last_scan["out"] is not None and _last_scan["limit"] == limit
+                and time.time() - _last_scan["at"] < _SCAN_REUSE_S):
+            return [dict(x) for x in _last_scan["out"]]
+        out = _list_sessions(limit)
+        _last_scan.update(at=time.time(), out=out, limit=limit)
+        return [dict(x) for x in out]
+
+
+def _list_sessions(limit):
     out = []
     if not os.path.isdir(PROJECTS):
         return out
@@ -92,7 +133,7 @@ def list_sessions(limit=MAX):
                 continue
             if size < 200:              # empty/aborted transcript
                 continue
-            cwd, first = _peek(path)
+            cwd, first = _peek_cached(path, mtime, size)
             if cwd and "helmdeck-worktrees" in cwd.replace("/", "\\"):
                 continue                # HelmDeck-managed - already a card
             if first and first.startswith(_INTERNAL):

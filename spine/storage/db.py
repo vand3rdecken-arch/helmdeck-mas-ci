@@ -1690,6 +1690,30 @@ def chat_tail(account, limit=80):
     return out
 
 
+def chat_range(account, before, after=None, limit=80):
+    """Entries with after < seq < before, OLDEST first, at most `limit` of the NEWEST of them - the page
+    above what a reader already has (owner 2026-10-18: the desktop chat could not scroll past the
+    80-entry window chat_tail serves). `after` closes a gap: the live window slid forward while older
+    pages were loaded, and the rows in between are fetched by range, not re-guessed."""
+    q = "SELECT seq, data FROM chat WHERE account=? AND seq<?"
+    args = [account, int(before)]
+    if after is not None:
+        q += " AND seq>?"
+        args.append(int(after))
+    q += " ORDER BY seq DESC LIMIT ?"
+    args.append(max(1, min(int(limit), 500)))
+    out = []
+    for (seq, d) in reversed(conn().execute(q, args).fetchall()):
+        try:
+            e = json.loads(d)
+        except ValueError:
+            continue
+        if isinstance(e, dict) and "seq" not in e:
+            e["seq"] = seq
+        out.append(e)
+    return out
+
+
 def chat_accounts():
     return [r[0] for r in conn().execute("SELECT DISTINCT account FROM chat")]
 
