@@ -56,7 +56,7 @@ def set_version(version):
     open(toml, "w", encoding="utf-8", newline="").write(t)
 
 
-def stage_payload():
+def stage_payload(no_web=False):
     """What the installer puts next to the window, like the Electron installer's extraResources: the web
     app, the daemon sources (the SAME allowlist + secret scan as the Store build), the tray that
     supervises the daemon, the relay bridge. tauri.conf.json maps target/payload/ into $INSTDIR."""
@@ -70,9 +70,8 @@ def stage_payload():
     os.makedirs(payload)
     bmt.STAGE = payload
     n = bmt.copy_allowlist()
-    dist = os.path.join(ROOT, "surfaces", "app", "dist")
-    if not os.path.isfile(os.path.join(dist, "index.html")):
-        sys.exit("no web build at surfaces/app/dist")
+    bmt.build_web(skip=no_web)   # never package a stale web app (see build_web)
+    dist = bmt.WEB_DIST
     shutil.copytree(dist, os.path.join(payload, "app-dist"))
     for crate, exe in (("surfaces/desktop/tray-rs", "helmdeck-tray.exe"), ("surfaces/relay/bridge-rs", "helmdeck-relay-bridge.exe")):
         d = os.path.join(ROOT, *crate.split("/"))
@@ -99,6 +98,7 @@ def main():
     ap.add_argument("--version", required=True)
     ap.add_argument("--notes", default="")
     ap.add_argument("--publish", action="store_true")
+    ap.add_argument("--no-web", action="store_true", help="reuse surfaces/app/dist (refused when older than the source)")
     a = ap.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
         sys.exit("--version must be x.y.z")
@@ -107,7 +107,7 @@ def main():
         sys.exit("no updater key in %s (see the header of this file)" % KEYS)
     env = dict(os.environ, TAURI_SIGNING_PRIVATE_KEY=open(key, encoding="utf-8").read().strip(), TAURI_SIGNING_PRIVATE_KEY_PASSWORD=dpapi_unprotect(open(pw_blob, "rb").read()))
     set_version(a.version)
-    stage_payload()
+    stage_payload(no_web=a.no_web)
     r = subprocess.run(["cargo", "tauri", "build"], cwd=APP, env=env)
     if r.returncode != 0:
         sys.exit("build failed")

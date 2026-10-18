@@ -80,6 +80,47 @@ def copy_allowlist():
     return n
 
 
+WEB_SRC = os.path.join(ROOT, "surfaces", "app")
+# the packages get their OWN export, not surfaces/app/dist: that folder is served by a running daemon and
+# locked while it runs (EBUSY on the export's rmdir, 2026-10-18), and it is whatever someone last built
+WEB_DIST = os.path.join(APP, "target", "web-dist")
+
+
+def newest_source_mtime():
+    """Newest file the web bundle is built from (src, app config, package lock)."""
+    newest = 0.0
+    for top in ("src",):
+        for dp, dn, fs in os.walk(os.path.join(WEB_SRC, top)):
+            dn[:] = [d for d in dn if d not in SKIP_DIRS]
+            for f in fs:
+                newest = max(newest, os.path.getmtime(os.path.join(dp, f)))
+    for f in ("app.json", "app.config.js", "app.config.ts", "package-lock.json"):
+        p = os.path.join(WEB_SRC, f)
+        if os.path.isfile(p):
+            newest = max(newest, os.path.getmtime(p))
+    return newest
+
+
+def build_web(skip=False):
+    """The web app is BUILT for every package, never taken from whatever surfaces/app/dist holds.
+
+    Measured 2026-10-18: the first Tauri installer and MSIX shipped a dist from 2026-10-09 - three days
+    before the login-field fix (login_screen.tsx, 2026-10-12) - so the installed window could not be
+    typed into. build_msix.ps1 always ran `npm run build:web`; these scripts did not. With --no-web a
+    dist older than the newest source file is refused instead of packaged."""
+    if not skip:
+        npm = shutil.which("npm.cmd") or shutil.which("npm")
+        if not npm:
+            sys.exit("npm not found - needed to build the web app (or pass --no-web with a fresh dist)")
+        subprocess.run([npm, "--prefix", WEB_SRC, "run", "export:web", "--", "--output-dir", WEB_DIST], check=True)
+    index = os.path.join(WEB_DIST, "index.html")
+    if not os.path.isfile(index):
+        sys.exit("no web build at " + WEB_DIST)
+    if os.path.getmtime(index) < newest_source_mtime():
+        sys.exit("the packaged web export is OLDER than the app source - refusing to package a stale web app "
+                 "(drop --no-web to rebuild it)")
+
+
 def scan_for_secrets():
     hits = []
     for dirpath, _, files in os.walk(STAGE):
@@ -178,6 +219,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True, help="x.y.z - must be higher than the listing's current package")
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--no-web", action="store_true", help="reuse surfaces/app/dist (refused when older than the source)")
     a = ap.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
         sys.exit("--version must be x.y.z")
@@ -186,9 +228,8 @@ def main():
         subprocess.run(["cargo", "build", "--release"], cwd=APP, check=True)
     if not os.path.isfile(exe):
         sys.exit("no release build at " + exe)
-    dist = os.path.join(ROOT, "surfaces", "app", "dist")
-    if not os.path.isfile(os.path.join(dist, "index.html")):
-        sys.exit("no web build at surfaces/app/dist (cd surfaces/app && npx expo export -p web)")
+    build_web(skip=a.no_web)
+    dist = WEB_DIST
 
     shutil.rmtree(STAGE, ignore_errors=True)
     os.makedirs(STAGE)
