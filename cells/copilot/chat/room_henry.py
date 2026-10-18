@@ -347,10 +347,10 @@ def live_event(rid, ev, parts, think):
     e = ev.get("event") or {}
     t = e.get("type")
     if t == "message_start":
-        livebuf.set_field(key, "status", "Anfrage läuft")
+        livebuf.set_field(key, "status", "")
     elif t == "content_block_start":
         bt = (e.get("content_block") or {}).get("type") or ""
-        livebuf.set_field(key, "status", "überlegt" if bt == "thinking" else "" if bt == "text" else
+        livebuf.set_field(key, "status", "" if bt in ("thinking", "text") else
                           livebuf.get_field(key, "status", ""))
     elif t == "content_block_delta":
         dl = e.get("delta") or {}

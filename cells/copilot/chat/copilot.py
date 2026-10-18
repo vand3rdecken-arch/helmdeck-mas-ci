@@ -2904,7 +2904,7 @@ def _opencode_live_sink(live_key, steps, handle=None):
                 livebuf.set_field(live_key, "status", "")
             elif kind == "thinking":
                 livebuf.set_field(live_key, "thinking", (ev.get("text") or "")[-600:])
-                livebuf.set_field(live_key, "status", "überlegt")
+                livebuf.set_field(live_key, "status", "")
             elif kind == "tool":
                 tname, inp = _oc_tool(ev.get("name"), ev.get("input") if isinstance(ev.get("input"), dict) else {})
                 if handle is not None and ev.get("id"):
@@ -3371,7 +3371,10 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         turn = ("<harness-report>\nSEIT DEINEM LETZTEN TURN (MASCHINENTEXT, keine Aussage "
                 "des Owners):\n- " + "\n- ".join(_cap_item(r) for r in _late)
                 + "\n</harness-report>\n\n") + turn
-    livebuf.set_field(live_key, "status", "bereitet den Turn vor")
+    # The lock is ours: whatever wait reason was on screen is over. Pipeline steps (preparing, writing to
+    # the process, reading context, "überlegt") are NOT shown - under "denkt nach" they read as the
+    # indicator flipping (owner 2026-10-18); only real waits and tool calls get a status line, like Claude.
+    livebuf.set_field(live_key, "status", "")
     _call = {"user": user, "skey": skey, "role": role, "message": message, "model": model,
              "thinking": thinking, "card": card, "card_run_dir": card_run_dir,
              "allow_actions": allow_actions, "extra_system": extra_system,
@@ -3509,7 +3512,6 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                                           "message": {"role": "user", "content": prompt}}) + "\n")
                 p.stdin.flush()
                 _tt["write"] = time.time()
-                livebuf.set_field(live_key, "status", "wartet auf Henrys Prozess")
             except Exception:
                 # warm process died since the health check - respawn ONCE fresh
                 _persist_drop(skey)
@@ -3674,16 +3676,14 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 # (the prefill of a 150k context is what takes the seconds),
                 # a thinking block = reasoning, a text block = writing (the
                 # stream takes over from here, the status line yields).
+                # 2026-10-18: those step words flipped the row under "denkt nach"; the elapsed clock and the
+                # live thinking tail now carry the wait, the status line stays for queues and tools only.
                 if e.get("type") == "message_start":
-                    _u = ((e.get("message") or {}).get("usage") or {})
-                    _ctx = int(_u.get("input_tokens") or 0) + int(_u.get("cache_read_input_tokens") or 0) \
-                        + int(_u.get("cache_creation_input_tokens") or 0)
-                    livebuf.set_field(live_key, "status",
-                                      ("liest Kontext (%dk)" % (_ctx // 1000)) if _ctx else "Anfrage läuft")
+                    livebuf.set_field(live_key, "status", "")
                 elif e.get("type") == "content_block_start":
                     _bt = ((e.get("content_block") or {}).get("type") or "")
                     if _bt == "thinking":
-                        livebuf.set_field(live_key, "status", "überlegt")
+                        livebuf.set_field(live_key, "status", "")
                     elif _bt == "text":
                         livebuf.set_field(live_key, "status", "")
                 if e.get("type") == "content_block_delta":
