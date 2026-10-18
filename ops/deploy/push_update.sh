@@ -116,7 +116,11 @@ RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/ap
 # released APK (the relay's version.json, the same file the banner reads) must BE this runtime before
 # any phone OTA ships for it: release the native build first (build_apk.sh + push_apk.sh).
 if [ "$DESKTOP_ONLY" != "1" ] && [ -z "$RUNTIME" ] && [ "${ALLOW_NO_APK:-0}" != "1" ]; then
-  LIVE_APK=$(curl -s -m20 "https://$RELAY_DOMAIN/apk/version.json" | py -3.12 -c "import json,sys;print(json.load(sys.stdin).get('versionName',''),end='')" 2>/dev/null)
+  # push_apk.sh writes the staged version.json only AFTER the APK upload is proven, and THIS run's worker
+  # deploy is what puts it live - so the staged file is the truth for this publish, the live one the fallback.
+  APK_VJ="${HELMDECK_APK_DIR:-/c/opt/helmdeck-apk}/version.json"
+  if [ -f "$APK_VJ" ]; then APK_SRC=$(cat "$APK_VJ"); else APK_SRC=$(curl -s -m20 "https://$RELAY_DOMAIN/apk/version.json"); fi
+  LIVE_APK=$(printf '%s' "$APK_SRC" | py -3.12 -c "import json,sys;print(json.load(sys.stdin).get('versionName',''),end='')" 2>/dev/null)
   if [ "$LIVE_APK" != "$RTV" ]; then
     echo "!!! REFUSING: this OTA targets runtime $RTV, the released Android APK is '${LIVE_APK:-unreadable}'."
     echo "!!! No Android phone could receive it. Release the APK first: bash ops/deploy/build_apk.sh && bash ops/deploy/push_apk.sh"
