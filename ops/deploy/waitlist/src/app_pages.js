@@ -45,7 +45,7 @@ const LESENACHWEIS_INDEX = page("readproof", "ReadProof", "ReadProof for Conflue
 <h2>Price / Preis</h2>
 <p>Free up to 10 users. From 11 users USD 0.50 per user and month, 30-day trial via the Atlassian Marketplace. / Gratis bis 10 Nutzer. Ab 11 Nutzern 0,50 USD je Nutzer und Monat, 30 Tage Testphase über den Atlassian Marketplace.</p>
 <p><a href="/readproof/compare">Price comparison, checked 18 October 2026 / Preisvergleich, Stand 18.10.2026</a></p>
-<p>The app records confirmations; it does not make an organisation compliant with any regulation. / Die App hält Bestätigungen fest; sie macht keine Organisation konform mit einer Vorschrift.</p>`);
+<p>The app records confirmations; whether a regulation is met is for the organisation to decide. / Die App hält Bestätigungen fest; ob eine Vorschrift erfüllt ist, entscheidet die Organisation.</p>`);
 const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadProof", `<h1>Documentation / Dokumentation</h1>
 <p>English first, deutsch darunter.</p>
 

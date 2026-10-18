@@ -61,6 +61,9 @@ for how long.</li>
 <li><a href="/label-doktor/terms">Terms of use</a>.</li>
 </ul>
 
+<h2>Price</h2>
+<p><a href="/label-doktor/compare">Price comparison, checked 18 October 2026</a></p>
+
 <h2>Contact</h2>
 <ul>
 <li>Support: <a href="mailto:support@helmdeck.de">support@helmdeck.de</a></li>
@@ -87,6 +90,9 @@ Vorschau, Zusammenführen, Rückgängig, KI, Einstellungen, Berechtigungen.</li>
 verarbeitet und wie lange.</li>
 <li><a href="/label-doktor/terms">Nutzungsbedingungen</a>.</li>
 </ul>
+
+<h2>Preis</h2>
+<p><a href="/label-doktor/compare">Preisvergleich, Stand 18.10.2026</a></p>
 
 <h2>Kontakt</h2>
 <ul>
