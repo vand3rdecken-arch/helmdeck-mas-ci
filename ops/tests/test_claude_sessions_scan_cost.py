@@ -81,6 +81,8 @@ def main():
     first = peeks[0]
     check(first == 31 and len(a) == 31, "first scan peeks every transcript once (%d)" % first)
     cs._last_scan["at"] = 0
+    cs.list_sessions()                      # stale answer at once, refresh in the background
+    cs._scan_done.wait(10)
     b = cs.list_sessions()
     check(peeks[0] == first and [x["id"] for x in a] == [x["id"] for x in b], "a second scan opens NO unchanged file")
     time.sleep(0.05)
@@ -88,9 +90,10 @@ def main():
         f.write("\n" + "z" * 10 + "\n")
     cs._last_scan["at"] = 0
     cs.list_sessions()
+    cs._scan_done.wait(10)
     check(peeks[0] == first + 1, "a changed transcript is re-read exactly once (%d)" % (peeks[0] - first))
 
-    cs._last_scan["at"] = 0
+    cs._last_scan.update(at=0, out=None)    # a daemon's first call: nothing to hand out yet
     scans = [0]
     real_list = cs._list_sessions
 
@@ -103,6 +106,11 @@ def main():
     [t.start() for t in ts]
     [t.join() for t in ts]
     check(scans[0] == 1, "ten concurrent callers share ONE scan (%d)" % scans[0])
+    # once there is a result, a caller never waits for a scan - it gets the last one at once
+    cs._last_scan["at"] = 0
+    t0 = time.time(); got = cs.list_sessions(); waited = time.time() - t0
+    check(waited < 0.2 and len(got) == 31, "with a result in hand a caller is answered at once (%.2fs) while the refresh runs" % waited)
+    cs._scan_done.wait(10)
     print()
     if _fails:
         print("=== %d FAILED ===" % len(_fails))

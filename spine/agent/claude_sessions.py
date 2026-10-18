@@ -55,7 +55,9 @@ def _first_text(content):
 # change is never opened again - and ONE scan at a time (callers that arrive during a scan get its result).
 PEEK_MAX_LINES = HEAD_LINES * 4
 PEEK_MAX_BYTES = 512 * 1024
-_peek_cache = {}             # path -> (mtime, size, cwd, first)
+_peek_cache = {}             # path -> (mtime, size, cwd, first[:FIRST_KEEP])
+FIRST_KEEP = 200
+PEEK_MAX_LINE = 256 * 1024
 _PEEK_CACHE_MAX = 20000
 _scan_lock = threading.Lock()
 _last_scan = {"at": 0.0, "out": None, "limit": None}
@@ -72,6 +74,8 @@ def _peek(path):
                 read += len(line)
                 if (i >= HEAD_LINES and cwd and first) or i >= PEEK_MAX_LINES or read > PEEK_MAX_BYTES:
                     break
+                if len(line) > PEEK_MAX_LINE:
+                    continue        # a pasted blob / base64 image line: never parse megabytes for a preview
                 line = line.strip()
                 if not line:
                     continue
@@ -95,6 +99,9 @@ def _peek_cached(path, mtime, size):
     if hit and hit[0] == mtime and hit[1] == size:
         return hit[2], hit[3]
     cwd, first = _peek(path)
+    # keep only what the list SHOWS (list_sessions cuts `first` to 160): measured 2026-10-18, caching the
+    # full first message of ~2,700 transcripts took the daemon from 215 MB to 1.2 GB on the first scan
+    first = first[:FIRST_KEEP] if first else first
     if len(_peek_cache) >= _PEEK_CACHE_MAX:
         _peek_cache.clear()          # a crude bound; the next scan refills what still exists
     _peek_cache[path] = (mtime, size, cwd, first)
@@ -102,16 +109,43 @@ def _peek_cached(path, mtime, size):
 
 
 def list_sessions(limit=MAX):
-    """All Claude Code sessions, most-recently-active first. Skips HelmDeck's
-    own worktree sessions (those are already cards). One scan at a time; a burst of
-    callers shares it (see the note above _peek)."""
-    with _scan_lock:
-        if (_last_scan["out"] is not None and _last_scan["limit"] == limit
-                and time.time() - _last_scan["at"] < _SCAN_REUSE_S):
-            return [dict(x) for x in _last_scan["out"]]
-        out = _list_sessions(limit)
-        _last_scan.update(at=time.time(), out=out, limit=limit)
-        return [dict(x) for x in out]
+    """All Claude Code sessions, most-recently-active first. Skips HelmDeck's own worktree sessions
+    (those are already cards).
+
+    Stale-while-revalidate (measured 2026-10-18: a cold first scan of ~2,700 transcripts took 26-116 s,
+    and a request thread holding that long is exactly the hang the phone saw): a caller gets the LAST
+    result at once and a refresh runs in the background - one at a time, shared by every caller. Only the
+    very first call of a daemon's life, with nothing to hand out yet, waits for the scan."""
+    with _state_lock:
+        last = _last_scan["out"] if _last_scan["limit"] == limit else None
+        fresh = last is not None and time.time() - _last_scan["at"] < _SCAN_REUSE_S
+        if not fresh and not _scanning["on"]:
+            _scanning["on"] = True
+            _scan_done.clear()
+            threading.Thread(target=_refresh, args=(limit,), daemon=True, name="claude-sessions-scan").start()
+    if last is None:
+        _scan_done.wait(timeout=_FIRST_WAIT_S)
+        with _state_lock:
+            last = _last_scan["out"] if _last_scan["limit"] == limit else []
+    return [dict(x) for x in (last or [])]
+
+
+_state_lock = threading.Lock()
+_scanning = {"on": False}
+_scan_done = threading.Event()
+_FIRST_WAIT_S = 180
+
+
+def _refresh(limit):
+    try:
+        with _scan_lock:
+            out = _list_sessions(limit)
+        with _state_lock:
+            _last_scan.update(at=time.time(), out=out, limit=limit)
+    finally:
+        with _state_lock:
+            _scanning["on"] = False
+        _scan_done.set()
 
 
 def _list_sessions(limit):
