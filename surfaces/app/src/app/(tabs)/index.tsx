@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Redirect } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 
@@ -18,6 +19,14 @@ export default function HenryTab() {
   // No timer: every writer moves the daemon's `v`, which reaches the phone as a
   // pushed event that invalidates every query (app/_layout.tsx useGlobalStream).
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
+  // A cold start must not chain the home's data behind /me: start the transcript and the board in the
+  // same breath (same keys chat.tsx reads), so they are on screen the moment the gate below opens.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (me) return;
+    void qc.prefetchQuery({ queryKey: ["chatHistory"], queryFn: api.chatHistory });
+    void qc.prefetchQuery({ queryKey: ["tracks"], queryFn: api.tracks, staleTime: 5000 });
+  }, [me, qc]);
   // A guest (client) or operator has no Henry home: /chat/threads answers 403.
   // Their home is the team rooms.
   if (isRestricted(me)) return <Redirect href={"/rooms" as never} />;
