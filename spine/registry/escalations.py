@@ -17,6 +17,7 @@ daemon/state/escalations.jsonl (1292 lines, count-verified). The file was
 folded IN FULL on every list_open(): once per lane tick, per Henry pass, per
 PM question. Same records, same fold, one indexed query. The table has no
 UPDATE/DELETE path (ops/tests/test_db_schema.py pins that)."""
+import threading
 import time
 
 
@@ -96,26 +97,49 @@ def records():
     return db.escalations_rows()
 
 
+# INCREMENTAL FOLD (owner 2026-10-19, "Laden von Nachrichten dauert lange"):
+# every /chat/history folded the WHOLE bus - 6416 rows json-parsed per call,
+# 94% of the endpoint's 126-253 ms, growing with every escalation. The table
+# is append-only (no UPDATE/DELETE path, test_db_schema pins it), so the
+# state after row N is a pure function of rows 1..N: fold only the tail since
+# the last read. Keyed by the db file, so a sandboxed test db re-folds from 0;
+# a seq that went BACKWARDS (db swapped in place) re-folds from 0 as well.
+_fold_lock = threading.Lock()
+_fold_cache = {"db": None, "seq": 0, "state": {}}
+
+
+def _fold_into(out, r):
+    ev = r.get("event")
+    if ev == "open":
+        out[r["id"]] = dict(r, attempts=0, closed=False)
+    elif r.get("id") in out:
+        e = out[r["id"]]
+        if ev == "attempt":
+            e["attempts"] += 1
+        elif ev == "note":
+            e["last_note"] = r.get("detail") or ""
+        elif ev == "decision":
+            e["closed"] = True
+            e["action"] = r.get("action")
+            e["why"] = r.get("why")
+            e["decided_ts"] = r.get("ts")
+
+
 def fold():
     """Current state, derived from the append-only records: {id: rec} with
-    rec['attempts'] and rec['closed'] folded in."""
-    out = {}
-    for r in records():
-        ev = r.get("event")
-        if ev == "open":
-            out[r["id"]] = dict(r, attempts=0, closed=False)
-        elif r.get("id") in out:
-            e = out[r["id"]]
-            if ev == "attempt":
-                e["attempts"] += 1
-            elif ev == "note":
-                e["last_note"] = r.get("detail") or ""
-            elif ev == "decision":
-                e["closed"] = True
-                e["action"] = r.get("action")
-                e["why"] = r.get("why")
-                e["decided_ts"] = r.get("ts")
-    return out
+    rec['attempts'] and rec['closed'] folded in. Callers get copies - the
+    cached state is never handed out."""
+    from spine.storage import db
+    with _fold_lock:
+        cache = _fold_cache
+        top = db.conn().execute("SELECT COALESCE(MAX(seq),0) FROM escalations").fetchone()[0]
+        if cache["db"] != db.DBPATH or top < cache["seq"]:
+            cache.update(db=db.DBPATH, seq=0, state={})
+        if top > cache["seq"]:
+            cache["seq"], rows = db.escalations_rows_after(cache["seq"])
+            for r in rows:
+                _fold_into(cache["state"], r)
+        return {k: dict(v) for k, v in cache["state"].items()}
 
 
 def list_open():

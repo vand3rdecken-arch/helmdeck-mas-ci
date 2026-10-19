@@ -1459,10 +1459,19 @@ def escalation_append(rec):
 def escalations_rows():
     """Every record in bus order, as the dicts escalations.py folds - the
     `card` key is the track column, everything else rides in data."""
+    return escalations_rows_after(0)[1]
+
+
+def escalations_rows_after(seq):
+    """(last seq, records with seq > `seq`) - the append-only tail an
+    incremental fold consumes (escalations.fold), so a reader parses only the
+    rows appended since its last read instead of the whole bus."""
     rows = conn().execute(
-        "SELECT id,ts,event,kind,track,data FROM escalations ORDER BY seq").fetchall()
+        "SELECT seq,id,ts,event,kind,track,data FROM escalations WHERE seq>? ORDER BY seq",
+        (seq,)).fetchall()
+    last = rows[-1][0] if rows else seq
     out = []
-    for rid, ts, ev, kind, track, data in rows:
+    for _seq, rid, ts, ev, kind, track, data in rows:
         r = {"id": rid, "ts": ts, "event": ev}
         if kind is not None:
             r["kind"] = kind
@@ -1472,7 +1481,7 @@ def escalations_rows():
         except ValueError:
             pass
         out.append(r)
-    return out
+    return last, out
 
 
 def _read_json_file(path):

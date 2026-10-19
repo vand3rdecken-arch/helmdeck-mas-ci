@@ -1966,12 +1966,31 @@ def history_older(user, before, after=None, limit=_HISTORY_WINDOW):
     return {"messages": [_readable(m) for m in entries], "followups": followups, "more": more}
 
 
-def history(user):
+def history(user, after=None):
     """The user's persisted copilot transcript (the same Claude session the
     backend resumes - session id in copilot_sessions.json, resumable even from
     a terminal via `claude --resume <id>`) plus the PM-session stats the board
-    chat renders as context meter + usage line (card-chat parity)."""
+    chat renders as context meter + usage line (card-chat parity).
+
+    `after` = the highest seq the reader already holds (owner 2026-10-19, "warum
+    sendet so viel und nicht nur diff wie bei paseo"): every wake re-sent the
+    whole 80-row window plus the final descriptor of every run tile in it
+    (~65 KB, half of it 4 finished hands runs that never change again). The
+    chat table is append-only with a monotonic seq, so the rows past `after`
+    ARE the change - Paseo's timeline `after` cursor. Answered with
+    delta=True; a cursor the store does not know (past its end) or a gap wider
+    than the window falls back to the full window (Paseo: overflow -> one
+    tail), delta=False, and the reader replaces instead of merging."""
     st = _stats().get(user)
+    delta = None
+    if after is not None:
+        from spine.storage import db
+        top = db.chat_tail(user, 1)
+        top = top[0].get("seq", 0) if top and isinstance(top[0], dict) else 0
+        if after <= top:
+            rows = db.chat_range(user, top + 1, after=after, limit=_HISTORY_WINDOW + 1)
+            if len(rows) <= _HISTORY_WINDOW:
+                delta = rows
     try:
         from cells.copilot.broker import henry_broker
         followups = henry_broker.followup_tasks()
@@ -1983,7 +2002,10 @@ def history(user):
         followups.update(henry_bg.tasks(user))   # his own CLI Agent/Task background runs
     except Exception:                                        # noqa: BLE001
         pass
-    entries = _entries(user)
+    # Delta: only the NEW rows' tiles are looked up below; a tile the reader
+    # already holds keeps its descriptor, and one still changing is in the
+    # live registries above.
+    entries = delta if delta is not None else _entries(user)
     # A RUN TILE FURTHER UP THE CHAT (owner 2026-09-25): the in-memory
     # registries keep a finished run for an hour and forget it on restart;
     # its final descriptor was written to db.chat_runs by that registry at
@@ -2005,7 +2027,8 @@ def history(user):
             "hands_mode": henry_pmode(),
             # Henry's in-flight follow-ups as bg-task descriptors (2026-09-12):
             # the chat renders them as ONE BackgroundTasks line above the composer.
-            "followups": followups}
+            "followups": followups,
+            "delta": delta is not None}
 
 
 class JudgePreempted(RuntimeError):

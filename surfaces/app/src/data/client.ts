@@ -322,6 +322,52 @@ export interface ReplyRef { text: string; by?: string; seq?: number; card?: stri
 export interface AnsweredRecord { id: string; items: { question: string; header: string; options: string[];
   chosen: string[]; custom: string[] }[] }
 
+export type ChatHistory = { messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
+  /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
+   *  descriptors, rendered by the same BackgroundTasks line a card uses. */
+  followups?: Record<string, BgTask>;
+  /** Henry's current permission mode (hands.permission_mode) - leads the composer's Mode row. */
+  hands_mode?: string;
+  /** true = `messages` holds only the rows past the `after` cursor sent (copilot.history). */
+  delta?: boolean };
+
+// GET /chat/history?after=<newest seq held> (owner 2026-10-19, "warum sendet so viel und nicht nur
+// diff wie bei paseo"): every wake re-downloaded the whole 80-row window plus every run tile's final
+// descriptor, ~65 KB over the relay for usually nothing new. The chat log is append-only with a
+// monotonic seq, so the cached window is extended by the rows past its newest seq (Paseo's timeline
+// `after` cursor); the daemon answers delta=false - a full window to REPLACE with - when the cursor is
+// past its end or the gap is wider than a window. Followups: the delta carries the live registries and
+// the new tiles' descriptors; a cached one the daemon no longer reports as running while it still
+// says running here was forgotten (restart) - the one case the delta cannot settle, so it re-baselines.
+// Every load lands in the diagnostics buffer (the hidden DiagPanel: repeat-tap the version in Updates) with its wall time and shape, so
+// the next "lädt ewig" on the phone is a measured number with its leg named, not a guess.
+async function chatHistorySync(): Promise<ChatHistory> {
+  const t0 = Date.now();
+  const r = await chatHistoryLoad();
+  diag("net", "chat history", `${Date.now() - t0} ms · ${r.how}`);
+  return r.data;
+}
+
+async function chatHistoryLoad(): Promise<{ data: ChatHistory; how: string }> {
+  const full = async (how: string) => ({ data: await req<ChatHistory>("GET", "/chat/history"), how });
+  const have = queryClient.getQueryData<ChatHistory>(["chatHistory"]);
+  const seqs = (have?.messages ?? []).map((m) => m.seq).filter((n): n is number => typeof n === "number");
+  const after = seqs.length ? Math.max(...seqs) : null;
+  if (after == null) return full("full (cold)");
+  const d = await req<ChatHistory>("GET", `/chat/history?after=${after}`);
+  if (!d.delta || !have) return { data: d, how: "full (reset)" };
+  const lost = Object.entries(have.followups ?? {}).some(([id, f]) => f.status === "running" && !d.followups?.[id]);
+  if (lost) return full("full (run forgotten)");
+  const messages = [...have.messages, ...d.messages].slice(-CHAT_WINDOW);
+  const tiles = new Set(messages.map((m) => m.run ?? m.hands));
+  const kept = Object.fromEntries(Object.entries(have.followups ?? {}).filter(([id]) => tiles.has(id)));
+  return { data: { ...d, messages, followups: { ...kept, ...d.followups }, delta: false },
+    how: `delta +${d.messages.length}` };
+}
+// copilot._HISTORY_WINDOW - the merged window stays the size the daemon serves, so `windowFirst`
+// (chat.tsx, older pages) slides exactly as it did with full refetches.
+const CHAT_WINDOW = 80;
+
 export interface ChatMsg { cls: string; text: string; ts?: string; client_msg_id?: string;
   /** an answered card question - drawn as the question with the chosen option marked */
   answered?: AnsweredRecord;
@@ -1268,12 +1314,7 @@ export const api = {
   chatOlder: (before: number, after?: number, limit = 80) =>
     req<{ messages: ChatMsg[]; followups?: Record<string, BgTask>; more?: boolean }>(
       "GET", `/chat/history/older?before=${before}${after != null ? `&after=${after}` : ""}&limit=${limit}`),
-  chatHistory: () => req<{ messages: ChatMsg[]; session_id?: string; stats?: ChatStats | null;
-    /** Henry's in-flight follow-ups (henry_broker.followup_tasks) - bg-task
-     *  descriptors, rendered by the same BackgroundTasks line a card uses. */
-    followups?: Record<string, BgTask>;
-    /** Henry's current permission mode (hands.permission_mode) - leads the composer's Mode row. */
-    hands_mode?: string }>("GET", "/chat/history"),
+  chatHistory: () => chatHistorySync(),
   /** The live turn. `voiceFrom` is a READ CURSOR (the highest chunk seq already
    *  taken): pass it to also collect the speech the daemon has rendered so far,
    *  omit it to stay the text-only poller the board chat has always been — the

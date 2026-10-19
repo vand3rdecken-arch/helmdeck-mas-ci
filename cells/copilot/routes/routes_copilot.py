@@ -53,7 +53,12 @@ def chat_history_get(self, user):
     # when the process is already warm, and self-throttled against this route's
     # 8s fallback poll (copilot._PREWARM_COOLDOWN).
     copilot.prewarm(user["name"], spoken=False)
-    return self._send(200, json.dumps(copilot.history(user["name"])))
+    q = parse_qs(urlparse(self.path).query)
+    try:
+        after = int(q["after"][0]) if q.get("after") else None
+    except ValueError:
+        return self._send(400, json.dumps({"error": "after must be an integer"}))
+    return self._send(200, json.dumps(copilot.history(user["name"], after=after)))
 
 
 def chat_threads_get(self, user):
