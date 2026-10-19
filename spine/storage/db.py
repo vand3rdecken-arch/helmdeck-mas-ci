@@ -106,13 +106,45 @@ def conn():
 TRACK_EPOCH = int(time.time() * 1000)
 _track_rev = {}                   # card id -> _version of its last write/delete
 
-def bump(tid=None):
+# WHAT moved, per board version (owner 2026-10-19, "warum soviele ... vs
+# paseo"): the version alone said only "something changed", so every client
+# refetched EVERY query on every tick - 25 requests per tick over the relay,
+# the multiplier behind the 30 s relay queue that evening. Paseo's events carry
+# the changed entity (agent_update, daemon_config_changed); this is the same
+# idea at the granularity HelmDeck's readers have: a TOPIC per write, named by
+# the writer, folded here at event time. A client asks "what moved since my
+# version" and refetches only those queries. Bounded ring: a client further
+# behind than TOPIC_RING versions gets "*" (= refetch all, the old behaviour),
+# never a wrong answer. An unnamed bump() is "*" too - safe by default.
+TOPIC_ALL = "*"
+TOPIC_RING = 512
+_topic_ring = []                  # [(version, topic)], ascending, last TOPIC_RING
+
+def bump(tid=None, topic=None):
     global _version
     with _version_cond:
         _version += 1
         if tid is not None:
             _track_rev[tid] = _version
+        _topic_ring.append((_version, topic or ("tracks" if tid is not None else TOPIC_ALL)))
+        if len(_topic_ring) > TOPIC_RING:
+            del _topic_ring[:len(_topic_ring) - TOPIC_RING]
         _version_cond.notify_all()
+
+
+def topics_since(v):
+    """Topics written after board version `v` - a sorted list, or [TOPIC_ALL]
+    when the ring no longer reaches back to `v` (or `v` is from another
+    process lifetime). Empty when nothing moved."""
+    with _version_cond:
+        if v == _version:
+            return []
+        if v > _version:
+            return [TOPIC_ALL]    # a version from before a restart: unknown gap
+        if not _topic_ring or _topic_ring[0][0] > v + 1 or v < 0:
+            return [TOPIC_ALL]
+        out = {t for ver, t in _topic_ring if ver > v}
+    return [TOPIC_ALL] if TOPIC_ALL in out else sorted(out)
 
 def tracks_changed_since(since):
     """Ids written OR deleted after cursor `since` (current _version read first)."""
@@ -652,12 +684,12 @@ def project_put(p):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO projects(id,data) VALUES(?,?)",
                   (p["id"], json.dumps(p)))
-    bump()
+    bump(topic="projects")
 
 def project_delete(pid):
     with conn() as c:
         c.execute("DELETE FROM projects WHERE id=?", (pid,))
-    bump()
+    bump(topic="projects")
 
 # -- processes --------------------------------------------------------------
 # processes.py's every call site is read-all -> mutate one item by id ->
@@ -674,7 +706,7 @@ def processes_replace(procs):
         for p in procs:
             c.execute("INSERT INTO processes(id,data) VALUES(?,?)",
                       (p["id"], json.dumps(p)))
-    bump()
+    bump(topic="processes")
 
 # -- connector state -------------------------------------------------------
 # connectors.py's _state()/_save_state() contract: one dict {name: last_run},
@@ -689,7 +721,7 @@ def connector_state_put(d):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO connector_state(id,data) VALUES(?,?)",
                   ("state", json.dumps(d)))
-    bump()
+    bump(topic="connectors")
 
 # -- user config -----------------------------------------------------------
 # Dumb storage, exactly like the tables above: no whitelist, no defaults, no
@@ -735,7 +767,7 @@ def user_config_put(user, pairs, only_absent=False):
             if cur.rowcount:
                 written.append(k)
     if written:
-        bump()            # other open devices re-render on the next SSE tick
+        bump(topic="user_config")            # other open devices re-render on the next SSE tick
     return written
 
 
@@ -747,7 +779,7 @@ def user_config_drop_user(user):
         cur = c.execute("DELETE FROM user_config WHERE user=?", (user,))
         n = cur.rowcount
     if n:
-        bump()
+        bump(topic="user_config")
     return n
 
 
@@ -791,7 +823,7 @@ def project_config_put(project, pairs):
                 " VALUES(?,?,?,?)", (project, k, json.dumps(v), now))
             written.append(k)
     if written:
-        bump()            # other open devices re-render on the next SSE tick
+        bump(topic="project_config")            # other open devices re-render on the next SSE tick
     return written
 
 
@@ -808,7 +840,7 @@ def project_config_delete(project, keys):
                 "DELETE FROM project_config WHERE project=? AND key=?", (project, k))
             n += cur.rowcount
     if n:
-        bump()
+        bump(topic="project_config")
     return n
 
 
@@ -820,7 +852,7 @@ def project_config_drop(project):
         cur = c.execute("DELETE FROM project_config WHERE project=?", (project,))
         n = cur.rowcount
     if n:
-        bump()
+        bump(topic="project_config")
     return n
 
 
@@ -866,7 +898,7 @@ def workspace_config_replace(doc):
         for k, v in (doc or {}).items():
             c.execute("INSERT INTO workspace_config(key,value,updated_at) "
                       "VALUES(?,?,?)", (k, json.dumps(v), now))
-    bump()
+    bump(topic="workspace_config")
 
 
 def workspace_config_put(pairs):
@@ -893,7 +925,7 @@ def workspace_config_put(pairs):
                       "VALUES(?,?,?)", (k, val, now))
             moved = True
     if moved:
-        bump()
+        bump(topic="workspace_config")
 
 
 # -- policy doc -------------------------------------------------------------
@@ -924,7 +956,7 @@ def policy_doc_put(doc):
         c.execute("INSERT OR REPLACE INTO policy_doc(id,json,version,updated_at) "
                   "VALUES('live',?,?,?)",
                   (json.dumps(doc), int(doc.get("version", 1)), now))
-    bump()
+    bump(topic="policy")
 
 
 # -- memory (Henry's notes, store of record) --------------------------------
@@ -1108,7 +1140,7 @@ def process_template_put(tid, doc, actor="owner"):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO process_template(id,data,updated_at,actor) "
                   "VALUES(?,?,?,?)", (tid, json.dumps(doc), now, actor))
-    bump()
+    bump(topic="process_templates")
 
 
 def process_template_delete(tid):
@@ -1116,7 +1148,7 @@ def process_template_delete(tid):
         cur = c.execute("DELETE FROM process_template WHERE id=?", (tid,))
         n = cur.rowcount
     if n:
-        bump()
+        bump(topic="process_templates")
     return bool(n)
 
 
@@ -1179,7 +1211,7 @@ def _board_write(board, verb):
              json.dumps(board), now))
         n = cur.rowcount
     if n:
-        bump()            # other open devices re-render on the next SSE tick
+        bump(topic="boards")            # other open devices re-render on the next SSE tick
     return bool(n)
 
 
@@ -1206,7 +1238,7 @@ def board_delete(bid):
     with conn() as c:
         n = c.execute("DELETE FROM boards WHERE id=?", (bid,)).rowcount
     if n:
-        bump()
+        bump(topic="boards")
     return bool(n)
 
 
@@ -1220,7 +1252,7 @@ def boards_drop_user(owner):
     with conn() as c:
         n = c.execute("DELETE FROM boards WHERE owner=?", (owner,)).rowcount
     if n:
-        bump()
+        bump(topic="boards")
     return n
 
 
@@ -1256,7 +1288,7 @@ def event_insert(row):
     # workers with frames queued 12-33 s. daemonctl.relay_latency reads these
     # rows on demand; nothing needs to be woken for them.
     if row.get("kind") != "relay":
-        bump()
+        bump(topic="events")
 
 
 # events_all() cache. ROOT CAUSE of the 2026-09-19 "Relay nicht erreichbar":
@@ -1477,7 +1509,7 @@ def escalation_append(rec):
     """ONE row per bus record (open/attempt/note/decision). Append-only."""
     with conn() as c:
         _escalation_insert(c, rec)
-    bump()
+    bump(topic="escalations")
 
 
 def escalations_rows():
@@ -1623,7 +1655,7 @@ def pm_plan_put(day, doc):
     with conn() as c:
         c.execute("INSERT OR REPLACE INTO pm_plans(day,generated_at,data) VALUES(?,?,?)",
                   (day, doc.get("generated_at"), json.dumps(doc, ensure_ascii=False)))
-    bump()
+    bump(topic="pm")
 
 
 def pm_plans_recent(n):
@@ -1652,7 +1684,7 @@ def pm_activity_append(kind, msg, card=None, ts=None):
     # whose writer never moved `v`, so the dashboard needed a timer to see it.
     # With the event push (spine/comms/relay_client._EventPublisher) the app
     # polls nothing that can move `v` instead (2026-09-24).
-    bump()
+    bump(topic="pm")
 
 
 def pm_activity_tail(n=20):

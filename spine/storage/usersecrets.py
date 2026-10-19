@@ -138,7 +138,7 @@ def put(user, provider, value):
     with db.conn() as c:
         c.execute("INSERT OR REPLACE INTO user_secret(user,provider,value_enc,hint,updated_at,test) "
                   "VALUES(?,?,?,?,?,NULL)", (user, provider, blob, value[-4:], _now()))
-    db.bump()
+    db.bump(topic="secrets")
     return None
 
 
@@ -147,7 +147,7 @@ def delete(user, provider):
     with db.conn() as c:
         n = c.execute("DELETE FROM user_secret WHERE user=? AND provider=?", (user, provider)).rowcount
     if n:
-        db.bump()
+        db.bump(topic="secrets")
     return bool(n)
 
 
@@ -213,7 +213,7 @@ def mark_running(user, provider):
         return False
     _write_test(user, provider, {"ok": False, "status": "running", "reason": "", "model": "", "ms": 0,
                                  "started": time.time()})
-    db.bump()
+    db.bump(topic="secrets")
     return True
 
 
@@ -223,7 +223,7 @@ def record_test(user, provider, result):
     daemon's event stream and reloads - no polling."""
     from spine.storage import db
     _write_test(user, provider, dict(result, at=_now()))
-    db.bump()
+    db.bump(topic="secrets")
 
 
 def get(user, provider):

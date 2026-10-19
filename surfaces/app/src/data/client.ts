@@ -1009,7 +1009,7 @@ export const api = {
   // Sending `c` is what opts this client into chat wake-ups (the daemon answers
   // board-only when it is absent, so an older bundle keeps working unchanged).
   boardWait: (v: number, c: number) =>
-    req<{ v: number; c?: number }>("GET", `/stream/wait?v=${v}&c=${c}`),
+    req<{ v: number; c?: number; t?: string[] }>("GET", `/stream/wait?v=${v}&c=${c}`),
 
   // board / cards
   tracks: () => syncTracks(queryClient, (p) => req<PullResponse | Track[]>("GET", p)),

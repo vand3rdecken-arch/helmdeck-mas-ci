@@ -26,7 +26,9 @@
 // No React, no expo, no crypto import: sealing is injected, so this file runs
 // under plain node in its end-to-end test.
 
-export type RelayEvent = { v?: number; c?: number };
+/** v = board version, c = chat cursor, t = topics that moved since the previous
+ *  event (spine/storage/db.py topics_since) - absent = unknown, refetch all. */
+export type RelayEvent = { v?: number; c?: number; t?: string[] };
 
 export interface SocketDeps {
   /** wss://…/tunnel/client?room=…&pub=… - or null when not in relay mode. */

@@ -187,10 +187,16 @@ class _EventPublisher:
     def stop(self):
         self._stop.set()
 
-    def _send(self, pub, v, c):
+    def _send(self, pub, v, c, topics=None):
         from spine.comms import e2ee
+        ev = {"v": v, "c": c}
+        if topics is not None:
+            # WHAT moved since the previous event (db.topics_since): the app
+            # refetches only those queries. Absent = "refetch what you hold"
+            # (announce on join: we do not know which version that phone has).
+            ev["t"] = topics
         try:
-            cipher = e2ee.seal_b64(json.dumps({"v": v, "c": c}).encode("utf-8"),
+            cipher = e2ee.seal_b64(json.dumps(ev).encode("utf-8"),
                                    e2ee.import_sec(self._sk_b64), e2ee.import_pub(pub))
             self._send_obj({"kind": "event", "to": pub, "cipher": cipher})
         except Exception:                                    # noqa: BLE001
@@ -212,8 +218,9 @@ class _EventPublisher:
                 continue
             self._stop.wait(self.COALESCE_S)
             v, c = db.current_version(), db.current_chat_version()
+            topics = db.topics_since(lv)
             for pub in _cfg()[3]:
-                self._send(pub, v, c)
+                self._send(pub, v, c, topics)
             lv, lc = v, c
 
 
@@ -499,6 +506,142 @@ def _admit(pub):
         return True, ""
 
 
+# --- IN-PROCESS SERVING (2026-10-19) -----------------------------------------
+# Owner: "warum soviele Instanz vs paseo". A phone request used to cross
+# phone -> relay -> bridge -> pipe -> serve pool -> an HTTP request to OUR OWN
+# loopback port -> a second thread in the HTTP server -> the handler: two
+# threads and a TCP hop per call, and the pool's 24 threads parked on urlopen
+# while the server's threads did the work. Paseo hands relay messages straight
+# to the session handler (websocket-server.ts attachExternalSocket ->
+# session.handleMessage). Here the SAME handler class runs in the serve-pool
+# thread on an in-memory request/response, so every route, auth check and
+# header is byte-identical to the loopback path. Registered by server.serve();
+# without it (tests that stand a fake API behind a port, a standalone bridge)
+# _local's loopback HTTP is still the path.
+_inproc_handler = None
+
+
+def serve_inproc(handler_cls):
+    """server.serve(): relay frames run through `handler_cls` in-process."""
+    global _inproc_handler
+    _inproc_handler = handler_cls
+
+
+def _inproc_class(base):
+    import io
+
+    class _InProc(base):
+        # BaseRequestHandler.__init__ would run setup()/handle()/finish() on a
+        # socket; this holds exactly one request on in-memory streams instead.
+        def __init__(self, raw):              # deliberately no super().__init__
+            self.rfile = io.BytesIO(raw)
+            self.wfile = io.BytesIO()
+            self.client_address = ("127.0.0.1", 0)
+            self.server = None
+            self.request = None
+            self.close_connection = True
+    return _InProc
+
+
+_inproc_cls_cache = {}
+
+
+def _is_event_stream(path):
+    p = path.split("?")[0]
+    return p == "/stream" or (p.startswith("/tracks/") and p.endswith("/stream"))
+
+
+def _inproc(inner):
+    """One relay request through the daemon's own handler, in this thread.
+    Returns the same {status, headers, body} shape _local() does."""
+    method = str(inner.get("method", "GET")).upper()
+    path = str(inner.get("path", "/")) or "/"
+    if _is_event_stream(path):
+        # SSE never ends: in-process it would hold a serve thread forever
+        return {"status": 400, "headers": {},
+                "body": json.dumps({"error": "event streams are not served over the relay - use /stream/wait"})}
+    body = (inner.get("body") or "").encode("utf-8")
+    if method not in ("POST", "PUT", "PATCH", "DELETE"):
+        body = b""
+    lines = ["%s %s HTTP/1.1" % (method, path.replace("\r", "").replace("\n", "").replace(" ", "%20")),
+             "Host: 127.0.0.1"]
+    for k, v in (inner.get("headers") or {}).items():
+        k, v = str(k), str(v)
+        if "\r" in k + v or "\n" in k + v or k.lower() in ("content-length", "host"):
+            continue                          # never let a header forge another line
+        lines.append("%s: %s" % (k, v))
+    lines.append("Content-Length: %d" % len(body))
+    raw = ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8") + body
+    base = _inproc_handler
+    cls = _inproc_cls_cache.get(base)
+    if cls is None:
+        cls = _inproc_cls_cache[base] = _inproc_class(base)
+    h = cls(raw)
+    try:
+        h.handle_one_request()
+    except Exception as e:                     # a crashed route is a 500, not a dead frame
+        return {"status": 500, "headers": {}, "body": json.dumps({"error": str(e)[:200]})}
+    out = h.wfile.getvalue()
+    head, sep, rest = out.partition(b"\r\n\r\n")
+    if not sep:
+        return {"status": 502, "headers": {}, "body": json.dumps({"error": "handler wrote no response"})}
+    hl = head.decode("iso-8859-1").split("\r\n")
+    try:
+        status = int(hl[0].split(" ")[1])
+    except (IndexError, ValueError):
+        status = 502
+    ctype = "application/json"
+    for line in hl[1:]:
+        k, _, v = line.partition(":")
+        if k.strip().lower() == "content-type":
+            ctype = v.strip()
+    return {"status": status, "headers": {"Content-Type": ctype}, "body": rest.decode("utf-8", "replace")}
+
+
+# The held leg, in-process: a request still running after LOCAL_TIMEOUT (a
+# send queued on the turn lock) gets the same 504 {"held": true} the loopback
+# leg's read timeout produced, and keeps running; its late answer is dropped
+# (it lands in the chat, which is what `held` tells the app). ONE watchdog
+# thread for all requests, not a timer thread each.
+_held_lock = threading.Lock()
+_held_waiting = {}                            # token -> (deadline, on_held)
+_held_thread = None
+HELD_TICK_S = 1.0
+
+
+def _held_watch():
+    while True:
+        time.sleep(HELD_TICK_S)
+        now = time.time()
+        with _held_lock:
+            due = [(t, cb) for t, (d, cb) in _held_waiting.items() if d <= now]
+            for t, _cb in due:
+                del _held_waiting[t]
+        for _t, cb in due:
+            try:
+                cb()
+            except Exception:                 # noqa: BLE001
+                pass
+
+
+def _held_arm(token, on_held, timeout):
+    global _held_thread
+    with _held_lock:
+        _held_waiting[token] = (time.time() + timeout, on_held)
+        if _held_thread is None:
+            _held_thread = threading.Thread(target=_held_watch, daemon=True, name="relay-held")
+            _held_thread.start()
+
+
+def _held_disarm(token):
+    """True if the request finished before the watchdog answered for it."""
+    with _held_lock:
+        return _held_waiting.pop(token, None) is not None
+
+
+HELD_BODY = json.dumps({"error": "still working - the answer arrives in the chat", "held": True})
+
+
 def _local(port, inner):
     url = "http://127.0.0.1:%d%s" % (port, inner.get("path", "/"))
     method = inner.get("method", "GET")
@@ -524,9 +667,7 @@ def _local(port, inner):
         # message that was delivered and answered (2026-09-17 09:16: two sends
         # waited 132s / 116s on the turn lock behind a 195s turn). `held` is
         # the signal the app keys on (client.ts HeldError) - never the text.
-        return {"status": 504, "headers": {},
-                "body": json.dumps({"error": "still working - the answer arrives in the chat",
-                                    "held": True})}
+        return {"status": 504, "headers": {}, "body": HELD_BODY}
     except Exception as e:
         return {"status": 502, "headers": {}, "body": json.dumps({"error": str(e)[:200]})}
 
@@ -683,20 +824,46 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
                        % (_age, inner.get("method", ""), str(inner.get("path", ""))[:60]))
         except Exception:                                # noqa: BLE001
             pass
+    def _seal_deliver(resp):
+        try:
+            cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
+        except Exception:
+            return
+        _deliver(relay, room, fid, cipher, send, to=pub)
+
     _t_local = time.time()
-    resp = _local(port, inner)
+    if _inproc_handler is not None:
+        token = object()
+        _held_arm(token, lambda: _seal_deliver({"status": 504, "headers": {}, "body": HELD_BODY}),
+                  LOCAL_TIMEOUT)
+        resp = _inproc(inner)
+        if not _held_disarm(token):
+            resp = None                       # the watchdog already answered `held`
+    else:
+        resp = _local(port, inner)
     try:
         _dt = time.time() - _t_local
-        if _dt > 20 and not str(inner.get("path", "")).startswith(("/stream/wait", "/chat")):
+        if _dt > SLOW_HANDLER_S and not _is_held_by_design(inner):
             from spine.storage import events
-            events.log("relay", "daemon took %.1fs to answer %s" % (_dt, str(inner.get("path", ""))[:60]))
+            events.log("relay", "daemon took %.1fs to answer %s %s"
+                       % (_dt, inner.get("method", ""), str(inner.get("path", ""))[:60]))
     except Exception:                                    # noqa: BLE001
         pass
-    try:
-        cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
-    except Exception:
-        return
-    _deliver(relay, room, fid, cipher, send, to=pub)
+    if resp is not None:
+        _seal_deliver(resp)
+
+
+# A handler slower than this is worth a note (was 20 s: on 2026-10-19 /engines
+# took 6-30 s and only the worst cases ever showed). Long-polls and sends that
+# wait on the turn lock are slow by design and stay out.
+SLOW_HANDLER_S = 3.0
+
+
+def _is_held_by_design(inner):
+    p = str(inner.get("path", "")).split("?")[0]
+    post = str(inner.get("method", "")).upper() == "POST"
+    return (p == "/stream/wait" or p.endswith("/transcript/live") or p.startswith("/glance")
+            or (post and (p == "/chat" or p.endswith("/chat") or p.endswith("/steer"))))
 
 
 def _pull(relay, room):

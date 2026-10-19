@@ -7,7 +7,7 @@
 // Run: npx tsc -p tsconfig.invalidate.json && node .invalidate-out/data/__invalidate_selftest__.js
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 
-import { makeInvalidator } from "./invalidate";
+import { keysFor, makeInvalidator } from "./invalidate";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
@@ -48,7 +48,53 @@ async function run(mode: "old" | "new") {
   return { started, abandoned };
 }
 
+// 2026-10-19 ("warum soviele ... vs paseo"): what ONE pushed event costs. The
+// queries the phone had mounted that evening (System screen over the Henry
+// chat with 12 images) - one board tick used to refetch every one of them.
+const PHONE = ["tracks", "metrics", "chatThreads", "settings", "me", "cells", "engines", "models",
+  "devices", "daemonStatus", "pmPlan", "rooms", "chatHistory",
+  ...Array.from({ length: 12 }, (_, i) => "chat-image#" + i)];
+
+async function oneEvent(topics: string[] | undefined) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const hits: string[] = [];
+  const unsubs = PHONE.map((k) => {
+    const [root, n] = k.split("#");
+    const o = new QueryObserver(qc, {
+      queryKey: n === undefined ? [root] : [root, n],
+      queryFn: async () => { hits.push(k); return k; },
+      staleTime: Infinity,
+    });
+    return o.subscribe(() => {});
+  });
+  await sleep(50);
+  hits.length = 0;
+  const inv = makeInvalidator(qc, 0);
+  inv.changed(topics);
+  await sleep(100);
+  inv.dispose();
+  unsubs.forEach((u) => u());
+  qc.clear();
+  return hits;
+}
+
+async function topicsRun() {
+  const all = await oneEvent(undefined);
+  check(all.length === PHONE.length, "an event without topics still refetches everything it holds (" + all.length + ")");
+  const card = await oneEvent(["tracks"]);
+  check(card.length > 0 && card.length <= 4, "a card write refetches only card views: " + card.join(","));
+  check(!card.some((k) => ["engines", "models", "settings", "me"].includes(k) || k.startsWith("chat-image")), "never engines/models/settings/images for a card write");
+  const ev = await oneEvent(["events"]);
+  check(!ev.some((k) => k.startsWith("chat-image")), "an audit event never refetches the chat images (" + ev.join(",") + ")");
+  const unknown = await oneEvent(["something-new"]);
+  check(unknown.length === PHONE.length, "a topic this bundle does not know: refetch all, never nothing");
+  check(keysFor(["*"]) === null, "'*' means everything");
+  const burst = makeInvalidator({ invalidateQueries: (() => Promise.resolve()) as never }, 0);
+  burst.dispose();
+}
+
 (async () => {
+  await topicsRun();
   const old = await run("old");
   const neu = await run("new");
   console.log("   old: %d fetches, %d abandoned mid-flight", old.started, old.abandoned);

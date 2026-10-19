@@ -299,7 +299,7 @@ def record(account, model_id, result):
     with db.conn() as c:
         c.execute("INSERT OR REPLACE INTO model_probe(user,model_id,status,reason,ms,tested_at) VALUES(?,?,?,?,?,?)",
                   (account or "", str(model_id)[:200], status, reason, int(result.get("ms") or 0), time.time()))
-    db.bump()
+    db.bump(topic="models")
 
 
 def drop_user(account):
@@ -352,14 +352,14 @@ def probe_all(account, only_untested=False, models=None):
             for mid in ids:
                 with _run_lock:
                     _running[account]["current"] = mid
-                db.bump()
+                db.bump(topic="models")
                 probe_model(account, mid)
                 with _run_lock:
                     _running[account]["done"] += 1
         finally:
             with _run_lock:
                 _running.pop(account, None)
-            db.bump()
+            db.bump(topic="models")
     threading.Thread(target=_run, daemon=True, name="model-probe").start()
     return True
 

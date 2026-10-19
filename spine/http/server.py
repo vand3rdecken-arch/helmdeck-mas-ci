@@ -315,7 +315,10 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, json.dumps(
                         {"v": db.wait_version(_cursor("v"), timeout=22)}))
                 v, c = db.wait_any(_cursor("v"), _cursor("c"), timeout=22)
-                return self._send(200, json.dumps({"v": v, "c": c}))
+                # the long-poll twin of the socket event's `t` (relay_client
+                # _EventPublisher): what moved between the caller's `v` and now
+                return self._send(200, json.dumps(
+                    {"v": v, "c": c, "t": db.topics_since(_cursor("v"))}))
             if p == "/stream":
                 # SSE: push a version tick whenever board data changes - pays
                 # the polling debt. Client refetches on tick.
@@ -813,6 +816,7 @@ def serve(port=8140, takeover=False):
     # Replaces the flat start_*() calls - all cells default enabled, so this is
     # behaviourally identical until an owner disables one via policy.swap.
     cells.start_enabled()
+    relay_client.serve_inproc(H)   # relay frames run H in-process, no loopback hop
     relay_client.start(port)   # reverse tunnel for mobile (spine, not a cell) - idle until settings.relay is set
     # Transport (pays debt [single-secret-transport]): with TLS material
     # present, network traffic goes through the https listener and the plain

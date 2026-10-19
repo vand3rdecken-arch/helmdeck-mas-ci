@@ -90,7 +90,7 @@ function useGlobalStream() {
     const inv = makeInvalidator(queryClient, 2000);
     const apply = (r: RelayEvent | undefined) => {
       if (typeof r?.v === "number") {
-        if (r.v !== v) inv.changed();
+        if (r.v !== v) inv.changed(Array.isArray(r.t) ? r.t : undefined);
         v = r.v;
       }
       // Guarded on `typeof`, not on truthiness: a daemon older than this
