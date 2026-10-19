@@ -50,9 +50,17 @@ module stays, but its UI vanishes ("OTA works but the update is gone"). Always
 `push_update.sh` right after a native release.
 
 ### runtimeVersion bump on native change (automated in ship.sh)
-`runtimeVersion` policy is `appVersion`, so the runtimeVersion == `expo.version`.
-`ops/deploy/ship.sh` now **bumps `version` + `android.versionCode` on every native
-change** before building the APK. Effect: an OLD APK (old version) *rejects* the
+`runtimeVersion` is **per platform** since 2026-10-19: `expo.android.runtimeVersion`
+and `expo.ios.runtimeVersion` in app.json (Expo's platform-specific form, no
+shared `appVersion` policy any more). Each moves ONLY on that platform's native
+change; `expo.version` is just the marketing version. Why: under `appVersion`
+an iOS-only bump (1.0.53, 10-10) stranded every Android phone from OTA for
+eight days, and an Android-only bump would have stranded the App Store build.
+`push_update.sh` publishes android on the main channel and, when the two
+runtimes differ, ios into `rt-<ios runtime>` (the relays' stranded-runtime
+fallback). An iOS native change: bump `ios.runtimeVersion` by hand with the
+EAS build. `ops/deploy/ship.sh` **bumps `version` + `android.versionCode` +
+`android.runtimeVersion` on every Android native change** before building the APK. Effect: an OLD APK (old version) *rejects* the
 new JS (rtv mismatch) instead of loading it and crashing on a native module it
 doesn't ship — the `Cannot find native module 'ExpoDocumentPicker'` crash-loop.
 JS-only ships keep the version, so phones still receive those OTAs. Belt-and-

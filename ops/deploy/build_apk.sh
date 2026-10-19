@@ -210,15 +210,18 @@ node surfaces/app/plugins/withWearApp.js surfaces/app/android \
 node -e '
   const fs = require("fs");
   const e = JSON.parse(fs.readFileSync("surfaces/app/app.json", "utf8")).expo;
+  // runtime is PER PLATFORM since 2026-10-19 (android.runtimeVersion); the
+  // fallback to version is the old appVersion policy for an older app.json.
   const ver = e.version, vc = String(e.android.versionCode);
+  const rtv = e.android.runtimeVersion || ver;
   const g = "surfaces/app/android/app/build.gradle";
   fs.writeFileSync(g, fs.readFileSync(g, "utf8")
     .replace(/versionCode\s+\d+/, "versionCode " + vc)
     .replace(/versionName\s+"[^"]*"/, "versionName \"" + ver + "\""));
   const m = "surfaces/app/android/app/src/main/AndroidManifest.xml";
   fs.writeFileSync(m, fs.readFileSync(m, "utf8")
-    .replace(/(EXPO_RUNTIME_VERSION"\s+android:value=")[^"]*(")/, "$1" + ver + "$2"));
-  console.log("[build_apk] native version synced from app.json -> " + ver + " / " + vc);
+    .replace(/(EXPO_RUNTIME_VERSION"\s+android:value=")[^"]*(")/, "$1" + rtv + "$2"));
+  console.log("[build_apk] native version synced from app.json -> " + ver + " / " + vc + " (runtime " + rtv + ")");
 ' || { echo "[build_apk] native version sync FAILED"; exit 1; }
 
 echo "HOOK-NOTE: npm ci done - gradle assembleRelease (native APK build, ~10-15 min)"

@@ -28,7 +28,10 @@ REPO="${HELMDECK_GH_REPO:-Tienduyvo/helmdeck-release}"
 [ -f "$APK" ] || { echo "[push_apk] FAILED: no APK at $APK"; exit 1; }
 VCODE=$(sed -n 's/.*"versionCode"[^0-9]*\([0-9]*\).*/\1/p' "$APPJSON" | head -1)
 VNAME=$(sed -n 's/.*"version"[^"]*"\([^"]*\)".*/\1/p' "$APPJSON" | head -1)
-[ -n "$VCODE" ] && [ -n "$VNAME" ] || { echo "[push_apk] FAILED: no version in $APPJSON"; exit 1; }
+# The runtime this APK was built for: android.runtimeVersion (per platform since
+# 2026-10-19; build_apk.sh stamps the same value). push_update.sh's guard reads it.
+VRT=$(py -3.12 -c "import json,sys;e=json.load(open(sys.argv[1],encoding='utf-8'))['expo'];print(e['android'].get('runtimeVersion') or e['version'],end='')" "$APPJSON")
+[ -n "$VCODE" ] && [ -n "$VNAME" ] && [ -n "$VRT" ] || { echo "[push_apk] FAILED: no version in $APPJSON"; exit 1; }
 SHA=$(sha256sum < "$APK" | cut -d' ' -f1)   # stdin: a backslash path would prefix the hash with '\'
 SIZE=$(wc -c < "$APK" | tr -d ' ')
 
@@ -50,7 +53,7 @@ case "$GOT" in *sha256:*) [ "${GOT##*sha256:}" = "$SHA" ] \
   || { echo "[push_apk] FAILED: release asset digest ${GOT##*sha256:} differs from built $SHA"; exit 1; };; esac
 
 mkdir -p "$OUT" || { echo "[push_apk] FAILED: cannot create $OUT"; exit 1; }
-printf '{"versionCode": %s, "versionName": "%s", "url": "/apk/helmdeck.apk?v=%s-%s"}\n' \
-  "$VCODE" "$VNAME" "$VCODE" "${SHA:0:12}" > "$OUT/version.json" \
+printf '{"versionCode": %s, "versionName": "%s", "runtimeVersion": "%s", "url": "/apk/helmdeck.apk?v=%s-%s"}\n' \
+  "$VCODE" "$VNAME" "$VRT" "$VCODE" "${SHA:0:12}" > "$OUT/version.json" \
   || { echo "[push_apk] FAILED: cannot write $OUT/version.json"; exit 1; }
 echo "[push_apk] APK on $REPO $TAG; version.json staged for the worker deploy (push_update.sh)"

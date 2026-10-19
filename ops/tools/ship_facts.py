@@ -155,7 +155,11 @@ def _read_app_json():
                 "versionCode": (e.get("android") or {}).get("versionCode"),
                 "runtimeVersionPolicy": (e.get("runtimeVersion") if isinstance(
                     e.get("runtimeVersion"), str) else
-                    (e.get("runtimeVersion") or {}).get("policy"))}
+                    (e.get("runtimeVersion") or {}).get("policy")),
+                # per platform since 2026-10-19; falls back to version (the
+                # old appVersion policy) so an older app.json still reads right
+                "runtime": {p: (e.get(p) or {}).get("runtimeVersion") or e.get("version")
+                            for p in ("android", "ios")}}
     except Exception as e:
         return {"error": str(e)[:120]}
 

@@ -7,9 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "helmdeck",
     "userInterfaceStyle": "dark",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "updates": {
       "enabled": true,
       "url": "https://relay.helmdeck.de/updates/manifest",
@@ -21,6 +18,7 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "app.helmdeck",
+      "runtimeVersion": "1.0.53",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "HelmDeck nutzt die Kamera nur zum Scannen des Pairing-QR-Codes vom Desktop.",
@@ -31,7 +29,8 @@
     },
     "android": {
       "package": "app.helmdeck",
-      "versionCode": 96,
+      "runtimeVersion": "1.0.53",
+      "versionCode": 97,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],

@@ -56,6 +56,7 @@ e = {k: v for k, v in d.get("expo", {}).items() if k not in ("ios", "extra")}
 e.pop("version", None)
 android = dict(e.get("android") or {})
 android.pop("versionCode", None)
+android.pop("runtimeVersion", None)   # moved BY the bump, like versionCode
 e["android"] = android
 blob = json.dumps(e, sort_keys=True)
 try:
@@ -135,10 +136,14 @@ PY
 combine_fp() { printf '%s %s' "$1" "$2" | py -3.12 -c "import sys,hashlib;print(hashlib.sha256(sys.stdin.read().encode()).hexdigest())"; }
 native_fp() { combine_fp "$(cfg_fp)" "$(kt_fp)"; }
 
-# Bump expo.version (patch) + android.versionCode in surfaces/app/app.json. runtimeVersion
-# policy is "appVersion", so bumping the version bumps the runtimeVersion too: an
-# OLD APK (old version) then REJECTS this new JS (rtv mismatch) instead of loading
-# it and crashing on a native module it doesn't have (the ExpoDocumentPicker trap).
+# Bump expo.version (patch) + android.versionCode in surfaces/app/app.json, and move
+# android.runtimeVersion to the new version: an OLD APK then REJECTS this new JS
+# (rtv mismatch) instead of loading it and crashing on a native module it doesn't
+# have (the ExpoDocumentPicker trap). runtimeVersion is PER PLATFORM since
+# 2026-10-19 (Expo's platform-specific runtimeVersion): an Android native change
+# leaves ios.runtimeVersion alone, so the App Store build keeps receiving OTAs.
+# The reverse (an iOS-only marketing bump of expo.version) no longer strands
+# Android either - the 1.0.53 incident push_update.sh documents.
 # JS-only ships keep the version, so phones still receive those OTAs. Prints the
 # new "version versionCode".
 bump_version() {
@@ -151,6 +156,7 @@ parts = (e.get("version", "1.0.0").split(".") + ["0", "0"])[:3]
 e["version"] = f"{parts[0]}.{parts[1]}.{int(parts[2]) + 1}"
 e.setdefault("android", {})
 e["android"]["versionCode"] = int(e["android"].get("versionCode", 0)) + 1
+e["android"]["runtimeVersion"] = e["version"]
 with open(p, "w", encoding="utf-8") as f:
     json.dump(d, f, indent=2, ensure_ascii=False)
     f.write("\n")

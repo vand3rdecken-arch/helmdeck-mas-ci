@@ -68,7 +68,7 @@ else
   TARGET="$SSH_USER@$RELAY_HOST"
 fi
 
-NO_BUILD=0; CHANNEL=""; RUNTIME=""; DESKTOP_ONLY=0
+NO_BUILD=0; CHANNEL=""; RUNTIME=""; RT_PLATFORM="android"; DESKTOP_ONLY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) NO_BUILD=1 ;;
@@ -84,6 +84,9 @@ while [ $# -gt 0 ]; do
     # channel dir "rt-X"; the relay serves it to a phone asking for X
     # (surfaces/relay/relay.py, manifest route). Android only - no desktop leg.
     --runtime)  RUNTIME="${2:-}"; shift ;;
+    # --platform P (with --runtime only): which phone platform that runtime is
+    # for. Default android; the per-platform split below calls itself with ios.
+    --platform) RT_PLATFORM="${2:-}"; shift ;;
     *) echo "unknown arg: $1"; exit 2 ;;
   esac
   shift
@@ -93,6 +96,7 @@ if [ -n "$RUNTIME" ]; then
   case "$RUNTIME" in *[!0-9.]*) echo "bad runtime"; exit 2 ;; esac
   [ -n "$CHANNEL" ] && { echo "--runtime and --channel are exclusive"; exit 2; }
   CHANNEL="rt-$RUNTIME"
+  case "$RT_PLATFORM" in android|ios) ;; *) echo "bad platform"; exit 2 ;; esac
 fi
 
 # Phone platforms this publish serves. BOTH land in the one dist-ota export
@@ -100,15 +104,25 @@ fi
 # expo-platform header). Until 2026-09-14 this was android only - no iOS bundle
 # was ever published, every iPhone got 404. A --runtime publish stays android
 # only (the stranded-APK case it was built for).
+# runtimeVersion is PER PLATFORM since 2026-10-19 (app.json android/ios
+# .runtimeVersion, Expo's platform-specific form): a native change on one
+# platform no longer moves the other's runtime. While both agree, one export
+# serves both, as before. When they differ, this run publishes android on the
+# main channel and calls itself once for ios into "rt-<ios runtime>" - the
+# relay's existing stranded-runtime fallback serves it (relay.py / worker).
+APPJSON_RT() { py -3.12 -c "import json,sys;e=json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo'];print((e.get(sys.argv[1]) or {}).get('runtimeVersion') or e['version'],end='')" "$1" 2>/dev/null; }
+RTV_ANDROID="$(APPJSON_RT android)"; RTV_IOS="$(APPJSON_RT ios)"
 OTA_PLATFORMS="android ios"
-[ -n "$RUNTIME" ] && OTA_PLATFORMS="android"
+IOS_SPLIT=0
+[ -z "$RUNTIME" ] && [ "$RTV_IOS" != "$RTV_ANDROID" ] && { OTA_PLATFORMS="android"; IOS_SPLIT=1; }
+[ -n "$RUNTIME" ] && OTA_PLATFORMS="$RT_PLATFORM"
 [ "$DESKTOP_ONLY" = "1" ] && { OTA_PLATFORMS=""; [ -n "$RUNTIME" ] && { echo "--desktop-only and --runtime are exclusive"; exit 2; }; }
 
 # Record the runtimeVersion this bundle was exported for (policy=appVersion, so it
 # is expo.version). The relay reads this marker to VALIDATE the client's
 # expo-runtime-version instead of echoing it back - without it the crash-loop
 # protection never fires (see relay.py _bundle_rtv). Packed with the export.
-RTV="${RUNTIME:-$(py -3.12 -c "import json;print(json.load(open('surfaces/app/app.json',encoding='utf-8'))['expo']['version'],end='')" 2>/dev/null)}"
+RTV="${RUNTIME:-$RTV_ANDROID}"
 
 # NO OTA FOR A RUNTIME NO ANDROID PHONE CAN RUN (2026-10-18): app.json went to 1.0.53 on 10-10 for an iOS
 # fix, no 1.0.53 APK was ever released, and eight days of OTAs went to a runtime no Android phone had -
@@ -120,7 +134,8 @@ if [ "$DESKTOP_ONLY" != "1" ] && [ -z "$RUNTIME" ] && [ "${ALLOW_NO_APK:-0}" != 
   # deploy is what puts it live - so the staged file is the truth for this publish, the live one the fallback.
   APK_VJ="${HELMDECK_APK_DIR:-/c/opt/helmdeck-apk}/version.json"
   if [ -f "$APK_VJ" ]; then APK_SRC=$(cat "$APK_VJ"); else APK_SRC=$(curl -s -m20 "https://$RELAY_DOMAIN/apk/version.json"); fi
-  LIVE_APK=$(printf '%s' "$APK_SRC" | py -3.12 -c "import json,sys;print(json.load(sys.stdin).get('versionName',''),end='')" 2>/dev/null)
+  # runtimeVersion (push_apk.sh since 2026-10-19), versionName for an older version.json
+  LIVE_APK=$(printf '%s' "$APK_SRC" | py -3.12 -c "import json,sys;d=json.load(sys.stdin);print(d.get('runtimeVersion') or d.get('versionName',''),end='')" 2>/dev/null)
   if [ "$LIVE_APK" != "$RTV" ]; then
     echo "!!! REFUSING: this OTA targets runtime $RTV, the released Android APK is '${LIVE_APK:-unreadable}'."
     echo "!!! No Android phone could receive it. Release the APK first: bash ops/deploy/build_apk.sh && bash ops/deploy/push_apk.sh"
@@ -241,7 +256,7 @@ REMOTE
   echo
 }
 if [ -n "$RUNTIME" ]; then
-  echo "==> --runtime $RUNTIME: android-only stranded-runtime publish, desktop untouched"
+  echo "==> --runtime $RUNTIME: $RT_PLATFORM-only stranded-runtime publish, desktop untouched"
 elif ! desktop_publish; then
   echo "!!! DESKTOP OTA PUBLISH FAILED - the phone update above is live, but the"
   echo "!!! desktop stays on its old bundle until the next successful publish."
@@ -255,6 +270,10 @@ if [ "$WORKER" = "1" ]; then
   DCHAN="desktop${CHANNEL:+-$CHANNEL}"
   CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN")
   echo "  desktop.json ($DCHAN): HTTP $CODE"
+fi
+if [ "$IOS_SPLIT" = "1" ] && [ "$NO_BUILD" != "1" ]; then
+  echo "==> ios runtime $RTV_IOS differs from android $RTV_ANDROID - publishing ios into rt-$RTV_IOS"
+  bash "$0" --runtime "$RTV_IOS" --platform ios || VERIFY_FAILED="$VERIFY_FAILED ios"
 fi
 if [ -n "$VERIFY_FAILED" ]; then
   echo "!!! PHONE OTA VERIFY FAILED for:$VERIFY_FAILED - the relay serves no update"

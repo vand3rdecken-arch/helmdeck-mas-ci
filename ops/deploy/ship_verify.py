@@ -42,18 +42,19 @@ def verify_ota():
     try:
         with open(meta_path, encoding="utf-8") as f:
             fm = json.load(f)["fileMetadata"]
-        bundles = {p: fm[p]["bundle"] for p in ("android", "ios")}
+        # a per-platform runtime split exports each platform on its own run
+        bundles = {p: fm[p]["bundle"] for p in ("android", "ios") if p in fm}
     except Exception as e:
         return False, "could not read the just-exported metadata.json to know what to verify against (%s)" % e
     sf = _ship_facts()
     dom, err = sf._relay_domain()
     if not dom:
         return False, "no relay domain resolvable to verify against (%s)" % err
-    rtv = (sf._read_app_json() or {}).get("version") or "1.0.0"
+    runtimes = (sf._read_app_json() or {}).get("runtime") or {}
     url = "https://%s/updates/manifest" % dom
     for platform, bundle in bundles.items():
         req = urllib.request.Request(url, headers={
-            "expo-platform": platform, "expo-runtime-version": rtv,
+            "expo-platform": platform, "expo-runtime-version": runtimes.get(platform) or "1.0.0",
             "expo-protocol-version": "1"})
         try:
             with urllib.request.urlopen(req, timeout=15) as r:
