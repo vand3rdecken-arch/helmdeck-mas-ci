@@ -163,7 +163,55 @@ def engines_get(self, user):
                                       ensure_ascii=False))
 
 
+def _desktop_update():
+    """surfaces/desktop/desktop_update.py by path (surfaces/ is not a package; the tray runs it
+    the same way). It is the ONE owner of the staging layout."""
+    import importlib.util
+    import os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))), "surfaces", "desktop", "desktop_update.py")
+    spec = importlib.util.spec_from_file_location("hd_desktop_update", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def desktop_update_get(self, user):
+    # What the packaged desktop window is serving vs what the tray has staged next to it. The
+    # shell's own bridge only ever answered "current" (tauri-app/src/main.rs BRIDGE_JS), so
+    # "Up to date" was compared by VERSION and a staged bundle with the same 1.0.x looked
+    # like nothing. Evidence is the two marker files, ids not versions.
+    try:
+        du = _desktop_update()
+        app_dist = du.packaged_appdist()
+        if not app_dist:
+            return self._send(200, json.dumps({"installed": False}))
+        pend = du._read_marker(app_dist + ".pending") if du.verify_staged(app_dist + ".pending") else None
+        return self._send(200, json.dumps({
+            "installed": True, "running_id": du.installed_id(app_dist),
+            "staged_id": (pend or {}).get("id"), "staged_version": (pend or {}).get("version")}))
+    except Exception as e:                                   # noqa: BLE001
+        return self._send(200, json.dumps({"installed": False, "error": str(e)[:200]}))
+
+
+def desktop_update_apply_post(self, user, body):
+    # Swap the verified staged bundle in (the previous one stays as app-dist.old). The shell
+    # serves plain files from disk, so the window picks it up on its next reload.
+    if user["role"] != "owner":
+        return self._send(403, json.dumps({"error": "owner only"}))
+    try:
+        du = _desktop_update()
+        app_dist = du.packaged_appdist()
+        if not app_dist:
+            return self._send(409, json.dumps({"error": "no packaged desktop install"}))
+        du.apply_staged(app_dist, app_dist + ".pending")
+        return self._send(200, json.dumps({"applied": True, "id": du.installed_id(app_dist)}))
+    except Exception as e:                                   # noqa: BLE001
+        return self._send(409, json.dumps({"error": str(e)[:200]}))
+
+
 GET_ROUTES = {
+    "/desktop/update": desktop_update_get,
     "/engines": engines_get,
     "/debt": debt_get,
     "/charter": charter_get,
@@ -172,4 +220,8 @@ GET_ROUTES = {
     "/harness": harness_get,
     "/harness/schema": harness_schema_get,
     "/escalations": escalations_get,
+}
+
+POST_ROUTES = {
+    "/desktop/update/apply": desktop_update_apply_post,
 }

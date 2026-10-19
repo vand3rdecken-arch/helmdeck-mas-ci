@@ -636,6 +636,8 @@ class H(BaseHTTPRequestHandler):
                 return routes_misc.process_templates_sub_post(self, user, body, parts[1], parts[2])
             if p in routes_control.POST_ROUTES:
                 return routes_control.POST_ROUTES[p](self, user, body)
+            if p in routes_info.POST_ROUTES:
+                return routes_info.POST_ROUTES[p](self, user, body)
             if p in routes_settings.POST_ROUTES:
                 return routes_settings.POST_ROUTES[p](self, user, body)
             if p in routes_takeout.POST_ROUTES:

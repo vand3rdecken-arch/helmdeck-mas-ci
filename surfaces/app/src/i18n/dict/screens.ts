@@ -657,9 +657,10 @@ export const screens: Dict = {
   },
   "updates.native.installNow": { de: "Jetzt neu starten & installieren", en: "Restart & install now" },
   "updates.js.staged": {
-    de: "App-Update {version} geladen und geprüft - liegt bereit, bis die App neu startet.",
-    en: "App update {version} downloaded and verified - waiting for the app to restart.",
+    de: "App-Update {version} ist bereit. Neu laden, um es zu nutzen.",
+    en: "App update {version} is ready. Reload to use it.",
   },
+  "updates.js.reloadNow": { de: "Jetzt neu laden", en: "Reload now" },
   // ---- desktop "App & Updates" panel (ui/desktop_update.tsx, 2026-09-22) --
   // The desktop shows its two real update lines instead of the phone's
   // expo-updates panel, which is inert in the web export the shell serves.

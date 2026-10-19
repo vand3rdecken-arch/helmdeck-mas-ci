@@ -23,6 +23,7 @@ import Constants from "expo-constants";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
+import { api } from "@/data/client";
 import { useT } from "@/i18n";
 import { useTheme } from "@/theme";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
@@ -84,6 +85,51 @@ function useBridgeStatus(
   return status;
 }
 
+// The Tauri shell's JS-update bridge is a stub that always answers "current"
+// (tauri-app/src/main.rs BRIDGE_JS) and "up to date" was a VERSION comparison, so a bundle the
+// tray had staged under the same 1.0.x never showed. The evidence is the bundle ids: this
+// window's own marker (read once per page load = what it is really running) against what the
+// daemon finds on disk (/desktop/update: the running dir's id and the verified staged one).
+let loadedId: Promise<string | null> | null = null;
+function loadedBundleId(): Promise<string | null> {
+  if (!loadedId) {
+    loadedId = fetch("/.hd-update.json").then((r) => (r.ok ? r.json() : null))
+      .then((j) => (j && typeof j.id === "string" ? j.id : null)).catch(() => null);
+  }
+  return loadedId;
+}
+
+type StagedInfo = { installed?: boolean; running_id?: string | null; staged_id?: string | null; staged_version?: string | null };
+
+function useStagedBundle(): UpdateStatus | null {
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  useEffect(() => {
+    if (!nativeBridge()) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const [d, own] = await Promise.all([api.get<StagedInfo>("/desktop/update"), loadedBundleId()]);
+        if (!alive || !d.installed || !own) return;
+        const pending = !!d.staged_id && d.staged_id !== own;
+        const onDisk = !!d.running_id && d.running_id !== own;   // applied already, window not reloaded yet
+        setStatus(pending || onDisk
+          ? { state: "staged", version: d.staged_version ?? Constants.expoConfig?.version ?? null, message: null }
+          : null);
+      } catch { /* not signed in / daemon away: stay silent, the next tick retries */ }
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  return status;
+}
+
+/** Swap the staged bundle in (daemon route) and reload: the shell serves plain files from disk. */
+async function applyBundleAndReload() {
+  try { await api.post("/desktop/update/apply"); } catch { /* already applied: reload anyway */ }
+  window.location.reload();
+}
+
 function Row({ busy, text, actionLabel, onAction }: {
   busy?: boolean; text: string; actionLabel?: string; onAction?: () => void;
 }) {
@@ -116,14 +162,15 @@ function Row({ busy, text, actionLabel, onAction }: {
 export function DesktopUpdateBanner() {
   const tr = useT();
   const native = useBridgeStatus((b) => b.getUpdateStatus(), (b, cb) => b.onUpdateStatus(cb));
-  const js = useBridgeStatus((b) => b.getJsUpdateStatus(), (b, cb) => b.onJsUpdateStatus(cb));
+  const bridgeJs = useBridgeStatus((b) => b.getJsUpdateStatus(), (b, cb) => b.onJsUpdateStatus(cb));
+  const js = useStagedBundle() ?? bridgeJs;
 
   const rows: React.ReactNode[] = [];
   if (js?.state === "downloading") {
     rows.push(<Row key="js-dl" busy text={tr("updates.native.downloading", { version: js.version ?? "?" })} />);
   } else if (js?.state === "staged") {
     rows.push(<Row key="js-staged" text={tr("updates.js.staged", { version: js.version ?? "?" })}
-      actionLabel={tr("updates.native.installNow")} onAction={() => nativeBridge()?.applyJsUpdateNow()} />);
+      actionLabel={tr("updates.js.reloadNow")} onAction={applyBundleAndReload} />);
   }
   if (native?.state === "downloading") {
     rows.push(<Row key="native-dl" busy text={tr("updates.native.downloading", { version: native.version ?? "?" })} />);
@@ -148,7 +195,8 @@ export function DesktopUpdatesPanel() {
   const t = useTheme();
   const tr = useT();
   const native = useBridgeStatus((b) => b.getUpdateStatus(), (b, cb) => b.onUpdateStatus(cb));
-  const js = useBridgeStatus((b) => b.getJsUpdateStatus(), (b, cb) => b.onJsUpdateStatus(cb));
+  const bridgeJs = useBridgeStatus((b) => b.getJsUpdateStatus(), (b, cb) => b.onJsUpdateStatus(cb));
+  const js = useStagedBundle() ?? bridgeJs;
   const [shell, setShell] = useState<string | null>(shellVersionFromUA());
   useEffect(() => {
     const b = nativeBridge();
@@ -211,7 +259,7 @@ export function DesktopUpdatesPanel() {
       {native?.state === "downloaded" ? action(tr("updates.native.installNow"), () => nativeBridge()?.installUpdate()) : null}
       <Text style={{ color: t.txtSecondary, fontSize: 12.5, fontWeight: "600" }}>{tr("updates.desktop.bundleLine")}</Text>
       <Text style={{ color: js?.state === "error" ? t.danger : t.txtSecondary, fontSize: 12 }}>{line(js, "js")}</Text>
-      {js?.state === "staged" ? action(tr("updates.native.installNow"), () => nativeBridge()?.applyJsUpdateNow()) : null}
+      {js?.state === "staged" ? action(tr("updates.js.reloadNow"), applyBundleAndReload) : null}
       {loginItem ? (
         <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: t.borderSubtle }}>
           <Toggle label={tr("updates.desktop.loginItem")} value={loginItem.openAtLogin} onChange={toggleLoginItem} />
