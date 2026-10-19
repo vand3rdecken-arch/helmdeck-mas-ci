@@ -81,10 +81,18 @@ def _valid_polish(v):
     return isinstance(v.get("on", False), bool) and v.get("model", "haiku") in POLISH_MODELS
 
 
+def _valid_bool(v):
+    return isinstance(v, bool)
+
+
 KEYS = {
     "lang": _valid_lang,
     "appearance": _valid_appearance,
     "polish": _valid_polish,
+    # Onboarding's "What do you work on?" step was waved off ("Set this up
+    # later"). The step is otherwise derived from the repos, so without this the
+    # choice lived in component state and came back on every launch.
+    "repo_step_skipped": _valid_bool,
 }
 
 
@@ -99,6 +107,7 @@ def defaults():
         "lang": pol.get("lang", "de"),
         "appearance": s.get("appearance") or {"backdrop": "mesh"},
         "polish": dict(POLISH_DEFAULT),
+        "repo_step_skipped": False,
     }
 
 

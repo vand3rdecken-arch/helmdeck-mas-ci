@@ -301,6 +301,8 @@ export interface Profile {
   appearance?: { backdrop?: string };
   /** Chat-text polish: fillers/self-corrections cleaned with the chat as context. */
   polish?: { on?: boolean; model?: string };
+  /** Onboarding's repo-type step was dismissed with "Set this up later". */
+  repo_step_skipped?: boolean;
 }
 /** One column of a board (accounts-boards-prd phase 2). `station` is a real
  *  lane, so the drag handler can translate a drop straight into

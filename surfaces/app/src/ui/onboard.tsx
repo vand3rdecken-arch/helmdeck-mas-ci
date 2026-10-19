@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as util from "tweetnacl-util";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Image, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import { api, AuthRequired } from "@/data/client";
 import { useConfig } from "@/data/config";
+import { saveProfile } from "@/data/profile";
+import type { Me } from "@/data/types";
 import { useDemo } from "@/data/demo";
 import { qrDataUrl } from "@/data/qrgen";
 import { MemoryImportPanel } from "@/ui/memory_import_panel";
@@ -183,9 +185,22 @@ export function Onboard() {
   // outstanding, and only until the user moves past it. `=== true` on purpose -
   // the hook returns undefined until the query answers, and treating that as
   // "outstanding" would flash this step into every launch.
+  // "Later" and "Continue" are stored on the ACCOUNT (profile.repo_step_skipped),
+  // not in component state: the step is derived from the repos, and a user with
+  // none would otherwise meet it again on every launch. `repoDone` only bridges
+  // the gap until the save lands and /me is refetched.
   const [repoDone, setRepoDone] = useState(false);
   const repoOutstanding = useRepoTypeOutstanding();
-  const repoStep = !!st?.daemon && !needsAuth && !repoDone && repoOutstanding === true;
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000, enabled: !!token });
+  const repoSkipped = me?.profile?.repo_step_skipped === true;
+  const skipRepoStep = useCallback(() => {
+    setRepoDone(true);
+    saveProfile({ repo_step_skipped: true })
+      .then(() => qc.invalidateQueries({ queryKey: ["me"] }))
+      .catch(() => {});
+  }, [qc]);
+  const repoStep = !!st?.daemon && !needsAuth && !repoDone && !repoSkipped && repoOutstanding === true
+    && !!me;
 
   useEffect(() => {
     if (st?.daemon && !needsAuth && !qr && !pairErr) {
@@ -258,11 +273,11 @@ export function Onboard() {
 
           <RepoTypePicker wide={false} intro={tr("onboard.repoIntro")} />
 
-          <Pressable onPress={() => setRepoDone(true)}
+          <Pressable onPress={skipRepoStep}
             style={{ backgroundColor: t.accent, borderRadius: 14, paddingVertical: 15, alignItems: "center" }}>
             <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>{tr("onboard.repoNext")}</Text>
           </Pressable>
-          <Pressable onPress={() => setRepoDone(true)}>
+          <Pressable onPress={skipRepoStep}>
             <Text style={{ color: t.txtTertiary, fontSize: 12.5, textAlign: "center" }}>
               {tr("onboard.repoLater")}
             </Text>
