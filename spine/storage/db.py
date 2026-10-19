@@ -197,10 +197,17 @@ def wait_any(board_last, chat_last, timeout=22):
 def current_version():
     return _version
 
-# A dedicated read-only connection whose PRAGMA data_version moves whenever ANY
-# OTHER connection commits (own thread-local connections included, other
-# processes included). Together with events max(seq) and this process' write
-# counter it is the store's own change signal for read-side caches.
+# The store's change signal for read-side caches (events.metrics): the newest
+# event that is not relay telemetry + this process' write counter.
+#
+# NOT PRAGMA data_version and NOT max(seq) over every kind (measured
+# 2026-10-19, "spinner dreht die ganze Zeit"): each phone frame that waited in
+# the relay queue appends a `relay` note, and data_version moves on ANY commit,
+# so the key changed on nearly every read - /dashboard/data recomputed metrics
+# (0.15-0.6 s of GIL) per call, which slowed the next frames, which appended
+# more notes: 24/24 serve workers busy, frames waiting 12-33 s. Metrics read
+# no relay rows; a write from another process still surfaces within
+# METRICS_TTL, which every hit is bounded by anyway.
 _sig_conn = None
 _sig_lock = threading.Lock()
 
@@ -209,9 +216,9 @@ def store_signature():
     with _sig_lock:
         if _sig_conn is None:
             _sig_conn = sqlite3.connect(DBPATH, timeout=15, check_same_thread=False)
-        dv = _sig_conn.execute("PRAGMA data_version").fetchone()[0]
-        mx = _sig_conn.execute("SELECT max(seq) FROM events").fetchone()[0]
-    return (mx, _version, dv)
+        mx = _sig_conn.execute(
+            "SELECT seq FROM events WHERE kind IS NOT 'relay' ORDER BY seq DESC LIMIT 1").fetchone()
+    return (mx[0] if mx else None, _version)
 
 def current_chat_version():
     return _chat_version
@@ -1232,7 +1239,14 @@ def event_insert(row):
         c.execute("INSERT OR IGNORE INTO events(id,ts,kind,track,data) VALUES(?,?,?,?,?)",
                   (row.get("id"), row.get("ts"), row.get("kind"), row.get("track"),
                    json.dumps(extra)))
-    bump()
+    # Relay telemetry is not board state (2026-10-19, "spinner dreht die ganze
+    # Zeit"): every phone frame that waited >5 s appends one, and a bump here
+    # pushed a new board version to the phone, which refetched EVERY query -
+    # more frames, more waits, more notes. A loop that held 24/24 serve
+    # workers with frames queued 12-33 s. daemonctl.relay_latency reads these
+    # rows on demand; nothing needs to be woken for them.
+    if row.get("kind") != "relay":
+        bump()
 
 
 # events_all() cache. ROOT CAUSE of the 2026-09-19 "Relay nicht erreichbar":

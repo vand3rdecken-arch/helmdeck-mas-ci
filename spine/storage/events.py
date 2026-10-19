@@ -635,9 +635,8 @@ def _completion_mode(track_events, turns):
 # /pm/plan derives metrics THREE times per call, and metrics is ~0.4s of
 # GIL-bound Python even with the events cache - so concurrent pollers still
 # serialised behind each other. Keyed on the store's own signature
-# (db.store_signature: events max(seq) + this process' write counter + SQLite's
-# data_version, which moves for a commit from ANY connection incl. other
-# processes) and bounded to METRICS_TTL seconds because a few figures are
+# (db.store_signature: newest non-relay event + this process' write counter)
+# and bounded to METRICS_TTL seconds because a few figures are
 # clock-derived (time_in_work of a running card, today's date). Handed out as
 # marshal copies so no caller can mutate another's view.
 METRICS_TTL = 5.0

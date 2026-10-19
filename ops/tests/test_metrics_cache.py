@@ -49,5 +49,10 @@ check(c.get("totals") != "poisoned", "a caller mutating its copy never leaks int
 events.emit("touch", t["id"], touch="steer")            # the store moved
 d = events.metrics(tracks)
 check(len(COMPUTES) == 2, "a new event re-derives exactly once (computes=%d)" % len(COMPUTES))
+# 2026-10-19: every slow phone frame appends a relay note (relay_client
+# _serve_one) - that must not re-derive, or the slowness feeds itself
+events.log("relay", "frame waited 11.7s in the relay queue before the bridge pulled it")
+events.metrics(tracks)
+check(len(COMPUTES) == 2, "relay telemetry does not re-derive (computes=%d)" % len(COMPUTES))
 print("RESULT:", "PASS" if not fails else "FAIL (%d)" % fails)
 sys.exit(1 if fails else 0)
