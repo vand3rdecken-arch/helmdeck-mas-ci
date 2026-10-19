@@ -311,8 +311,34 @@ fn main() {
                 Some(p) => error_page(p),
                 None => window_url(started.ok().map(|_| (setup::SETUP_PORT, setup.nonce.as_str()))),
             };
-            let target = url.parse().expect("window url");
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(target))
+            let target: tauri::Url = url.parse().expect("window url");
+            // Closing the window and reopening it at once (exactly what "close to load the update" asks
+            // for) meets the previous WebView2 browser process still shutting down on the same user-data
+            // folder: creation fails with 0x800700AA "requested resource is in use" and the setup hook
+            // used to panic - the app simply did not start (2026-10-19). Wait for the folder, up to 10 s.
+            let mut tries = 0;
+            loop {
+                match build_main_window(app, target.clone()) {
+                    Ok(()) => return Ok(()),
+                    Err(e) if tries < 20 && webview_busy(&e.to_string()) => {
+                        tries += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running HelmDeck");
+}
+
+/// WebView2's "user-data folder still held by a browser process that is exiting" failure.
+fn webview_busy(err: &str) -> bool {
+    err.contains("0x800700AA") || err.contains("requested resource is in use")
+}
+
+fn build_main_window(app: &mut tauri::App, target: tauri::Url) -> Result<(), Box<dyn std::error::Error>> {
+    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(target))
                 .title("HelmDeck")
                 .inner_size(1360.0, 900.0)
                 .background_color(tauri::window::Color(0x0b, 0x0f, 0x14, 0xff))
@@ -327,10 +353,7 @@ fn main() {
                     }
                 })
                 .build()?;
-            Ok(())
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running HelmDeck");
+    Ok(())
 }
 
 #[cfg(test)]
