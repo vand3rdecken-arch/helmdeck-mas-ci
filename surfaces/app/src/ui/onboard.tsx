@@ -534,7 +534,10 @@ export function useShowOnboard(): { show: boolean; unresolved: boolean } {
         if (auth.setup_needed) { setOwns(true); return; }
         const repos = await api.repoTemplates().catch(() => null);
         if (!alive) return;
-        const repoOutstanding = !!repos && (!repos.repos.length || repos.repos.some((r) => !r.template));
+        // A step the account waved off ("Set this up later") is not outstanding.
+        const skipped = (await api.me().catch(() => null))?.profile?.repo_step_skipped === true;
+        if (!alive) return;
+        const repoOutstanding = !skipped && !!repos && (!repos.repos.length || repos.repos.some((r) => !r.template));
         // LATCH: once true, a later tick landing right after setup_needed/
         // repoOutstanding themselves clear must not flip this back to false
         // out from under a user still looking at the repo-type step or the
