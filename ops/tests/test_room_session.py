@@ -152,6 +152,22 @@ picked = room_henry.pick_model(RID, "tien", "haiku", "x")
 check(picked and room_henry.stats(RID)["model"] == picked, "5. the owner's pick sticks as the room's model: %r" % picked)
 check(room_henry.pick_model(RID, "member", "", "x") == picked, "5. and then every turn of the room uses it")
 
+# ---- 6. lanes: the owner's hands run never becomes the member's session
+# (2026-10-19 "(keine Antwort)": a member turn resumed the owner's 150k tool
+# session and the tool-less model ended in thinking only)
+room_henry.on_result(RID, {"session_id": "OWNER-S", "usage": {}}, None, room_henry.OWNER)
+check(room_henry.session_id(RID, room_henry.OWNER) == "OWNER-S", "6. the owner run advances the owner lane")
+check(room_henry.session_id(RID) == "S3", "6. the member lane still points at its own session")
+seen.clear()
+rooms.post(RID, "member", "@henry und jetzt?")
+room_henry.answer(RID, "member", "@henry und jetzt?", opts={})
+check(seen and "OWNER-S" not in seen[-1], "6. a member turn never resumes the owner's session: %r"
+      % [a for a in (seen[-1] if seen else []) if "S" in a[:8]])
+rooms.post(RID, "Henry", "Owner-Antwort", by_kind="henry", extra={"to": "tien"})
+rooms.post(RID, "member", "@henry hallo")
+d = room_henry.delta_prompt(rooms.get(RID), rooms.history(RID, "member"), "member", "x")
+check("Owner-Antwort" in d, "6. the other lane's answer rides in the member's delta")
+
 print()
 print("ROOM SESSION: %s" % ("PASS" if not _fails else "FAIL - %d" % len(_fails)))
 sys.exit(1 if _fails else 0)

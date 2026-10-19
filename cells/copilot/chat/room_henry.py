@@ -132,6 +132,13 @@ def build_prompt(room, history, author, text, rows):
 #   economics/meter  copilot_stats._stats()   {skey: ctx_tokens, ctx_window, ...}
 # The room RECORD stays the source of truth: the session is a cache of it. A lost
 # or rotated session is rebuilt from the record (build_prompt), never lost.
+# The session pointer is split by LANE (2026-10-19): the owner's @henry is a hands
+# run (his tools, his brief, his research context), a member's is the tool-less
+# plan-mode turn. One shared session let a member's turn resume the owner's
+# 150k tool session - it leaked his context into a guest turn, and the tool-less
+# model, facing a transcript of tool calls, ended twice in thinking only
+# ("(keine Antwort)"). Each lane resumes only its own conversation.
+OWNER, GUEST = "owner", "guest"
 
 
 def skey(rid):
@@ -140,18 +147,23 @@ def skey(rid):
     return "\x00room:" + rid
 
 
-def session_id(rid):
+def _sess_key(rid, lane):
+    return skey(rid) + "\x00" + lane
+
+
+def session_id(rid, lane=GUEST):
     from cells.copilot.chat import copilot
-    return copilot._sessions().get(skey(rid)) or ""
+    return copilot._sessions().get(_sess_key(rid, lane)) or ""
 
 
-def drop_session(rid, why=""):
-    """Forget the room's session (resume failed, or the context hit the mark): the
-    next turn rebuilds from the record. The meter reads 0 until that turn reports
-    a real figure - never the old session's."""
+def drop_session(rid, why="", lane=None):
+    """Forget the room's session of `lane` (both when None: the context hit the
+    mark): the next turn rebuilds from the record. The meter reads 0 until that
+    turn reports a real figure - never the old session's."""
     from cells.copilot.chat import copilot, copilot_stats
     sess = copilot._sessions()
-    if sess.pop(skey(rid), None) is not None:
+    keys = [skey(rid)] + [_sess_key(rid, ln) for ln in ((lane,) if lane else (OWNER, GUEST))]
+    if [sess.pop(k, None) for k in keys if k in sess]:
         copilot._save_sessions(sess)
     st = copilot_stats._stats()
     m = st.get(skey(rid))
@@ -171,7 +183,7 @@ def forget(rid):
     from cells.copilot.chat import copilot, copilot_stats
     k = skey(rid)
     sess = copilot._sessions()
-    if sess.pop(k, None) is not None:
+    if [sess.pop(x, None) for x in (k, _sess_key(rid, OWNER), _sess_key(rid, GUEST)) if x in sess]:
         copilot._save_sessions(sess)
     prefs = copilot._model_prefs()
     if prefs.pop(k, None) is not None:
@@ -218,13 +230,13 @@ def maybe_rotate(rid):
     from cells.copilot.chat import copilot, copilot_stats
     m = copilot_stats._stats().get(skey(rid)) or {}
     mark, why = copilot._compact_mark(m)
-    if session_id(rid) and int(m.get("ctx_tokens") or 0) >= mark:
+    if (session_id(rid, OWNER) or session_id(rid, GUEST)) and int(m.get("ctx_tokens") or 0) >= mark:
         drop_session(rid, "context %dk >= %s mark" % (int(m["ctx_tokens"]) // 1000, why))
         return True
     return False
 
 
-def on_result(rid, raw, ctx_usage):
+def on_result(rid, raw, ctx_usage, lane=GUEST):
     """A room turn finished (guest path AND the owner's hands run): the session
     pointer advances only on the runtime's own result event, and the economics
     fold at event time into the room's stats (copilot_stats._fold_stats, the one
@@ -235,8 +247,8 @@ def on_result(rid, raw, ctx_usage):
     sid = raw.get("session_id")
     if sid:
         sess = copilot._sessions()
-        if sess.get(skey(rid)) != sid:
-            sess[skey(rid)] = sid
+        if sess.get(_sess_key(rid, lane)) != sid:
+            sess[_sess_key(rid, lane)] = sid
             copilot._save_sessions(sess)
     copilot_stats._fold_stats(skey(rid), raw, ctx_usage)
 
@@ -250,14 +262,20 @@ def _line(m):
                                   (m.get("text") or "").replace("\r", ""))
 
 
+def _lane_of(author):
+    return OWNER if _is_owner(author) else GUEST
+
+
 def delta_prompt(room, history, author, text):
     """A RESUMED turn: the session already holds everything up to Henry's last
-    answer, so only what the room said since (incl. the question) rides in -
-    derived from the record, no stored cursor. An errored Henry row never
-    advanced the session, so it does not count as his last answer."""
-    last = -1
+    answer IN THIS LANE, so only what the room said since (incl. the question and
+    the other lane's answers) rides in - derived from the record, no stored
+    cursor. An errored Henry row never advanced the session, so it does not count
+    as his last answer."""
+    lane, last = _lane_of(author), -1
     for i, m in enumerate(history):
-        if m.get("byKind") == "henry" and not m.get("error"):
+        if (m.get("byKind") == "henry" and not m.get("error")
+                and _lane_of(m.get("to") or "") == lane):
             last = i
     new = history[last + 1:][-HISTORY_LINES:]
     return ("NEU IM RAUM %s seit deiner letzten Antwort (aelteste zuerst):\n%s\n\n"
@@ -269,7 +287,7 @@ def delta_prompt(room, history, author, text):
 def turn_prompt(room, history, author, text, rows, thinking=""):
     """(prompt, resumed): the delta on a live session, else the whole record."""
     from spine.agent import turnopts
-    if session_id(room["id"]):
+    if session_id(room["id"], _lane_of(author)):
         body, resumed = delta_prompt(room, history, author, text), True
     else:
         body, resumed = build_prompt(room, history, author, text, rows), False
@@ -517,7 +535,7 @@ def _owner_turn(room, author, text, opts=None):
                     room={"id": room["id"], "to": author},
                     why="@henry im Raum %s" % room["name"],
                     model=pick_model(room["id"], author, opts.get("model"), text),
-                    resume=session_id(room["id"]) if resumed else "")
+                    resume=session_id(room["id"], OWNER) if resumed else "")
     except Exception as e:                                       # noqa: BLE001
         return rooms.post(room["id"], "Henry", "Ich konnte gerade nicht antworten (%s)."
                           % str(e)[:120], by_kind="henry", extra={"to": author, "error": True})
@@ -567,12 +585,12 @@ def answer(rid, author, text, runner=None, opts=None):
                     prompt, resumed = turn_prompt(room, hist, author, text, rows, opts.get("thinking", ""))
                     try:
                         reply, _raw = run_claude(brief(), prompt, live=rid, model=model, rid=rid,
-                                                 resume=session_id(rid) if resumed else "")
+                                                 resume=session_id(rid, GUEST) if resumed else "")
                     except Exception:                            # noqa: BLE001
                         if not resumed:
                             raise
                         # the session is gone / refused: the record rebuilds it, once
-                        drop_session(rid, "resume failed")
+                        drop_session(rid, "resume failed", GUEST)
                         prompt, _ = turn_prompt(room, hist, author, text, rows, opts.get("thinking", ""))
                         reply, _raw = run_claude(brief(), prompt, live=rid, model=model, rid=rid)
             except Exception as e:                               # noqa: BLE001

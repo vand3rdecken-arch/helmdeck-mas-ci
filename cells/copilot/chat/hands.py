@@ -378,7 +378,7 @@ def _pump(hid, p):
             try:
                 if room_id and not is_error:      # a room turn: session pointer + meter + spend
                     from cells.copilot.chat import room_henry
-                    room_henry.on_result(room_id, ev, last_usage)
+                    room_henry.on_result(room_id, ev, last_usage, room_henry.OWNER)
                 else:                             # the plan calibration's share of it
                     from spine.turn import econ
                     econ.record_spend("hands", list((ev.get("modelUsage") or {}).keys()),
@@ -454,7 +454,7 @@ def _land_room(t, hid, status, result, steps):
         extra = {"to": asker, "error": True}
         if t.get("resume"):             # the resumed session may be what failed: rebuild from the record
             from cells.copilot.chat import room_henry as _rh
-            _rh.drop_session(room, "resumed run failed")
+            _rh.drop_session(room, "resumed run failed", _rh.OWNER)
     try:
         rooms.post(room, "Henry", text[:rooms.TEXT_MAX], by_kind="henry", extra=extra)
     except Exception as e:                               # noqa: BLE001
