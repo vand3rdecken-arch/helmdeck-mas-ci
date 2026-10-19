@@ -2434,9 +2434,11 @@ def say(text, cls="pm", card=None, extra=None):
                 item = {"kind": "note", "text": text, "byKind": "henry",
                         "ts": time.strftime("%H:%M:%S"), "ta": time.time()}
                 if extra and extra.get("answered"):
-                    # an answered question is the OWNER's act on the card, kept with its question
+                    # an answered question, kept with its question - attributed to whoever
+                    # actually answered it: the broker answers as "henry", never as the owner
+                    by = extra.get("by") or owner
                     item = {"kind": "answered", "answered": extra["answered"], "text": text,
-                            "byKind": "human", "by": extra.get("by") or owner,
+                            "byKind": "henry" if by == "henry" else "human", "by": by,
                             "ts": time.strftime("%H:%M:%S"), "ta": time.time()}
                 timeline_store.append(run_dir, "s:" + uuid.uuid4().hex, item)
     except Exception:

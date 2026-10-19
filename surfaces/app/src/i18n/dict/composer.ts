@@ -120,6 +120,7 @@ export const composer: Dict = {
   "chat.imageUnavailable": { de: "Bild nicht verfügbar", en: "Image unavailable" },
   "chat.answered": { de: "Frage beantwortet", en: "Question answered" },
   "chat.answeredOwn": { de: "Eigene Antwort", en: "Own answer" },
+  "chat.answeredByHenry": { de: "Henry hat geantwortet", en: "Henry answered" },
   "chat.yesterday": { de: "Gestern", en: "Yesterday" },
   "chat.loadingOlder": { de: "Ältere Nachrichten werden geladen…", en: "Loading older messages…" },
   "chat.historyStart": { de: "Anfang des Verlaufs", en: "Start of the conversation" },

@@ -521,11 +521,12 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
             {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
           </View>));
         if (kind === "answered" && s.answered) return wrap(s, key, (
-          <View testID="answered-question" style={{ alignSelf: "flex-end", maxWidth: "88%", borderWidth: 1, borderColor: t.borderSubtle,
-            borderRadius: 12, padding: 10, gap: 8, backgroundColor: t.surface1 }}>
+          <View testID="answered-question" style={{ alignSelf: s.byKind === "henry" ? "flex-start" : "flex-end", maxWidth: "88%", borderWidth: 1,
+            borderColor: s.byKind === "henry" ? t.accent2 + "66" : t.borderSubtle, borderRadius: 12, padding: 10, gap: 8, backgroundColor: t.surface1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Ionicons name="checkmark-circle" size={14} color={t.ok} />
-              <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontWeight: "700", flex: 1 }}>{tr("chat.answered")}</Text>
+              <Ionicons name={s.byKind === "henry" ? "sparkles" : "checkmark-circle"} size={14} color={s.byKind === "henry" ? t.accent2 : t.ok} />
+              <Text style={{ color: t.txtSecondary, fontSize: 11.5, fontWeight: "700", flex: 1 }}>
+                {tr(s.byKind === "henry" ? "chat.answeredByHenry" : "chat.answered")}</Text>
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
             </View>
             {s.answered.items.map((it, j) => (

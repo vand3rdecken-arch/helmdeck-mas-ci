@@ -61,6 +61,10 @@ def main():
           and folded[0][1]["answered"]["items"][0]["chosen"] == ["Unten"],
           "the card's timeline gets an `answered` item by the owner, not a Henry note (%s)" % (folded[0][1].get("kind") if folded else None))
     folded.clear()
+    copilot.say("Hauptcheckout", cls="you", card="C1", extra={"answered": rec, "by": "henry"})
+    check(folded and folded[0][1]["kind"] == "answered" and folded[0][1]["byKind"] == "henry",
+          "a question the broker answered is attributed to Henry, not the owner (%s)" % (folded[0][1].get("byKind") if folded else None))
+    folded.clear()
     copilot.say("Gate ist rot", cls="pm", card="C1")
     check(folded and folded[0][1]["kind"] == "note" and folded[0][1]["byKind"] == "henry",
           "an ordinary notice still folds as a Henry note")

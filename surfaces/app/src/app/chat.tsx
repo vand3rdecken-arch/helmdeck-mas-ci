@@ -106,8 +106,10 @@ function toStep(m: ChatMsg, me?: string, tr?: (k: string) => string): TStep {
   // An ANSWERED card question (owner 2026-10-18: "Fragen laufen weg sobald die beantwortet werden"):
   // the question, its options and the pick, drawn by the shared transcript - never just the bare pick.
   if (m.answered) {
-    return { role: "user", kind: "answered", answered: m.answered, text: m.text, ts: m.ts, card: (m as { card?: string }).card,
-             seq: m.seq, by: me, byKind: "human" };
+    // Henry's broker answers card questions too (actor "henry") - never draw that as the owner's pick
+    const henry = (m as { by?: string }).by === "henry";
+    return { role: henry ? "assistant" : "user", kind: "answered", answered: m.answered, text: m.text, ts: m.ts,
+             card: (m as { card?: string }).card, seq: m.seq, by: henry ? "Henry" : me, byKind: henry ? "henry" : "human" };
   }
   // Paseo's compaction item: ONE typed row (spinner, then the divider), never prose
   if (m.cls === "compaction") {
