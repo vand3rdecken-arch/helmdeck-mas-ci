@@ -1,6 +1,6 @@
 [package]
 name = "helmdeck-desktop"
-version = "0.2.31"
+version = "0.2.32"
 edition = "2021"
 description = "HelmDeck desktop window in Tauri (prototype of the Electron shell in surfaces/desktop/main.js)"
 
