@@ -65,13 +65,23 @@ const persister = createAsyncStoragePersister({
 // and 'success' only dropped that data from the next write - so a process kill
 // mid-outage woke up to an empty cache (owner report 2026-09-03). Persist any
 // query that HAS data.
+//
+// EXCEPT "chat-image": its data is the picture as base64 (ChatImage), so 13
+// images were 4.3 of the 4.4 MB blob. The persister re-serialises the WHOLE cache
+// and does a synchronous localStorage.setItem on every cache event (1.5 s
+// throttle) - measured on the owner's desktop 2026-10-19: 200-370 ms long tasks
+// while Henry streamed, i.e. the composer lagging behind the keys. An image is
+// refetched by URL on demand anyway; it never needed to survive a restart.
+const NEVER_PERSIST = new Set(["chat-image"]);
 export function startCachePersist(): [() => void, Promise<void>] {
   return persistQueryClient({
     queryClient,
     persister,
     maxAge: CACHE_MAX_AGE,
     buster: CACHE_BUSTER,
-    dehydrateOptions: { shouldDehydrateQuery: (q) => q.state.data !== undefined },
+    dehydrateOptions: {
+      shouldDehydrateQuery: (q) => q.state.data !== undefined && !NEVER_PERSIST.has(String(q.queryKey[0])),
+    },
   });
 }
 
