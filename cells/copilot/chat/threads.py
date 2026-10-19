@@ -46,6 +46,13 @@ def _bucket(t):
         return "attention"
     if st in ("bounced", "failed", "canceled"):
         return "failed"
+    # A review card Henry (or the owner) sent back with a finding keeps its
+    # lane while the worker fixes it - the lane says "review", the runtime says
+    # a turn is in flight. The observation wins (drivers.turn_active), else the
+    # tile read "Ready to review" while the card worked (2026-10-19 21:21).
+    from spine.agent import drivers
+    if t.get("id") and drivers.turn_active(t["id"]):
+        return "running"
     if lane == "review":
         return "attention"
     if lane == "working":
