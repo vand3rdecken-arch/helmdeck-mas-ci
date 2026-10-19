@@ -30,7 +30,7 @@ import { useSilentOta } from "@/data/ota";
 import { CHAT_FOCUS, usePresence, usePresenceHeartbeat } from "@/data/presence";
 import { warmProfileCache } from "@/data/profile";
 import { useBlockerVoice } from "@/data/blocker_voice";
-import { announceDecrypted, decryptPush, presentDecrypted, registerForPush } from "@/data/push";
+import { announceDecrypted, decryptPush, presentDecrypted, watchPushRegistration } from "@/data/push";
 import { decideChatPush } from "@/data/push_present";
 import { pushRoute } from "@/data/push_route";
 import { t as i18nT } from "@/i18n/core";
@@ -212,6 +212,7 @@ function usePushWiring() {
     // hydration resolves, and decryptPush reads mySec/daemonPub synchronously
     // off the store - so an unhydrated tap silently failed to decrypt, lost
     // its `track`, and fell through to the dashboard (measured 2026-08-24).
+    let stopPushReg = () => {};
     const hydration = (async () => {
       await useConfig.getState().hydrate();
       await useDemo.getState().hydrate();   // demo survives a restart, like pairing
@@ -220,7 +221,7 @@ function usePushWiring() {
       // (empty/401) data - refetch so a returning demo session actually shows the
       // sample board instead of the stale pre-hydrate payload.
       if (useDemo.getState().active) queryClient.invalidateQueries();
-      if (useConfig.getState().relayMode()) registerForPush();
+      stopPushReg = watchPushRegistration();
     })();
     // foreground: decrypt sealed data pushes and present them locally.
     // A Henry reply gets one more call first (push_present.ts): while the
@@ -284,7 +285,7 @@ function usePushWiring() {
       const dest = pushRoute({ track, kind, body, room });
       if (dest) router.push(dest as never);
     });
-    return () => { recv.remove(); resp.remove(); };
+    return () => { recv.remove(); resp.remove(); stopPushReg(); };
   }, [router]);
 }
 

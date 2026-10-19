@@ -111,6 +111,34 @@ export async function registerForPush() {
   } catch { /* not paired / no daemon / no FCM */ }
 }
 
+/** Keep this device's push slot current for its WHOLE life, not just at
+ *  launch. registerForPush() used to run once after hydration, and only if the
+ *  app was already paired then - a phone that paired (or re-paired) inside the
+ *  running app minted a new key the daemon never got a token for, and an APK
+ *  reinstall rotated the FCM token under a registration that stayed dead: FCM
+ *  answered 404 NotRegistered for every Android slot (owner 2026-10-19). The
+ *  register is driven by the two events that actually change the answer: the
+ *  pairing identity changing in the store, and FCM rotating the token. */
+export function watchPushRegistration(): () => void {
+  if (Platform.OS === "web") return () => {};
+  const ident = () => {
+    const s = useConfig.getState();
+    return s.relayMode() ? `${s.room}|${s.daemonPub}|${s.myPub}` : "";
+  };
+  let last = ident();
+  if (last) void registerForPush();
+  const unsub = useConfig.subscribe(() => {
+    const now = ident();
+    if (now === last) return;
+    last = now;
+    if (now) void registerForPush();
+  });
+  const tok = Notifications.addPushTokenListener(() => {
+    if (useConfig.getState().relayMode()) void registerForPush();
+  });
+  return () => { unsub(); tok.remove(); };
+}
+
 /** Decrypt a sealed data-only push {cipher} -> {title, body, track}. The daemon
  *  (notify.push_fcm) seals with its sk + the pinned phone pub; we open with our
  *  sk + the daemon pub. */
