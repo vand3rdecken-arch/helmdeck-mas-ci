@@ -3,6 +3,7 @@ package app.helmdeck.glassesbridge
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
@@ -64,7 +65,20 @@ class GlassesBridgeModule : Module() {
   private val context: Context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
-  private fun start(service: String, action: String, extras: Map<String, String> = emptyMap()) {
+  /** RECORD_AUDIO held right now - read from the runtime at the call, never cached. */
+  private fun hasMic(): Boolean =
+    context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+      PackageManager.PERMISSION_GRANTED
+
+  private fun start(service: String, action: String, extras: Map<String, String> = emptyMap()): Boolean {
+    // startForegroundService is a CONTRACT: the service must reach
+    // startForeground within seconds or Android kills the whole app
+    // (ForegroundServiceDidNotStartInTimeException - the 2026-10-19 crash, when
+    // the launch-time arm() hit a handset without the mic grant). A microphone
+    // service cannot keep that contract without RECORD_AUDIO, and stopping
+    // itself does not release it - so the only safe place to refuse is HERE,
+    // before the start. The caller gets false and the app keeps running.
+    if (service == VOICE_SERVICE && !hasMic()) return false
     val intent = Intent(action).apply {
       component = ComponentName(context.packageName, service)
       extras.forEach { (k, v) -> putExtra(k, v) }
@@ -77,6 +91,7 @@ class GlassesBridgeModule : Module() {
     } else {
       context.startService(intent)
     }
+    return true
   }
 
   override fun definition() = ModuleDefinition {
@@ -112,7 +127,6 @@ class GlassesBridgeModule : Module() {
      */
     Function("listen") { useGlassMic: Boolean ->
       start(VOICE_SERVICE, if (useGlassMic) ACTION_LISTEN else ACTION_LISTEN_PHONE_MIC)
-      true
     }
 
     /**
@@ -126,12 +140,10 @@ class GlassesBridgeModule : Module() {
      */
     Function("arm") {
       start(VOICE_SERVICE, ACTION_ARM)
-      true
     }
 
     Function("stopListening") {
       start(VOICE_SERVICE, ACTION_VOICE_STOP)
-      true
     }
 
     /**

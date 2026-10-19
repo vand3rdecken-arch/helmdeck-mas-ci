@@ -180,23 +180,37 @@ class GlassVoiceService : Service() {
         checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
+    /** Set only when startForeground actually returned - the runtime's proof. */
+    private var inForeground = false
+
     override fun onCreate() {
         super.onCreate()
         if (!hasMicPermission()) {
-            // Stop cleanly instead of crashing. The owner grants the permission
-            // in the app, then starts voice mode again.
+            // Last line only: stopping does NOT satisfy startForegroundService,
+            // so the real guard is GlassesBridgeModule.start() refusing to start
+            // without the grant. This catches a START_STICKY restart after revoke.
             Log.w(TAG, "RECORD_AUDIO not granted - refusing to start the mic service")
             stopSelf()
             return
         }
-        safe("foreground") { startForeground(NOTIF_ID, notification("Bereit")) }
+        // NOT safe(): a swallowed failure here leaves the start contract
+        // unmet and Android kills the app seconds later anyway. Android 14+
+        // throws when a microphone FGS starts while the app is not in front;
+        // stop and say so instead of pretending the service is up.
+        try {
+            startForeground(NOTIF_ID, notification("Bereit"))
+            inForeground = true
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground refused - stopping", e)
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Re-checked here too, not just in onCreate: START_STICKY means Android
         // can restart this service later, by which time the owner may have
         // revoked the permission in Settings.
-        if (!hasMicPermission()) { stopSelf(); return START_NOT_STICKY }
+        if (!hasMicPermission() || !inForeground) { stopSelf(); return START_NOT_STICKY }
         when (intent?.action) {
             ACTION_STOP -> {
                 safe("stop") {
