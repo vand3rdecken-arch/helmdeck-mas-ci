@@ -244,12 +244,18 @@ def _cached_ready(name):
 def entry(name, refresh=False, account=None):
     defn = _definition(name)
     now = time.time()
+    # The lock guards the cache dict only. models_of() can run the engine's
+    # CLI (`opencode models`: ~6 s cold, 45 s timeout); inside the lock every
+    # /engines and /models call queued behind it - measured 2026-10-19 with
+    # py-spy, all relay serve workers parked here and phone frames waiting
+    # 12-33 s in the relay queue (the chat header spinner that never stopped).
     with _lock:
         hit = _cache.get(name)
-        if hit and not refresh and hit[0] > now:
-            e = dict(hit[1])
-            e["models"] = models_of(name, account)
-            return e
+        hit = hit if hit and not refresh and hit[0] > now else None
+    if hit:
+        e = dict(hit[1])
+        e["models"] = models_of(name, account)
+        return e
     e = _probe(name, defn)
     ttl = PROBE_HIT_TTL if e["status"] == "ready" else PROBE_MISS_TTL
     with _lock:

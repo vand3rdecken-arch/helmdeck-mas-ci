@@ -83,6 +83,15 @@ async function registerQuestionCategory(track: string, ask: Ask): Promise<string
 
 /** Announce this device's raw FCM token to the daemon (daemon seals pushes to
  *  it). No-op on web / when not connected. */
+// The FCM token this process last fetched. expo-notifications' Android
+// getDevicePushTokenAsync() emits onDevicePushToken for EVERY fetch, not only
+// for a rotation (PushTokenModule.kt: promise.resolve(token); onNewToken(token)),
+// so a token listener that registers re-fetched, re-emitted and re-registered
+// forever: POST /push/register every ~2 s, each one a settings write that moved
+// the board version and refetched every query on the phone (2026-10-19, the
+// chat spinner that never stopped). The listener acts on a DIFFERENT token only.
+let lastToken = "";
+
 export async function registerForPush() {
   if (Platform.OS === "web") return;
   try {
@@ -99,6 +108,7 @@ export async function registerForPush() {
       await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
     }
     const token = (await Notifications.getDevicePushTokenAsync()).data; // raw FCM token on Android
+    lastToken = String(token);
     // WITH this device's own key. Without it the daemon sealed every push to
     // relay.phone_pub = the OLDEST pinned key (notify.recipients), which after
     // a reinstall or re-pair is not this phone's key any more - the push then
@@ -133,7 +143,8 @@ export function watchPushRegistration(): () => void {
     last = now;
     if (now) void registerForPush();
   });
-  const tok = Notifications.addPushTokenListener(() => {
+  const tok = Notifications.addPushTokenListener((t) => {
+    if (String(t.data) === lastToken) return;   // our own fetch echoing back (see lastToken)
     if (useConfig.getState().relayMode()) void registerForPush();
   });
   return () => { unsub(); tok.remove(); };

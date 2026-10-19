@@ -875,15 +875,25 @@ def workspace_config_put(pairs):
     absent-means-inherited rule project_config lives by)."""
     import datetime
     now = datetime.datetime.now().isoformat(timespec="seconds")
+    moved = False
     with conn() as c:
         for k, v in pairs.items():
             if v is None:
-                c.execute("DELETE FROM workspace_config WHERE key=?", (k,))
-            else:
-                c.execute(
-                    "INSERT OR REPLACE INTO workspace_config(key,value,updated_at) "
-                    "VALUES(?,?,?)", (k, json.dumps(v), now))
-    bump()
+                moved |= c.execute("DELETE FROM workspace_config WHERE key=?", (k,)).rowcount > 0
+                continue
+            # A write that changes nothing wakes nobody (2026-10-19): the phone
+            # re-registered its unchanged FCM token every ~2 s, each one a bump
+            # here, each bump a pushed board version, each push every query on
+            # the phone refetched - the relay queue backed up to 30 s.
+            val = json.dumps(v)
+            cur = c.execute("SELECT value FROM workspace_config WHERE key=?", (k,)).fetchone()
+            if cur and cur[0] == val:
+                continue
+            c.execute("INSERT OR REPLACE INTO workspace_config(key,value,updated_at) "
+                      "VALUES(?,?,?)", (k, val, now))
+            moved = True
+    if moved:
+        bump()
 
 
 # -- policy doc -------------------------------------------------------------

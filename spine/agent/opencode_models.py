@@ -116,6 +116,12 @@ def discover(account=""):
         return [dict(m) for m in hit[1]]
     models = None
     with _cli_lock:
+        # a caller that queued here while another ran the CLI takes its answer
+        # instead of running it again (N cold callers = one subprocess, not N
+        # back to back - 2026-10-19, /engines piled up behind this lock)
+        hit = _cache.get(key)
+        if hit and hit[0] > time.time():
+            return [dict(m) for m in hit[1]] if hit[1] else None
         try:
             r = subprocess.run([exe, "models"], cwd=_home(), env=env, capture_output=True, text=True,
                                timeout=45, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
@@ -124,7 +130,7 @@ def discover(account=""):
                 models = parse(r.stdout) or None
         except (OSError, subprocess.SubprocessError):
             models = None
-    _cache[key] = (time.time() + (_TTL_HIT if models else _TTL_MISS), models or [])
+        _cache[key] = (time.time() + (_TTL_HIT if models else _TTL_MISS), models or [])
     if models:
         _remember(models)
     return [dict(m) for m in models] if models else None

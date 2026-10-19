@@ -648,11 +648,8 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
     # queue, the bridge, or the daemon. Logged only when it matters.
     try:
         _age = time.time() - float(frame.get("t") or 0) if frame.get("t") else 0.0
-        if _age > 5:
-            from spine.storage import events
-            events.log("relay", "frame waited %.1fs in the relay queue before the bridge pulled it" % _age)
     except Exception:                                    # noqa: BLE001
-        pass
+        _age = 0.0
     ok, reason = _admit(pub)
     if not ok:
         # Refused (not pinned, window closed/expired). Say so instead of
@@ -677,6 +674,15 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
         inner = json.loads(e2ee.open_b64(frame["cipher"], sk, peer))
     except Exception:
         return               # undecryptable / tampered - ignore
+    # Logged AFTER opening so the note names the request (2026-10-19: a burst
+    # of ~250 waited frames in 14 s and nothing said WHAT the phone asked for).
+    if _age > 5:
+        try:
+            from spine.storage import events
+            events.log("relay", "frame waited %.1fs in the relay queue before the bridge pulled it (%s %s)"
+                       % (_age, inner.get("method", ""), str(inner.get("path", ""))[:60]))
+        except Exception:                                # noqa: BLE001
+            pass
     _t_local = time.time()
     resp = _local(port, inner)
     try:
