@@ -374,7 +374,8 @@ def _build_manifest(platform, base_url, runtime_version, base_dir=None, channel=
         if not fp:
             return None
         n = _norm(rel)
-        a = {"key": n, "contentType": _CT.get((ext or "").lower().lstrip("."), "application/octet-stream"),
+        a = {"key": n.rsplit("/", 1)[-1],   # a file name, never a path: see worker/src/index.js buildManifest
+             "contentType": _CT.get((ext or "").lower().lstrip("."), "application/octet-stream"),
              "url": base_url + "/updates/assets?path=" + quote(n)
                   + ("&channel=" + quote(channel) if channel else ""),
              "hash": _b64url_sha256(fp)}

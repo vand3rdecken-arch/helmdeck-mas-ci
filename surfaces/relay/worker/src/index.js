@@ -103,7 +103,11 @@ function buildManifest(idx, platform, baseUrl, runtimeVersion, label) {
     const hash = n && idx.hashes && idx.hashes[n];
     if (!hash) return null;
     const a = {
-      key: n,
+      // The KEY is a file name on the phone, not a path (owner 2026-10-19, OTA stuck on "Base build"):
+      // expo-updates stores an asset as <key><fileExtension> and now refuses a key with a path
+      // separator ("…is not a valid filename"), so "_expo/static/js/android/entry-<hash>.hbc" failed
+      // every download. The last segment is already unique - the bundler names files by content hash.
+      key: n.split("/").pop(),
       contentType: CT[(ext || "").toLowerCase().replace(/^\./, "")] || "application/octet-stream",
       url: `${baseUrl}/updates/assets?path=${encodeURIComponent(n)}${label ? "&channel=" + encodeURIComponent(label) : ""}`,
       hash,
