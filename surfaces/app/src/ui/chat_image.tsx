@@ -1,7 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Modal, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Platform, Pressable, Text, View, useWindowDimensions } from "react-native";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 import { api } from "@/data/client";
 import { useT } from "@/i18n";
@@ -12,7 +14,8 @@ import { useTheme } from "@/theme";
  *
  * The shape every chat settled on (Paseo, Open WebUI, Slack, ChatGPT): a fixed-size thumbnail with a
  * placeholder while it loads, tap -> full size over a dimmed screen, closed by tapping outside, the close
- * button, Escape or the back gesture.
+ * button, Escape or the back gesture. The full view zooms like a gallery (owner 2026-10-19: "kann nicht
+ * reinzoomen, Screenshots zu klein"): pinch, double-tap 1x <-> 2.5x, pan while zoomed, edge to edge.
  *
  * The bytes come as JSON {mime, data} (spine/agent/images.py), not as a plain <img src>: the phone reaches
  * the daemon only through the E2EE relay, and an authenticated JSON request is the one transport that works
@@ -66,16 +69,75 @@ export function ChatImage({ url, alt }: { url: string; alt?: string }) {
             </View>)
           : isLoading ? <ActivityIndicator color={t.txtTertiary} /> : null}
       </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable onPress={() => setOpen(false)} accessibilityLabel={tr("chat.close")}
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.88)", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          {src ? <Image source={{ uri: src }} style={{ width: "100%", height: "100%" }} resizeMode="contain" testID="chat-image-full" /> : null}
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)} statusBarTranslucent>
+        {/* a Modal is its own root on Android - gestures need their own root view inside it */}
+        <GestureHandlerRootView style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)" }}>
+          {src ? <ZoomableImage src={src} onClose={() => setOpen(false)} /> : null}
           <Pressable onPress={() => setOpen(false)} hitSlop={12} accessibilityRole="button" accessibilityLabel={tr("chat.close")}
-            style={{ position: "absolute", top: 18, right: 18, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 18, padding: 8 }}>
+            style={{ position: "absolute", top: 36, right: 18, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 18, padding: 8 }}>
             <Ionicons name="close" size={20} color="#fff" />
           </Pressable>
-        </Pressable>
+        </GestureHandlerRootView>
       </Modal>
     </>
+  );
+}
+
+const MAX_ZOOM = 6;
+const TAP_ZOOM = 2.5;
+
+/** Full-screen image: pinch to zoom, double-tap toggles zoom, pan while zoomed, single tap at 1x closes. */
+function ZoomableImage({ src, onClose }: { src: string; onClose: () => void }) {
+  const { width: W, height: H } = useWindowDimensions();
+  const scale = useSharedValue(1), savedScale = useSharedValue(1);
+  const tx = useSharedValue(0), ty = useSharedValue(0), savedX = useSharedValue(0), savedY = useSharedValue(0);
+
+  // keep the zoomed image covering the screen - never pan it out of view
+  const clamp = (v: number, s: number, size: number) => {
+    "worklet";
+    const max = (size * (s - 1)) / 2;
+    return Math.min(max, Math.max(-max, v));
+  };
+  const reset = () => {
+    "worklet";
+    scale.value = withTiming(1); savedScale.value = 1;
+    tx.value = withTiming(0); ty.value = withTiming(0); savedX.value = 0; savedY.value = 0;
+  };
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => { scale.value = Math.min(MAX_ZOOM, Math.max(0.8, savedScale.value * e.scale)); })
+    .onEnd(() => {
+      if (scale.value <= 1) { reset(); return; }
+      savedScale.value = scale.value;
+      tx.value = withTiming(clamp(tx.value, scale.value, W)); ty.value = withTiming(clamp(ty.value, scale.value, H));
+      savedX.value = clamp(tx.value, scale.value, W); savedY.value = clamp(ty.value, scale.value, H);
+    });
+  const pan = Gesture.Pan().averageTouches(true)
+    .onUpdate((e) => {
+      if (savedScale.value <= 1) return;
+      tx.value = clamp(savedX.value + e.translationX, scale.value, W);
+      ty.value = clamp(savedY.value + e.translationY, scale.value, H);
+    })
+    .onEnd(() => { savedX.value = tx.value; savedY.value = ty.value; });
+  const doubleTap = Gesture.Tap().numberOfTaps(2)
+    .onEnd((e) => {
+      if (savedScale.value > 1) { reset(); return; }
+      // zoom in towards the tapped point
+      const x = clamp((W / 2 - e.x) * (TAP_ZOOM - 1), TAP_ZOOM, W), y = clamp((H / 2 - e.y) * (TAP_ZOOM - 1), TAP_ZOOM, H);
+      scale.value = withTiming(TAP_ZOOM); savedScale.value = TAP_ZOOM;
+      tx.value = withTiming(x); ty.value = withTiming(y); savedX.value = x; savedY.value = y;
+    });
+  const singleTap = Gesture.Tap().requireExternalGestureToFail(doubleTap)
+    .onEnd(() => { if (savedScale.value <= 1) runOnJS(onClose)(); });
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+  }));
+  return (
+    <GestureDetector gesture={Gesture.Simultaneous(pinch, pan, Gesture.Exclusive(doubleTap, singleTap))}>
+      <Animated.View style={[{ width: W, height: H }, style]}>
+        <Image source={{ uri: src }} style={{ width: W, height: H }} resizeMode="contain" testID="chat-image-full" />
+      </Animated.View>
+    </GestureDetector>
   );
 }
