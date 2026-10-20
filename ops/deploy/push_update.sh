@@ -96,7 +96,7 @@ if [ -n "$RUNTIME" ]; then
   case "$RUNTIME" in *[!0-9.]*) echo "bad runtime"; exit 2 ;; esac
   [ -n "$CHANNEL" ] && { echo "--runtime and --channel are exclusive"; exit 2; }
   CHANNEL="rt-$RUNTIME"
-  case "$RT_PLATFORM" in android|ios) ;; *) echo "bad platform"; exit 2 ;; esac
+  case "$RT_PLATFORM" in android|ios|both) ;; *) echo "bad platform"; exit 2 ;; esac
 fi
 
 # Phone platforms this publish serves. BOTH land in the one dist-ota export
@@ -116,6 +116,11 @@ OTA_PLATFORMS="android ios"
 IOS_SPLIT=0
 [ -z "$RUNTIME" ] && [ "$RTV_IOS" != "$RTV_ANDROID" ] && { OTA_PLATFORMS="android"; IOS_SPLIT=1; }
 [ -n "$RUNTIME" ] && OTA_PLATFORMS="$RT_PLATFORM"
+# both: ONE export for a runtime two platforms share - the channel dir is
+# swapped whole on publish, so two single-platform publishes into the same
+# rt-X would each delete the other's bundle (2026-10-20: ios rt-1.0.53 and the
+# previous android 1.0.53 APK).
+[ "$OTA_PLATFORMS" = "both" ] && OTA_PLATFORMS="android ios"
 [ "$DESKTOP_ONLY" = "1" ] && { OTA_PLATFORMS=""; [ -n "$RUNTIME" ] && { echo "--desktop-only and --runtime are exclusive"; exit 2; }; }
 
 # Record the runtimeVersion this bundle was exported for (policy=appVersion, so it
@@ -271,9 +276,42 @@ if [ "$WORKER" = "1" ]; then
   CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN")
   echo "  desktop.json ($DCHAN): HTTP $CODE"
 fi
-if [ "$IOS_SPLIT" = "1" ] && [ "$NO_BUILD" != "1" ]; then
-  echo "==> ios runtime $RTV_IOS differs from android $RTV_ANDROID - publishing ios into rt-$RTV_IOS"
-  bash "$0" --runtime "$RTV_IOS" --platform ios || VERIFY_FAILED="$VERIFY_FAILED ios"
+# STRANDED RUNTIMES - the phones whose binary is not the current one.
+#  - iOS on its own runtime (IOS_SPLIT, the 1.0.53 incident above);
+#  - NO BREAK FOR THE PREVIOUS APK (owner 2026-10-20, "keine Brüche mehr für
+#    version"): after a native ship the phones still on the previous APK got NO
+#    OTA at all - not even the screen telling them to install the new one. The
+#    bundle also goes to rt-<previous android runtime>, but ONLY when
+#    test_native_optional proves it cannot white-screen there (every native
+#    package added since that APK is reached via requireOptionalNativeModule).
+#    If the proof fails, it says so loudly and that channel is left alone.
+# Both targets collected first: when they share a runtime it is ONE publish
+# with both platforms (the channel dir is swapped whole - see --platform both).
+if [ -z "$RUNTIME" ] && [ "$NO_BUILD" != "1" ] && [ "$DESKTOP_ONLY" != "1" ]; then
+  RT_IOS_T=""; RT_AND_T=""
+  [ "$IOS_SPLIT" = "1" ] && RT_IOS_T="$RTV_IOS"
+  PREV_RT="$(py -3.12 ops/tests/test_native_optional.py --print-prev 2>/dev/null | tail -1)"
+  if [ -n "$PREV_RT" ] && [ "$PREV_RT" != "$RTV_ANDROID" ]; then
+    if py -3.12 ops/tests/test_native_optional.py --runtime "$PREV_RT"; then
+      RT_AND_T="$PREV_RT"
+    else
+      echo "!!! rt-$PREV_RT (android) NOT published: this bundle imports a native module the $PREV_RT APK"
+      echo "!!! does not have (see above). Phones on that APK keep their old JS until they install the new APK."
+    fi
+  fi
+  if [ -n "$RT_IOS_T" ] && [ "$RT_IOS_T" = "$RT_AND_T" ]; then
+    echo "==> ios and the previous android APK share runtime $RT_IOS_T - one publish into rt-$RT_IOS_T"
+    bash "$0" --runtime "$RT_IOS_T" --platform both || VERIFY_FAILED="$VERIFY_FAILED ios+android-$RT_IOS_T"
+  else
+    if [ -n "$RT_IOS_T" ]; then
+      echo "==> ios runtime $RTV_IOS differs from android $RTV_ANDROID - publishing ios into rt-$RTV_IOS"
+      bash "$0" --runtime "$RT_IOS_T" --platform ios || VERIFY_FAILED="$VERIFY_FAILED ios"
+    fi
+    if [ -n "$RT_AND_T" ]; then
+      echo "==> previous android runtime $RT_AND_T keeps receiving this bundle (rt-$RT_AND_T)"
+      bash "$0" --runtime "$RT_AND_T" --platform android || VERIFY_FAILED="$VERIFY_FAILED android-$RT_AND_T"
+    fi
+  fi
 fi
 if [ -n "$VERIFY_FAILED" ]; then
   echo "!!! PHONE OTA VERIFY FAILED for:$VERIFY_FAILED - the relay serves no update"

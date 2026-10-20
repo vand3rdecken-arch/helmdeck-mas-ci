@@ -22,7 +22,7 @@ import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, pushStillNews, useStreamCaps } from "@/data/stream";
 import { applyPushedPatch, TRACKS_KEY } from "@/data/tracks_sync";
-import * as Network from "expo-network";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
 import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
 import { useConfig, useNeedsPairing } from "@/data/config";
@@ -338,10 +338,21 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 // refetch on return without any pause hazard.
 // WiFi <-> mobile: the direct LAN path (data/direct.ts) is re-decided at once,
 // and in-flight direct requests are cut so they fall back instead of hanging.
+//
+// OPTIONAL, like data/glasses.ts: an OTA bundle also runs on an APK built
+// before expo-network was added (owner 2026-10-20, "keine Brüche mehr für
+// version"). requireOptionalNativeModule returns null there instead of
+// throwing at import, so that phone keeps working - it just re-decides the
+// direct path on resume and on failure instead of on the network event.
+// ops/tests/test_native_optional.py pins this for every native package newer
+// than the oldest runtime still served.
+type NetworkModule = { addListener: (ev: string, fn: () => void) => { remove: () => void } };
 function useNetworkChange() {
   useEffect(() => {
     if (Platform.OS === "web") return;
-    const sub = Network.addNetworkStateListener(() => directNetworkChanged());
+    const net = requireOptionalNativeModule<NetworkModule>("ExpoNetwork");
+    if (!net) return;
+    const sub = net.addListener("onNetworkStateChanged", () => directNetworkChanged());
     return () => sub.remove();
   }, []);
 }

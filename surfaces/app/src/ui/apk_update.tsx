@@ -59,7 +59,7 @@ function relayOrigin(): string | null {
 
 type ApkInfo = { versionCode: number; versionName: string; url: string };
 
-function useApkUpdateCheck(): ApkInfo | null {
+export function useApkUpdateCheck(): ApkInfo | null {
   const [info, setInfo] = useState<ApkInfo | null>(null);
   useEffect(() => {
     // version.json/the .apk on the relay are Android-only artifacts (built

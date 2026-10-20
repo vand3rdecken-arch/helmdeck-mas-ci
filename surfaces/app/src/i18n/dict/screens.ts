@@ -618,6 +618,9 @@ export const screens: Dict = {
   },
   "updates.upToDate": { de: "Aktuell.", en: "Up to date." },
   "updates.checkFailed": { de: "Check fehlgeschlagen: {err}", en: "Check failed: {err}" },
+  // the check found nothing for THIS runtime because a newer APK carries the
+  // next one - not a failure, the step is the APK (owner 2026-10-20)
+  "updates.needApk": { de: "Die neueste Version braucht ein App-Update (oben installieren). Bis dahin läuft diese Version weiter.", en: "The latest version needs an app update (install it above). This version keeps working until then." },
   "updates.diag.section": { de: "Update-Diagnose", en: "update diagnostics" },
   "updates.diag.updateId": { de: "Update-ID", en: "Update ID" },
   "updates.diag.createdAt": { de: "Erstellt", en: "Created" },
@@ -639,8 +642,8 @@ export const screens: Dict = {
     en: "OTA is only active in the release build (dev/Expo Go: off).",
   },
   "updates.apkAvailable": {
-    de: "Neue App-Version verfügbar (Build {build}). Diese Installation ist zu alt, um sie per OTA zu erreichen - nur eine neue APK bringt dich wieder auf den aktuellen Stand.",
-    en: "A new app version is available (build {build}). This install is too old for OTA to reach - only a fresh APK gets you current again.",
+    de: "Neue App-Version verfügbar (Build {build}). Bitte installieren, damit alle neuen Funktionen laufen. Diese Version bekommt bis dahin weiter Updates.",
+    en: "A new app version is available (build {build}). Please install it to get every new feature. This version keeps receiving updates until then.",
   },
   "updates.apkInstall": { de: "Jetzt installieren", en: "Install now" },
   // ---- native desktop-shell updates (surfaces/desktop/native-updater.js) --

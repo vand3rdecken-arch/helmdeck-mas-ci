@@ -10,6 +10,7 @@ import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { otaPending } from "@/data/ota";
 import { t as i18nT, useT } from "@/i18n";
 import { useTheme } from "@/theme";
+import { ApkUpdateBanner, useApkUpdateCheck } from "@/ui/apk_update";
 import { DesktopUpdatesPanel, isDesktopShell } from "@/ui/desktop_update";
 import { DiagPanel, useSecretTap } from "@/ui/diag_panel";
 import { KVRow, Panel, SectionLabel } from "@/ui/kit";
@@ -72,6 +73,9 @@ function PhoneUpdatesPanel() {
   const [staged, setStaged] = useState(otaPending.current);
 
   const [raw, setRaw] = useState("");   // the check/fetch result as returned, for diagnosis
+  // A newer APK on the relay means this runtime is the OLD one: "no update"
+  // from expo-updates is then expected, and the next step is the APK.
+  const apk = useApkUpdateCheck();
 
   async function checkNow() {
     setBusy(true); setFailed(false); setMsg(tr("updates.checking")); setRaw("");
@@ -89,8 +93,9 @@ function PhoneUpdatesPanel() {
           : tr("updates.updateLoaded"));
       } else setMsg(tr("updates.upToDate"));
     } catch (e) {
-      setFailed(true);
       const err = e as Error & { code?: string };
+      if (apk) { setMsg(tr("updates.needApk")); return; }   // not a failure: the APK is the update
+      setFailed(true);
       setMsg(tr("updates.checkFailed", { err: `${err.code ? err.code + ": " : ""}${String(err.message)}` }));
     } finally { setBusy(false); }
   }
@@ -98,6 +103,7 @@ function PhoneUpdatesPanel() {
   return (
     <Panel>
       <SectionLabel text={tr("updates.section")} />
+      <ApkUpdateBanner />
       <KVRow k={tr("updates.version")} v={`v${version}${build ? ` · Build ${build}` : ""}`} />
       <KVRow k={tr("updates.runtime")} v={Updates.runtimeVersion ?? "—"} />
       <KVRow k={tr("updates.channel")} v={Updates.channel || (Updates.isEnabled ? "production" : "— (dev)")} />
