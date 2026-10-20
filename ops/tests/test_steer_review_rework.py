@@ -103,6 +103,13 @@ t = _store["CF"]
 check(t["lane"] == "review" and t.get("merge_kind") == "conflict", "stays on Review with its finding (%s)" % t["lane"])
 check(not _lanes, "no lane event")
 
+print("[2b] Henry relaying the owner's rejection (no conflict) sends it back to work")
+_lanes.clear()
+_track("RJ", status="submitted", lane="review", machine=True, review_report="Maschinen-Aufgabe")
+sessions.steer("RJ", "Noch nicht abgenommen, es fehlen Clips", source="board copilot")
+check(_store["RJ"]["lane"] == "working" and "review_report" not in _store["RJ"],
+      "review -> working, verdict cleared (%s)" % _store["RJ"]["lane"])
+
 print("[3] a steer on Done still reopens it (unchanged)")
 _track("DN", status="done", lane="done")
 sessions.steer("DN", "noch eine Kleinigkeit")

@@ -922,20 +922,23 @@ def steer(tid, text, perm=None, actor="owner", source="you",
     # The OWNER writing to a card on Review sends it back to work (owner 2026-10-18: "karten auf review wenn
     # neue steer kommt geht nicht auf in arbeit und zeigt falsch als das ist ok so"): the card kept its lane,
     # kept its old green "mergeable" verdict on the board, and after the turn read "Bereit zur Abnahme"
-    # again without any new gate. A DELEGATED steer (Henry resolving a merge conflict on the card) still
-    # keeps it on Review - that is the case the old rule was written for.
-    owner_rework = (source in ("", "you") and actor not in ("henry", "system", "daemon"))
+    # again without any new gate. Only a delegated MERGE-CONFLICT fix keeps it on Review - that is the
+    # case the old rule was written for, and the card's own conflict verdict says so. Every other steer
+    # is rework: measured 2026-10-20, Henry relayed the owner's "Noch nicht abgenommen" (source "board
+    # copilot") and the machine card sat in Abnahme while its worker ran for minutes.
+    human = (source in ("", "you") and actor not in ("henry", "system", "daemon"))
 
     def _begin(tt):
-        if tt["lane"] == "review" and owner_rework:
+        conflict_fix = not human and (source == "conflict-resolution" or tt.get("merge_kind") == "conflict")
+        if tt["lane"] == "review" and not conflict_fix:
             # review -> working is the lane table's own "bounce" transition (_LANE_TRANSITIONS)
             events.emit("lane", tid, frm="review", to="working", verb="bounce", actor=actor)
             tt["lane"] = "working"
             # the verdict described the work BEFORE this instruction - showing it now is the lie
             for k in ("merge_report", "merge_kind", "review_report", "gate_report"):
                 tt.pop(k, None)
-        # Any other lane (backlog/done) still means "back to active work"; a delegated
-        # steer on Review (conflict fix) stays on Review.
+        # Any other lane (backlog/done) still means "back to active work"; the
+        # conflict-fix steer on Review stays on Review.
         if tt["lane"] not in ("working", "review"):
             events.emit("lane", tid, frm=tt["lane"], to="working")
             tt["lane"] = "working"
