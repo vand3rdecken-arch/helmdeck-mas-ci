@@ -85,11 +85,18 @@ def stage_payload(no_web=False):
 
 def feed(version, notes, installer_name, signature):
     url = "https://github.com/%s/releases/download/v%s/%s" % (REPO, version, installer_name)
+    # a re-run for the SAME version keeps the darwin entries release_tauri_mac.py added
+    import urllib.request
+    try:
+        old = json.load(urllib.request.urlopen("https://github.com/%s/releases/download/%s/latest.json" % (REPO, FEED_TAG)))
+    except Exception:
+        old = {}
+    keep = old.get("platforms", {}) if old.get("version") == version else {}
     return {
         "version": version,
         "notes": notes,
         "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "platforms": {"windows-x86_64": {"signature": signature, "url": url}},
+        "platforms": {**keep, "windows-x86_64": {"signature": signature, "url": url}},
     }
 
 

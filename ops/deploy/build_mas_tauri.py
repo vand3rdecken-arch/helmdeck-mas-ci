@@ -40,6 +40,25 @@ def identity(*names):
     return None
 
 
+def stage_payload():
+    """The payload: same allowlist + secret scan + fresh web export as the Windows packages. Shared with
+    build_devid_tauri.py, the direct-download twin of this script."""
+    spec = importlib.util.spec_from_file_location("bmt", os.path.join(ROOT, "ops", "deploy", "build_msix_tauri.py"))
+    bmt = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bmt)
+    payload = os.path.join(APP, "target", "payload")
+    shutil.rmtree(payload, ignore_errors=True)
+    os.makedirs(payload)
+    bmt.STAGE = payload
+    n = bmt.copy_allowlist()
+    bmt.build_web()
+    shutil.copytree(bmt.WEB_DIST, os.path.join(payload, "app-dist"))
+    hits = bmt.scan_for_secrets()
+    if hits:
+        sys.exit("REFUSING to build - secret-shaped files in the payload:\n  " + "\n  ".join(hits))
+    print("payload: %d source files + web app" % n)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True)
@@ -55,21 +74,7 @@ def main():
     if not (app_id and pkg_id):
         sys.exit("signing identities missing in the keychain (app: %s, installer: %s)" % (app_id, pkg_id))
 
-    # the payload: same allowlist + secret scan + fresh web export as the Windows packages
-    spec = importlib.util.spec_from_file_location("bmt", os.path.join(ROOT, "ops", "deploy", "build_msix_tauri.py"))
-    bmt = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bmt)
-    payload = os.path.join(APP, "target", "payload")
-    shutil.rmtree(payload, ignore_errors=True)
-    os.makedirs(payload)
-    bmt.STAGE = payload
-    n = bmt.copy_allowlist()
-    bmt.build_web()
-    shutil.copytree(bmt.WEB_DIST, os.path.join(payload, "app-dist"))
-    hits = bmt.scan_for_secrets()
-    if hits:
-        sys.exit("REFUSING to build - secret-shaped files in the payload:\n  " + "\n  ".join(hits))
-    print("payload: %d source files + web app" % n)
+    stage_payload()
 
     # The signature must carry the App ID the provisioning profile names (Apple 90886: without it no
     # TestFlight) - electron-builder did this implicitly. Read it FROM the profile, never hand-typed, and

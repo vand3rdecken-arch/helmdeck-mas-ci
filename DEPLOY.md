@@ -73,6 +73,23 @@ Recovery if a bad bundle already shipped: `ops/deploy/rollback_update.sh --embed
 
 ## 1b) Desktop installer → GitHub release
 
+**CURRENT (2026-10-20): the desktop shell is TAURI, not Electron.** `release_desktop.sh` /
+`release_desktop_mac.sh` and `latest-mac.yml` below describe the retired Electron channel (kept for the
+installed 0.2.x Electron apps, which still read it). A release today:
+
+```bash
+py -3.12 ops/deploy/release_tauri.py --version 0.2.32 --publish        # Windows NSIS + feed (this PC: the updater key lives here)
+# Mac: dispatch the workflow on the mirror (HTTPS push of main to vand3rdecken-arch/helmdeck-mas-ci first)
+gh workflow run desktop-mac-tauri.yml --repo vand3rdecken-arch/helmdeck-mas-ci -f version=0.2.32
+py -3.12 ops/deploy/release_tauri_mac.py --version 0.2.32 --run <run id> --publish
+```
+
+Feed = `latest.json` on the fixed tag `tauri-feed` of `Tienduyvo/helmdeck-release`; Windows and macOS entries
+live in the same file. The Mac DMG is ONE universal build, Developer ID signed, notarized and stapled
+(`desktop-mac-tauri.yml` -> `build_devid_tauri.py`, `spctl --assess` in the log); same certificate and
+secrets as `desktop-mac.yml`. The updater tarball is signed on this PC by `release_tauri_mac.py`, never in CI.
+The App Store `.pkg` is the other twin (`desktop-mac-mas-tauri.yml`, §1f) and is never touched by this path.
+
 The Windows desktop app is distributed as an NSIS installer on the GitHub
 "Downloads" release (`github.com/Tienduyvo/helmdeck`). OTA now covers the UI
 bundle (§1), but the app *shell* (main.js, the auto-updater, electron-builder

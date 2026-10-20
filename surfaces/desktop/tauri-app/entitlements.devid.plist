@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Tauri window for DIRECT download (Developer ID, hardened runtime, NO App Sandbox - an agent works in
+  any repo the owner picks). WKWebView needs no JIT entitlement (its JavaScript runs in Apple's WebContent
+  process). disable-library-validation, as in the Electron build's entitlements.mac.plist: HelmDeck spawns
+  the Python daemon and the `claude` CLI, executables signed by somebody else or not at all.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>
