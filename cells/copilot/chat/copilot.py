@@ -2470,6 +2470,16 @@ def say(text, cls="pm", card=None, extra=None):
 # live copilot subprocess per user, so the chat's Stop button can kill a turn.
 _running = {}
 _turn_started = {}       # user -> epoch the running turn began (live()["since"])
+# A turn is not over when its engine stops: _running is popped in the engine's
+# own `finally`, BEFORE _conclude_turn persists the answer. /chat/live said
+# running=false in that gap, so a history read the app issued on that signal
+# could miss the answer - and the app could never tell "not persisted yet"
+# from "this turn persists nothing" (a dropped preamble, a killed or failed
+# turn), so the last streamed sentence stayed on screen until the NEXT answer
+# (owner 2026-10-19 21:18, "Ich schau, ob die Hands fertig sind." under the
+# spinner). user -> thread id of the chat() call whose turn is concluding;
+# set where the turn registers, cleared when that chat() call returns.
+_concluding = {}
 
 
 def _note_turn(user, on):
@@ -2813,11 +2823,12 @@ def live(user):
             # transient tool steps of the running turn (see the tool_use fold
             # in chat()) - gone with livebuf.clear(), never in the chat log
             "steps": _steps_of(_rd("steps")),
-            "running": user in _running,
+            # running until CONCLUDED (persisted or not) - see _concluding
+            "running": user in _running or user in _concluding,
             # the app's "denkt nach · Ns" counts from HERE, not from a local
             # timer that restarts at 0 on every remount/resume (owner
             # 2026-09-14: "counter goes to 0 or not counting when app not open")
-            "since": _turn_started.get(user) if user in _running else None,
+            "since": _turn_started.get(user) if (user in _running or user in _concluding) else None,
             "card": _running_card.get(user)}
 
 
@@ -3027,7 +3038,20 @@ def _engine_opencode(user, skey, cli_model, system, turn, run_dir, live_key, han
                        "session_id": sid},
             "sess": sess, "rotation_check": False, "warm": False, "live_steps": steps}
 
-def chat(user, message, role="operator", model="", thinking="", attachments=None,
+def chat(user, message, *args, **kwargs):
+    """A Henry turn - see _chat. This wrapper only ends the turn's
+    `_concluding` mark when the call returns (answer persisted, nothing to
+    persist, error or cancel alike): the one moment /chat/live may say the
+    turn is over. Keyed by thread so a message queued behind the turn lock
+    never clears the running turn's mark."""
+    try:
+        return _chat(user, message, *args, **kwargs)
+    finally:
+        if _concluding.get(user) == threading.get_ident():
+            _concluding.pop(user, None)
+
+
+def _chat(user, message, role="operator", model="", thinking="", attachments=None,
          card=None, allow_actions=True, extra_system="", voice_stream=False,
          client_msg_id="", announce=True, _retried=False, model_source="user", mode="",
          harness_note="", overlay="", reply_to=None):
@@ -3422,6 +3446,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
             turn = _revoke + "\n\n" + turn
         _h = _EngineHandle()
         _running[user] = _h
+        _concluding[user] = threading.get_ident()
         _turn_started[user] = time.time()
         _my_start = _turn_started[user]
         _note_turn(user, True)
@@ -3491,6 +3516,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
         _lk.release()      # a failed spawn must not deadlock every later turn
         raise
     _running[user] = p
+    _concluding[user] = threading.get_ident()
     _turn_started[user] = time.time()
     _my_start = _turn_started[user]      # this turn's identity (see _superseded)
     _note_turn(user, True)
@@ -3543,6 +3569,7 @@ def chat(user, message, role="operator", model="", thinking="", attachments=None
                 base_system = harness.brief("board-copilot")
                 p, _fresh = _persist_get(skey, cli_model, sid, base_system)
                 _running[user] = p
+                _concluding[user] = threading.get_ident()
                 _port.begin(p)
                 p.stdin.write(json.dumps({"type": "user",
                                           "message": {"role": "user", "content": prompt}}) + "\n")

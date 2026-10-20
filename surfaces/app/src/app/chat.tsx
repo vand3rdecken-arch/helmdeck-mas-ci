@@ -530,6 +530,36 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
       : sigOf(server) !== held.sig;
     if (landed) setHeld(null);
   }, [server, held]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // ...and drop it once the daemon PROVES the turn left nothing to land (owner
+  // 2026-10-19 21:18: "Ich schau, ob die Hands fertig sind." stayed under the
+  // spinner until the next answer). A turn can end without a persisted row: the
+  // preamble before its last tool call is dropped by design (copilot "only the
+  // result is kept"), a killed or failed turn persists nothing. The proof, in
+  // order: /chat/live says not running - which since 2026-10-20 means
+  // CONCLUDED, answer persisted or not (copilot._concluding) - and a history
+  // read issued AFTER that still has no non-owner row past the turn's start.
+  // Any failed read keeps the copy: unknown is never treated as "nothing".
+  useEffect(() => {
+    if (!held) return;
+    let alive = true;
+    const mine = held;
+    (async () => {
+      try {
+        const live = await api.chatLive();
+        if (!alive || live?.running !== false) return;
+        await qc.refetchQueries({ queryKey: ["chatHistory"] });
+        const st = qc.getQueryState<{ messages: ChatMsg[] }>(["chatHistory"]);
+        if (!alive || !st || st.status === "error") return;
+        const rows = st.data?.messages ?? [];
+        const landed = mine.seq > 0
+          ? rows.some((m) => m.cls !== "user" && m.cls !== "you" && (m.seq ?? 0) > mine.seq)
+          : sigOf(rows) !== mine.sig;
+        // landed: the effect above releases it; not landed: the turn left nothing
+        if (!landed) setHeld((cur) => (cur === mine ? null : cur));
+      } catch { /* unreachable daemon: keep the copy */ }
+    })();
+    return () => { alive = false; };
+  }, [held]);   // eslint-disable-line react-hooks/exhaustive-deps
   // OBSERVE a turn already running on the daemon (mount + every foreground
   // resume): /chat/live `running` is the one place that state is owned.
   useEffect(() => {
