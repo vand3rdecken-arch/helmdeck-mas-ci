@@ -524,6 +524,10 @@ class H(BaseHTTPRequestHandler):
             # (python-local-import-shadows-module-scope); it caught me anyway.
             if p == "/takeout/restore":
                 return routes_takeout.POST_ROUTES[p](self, user, body)
+            # LAN direct frames: sealed, pinned-key-gated, before the session
+            # gate for the same reason (no session by design) - routes_relay.
+            if p == "/relay/direct":
+                return routes_relay.relay_direct_post(self, body)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate (see do_GET): a POST path owned by a DISABLED agentic
@@ -827,6 +831,8 @@ def serve(port=8140, takeover=False):
     # failing loud beats silently downgrading to cleartext on the network.
     cert, key, tls_port = _tls_config()
     bind = "127.0.0.1" if cert else "0.0.0.0"
+    if bind == "0.0.0.0":
+        relay_client.serve_direct_on(port)   # phones on the same WiFi may skip the relay
     if cert:
         import ssl
         try:

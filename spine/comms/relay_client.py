@@ -212,9 +212,11 @@ class _EventPublisher:
         tp["from"] = frm
         return tp if len(json.dumps(tp)) <= self.TRACKS_PUSH_MAX else None
 
-    def _send(self, pub, v, c, topics=None, from_v=None):
+    def _send(self, pub, v, c, topics=None, from_v=None, extra=None):
         from spine.comms import e2ee
         ev = {"v": v, "c": c}
+        if extra:
+            ev.update(extra)
         if topics is not None:
             # WHAT moved since the previous event (db.topics_since): the app
             # refetches only those queries. Absent = "refetch what you hold"
@@ -236,10 +238,13 @@ class _EventPublisher:
 
     def announce(self, pub):
         """A phone just joined the room: give it the current state NOW, which
-        is also how it learns this daemon pushes at all."""
+        is also how it learns this daemon pushes at all - and, sealed to that
+        phone only, where it can reach this daemon DIRECTLY on the local
+        network (lan_endpoints; the app probes it and falls back to the relay)."""
         from spine.storage import db
         if pub and pub in _cfg()[3]:
-            self._send(pub, db.current_version(), db.current_chat_version())
+            self._send(pub, db.current_version(), db.current_chat_version(),
+                       extra={"lan": lan_endpoints()})
 
     def _run(self):
         from spine.storage import db
@@ -674,6 +679,130 @@ def _held_disarm(token):
 HELD_BODY = json.dumps({"error": "still working - the answer arrives in the chat", "held": True})
 
 
+# --- DIRECT ON THE LOCAL NETWORK (2026-10-20) --------------------------------
+# Owner: "Wie kann man weg request noch verkürzen". Measured on the phone the
+# same morning: median 829 ms per request, of which the daemon 29 ms and the
+# network legs (phone <-> Cloudflare <-> this box) 710 ms. On the same WiFi the
+# phone can skip Cloudflare entirely.
+#
+# Paseo has a direct path too (packages/protocol host-connection-schema.ts
+# directTcp) but only for an address typed in by hand, and WITHOUT its E2EE
+# (host-runtime.ts creates the direct DaemonClient with no e2ee option). Here
+# the phone sends the SAME sealed frame it sends the relay ({pub, cipher}) to
+# POST /relay/direct, so the LAN sees only ciphertext even over plain http, and
+# the daemon learns the address it advertises from its own routing table.
+#
+# What the LAN adds that the relay's HTTPS did not: a captured frame can be
+# REPLAYED by anyone on the network. A direct frame therefore must carry a
+# timestamp and a one-time nonce inside the sealed box; stale or seen frames
+# are refused. Only already-pinned keys are served - pairing never happens
+# over this door.
+_direct_port = None
+DIRECT_SKEW_S = 60                      # |phone clock - ours| a direct frame may have
+IDEM_KEEP_S = 2 * DIRECT_SKEW_S         # how long a nonce (and a write's answer) is kept
+_idem = {}                              # nonce -> {"ts", "get", "resp", "ev"}
+_idem_lock = threading.Lock()
+
+
+def _once(inner, run):
+    """Run `inner` at most once per nonce `n` - the idempotency key a frame
+    carries in its sealed box, on BOTH doors (direct and relay).
+
+    A WRITE seen again gets the answer of its first run, never a second run:
+    that is what lets the app resend a write over the relay when the direct
+    attempt failed mid-flight (it may or may not have run), and what makes a
+    frame replayed by someone on the LAN harmless. A READ seen again is refused
+    (409): reads are resent with a fresh nonce, so a repeat is only a replay.
+    A frame without `n` (older app) runs as before."""
+    n = str(inner.get("n") or "")
+    if not n:
+        return run()
+    is_get = str(inner.get("method", "GET")).upper() == "GET"
+    now = time.time()
+    with _idem_lock:
+        for k in [k for k, e in _idem.items() if now - e["ts"] > IDEM_KEEP_S]:
+            del _idem[k]
+        e = _idem.get(n)
+        mine = e is None
+        if mine:
+            e = _idem[n] = {"ts": now, "get": is_get, "resp": None, "ev": threading.Event()}
+    if not mine:
+        if is_get or e["get"]:
+            return {"status": 409, "headers": {}, "body": json.dumps({"error": "replayed frame"})}
+        e["ev"].wait(LOCAL_TIMEOUT)          # the first run may still be working
+        return e["resp"] or {"status": 504, "headers": {}, "body": HELD_BODY}
+    try:
+        resp = run()
+    except Exception as ex:                  # noqa: BLE001
+        resp = {"status": 500, "headers": {}, "body": json.dumps({"error": str(ex)[:200]})}
+    if not is_get:
+        e["resp"] = resp                     # only writes keep their answer (reads can be large)
+    e["ev"].set()
+    return resp
+
+
+def serve_direct_on(port):
+    """server.serve(): plain http is on the network (no TLS material) - the
+    direct door may be advertised. With TLS the plain listener is loopback
+    only and nothing is advertised (a self-signed https the phone would have
+    to trust is a separate step)."""
+    global _direct_port
+    _direct_port = port
+
+
+def lan_endpoints():
+    """["http://<lan ip>:<port>"] this daemon is reachable on, or [] - derived
+    from the routing table at call time (the address the OS would use to reach
+    the internet; no packet is sent), never stored."""
+    if not _direct_port:
+        return []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("192.0.2.1", 9))      # TEST-NET-1: route lookup only
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return []
+    if not ip or ip.startswith("127.") or ip == "0.0.0.0":
+        return []
+    return ["http://%s:%d" % (ip, _direct_port)]
+
+
+def serve_direct(body):
+    """POST /relay/direct: one sealed frame in, (status, {cipher}|{error}) out.
+    Same pinned-key admission and in-process handler as a relay frame."""
+    from spine.comms import e2ee
+    if _inproc_handler is None or not _direct_port:
+        return 404, {"error": "no direct path on this daemon"}
+    pub = str((body or {}).get("pub") or "")
+    cipher = (body or {}).get("cipher")
+    _url, _room, sk_b64, pubs = _cfg()
+    if not pub or pub not in pubs or not sk_b64 or not isinstance(cipher, str):
+        return 403, {"error": "this device is not paired with the workspace"}
+    try:
+        sk = e2ee.import_sec(sk_b64)
+        peer = e2ee.import_pub(pub)
+        inner = json.loads(e2ee.open_b64(cipher, sk, peer))
+    except Exception:
+        return 400, {"error": "undecryptable frame"}
+    try:
+        ts = float(inner.get("ts"))
+    except (TypeError, ValueError):
+        ts = 0.0
+    if not inner.get("n") or abs(time.time() - ts) > DIRECT_SKEW_S:
+        # sealed to the caller like any answer: a replayer learns nothing
+        resp = {"status": 409, "headers": {}, "body": json.dumps({"error": "stale frame or no nonce"})}
+    elif str(inner.get("path", "")).split("?")[0] == "/relay/direct":
+        resp = {"status": 400, "headers": {}, "body": json.dumps({"error": "no frames inside frames"})}
+    else:
+        t0 = time.time()
+        resp = _once(inner, lambda: _inproc(inner))
+        resp = dict(resp, tm={"q": 0, "h": int((time.time() - t0) * 1000)})
+    return 200, {"cipher": e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)}
+
+
 def _local(port, inner):
     url = "http://127.0.0.1:%d%s" % (port, inner.get("path", "/"))
     method = inner.get("method", "GET")
@@ -874,7 +1003,7 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
         token = object()
         _held_arm(token, lambda: _seal_deliver({"status": 504, "headers": {}, "body": HELD_BODY}),
                   LOCAL_TIMEOUT)
-        resp = _inproc(inner)
+        resp = _once(inner, lambda: _inproc(inner))
         if not _held_disarm(token):
             resp = None                       # the watchdog already answered `held`
     else:

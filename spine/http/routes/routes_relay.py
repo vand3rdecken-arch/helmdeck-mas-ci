@@ -84,6 +84,16 @@ def relay_pair_claim_get(self, user):
     return self._send(200, json.dumps(pay))
 
 
+def relay_direct_post(self, body):
+    """POST /relay/direct - the LAN twin of a relay frame (relay_client.
+    serve_direct). Dispatched BEFORE the auth gate: it carries no session by
+    design and gates itself on a pinned device key + a fresh sealed nonce; the
+    request inside the box authenticates like any relay request."""
+    from spine.comms import relay_client
+    code, out = relay_client.serve_direct(body)
+    return self._send(code, json.dumps(out))
+
+
 GET_ROUTES = {
     "/relay/pair/claim": relay_pair_claim_get,
 }
