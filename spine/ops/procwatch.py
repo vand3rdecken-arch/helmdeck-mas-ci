@@ -35,3 +35,26 @@ def create_time(pid):
 def alive(pid, ctime):
     """True only while pid exists AND was created at ctime."""
     return ctime is not None and create_time(pid) == ctime
+
+
+def exists(pid):
+    """Is there a live process with this pid? The ONE liveness probe for a pid
+    read from a lock file. NEVER os.kill(pid, 0) on Windows: CPython maps every
+    signal but CTRL_C/CTRL_BREAK to TerminateProcess, so the "probe" KILLS a
+    foreign process and then raises SystemError (measured 2026-10-20: Henry's
+    ship.lock line and an analysis session both took the live daemon down)."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return create_time(pid) is not None
+    try:
+        os.kill(pid, 0)                 # POSIX: signal 0 really is a probe
+        return True
+    except PermissionError:
+        return True                     # exists, owned by someone else
+    except OSError:
+        return False

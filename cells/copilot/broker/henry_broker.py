@@ -478,11 +478,10 @@ def _android_lock_pid():
 
 
 def _pid_alive(pid):
-    try:
-        os.kill(int(pid), 0)
-        return True
-    except (OSError, ValueError):
-        return False
+    # procwatch.exists, never os.kill(pid, 0): on Windows that TERMINATES the
+    # lock holder - every snapshot killed the running ship/build it reported on.
+    from spine.ops import procwatch
+    return procwatch.exists(pid)
 
 
 def _box_load_line():
@@ -1400,5 +1399,12 @@ def start_broker():
     if _started:
         return
     _started = True
-    check_stale_ship_lock()
+    # The loop FIRST: a boot check that raises must never cost Henry his ears.
+    # 2026-10-20 10:35 check_stale_ship_lock raised (os.kill SystemError) before
+    # this line, the thread never started, and every escalation sat unread for
+    # 41 minutes behind one line in the boot log.
     threading.Thread(target=_loop, daemon=True).start()
+    try:
+        check_stale_ship_lock()
+    except Exception:
+        print("henry: stale ship.lock check failed:\n" + traceback.format_exc())

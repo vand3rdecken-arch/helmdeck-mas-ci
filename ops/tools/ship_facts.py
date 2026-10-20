@@ -293,11 +293,12 @@ def resources():
         pids = [l.strip() for l in open(os.path.join(lock, "pid")).read().splitlines() if l.strip()]
         holder = pids[1] if len(pids) > 1 else (pids[0] if pids else None)
         label = open(os.path.join(lock, "label"), encoding="utf-8").read().strip()
-        try:
-            os.kill(int(holder), 0)
-            held = True
-        except (OSError, ValueError):
-            held = False
+        # procwatch.exists, never os.kill(holder, 0): on Windows that
+        # TERMINATES the build it is asking about.
+        if ROOT not in sys.path:
+            sys.path.insert(0, ROOT)
+        from spine.ops import procwatch
+        held = procwatch.exists(holder)
     except OSError:
         pass
     r["android_build_lock"] = {"held": held, "holder_pid": holder, "label": label,

@@ -818,6 +818,8 @@ class _ClaudeSession:
         self._spawn_resumed = None       # the session id --resume asked for, or None
         self._resume_echo = False        # init event echoed that id -> attach certain
         self._first_turn_after_spawn = True
+        self._context_lost = False       # set by _spawn when --resume had nothing to resume
+        self.card_task = ""              # the card's task, refreshed every turn by _claude
         self._spawn()
 
     # -- lifecycle -------------------------------------------------------
@@ -851,6 +853,11 @@ class _ClaudeSession:
                         % self.session_id[:8])
                 self.session_id = None
                 self.adopted_source = None
+                # the fresh session knows NOTHING - not even the card's task.
+                # The next turn carries it (_run_turn_locked); 2026-10-20 a
+                # worker cut 76s into its first turn got only "do the task as
+                # described" and asked the owner what the task was.
+                self._context_lost = True
                 if self.run_dir:
                     try:
                         from spine.ops.actionlog import ActionLog
@@ -1616,6 +1623,9 @@ class _ClaudeSession:
             # session died (crash/cancel/opts-restart/idle-evict) - respawn & --resume.
             _tree_kill(self.proc)
             self._spawn()
+        if self._context_lost:
+            self._context_lost = False
+            prompt = _with_lost_task(self.card_task, prompt)
         # in-flight state lives in livebuf (state-into-db phase I): the
         # partial in memory, the rotated session id as a runtime_doc row
         from spine.ops.runs import run_id_of
@@ -1886,7 +1896,21 @@ def _claude(cfg, t, prompt, by=None):
     # carries the SAME economics fields as before (result/total_cost_usd/usage/
     # modelUsage) so the gate and metrics are unchanged.
     s = _get_session(cfg, t)
+    s.card_task = t.get("task") or ""
     return s.run_turn(prompt, t.get("run_dir") or ".", by=by)
+
+
+def _with_lost_task(task, prompt):
+    """The prompt for the first turn of a session that should have RESUMED but
+    had no transcript to resume: the card's task first, then the instruction.
+    The task is the card's own record (the one thing that survives any crash),
+    not a reconstruction of the lost conversation."""
+    task = (task or "").strip()
+    if not task:
+        return prompt
+    return ("[Der bisherige Gespraechsverlauf dieser Karte ist verloren (Neustart, "
+            "bevor die Session gespeichert war). Hier ist der Auftrag der Karte im "
+            "Wortlaut:]\n\n" + task + "\n\n[Aktuelle Anweisung:]\n\n" + prompt)
 
 
 def _http(cfg, t, prompt):
