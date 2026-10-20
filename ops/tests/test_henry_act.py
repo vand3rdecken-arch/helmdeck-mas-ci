@@ -149,5 +149,11 @@ check("BOARD CHANGES" not in harness.brief("delegate"), "a research agent's brie
 check(os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "henry_act.py")),
       "the CLI the briefs name exists")
 
+# 9. the broker's hands round is told the same (it has Bash and no catalog)
+from cells.copilot.broker import henry_broker as hb
+_t = hb._HANDS_TAIL % "Plan"
+check("henry_act.py" in _t and "nie den Speicher" in _t and os.path.isfile(hb._ACT_TOOLS + "/henry_act.py"),
+      "the broker hands round names the verb tool (a real path) and forbids writing the store")
+
 print("PASS test_henry_act" if not fails else "FAIL (%d)" % len(fails))
 sys.exit(1 if fails else 0)

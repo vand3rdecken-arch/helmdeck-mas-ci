@@ -268,8 +268,17 @@ _STAGE1_TAIL = (
     ' "goal": "bei direct_task/machine_task: true wenn die Karte dem Ziel dient (GOAL-Zeile)",\n'
     ' "why": "ein satz begruendung"}') % (NEED_MAX, NEED_ROUNDS)
 
+# the verb tool (ops/tools/henry_act.py): the hands round has Bash but no verb catalog; told to
+# "fill the processes" it wrote the store directly (2026-10-20: steps without events, cards
+# without their process pointer). Verbs keep both sides of every link.
+_ACT_TOOLS = os.path.join(_HENRY_REPO_ROOT, "ops", "tools").replace("\\", "/")
+
 _HANDS_TAIL = (
     "\n\nJETZT hast du Werkzeuge (Bash, Read, Edit) und darfst handeln. "
+    "Board-Aenderungen (Prozesse, Karten, Schritte anlegen oder aendern) NUR ueber das Verb-Werkzeug, "
+    "nie den Speicher (db, json) selbst beschreiben: py -3.12 " + '\"' + _ACT_TOOLS + "/henry_act.py" + '\"' + " '<JSON-Liste>'. "
+    "Die Verben laufen der Reihe nach; \"$N.process\" / \"$N.card\" in einem spaeteren Verb ist die ID, "
+    "die das N-te Verb desselben Aufrufs gemacht hat. Die Formen: py -3.12 " + '\"' + _ACT_TOOLS + "/henry_brief_get.py" + '\"' + " get actions. "
     "Dein Vorhaben aus der Vorrunde: %s\n"
     "Fuehre es aus und melde action \"did\" (text: was du getan hast). "
     "action \"restart\" = Daemon-Neustart ueber den Harness (verweigert von selbst, solange "
