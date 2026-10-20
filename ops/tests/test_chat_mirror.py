@@ -122,6 +122,16 @@ check((e.get("question") or {}).get("id") == "q-1",
 check("Welchen Weg" in (e.get("text") or ""),
       "the text is the question itself, not 'a card needs you'")
 
+# -- 1b. the asking reply's prose rides along as context (owner 2026-10-20) ----
+reset()
+notify.card_event(card(question=ask_block("q-ctx"),
+                       last_reply="Der Guard sperrt Seekingalpha, weil dort die .env liegt."),
+                  "question")
+e = (cards() or [{}])[0]
+check("Guard sperrt" in ((e.get("question") or {}).get("context") or ""),
+      "the chat question carries the worker's reasoning, so it reads without "
+      "opening the card")
+
 # -- 2. a turn END is NOT mirrored: Henry answers, the worker report stays his --
 # (owner 2026-10-09, screenshot: a cut-off "Result" bubble beside Henry's own
 # answer). The worker's reply goes to Henry via delivered-parked; he decides and

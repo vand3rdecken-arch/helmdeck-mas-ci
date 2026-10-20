@@ -94,6 +94,7 @@ export function QuestionPanel({ question, onSubmit, onAnswered, hint }: {
   // that cap), and one tap on the header collapses it to a single line so the
   // transcript is fully readable - Paseo-style, the question never blocks history.
   const [open, setOpen] = useState(true);
+  const [ctxOpen, setCtxOpen] = useState(false);
   const { height: winH } = useWindowDimensions();
 
   const qs = question.questions ?? [];
@@ -155,7 +156,9 @@ export function QuestionPanel({ question, onSubmit, onAnswered, hint }: {
         borderRadius: 12, padding: 11, gap: 9,
         // Never taller than ~half the viewport: the transcript above always
         // keeps room, and the question's own body scrolls within this cap.
-        maxHeight: open ? Math.round(winH * 0.5) : undefined,
+        // a little more when the worker's context sits above the options, so
+        // folded context still leaves every option of a short ask in view.
+        maxHeight: open ? Math.round(winH * (question.context ? 0.62 : 0.5)) : undefined,
       }}>
         <Pressable onPress={() => setOpen(!open)} accessibilityRole="button"
           accessibilityLabel={open ? tr("card.q.collapse") : tr("card.q.expand")}
@@ -192,6 +195,24 @@ export function QuestionPanel({ question, onSubmit, onAnswered, hint }: {
             and the answer button off screen (the whole panel is bounded above). */}
         <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ gap: 9 }}
           showsVerticalScrollIndicator persistentScrollbar keyboardShouldPersistTaps="handled">
+          {question.context ? (
+            // The worker's reasoning from the asking reply, so the question
+            // reads without opening the card. Folded to a preview by default.
+            <Pressable onPress={() => setCtxOpen(!ctxOpen)} accessibilityRole="button"
+              accessibilityLabel={ctxOpen ? tr("card.q.contextHide") : tr("card.q.contextShow")}
+              style={{ backgroundColor: t.surface2, borderRadius: 9, padding: 9, gap: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600", letterSpacing: 0.3, flex: 1 }}>
+                  {tr("card.q.context")}
+                </Text>
+                <Ionicons name={ctxOpen ? "chevron-up" : "chevron-down"} size={14} color={t.txtTertiary} />
+              </View>
+              <Text numberOfLines={ctxOpen ? undefined : 3}
+                style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 17 }}>
+                {question.context}
+              </Text>
+            </Pressable>
+          ) : null}
           <Text style={{ color: t.txtPrimary, fontSize: 13.5, fontWeight: "600", lineHeight: 19 }}>
             {q.question}
           </Text>

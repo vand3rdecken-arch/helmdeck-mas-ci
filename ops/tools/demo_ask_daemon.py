@@ -22,8 +22,10 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT)
 
 SANDBOX = tempfile.mkdtemp(prefix="hd-askdemo-")
+os.environ["HELMDECK_DATA_ROOT"] = SANDBOX
 import daemon.paths
 daemon.paths.DAEMON_ROOT = SANDBOX
+daemon.paths.DATA_ROOT = SANDBOX
 
 from spine.auth import auth                     # noqa: E402
 from spine.storage import db, events            # noqa: E402
@@ -65,9 +67,16 @@ TRACK = {"id": TID, "status": "needs_you", "lane": "working",
          "tokens_out": 0, "models": [], "created": "2026-09-13 12:00:00",
          "updated": "2026-09-13 12:00:00", "rank": 0, "driver": "claude",
          "actor": "owner", "client": "", "priority": "medium",
-         "question": QUESTION}
+         "question": QUESTION,
+         "last_reply": "Die Erinnerung ist gebaut und getestet, es fehlt nur der "
+                       "Versandkanal. Web-Push kommt sofort aufs Handy, braucht "
+                       "aber eine einmalige Freigabe im Browser. E-Mail braucht "
+                       "keine Freigabe, landet aber im Tages-Digest und kommt "
+                       "damit bis zu 24 Stunden spaeter. Ich empfehle Web-Push, "
+                       "weil eine Deploy-Erinnerung zeitnah sein muss."}
 db.track_put(TRACK)
-card_mirror.say_card(TRACK, "question", ask.summary(QUESTION), question=QUESTION)
+# the REAL mirror path, so the chat copy carries the asking reply as context
+card_mirror.mirror(TRACK, "question")
 
 # The one fake: sessions.answer_question ends by resuming the session via a
 # real steer() - here it instead simulates the worker picking the decision

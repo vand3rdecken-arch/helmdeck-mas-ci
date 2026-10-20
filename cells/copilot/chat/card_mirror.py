@@ -247,6 +247,17 @@ def mirror(track, status):
             from spine.ops import ask
             q = track.get("question") or {}
             text = ask.summary(q) or ""
+            # The worker's reasoning lives in the prose BEFORE its ask block;
+            # ask.parse split the two, so the bare question reached the chat
+            # without it and the owner had to open the card to understand it
+            # (owner 2026-10-20). Fold it in NOW: _settle_reply_apply wrote
+            # last_reply and question together, so this is the reply that asked
+            # - a later turn overwrites last_reply, the chat copy keeps it.
+            # Chat copy only: the card shows the reply itself, the push stays
+            # the bare question.
+            ctx = (track.get("last_reply") or "").strip()
+            if q and ctx:
+                q = dict(q, context=ctx)
         else:
             # KIND_RESULT: a PLAIN-LANGUAGE DISTILLATION of the card's closing
             # words (see the module docstring for why this stopped being the
