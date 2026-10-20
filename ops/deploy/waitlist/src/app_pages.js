@@ -18,11 +18,11 @@ blockquote{margin:16px 0;padding:4px 16px;border-left:3px solid #222425;color:#9
 
 function page(slug, name, title, body) {
   const nav = `<p class=muted><a href="/${slug}/">${name}</a> &middot;
-<a href="/${slug}/docs">Doku / Docs</a> &middot;
+<a href="/${slug}/docs">Docs / Doku</a> &middot;
 <a href="/${slug}/support">Support</a> &middot;
-<a href="/${slug}/privacy">Datenschutz / Privacy</a> &middot;
-<a href="/${slug}/terms">Nutzungsbedingungen / Terms</a>${slug === "readproof" ? ` &middot;
-<a href="/readproof/security">Sicherheit / Security</a>` : ""}</p>`;
+<a href="/${slug}/privacy">Privacy / Datenschutz</a> &middot;
+<a href="/${slug}/terms">Terms / Nutzungsbedingungen</a>${slug === "readproof" ? ` &middot;
+<a href="/readproof/security">Security / Sicherheit</a>` : ""}</p>`;
   return `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>${title}</title>
@@ -137,44 +137,8 @@ const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof"
 <tr><td>Gratis-Stufe (bis 10 Nutzer)</td><td>Nur Dokumentation; keine Antwortzeit zugesagt.</td></tr>
 </table>
 <p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>`);
-const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Datenschutz / Privacy, ReadProof", `<h1>Datenschutzerklärung / Privacy Policy: ReadProof</h1>
-<p>Stand / Version: 20.10.2026</p>
-<h1>Deutsch</h1>
-<h2>1. Verantwortlicher</h2>
-<p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland, E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
-<h2>2. Was die App ist</h2>
-<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
-<h2>3. Wo die Daten verarbeitet werden</h2>
-<p>Die App läuft auf Atlassian Forge. Alle Daten liegen im Forge-Speicher (Key-Value-Store) deiner eigenen Confluence-Installation, also auf Atlassian-Infrastruktur. Es gibt <strong>keine eigenen Server, keine eigene Datenbank, kein Tracking, keine Analyse, keine Drittdienste</strong>. Die App ruft nur die Confluence-Schnittstelle auf. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Der Anbieter erhält und speichert keine Daten deiner Seite bei sich.</p>
-<h2>4. Welche Daten die App verarbeitet</h2>
-<table>
-<tr><th>Daten</th><th>Zweck</th><th>Wo</th><th>Wie lange</th></tr>
-<tr><td>Zuweisung: Seiten-ID, Gruppen-ID und Gruppenname, Frist, Tage bis zur Neu-Bestätigung, Eskalationstage und -gruppe, Basisversion, Konto-ID des Erstellers, Zeitstempel</td><td>Wer muss was bis wann bestätigen</td><td>Forge-Speicher deiner Seite</td><td>Bis ein Administrator die Zuweisung entfernt oder die App deinstalliert wird</td></tr>
-<tr><td>Bestätigung: Seiten-ID, Version, Atlassian-Konto-ID der Person, Zeitpunkt</td><td>Nachweis</td><td>Forge-Speicher</td><td><strong>Keine automatische Löschung.</strong> Bestätigungen älterer Versionen bleiben absichtlich als Nachweis. Die Aufbewahrungsdauer entscheidest du; exportiere vorher</td></tr>
-<tr><td>Eskalationsvermerk: Seiten-ID, Version, Zeitpunkt</td><td>Eskalation je Seite und Version nur einmal melden</td><td>Forge-Speicher</td><td>wie oben</td></tr>
-<tr><td>Erwähnungs-Sperre: Seiten-ID, Version, Konto-ID der Person, Zeitpunkt</td><td>Dieselbe Person je Seitenversion nur einmal per Kommentar erwähnen</td><td>Forge-Speicher</td><td>wie oben</td></tr>
-<tr><td>Erwähnungs-Kommentar auf der Seite: Konto-IDs der neu Zugewiesenen (als @-Erwähnung), Frist, fester Hinweistext</td><td>Zugewiesene benachrichtigen</td><td><strong>In Confluence gespeichert</strong> (als Kommentar der Seite), nicht im Forge-Speicher</td><td>Bleibt als Kommentar bestehen, bis er in Confluence gelöscht wird. Die App löscht ihn nicht</td></tr>
-<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>n/a</td></tr>
-<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>n/a</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>n/a</td></tr>
-</table>
-<p>Ausgetretene Personen: Ihr Name ist unter Umständen nicht mehr abrufbar; ihre Konto-ID bleibt im Nachweis. Exporte (CSV/PDF) enthalten Namen und Konto-IDs und werden von der App nicht gespeichert; sie landen in deinem Download-Ordner.</p>
-<h2>5. Berechtigungen (Scopes)</h2>
-<p>Lesend auf Confluence: Seiten, Bereiche, Seitenbaum (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), Vorfahren einer Seite für die Teilbaum-Regel (<code>read:content.metadata</code>), Seiten-Ereignisse „angelegt“ und „verschoben“ (<code>read:confluence-content.summary</code>), Gruppen und deren Mitglieder (<code>read:group</code>, <code>read:confluence-groups</code>), Nutzer-Namen (<code>read:user</code>, <code>read:confluence-user</code>), Suche (<code>search:confluence</code>), dazu <code>storage:app</code>.</p>
-<p>Schreibend auf Confluence gibt es zwei Zwecke. Erstens fügt die App ihr eigenes Bestätigungs-Makro ans Ende einer zugewiesenen Seite ein und entfernt es beim Entzug wieder (<code>write:page:confluence</code>). Zweitens schreibt die App bei einer Zuweisung einen Fußzeilen-Kommentar auf die Seite, der die Zugewiesenen mit @ erwähnt (<code>write:comment:confluence</code>). Der Kommentar enthält die Konto-IDs der Zugewiesenen als Erwähnung, die Frist und einen festen Hinweistext. Die Benachrichtigung selbst versendet Confluence nach den Einstellungen der jeweiligen Person. Die App verschickt keine E-Mails und nutzt dafür keinen eigenen Server oder Dienst. Ein Administrator kann den Kommentar in der App abschalten; dann wird keiner geschrieben. Der Kommentar bleibt in Confluence gespeichert, bis er dort gelöscht wird. Weiteren Seiteninhalt ändert die App nicht.</p>
-<h2>6. Keine KI</h2>
-<p>Die App nutzt keine KI und kein Forge LLM.</p>
-<h2>7. Rechtsgrundlage und Rollen (DSGVO)</h2>
-<p>Verantwortlicher für die Daten deiner Mitarbeitenden bist du als Kunde. Soweit der Anbieter personenbezogene Daten (Konto-ID, Bestätigungszeitpunkt) im Auftrag verarbeitet, geschieht das nur im Forge-Speicher deiner Seite; der Anbieter hat keinen eigenen Zugriff darauf. Hinweise zum Auftragsverarbeitungsvertrag: <code>docs/legal/avv-hinweis.md</code>.</p>
-<h2>8. Weitergabe</h2>
-<p>Keine Weitergabe durch den Anbieter. Atlassian verarbeitet als Plattformbetreiber nach eigenen Bedingungen.</p>
-<h2>9. Löschung und Deinstallation</h2>
-<p>Du kannst Zuweisungen in der App entfernen. Bestätigungen werden von der App nicht gelöscht (Nachweis). Nach der Deinstallation löscht Atlassian die Forge-Speicherdaten der Installation automatisch nach 28 Tagen; eine Neuinstallation stellt sie nicht wieder her. Auf Anfrage bestätigen wir die Löschung.</p>
-<h2>10. Deine Rechte</h2>
-<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an <code>privacy@helmdeck.de</code>. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
-<h2>11. Sicherheit</h2>
-<p>Anmeldung und Hosting liefert Atlassian Forge. Die App nutzt nur die oben genannten Berechtigungen. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
-<h2>12. Änderungen</h2>
-<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>https://helmdeck.de/readproof/privacy</code>.</p>
+const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Privacy / Datenschutz, ReadProof", `<h1>Privacy Policy / Datenschutzerklärung: ReadProof</h1>
+<p>Version / Stand: 20.10.2026</p>
 <h1>English</h1>
 <h2>1. Who is responsible</h2>
 <p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, e-mail <code>privacy@helmdeck.de</code>. The provider is a natural person, not a company.</p>
@@ -210,8 +174,44 @@ const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Datenschutz / Priva
 <h2>11. Security</h2>
 <p>Authentication and hosting are provided by Atlassian Forge. The app uses only the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: <code>security@helmdeck.de</code>.</p>
 <h2>12. Changes</h2>
-<p>We may update this policy. The current version is at <code>https://helmdeck.de/readproof/privacy</code>.</p>`);
-const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "AGB / Terms, ReadProof", `<h1>Nutzungsbedingungen / Terms of Use (EULA): ReadProof</h1>
+<p>We may update this policy. The current version is at <code>https://helmdeck.de/readproof/privacy</code>.</p>
+<h1>Deutsch</h1>
+<h2>1. Verantwortlicher</h2>
+<p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland, E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
+<h2>2. Was die App ist</h2>
+<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
+<h2>3. Wo die Daten verarbeitet werden</h2>
+<p>Die App läuft auf Atlassian Forge. Alle Daten liegen im Forge-Speicher (Key-Value-Store) deiner eigenen Confluence-Installation, also auf Atlassian-Infrastruktur. Es gibt <strong>keine eigenen Server, keine eigene Datenbank, kein Tracking, keine Analyse, keine Drittdienste</strong>. Die App ruft nur die Confluence-Schnittstelle auf. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Der Anbieter erhält und speichert keine Daten deiner Seite bei sich.</p>
+<h2>4. Welche Daten die App verarbeitet</h2>
+<table>
+<tr><th>Daten</th><th>Zweck</th><th>Wo</th><th>Wie lange</th></tr>
+<tr><td>Zuweisung: Seiten-ID, Gruppen-ID und Gruppenname, Frist, Tage bis zur Neu-Bestätigung, Eskalationstage und -gruppe, Basisversion, Konto-ID des Erstellers, Zeitstempel</td><td>Wer muss was bis wann bestätigen</td><td>Forge-Speicher deiner Seite</td><td>Bis ein Administrator die Zuweisung entfernt oder die App deinstalliert wird</td></tr>
+<tr><td>Bestätigung: Seiten-ID, Version, Atlassian-Konto-ID der Person, Zeitpunkt</td><td>Nachweis</td><td>Forge-Speicher</td><td><strong>Keine automatische Löschung.</strong> Bestätigungen älterer Versionen bleiben absichtlich als Nachweis. Die Aufbewahrungsdauer entscheidest du; exportiere vorher</td></tr>
+<tr><td>Eskalationsvermerk: Seiten-ID, Version, Zeitpunkt</td><td>Eskalation je Seite und Version nur einmal melden</td><td>Forge-Speicher</td><td>wie oben</td></tr>
+<tr><td>Erwähnungs-Sperre: Seiten-ID, Version, Konto-ID der Person, Zeitpunkt</td><td>Dieselbe Person je Seitenversion nur einmal per Kommentar erwähnen</td><td>Forge-Speicher</td><td>wie oben</td></tr>
+<tr><td>Erwähnungs-Kommentar auf der Seite: Konto-IDs der neu Zugewiesenen (als @-Erwähnung), Frist, fester Hinweistext</td><td>Zugewiesene benachrichtigen</td><td><strong>In Confluence gespeichert</strong> (als Kommentar der Seite), nicht im Forge-Speicher</td><td>Bleibt als Kommentar bestehen, bis er in Confluence gelöscht wird. Die App löscht ihn nicht</td></tr>
+<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>n/a</td></tr>
+<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>n/a</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>n/a</td></tr>
+</table>
+<p>Ausgetretene Personen: Ihr Name ist unter Umständen nicht mehr abrufbar; ihre Konto-ID bleibt im Nachweis. Exporte (CSV/PDF) enthalten Namen und Konto-IDs und werden von der App nicht gespeichert; sie landen in deinem Download-Ordner.</p>
+<h2>5. Berechtigungen (Scopes)</h2>
+<p>Lesend auf Confluence: Seiten, Bereiche, Seitenbaum (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), Vorfahren einer Seite für die Teilbaum-Regel (<code>read:content.metadata</code>), Seiten-Ereignisse „angelegt“ und „verschoben“ (<code>read:confluence-content.summary</code>), Gruppen und deren Mitglieder (<code>read:group</code>, <code>read:confluence-groups</code>), Nutzer-Namen (<code>read:user</code>, <code>read:confluence-user</code>), Suche (<code>search:confluence</code>), dazu <code>storage:app</code>.</p>
+<p>Schreibend auf Confluence gibt es zwei Zwecke. Erstens fügt die App ihr eigenes Bestätigungs-Makro ans Ende einer zugewiesenen Seite ein und entfernt es beim Entzug wieder (<code>write:page:confluence</code>). Zweitens schreibt die App bei einer Zuweisung einen Fußzeilen-Kommentar auf die Seite, der die Zugewiesenen mit @ erwähnt (<code>write:comment:confluence</code>). Der Kommentar enthält die Konto-IDs der Zugewiesenen als Erwähnung, die Frist und einen festen Hinweistext. Die Benachrichtigung selbst versendet Confluence nach den Einstellungen der jeweiligen Person. Die App verschickt keine E-Mails und nutzt dafür keinen eigenen Server oder Dienst. Ein Administrator kann den Kommentar in der App abschalten; dann wird keiner geschrieben. Der Kommentar bleibt in Confluence gespeichert, bis er dort gelöscht wird. Weiteren Seiteninhalt ändert die App nicht.</p>
+<h2>6. Keine KI</h2>
+<p>Die App nutzt keine KI und kein Forge LLM.</p>
+<h2>7. Rechtsgrundlage und Rollen (DSGVO)</h2>
+<p>Verantwortlicher für die Daten deiner Mitarbeitenden bist du als Kunde. Soweit der Anbieter personenbezogene Daten (Konto-ID, Bestätigungszeitpunkt) im Auftrag verarbeitet, geschieht das nur im Forge-Speicher deiner Seite; der Anbieter hat keinen eigenen Zugriff darauf. Hinweise zum Auftragsverarbeitungsvertrag: <code>docs/legal/avv-hinweis.md</code>.</p>
+<h2>8. Weitergabe</h2>
+<p>Keine Weitergabe durch den Anbieter. Atlassian verarbeitet als Plattformbetreiber nach eigenen Bedingungen.</p>
+<h2>9. Löschung und Deinstallation</h2>
+<p>Du kannst Zuweisungen in der App entfernen. Bestätigungen werden von der App nicht gelöscht (Nachweis). Nach der Deinstallation löscht Atlassian die Forge-Speicherdaten der Installation automatisch nach 28 Tagen; eine Neuinstallation stellt sie nicht wieder her. Auf Anfrage bestätigen wir die Löschung.</p>
+<h2>10. Deine Rechte</h2>
+<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an <code>privacy@helmdeck.de</code>. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
+<h2>11. Sicherheit</h2>
+<p>Anmeldung und Hosting liefert Atlassian Forge. Die App nutzt nur die oben genannten Berechtigungen. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
+<h2>12. Änderungen</h2>
+<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>https://helmdeck.de/readproof/privacy</code>.</p>`);
+const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "Terms / AGB, ReadProof", `<h1>Terms of Use (EULA) / Nutzungsbedingungen: ReadProof</h1>
 <p>Version: 20.10.2026</p>
 <h1>English</h1>
 <h2>1. Parties</h2>
@@ -257,25 +257,8 @@ const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "AGB / Terms, ReadProo
 <li><strong>Support:</strong> zahlende Kunden Ziel zwei Werktage; Gratis-Stufe nur Dokumentation.</li>
 <li><strong>Impressum:</strong> Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, E-Mail: support@helmdeck.de.</li>
 </ul>`);
-const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherheit, ReadProof", `<h1>Sicherheit / Security: ReadProof</h1>
-<p>Stand / Version: 20.10.2026</p>
-<h1>Deutsch</h1>
-<h2>Architektur</h2>
-<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie läuft auf der Atlassian-Plattform. Es gibt keine eigenen Server, keine eigene Datenbank und keine Drittdienste. Alle App-Daten liegen im Forge-Speicher deiner eigenen Confluence-Installation. Der Anbieter hat keinen Zugriff darauf.</p>
-<h2>Daten</h2>
-<p>Gespeichert werden nur IDs und Zeitstempel (Seiten-ID, Version, Atlassian-Konto-ID, Zeitpunkt, Fristen und Einstellungen). Namen werden bei Anzeige und Export live aus Confluence abgerufen. E-Mail-Adressen, Seiteninhalte und IP-Adressen speichert die App nicht. Details: <a href="/readproof/privacy">Datenschutzerklärung</a>.</p>
-<h2>Berechtigungen</h2>
-<p>Die App fordert nur die Confluence-Berechtigungen an, die sie braucht: Lesen von Seiten, Bereichen, Gruppen, Nutzernamen und Suche sowie zwei Schreibzwecke (eigenes Bestätigungs-Makro auf zugewiesenen Seiten, ein Fußzeilen-Kommentar mit @-Erwähnung bei einer Zuweisung). Die vollständige Liste steht in der Datenschutzerklärung, Abschnitt 5.</p>
-<h2>Zugriffskontrolle</h2>
-<p>Die Rechte werden bei jeder Aktion im Backend der App geprüft, nicht nur in der Oberfläche. Verwaltung ist Confluence-Administratoren, ReadProof-Managern und Space-Administratoren (für ihren Space) vorbehalten.</p>
-<h2>Eingaben und Exporte</h2>
-<p>Eingaben werden im Backend geprüft. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung).</p>
-<h2>Externe Verbindungen</h2>
-<p>Die App ruft keine anderen Server auf als deine Confluence-Seite. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Kein Tracking, keine Analyse, keine KI.</p>
-<h2>Sicherheitslücke melden</h2>
-<p>Schreibe an <code>security@helmdeck.de</code> mit "Security" im Betreff. Bitte keine Zugangsdaten oder Kundendaten mitsenden. Wir bestätigen den Eingang in der Regel innerhalb von zwei Werktagen (Ziel, keine Zusage) und melden uns, sobald wir die Meldung bewertet haben.</p>
-<h2>Anbieter</h2>
-<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland.</p>
+const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherheit, ReadProof", `<h1>Security / Sicherheit: ReadProof</h1>
+<p>Version / Stand: 20.10.2026</p>
 <h1>English</h1>
 <h2>Architecture</h2>
 <p>ReadProof is an Atlassian Forge app for Confluence Cloud. It runs on the Atlassian platform. There are no servers, no database and no third-party services of our own. All app data is stored in the Forge storage of your own Confluence installation. The provider has no access to it.</p>
@@ -292,8 +275,25 @@ const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherh
 <h2>Reporting a vulnerability</h2>
 <p>Write to <code>security@helmdeck.de</code> with "Security" in the subject. Please do not send credentials or customer data. We usually acknowledge a report within two business days (a target, not a commitment) and get back to you once we have assessed it.</p>
 <h2>Provider</h2>
-<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany.</p>`);
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany.</p>
 
+<h1>Deutsch</h1>
+<h2>Architektur</h2>
+<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie läuft auf der Atlassian-Plattform. Es gibt keine eigenen Server, keine eigene Datenbank und keine Drittdienste. Alle App-Daten liegen im Forge-Speicher deiner eigenen Confluence-Installation. Der Anbieter hat keinen Zugriff darauf.</p>
+<h2>Daten</h2>
+<p>Gespeichert werden nur IDs und Zeitstempel (Seiten-ID, Version, Atlassian-Konto-ID, Zeitpunkt, Fristen und Einstellungen). Namen werden bei Anzeige und Export live aus Confluence abgerufen. E-Mail-Adressen, Seiteninhalte und IP-Adressen speichert die App nicht. Details: <a href="/readproof/privacy">Datenschutzerklärung</a>.</p>
+<h2>Berechtigungen</h2>
+<p>Die App fordert nur die Confluence-Berechtigungen an, die sie braucht: Lesen von Seiten, Bereichen, Gruppen, Nutzernamen und Suche sowie zwei Schreibzwecke (eigenes Bestätigungs-Makro auf zugewiesenen Seiten, ein Fußzeilen-Kommentar mit @-Erwähnung bei einer Zuweisung). Die vollständige Liste steht in der Datenschutzerklärung, Abschnitt 5.</p>
+<h2>Zugriffskontrolle</h2>
+<p>Die Rechte werden bei jeder Aktion im Backend der App geprüft, nicht nur in der Oberfläche. Verwaltung ist Confluence-Administratoren, ReadProof-Managern und Space-Administratoren (für ihren Space) vorbehalten.</p>
+<h2>Eingaben und Exporte</h2>
+<p>Eingaben werden im Backend geprüft. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung).</p>
+<h2>Externe Verbindungen</h2>
+<p>Die App ruft keine anderen Server auf als deine Confluence-Seite. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Kein Tracking, keine Analyse, keine KI.</p>
+<h2>Sicherheitslücke melden</h2>
+<p>Schreibe an <code>security@helmdeck.de</code> mit "Security" im Betreff. Bitte keine Zugangsdaten oder Kundendaten mitsenden. Wir bestätigen den Eingang in der Regel innerhalb von zwei Werktagen (Ziel, keine Zusage) und melden uns, sobald wir die Meldung bewertet haben.</p>
+<h2>Anbieter</h2>
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland.</p>`);
 const SEITEN_REVIEW_INDEX = page("seiten-review", "Seiten-Review", "Overview, Page Review / Seiten-Review", `
 <blockquote><p><b>DRAFT / ENTWURF, not published, not legally reviewed. Placeholders in [[ ]] are open.</b></p></blockquote>
 <h1>Page Review for Confluence</h1><h2>English</h2><p>Give pages an owner and a review date. One reminder per owner, confirm with one click. Runs on Atlassian Forge, no external servers.</p><p>Free up to 10 users, then US$0.50 per user per month (proposal, not final).</p><h2>Deutsch</h2><p>Seiten bekommen Besitzer und Prüftermin. Eine Erinnerung je Besitzer, Bestätigung mit einem Klick. Läuft auf Atlassian Forge, keine externen Server.</p><p>Bis 10 Nutzer kostenlos, danach 0,50 US-$ je Nutzer und Monat [[Preis nicht entschieden]].</p>

@@ -4,7 +4,7 @@
 // support, documentation, privacy and terms pages on the vendor's own domain.
 // The shape is the one this worker already uses for /datenschutz and /impressum:
 // a pathname route per page, one HTML string per page, no <script> and no
-// analytics on them, DE first and EN below the same #en anchor. Nothing here
+// analytics on them, EN first and DE below, behind the #de anchor. Nothing here
 // needs JavaScript, so these pages inherit the worker's strict CSP for free.
 //
 // Every statement about what the app does is taken from the app source in
@@ -45,7 +45,7 @@ ${body}
 const INDEX_HTML = page("Label Doctor for Jira Cloud: Overview / Übersicht", `
 <div lang=en>
 <h1>Label Doctor for Jira Cloud</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF} <a href="#de">German version below / Deutsche Version unten</a></p>
 
 <p>Label Doctor finds Jira Cloud labels that mean the same thing and merges them
 after a Jira administrator confirms. The app is an Atlassian Forge app. It runs
@@ -108,7 +108,7 @@ verarbeitet und wie lange.</li>
 const DOCS_HTML = page("Label Doctor: Documentation / Dokumentation", `
 <div lang=en>
 <h1>Label Doctor, documentation</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF} <a href="#de">German version below / Deutsche Version unten</a></p>
 
 <h2>1. What the app does</h2>
 <p>Over time a Jira site collects labels that mean the same thing: a different
@@ -343,7 +343,7 @@ Sicherheit <a href="mailto:security@helmdeck.de">security@helmdeck.de</a>.</p>
 const SUPPORT_HTML = page("Label Doctor: Support", `
 <div lang=en>
 <h1>Label Doctor, support</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF} <a href="#de">German version below / Deutsche Version unten</a></p>
 
 <p>Support runs by email to
 <a href="mailto:support@helmdeck.de">support@helmdeck.de</a>. There is no ticket
@@ -434,7 +434,7 @@ sich danach nicht mehr über die App zurücknehmen.</p>
 const PRIVACY_HTML = page("Label Doctor: Privacy / Datenschutz", `
 <div lang=en>
 <h1>Label Doctor, privacy</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF} <a href="#de">German version below / Deutsche Version unten</a></p>
 
 <p>This page covers the Jira Cloud app Label Doctor. For the helmdeck.de website
 see the <a href="/privacy">HelmDeck privacy policy</a>.</p>
@@ -574,7 +574,7 @@ Sie die App deinstallieren.</p>
 const TERMS_HTML = page("Label Doctor: Terms / Nutzungsbedingungen", `
 <div lang=en>
 <h1>Label Doctor, terms of use</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF} <a href="#de">German version below / Deutsche Version unten</a></p>
 
 <h2>1. Governing agreement</h2>
 <p>Label Doctor is licensed under the Atlassian Marketplace Standard End User
