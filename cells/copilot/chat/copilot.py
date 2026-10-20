@@ -2167,7 +2167,7 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None, max_out
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    proctable.own(p)
+    proctable.own_turn(p)
     _judge_preempted.discard(user)
     _judge_proc[user] = p
     try:
@@ -2178,6 +2178,7 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None, max_out
         raise
     finally:
         _judge_proc.pop(user, None)
+        proctable.forget_turn(p)
     if user in _judge_preempted:
         _judge_preempted.discard(user)
         raise JudgePreempted("henry: judgement stopped - the owner wrote in the chat")
@@ -2248,7 +2249,7 @@ def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=
                              stdin=subprocess.PIPE, env=tool_path(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        proctable.own(p)
+        proctable.own_turn(p)
         _judge_preempted.discard(user)
         _judge_proc[user] = p
         try:
@@ -2259,6 +2260,7 @@ def judge(prompt, cwd, perm=None, model="", timeout=900, tools=None, max_output=
             raise
         finally:
             _judge_proc.pop(user, None)
+            proctable.forget_turn(p)
         if user in _judge_preempted:
             _judge_preempted.discard(user)
             raise JudgePreempted("henry: judgement stopped - the owner wrote in the chat")

@@ -235,6 +235,25 @@ def own(p):
     return p
 
 
+def own_turn(p):
+    """own() for a one-shot TURN the restart tool must wait for (Henry's judge /
+    broker runs). own() lives in the daemon's memory; restart_daemon.py is another
+    process and reads driver_pids.json - so a turn is recorded there too, and
+    forget_turn() removes it. 2026-10-20 22:30: a restart read "nothing running"
+    while the broker was mid-way through filing a process's step cards."""
+    own(p)
+    pid = getattr(p, "pid", None)
+    if pid:
+        _record_pid(pid, _proc_start_epoch(pid))
+    return p
+
+
+def forget_turn(p):
+    pid = getattr(p, "pid", None)
+    if pid:
+        _forget_pid(pid)
+
+
 def owned():
     """[(pid, exe, started_epoch_or_None)] of every live process THIS daemon
     owns - the question "is this one mine?" answered from what the OS keeps,
