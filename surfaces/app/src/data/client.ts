@@ -8,6 +8,7 @@ import { demoRespond, useDemo } from "./demo";
 import { diag } from "./diag";
 import { open, seal } from "./e2ee";
 import { useHealth } from "./health";
+import { DirectPath } from "./direct";
 import { relaySocket, SocketError, SocketRetryHttp, SOCKET_MAX_REQUEST } from "./relay_socket";
 import { t } from "@/i18n/core";
 
@@ -101,9 +102,90 @@ function authHeaders(): Record<string, string> {
 // "do not abort" - the ONLY caller that passes it is req()'s POST /chat, since
 // a client abort there leaves the send un-acked, which is exactly what drives
 // the chat_dedupe replay-duplicate path (already paid for once, see req()).
-async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string; tm?: DaemonTiming; via: "socket" | "http" }> {
+// A fresh per-frame nonce: the daemon's idempotency key (relay_client._once)
+// and the direct door's replay guard. Unpredictability is not what protects
+// here (a frame is sealed to our key); uniqueness is.
+const nonce = () =>
+  `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+
+// THE DIRECT PATH on the same WiFi (data/direct.ts decides when it is usable).
+// The frame is the relay's own sealed one, POSTed to the address the daemon
+// advertised; nothing else is ever sent to that address (debt
+// [android-cleartext-sealed-lan]: Android's base config permits cleartext for
+// this, the content is NaCl-sealed). A network change aborts every in-flight
+// direct request so the caller falls back at once instead of hanging on an
+// address the new network cannot reach.
+const directAborts = new Set<AbortController>();
+class DirectFailed extends Error {}
+
+async function sendDirect(base: string, inner: string, timeoutMs?: number): Promise<{ status: number; body: string; tm?: DaemonTiming }> {
+  const { daemonPub, mySec, myPub } = useConfig.getState();
+  const ctl = new AbortController();
+  directAborts.add(ctl);
+  const timer = timeoutMs !== undefined ? setTimeout(() => ctl.abort(), timeoutMs) : undefined;
+  try {
+    let r: Response;
+    try {
+      r = await fetch(`${base}/relay/direct`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pub: myPub, cipher: seal(inner, mySec, daemonPub) }),
+        signal: ctl.signal,
+      });
+    } catch (e) {
+      throw new DirectFailed(String((e as Error)?.message ?? e));
+    }
+    if (r.status !== 200) throw new DirectFailed(`direct ${r.status}`);
+    let resp: { status?: number; body?: string; tm?: DaemonTiming };
+    try {
+      resp = JSON.parse(open(JSON.parse(await r.text()).cipher, mySec, daemonPub));
+    } catch {
+      throw new DirectFailed("direct reply unreadable");
+    }
+    // a frame the door refused as stale (clocks too far apart) is a direct
+    // FAILURE, not the answer - the relay has no clock window
+    if (resp.status === 409 && /stale/.test(resp.body ?? "")) throw new DirectFailed("clock skew");
+    return { status: resp.status ?? 200, body: resp.body ?? "", tm: resp.tm };
+  } finally {
+    if (timer) clearTimeout(timer);
+    directAborts.delete(ctl);
+  }
+}
+
+const frameFor = (method: string, path: string, bodyStr: string) =>
+  JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr, ts: Date.now() / 1000, n: nonce() });
+
+export const directPath = new DirectPath(
+  (url) => sendDirect(url, frameFor("GET", "/auth/state", ""), 1500).then((r) => r.status === 200),
+  undefined,
+  () => diag("net", "direct LAN path", directPath.up ? `up via ${directPath.url}` : "down - relay"),
+);
+
+/** The phone's network changed (expo-network) or the app came back: void
+ *  what we knew, cut in-flight direct requests loose, re-probe. */
+export function directNetworkChanged() {
+  directPath.networkChanged();
+  for (const c of directAborts) c.abort();
+}
+
+async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string; tm?: DaemonTiming; via: "direct" | "socket" | "http" }> {
   const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
-  const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
+  // Every frame carries ts + a nonce. A WRITE keeps its nonce across a resend
+  // (the daemon runs it at most once and answers the repeat with the first
+  // answer - relay_client._once); a READ that is sent again gets a FRESH one,
+  // because the daemon refuses a repeated read nonce as a replay.
+  let inner = frameFor(method, path, bodyStr);
+  const resend = () => { if (method === "GET") inner = frameFor(method, path, bodyStr); };
+  const lanBase = directPath.usable();
+  if (lanBase) {
+    try {
+      return { ...(await sendDirect(lanBase, inner, timeoutMs)), via: "direct" };
+    } catch (e) {
+      if (!(e instanceof DirectFailed)) throw e;
+      directPath.failed();
+      resend();                               // and on over the relay
+    }
+  }
   // THE SOCKET FIRST (2026-09-24): the same sealed inner request, but over the
   // phone's one socket to its room - no Cloudflare request per call. HTTP stays
   // the fallback: the room says retry:"http" (reply too big for a message, or
@@ -124,13 +206,13 @@ async function relayReq(method: string, path: string, bodyStr: string, timeoutMs
       return { ...(await relaySocket.request(inner, timeoutMs ?? 180_000)), via: "socket" };
     } catch (e) {
       if (e instanceof SocketRetryHttp) {
-        // fall through to HTTP
+        resend();                             // fall through to HTTP
       } else if (e instanceof SocketError) {
         if (e.code === "offline") throw new TransportError(t("net.desktopOffline"));
         if (e.code === "keys") throw new TransportError(t("net.badKeys"));
         if (e.code === "timeout") throw new TransportError(timeoutMs === undefined ? t("net.desktopTimeout") : t("net.relayTimeout"));
         if (method !== "GET") throw new TransportError(t("net.relayUnreachable"));
-        // a GET whose socket closed: ask again over HTTP
+        resend();                             // a GET whose socket closed: ask again over HTTP
       } else {
         throw e;
       }

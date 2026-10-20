@@ -9,12 +9,12 @@
 //
 // No React/expo imports: plain module state, read on demand.
 export interface DaemonTiming { q: number; h: number }
-interface Sample { path: string; total: number; q: number; h: number; via: "socket" | "http" }
+interface Sample { path: string; total: number; q: number; h: number; via: "direct" | "socket" | "http" }
 
 const WINDOW = 100;
 const samples: Sample[] = [];
 
-export function recordTiming(path: string, totalMs: number, tm: DaemonTiming | undefined, via: "socket" | "http") {
+export function recordTiming(path: string, totalMs: number, tm: DaemonTiming | undefined, via: "direct" | "socket" | "http") {
   if (!tm || typeof tm.q !== "number" || typeof tm.h !== "number") return;   // older daemon: nothing to split
   samples.push({ path: path.split("?")[0], total: totalMs, q: tm.q, h: tm.h, via });
   if (samples.length > WINDOW) samples.splice(0, samples.length - WINDOW);
@@ -28,7 +28,7 @@ const median = (xs: number[]) => {
 
 /** One line per transport: n requests, median total = queue + daemon + network. */
 export function timingSummary(): string[] {
-  return (["socket", "http"] as const).flatMap((via) => {
+  return (["direct", "socket", "http"] as const).flatMap((via) => {
     const xs = samples.filter((s) => s.via === via);
     if (!xs.length) return [];
     const net = xs.map((s) => Math.max(0, s.total - s.q - s.h));

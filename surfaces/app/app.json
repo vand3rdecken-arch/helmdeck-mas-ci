@@ -70,7 +70,8 @@
       [
         "./plugins/withLanCleartext",
         {
-          "hosts": []
+          "hosts": [],
+          "sealedLan": true
         }
       ],
       [

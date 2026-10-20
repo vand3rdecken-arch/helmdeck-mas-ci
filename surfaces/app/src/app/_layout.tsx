@@ -16,12 +16,13 @@ import { KernelProvider } from "@/kernel/react";
 import type { Kernel } from "@/kernel";
 import { queryClient, startCachePersist } from "@/data/query";
 import { track, useAnalytics } from "@/data/analytics";
-import { api } from "@/data/client";
+import { api, directNetworkChanged, directPath } from "@/data/client";
 import { useHealth } from "@/data/health";
 import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, pushStillNews, useStreamCaps } from "@/data/stream";
 import { applyPushedPatch, TRACKS_KEY } from "@/data/tracks_sync";
+import * as Network from "expo-network";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
 import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
 import { useConfig, useNeedsPairing } from "@/data/config";
@@ -108,6 +109,8 @@ function useGlobalStream() {
       // older daemon. Recording what the daemon actually answered lets the
       // chat keep its old 8s fallback in that case instead of going quiet -
       // derived from the reply at event time, never assumed.
+      // the join event says where the daemon is on the LAN: probe the direct path
+      if (Array.isArray(r?.lan)) directPath.offer(r.lan);
       useStreamCaps.getState().setChatEvents(typeof r?.c === "number");
       if (typeof r?.c === "number") {
         // NOT invalidateQueries: that fires exactly one refetch, and if it
@@ -333,6 +336,16 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 // them stuck loading if the balancing "active" event is ever missed (chat, already
 // cached, still shows - the board would hang). invalidateQueries alone forces the
 // refetch on return without any pause hazard.
+// WiFi <-> mobile: the direct LAN path (data/direct.ts) is re-decided at once,
+// and in-flight direct requests are cut so they fall back instead of hanging.
+function useNetworkChange() {
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const sub = Network.addNetworkStateListener(() => directNetworkChanged());
+    return () => sub.remove();
+  }, []);
+}
+
 function useResumeRefetch() {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
@@ -341,6 +354,8 @@ function useResumeRefetch() {
         // reconnect NOW rather than after the backoff; the daemon answers the
         // join with the current cursors, which is the catch-up.
         relaySocket.kick();
+        // a resumed phone may be on another network than when it slept
+        directNetworkChanged();
         queryClient.invalidateQueries();
         void ensureChatFresh(queryClient);
       }
@@ -431,6 +446,7 @@ export default function RootLayout() {
   useRelaySocket();
   useGlobalStream();
   useResumeRefetch();
+  useNetworkChange();
   useGlassesArm();
   useSilentOta();
   usePresenceHeartbeat();

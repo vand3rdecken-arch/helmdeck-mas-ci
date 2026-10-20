@@ -1360,6 +1360,35 @@ DEBT = [
         "order": 10,
     },
     {
+        "id": "android-cleartext-sealed-lan",
+        "title": "Android base config permits cleartext again - for the sealed LAN path",
+        "status": "open",
+        "what": "Owner 2026-10-20 (\"was ist best practise\" -> the Home Assistant / "
+                "Paseo trade-off): the phone's direct path on the same WiFi "
+                "(POST /relay/direct) targets whatever RFC1918 address the daemon "
+                "advertises, which Android's network-security-config cannot name "
+                "(no IP ranges). withLanCleartext `sealedLan: true` therefore sets "
+                "the BASE config to cleartextTrafficPermitted=true - partly undoing "
+                "the scoping [android-cleartext-lan] paid for.",
+        "why_it_bites": "The OS no longer blocks an ACCIDENTAL http request to any "
+                        "host. What is meant to travel there is safe: the relay's "
+                        "NaCl-sealed frame with a timestamp + nonce (replay refused, "
+                        "writes idempotent - relay_client.serve_direct/_once), so "
+                        "the LAN sees only ciphertext. A future code path that "
+                        "talks plain http with a token would not be caught by the "
+                        "platform any more - and the legacy direct-LAN mode "
+                        "(baseUrl http://) now works without listing the host, "
+                        "token in the clear on the WiFi.",
+        "trigger": "a security review of the APK, more than one owner on a workspace, "
+                   "or any new http:// call site in surfaces/app",
+        "fix": "Best practice is a real certificate per daemon for its LAN address "
+               "(Plex's <ip>.<id>.plex.direct with a public CA), so the phone speaks "
+               "plain HTTPS with no exception at all; the base config then goes back "
+               "to cleartextTrafficPermitted=false. Interim guard: client.ts sends "
+               "only sealed frames to an advertised LAN address.",
+        "order": 10,
+    },
+    {
         "id": "pair-token-no-ttl",
         "title": "Pairing device-token outlives the 15-min pairing window",
         "status": "paid",

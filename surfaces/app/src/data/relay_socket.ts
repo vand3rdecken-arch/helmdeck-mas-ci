@@ -32,7 +32,9 @@ import type { DaemonTiming } from "./net_timing";
 
 export type RelayEvent = { v?: number; c?: number; t?: string[];
   /** the card patch since `from` (routes_tracks.tracks_patch) - tracks_sync.applyPushedPatch */
-  tp?: { from: string; cookie: string; patch: import("./tracks_sync").PatchOp[] } };
+  tp?: { from: string; cookie: string; patch: import("./tracks_sync").PatchOp[] };
+  /** where the daemon is reachable on the LAN (join event only) - data/direct.ts */
+  lan?: string[] };
 
 export interface SocketDeps {
   /** wss://…/tunnel/client?room=…&pub=… - or null when not in relay mode. */
