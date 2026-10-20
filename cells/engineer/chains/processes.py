@@ -265,7 +265,16 @@ def update_process(pid, patch, actor="owner"):
                 return p
     raise RuntimeError("no such process")
 
-def cancel_process(pid, actor="owner"):
+def _via(via):
+    """WHO pressed it, beside the account: the chat runs Henry's actions under
+    the owner's ACCOUNT name (billing/dispatch attribution), so the account
+    alone reads as "the owner decided". `via` keeps the real hand on the record
+    (2026-10-20: Henry deleted three processes, another Henry read the owner's
+    name and dropped its own task: "der Owner hat sie bewusst geloescht")."""
+    return {"via": via} if via else {}
+
+
+def cancel_process(pid, actor="owner", via=""):
     """Stops the CHAIN (sync() skips a cancelled process entirely - no more
     auto-dispatch/auto-accept of its remaining steps) without touching any
     card a step already spawned; those keep running/stay on the board like
@@ -280,11 +289,11 @@ def cancel_process(pid, actor="owner"):
                 p["status"] = "cancelled"
                 _save(ps)
                 from spine.storage import events
-                events.emit("process", pid, action="cancelled", actor=actor)
+                events.emit("process", pid, action="cancelled", actor=actor, **_via(via))
                 return p
     raise RuntimeError("no such process")
 
-def finish_process(pid, actor="owner"):
+def finish_process(pid, actor="owner", via=""):
     """CLOSE an open-ended (goal) process as DONE. sync() never finishes one by
     its steps - it is a folder - so without this verb a finished goal sat on
     "running" for good (20260929-121246-611-proc: 11/11 steps done, running 6
@@ -301,11 +310,11 @@ def finish_process(pid, actor="owner"):
                 p["closed"] = True
                 _save(ps)
                 from spine.storage import events
-                events.emit("process", pid, action="finished", actor=actor)
+                events.emit("process", pid, action="finished", actor=actor, **_via(via))
                 return p
     raise RuntimeError("no such process")
 
-def delete_process(pid, actor="owner"):
+def delete_process(pid, actor="owner", via=""):
     """Removes the process ROW entirely (owner report 2026-09-03: cancel
     only soft-stops the chain, the process still sits in the list forever -
     sometimes you just want it gone). Any card a step already spawned is
@@ -318,7 +327,7 @@ def delete_process(pid, actor="owner"):
             raise RuntimeError("no such process")
         _save(remaining)
     from spine.storage import events
-    events.emit("process", pid, action="deleted", actor=actor)
+    events.emit("process", pid, action="deleted", actor=actor, **_via(via))
     return True
 
 def move_step(pid, idx, direction, actor="owner"):

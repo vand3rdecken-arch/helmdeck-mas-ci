@@ -1085,13 +1085,13 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             return "%s updated: %s" % (pid, json.dumps(patch)[:200])
         if kind == "cancel_process":
             try:
-                processes.cancel_process(pid, actor=actor)
+                processes.cancel_process(pid, actor=actor, via="henry")
             except RuntimeError as e:
                 return "cancel_process refused: %s" % e
             return "%s cancelled - remaining steps will not auto-advance; already-dispatched cards keep running" % pid
         if kind == "finish_process":
             try:
-                processes.finish_process(pid, actor=actor)
+                processes.finish_process(pid, actor=actor, via="henry")
             except RuntimeError as e:
                 return "finish_process refused: %s" % e
             return "%s abgeschlossen (done) - Karten bleiben unberuehrt" % pid
@@ -1099,10 +1099,10 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         # nur stehen, ich will es weg"); cards a step already spawned are
         # untouched, same rule as cancel.
         try:
-            processes.delete_process(pid, actor=actor)
+            processes.delete_process(pid, actor=actor, via="henry")
         except RuntimeError as e:
             return "delete_process refused: %s" % e
-        return "%s deleted - it will no longer appear in the Prozesse list; any card already created keeps running" % pid
+        return "%s deleted BY HENRY (chat action, not an owner decision) - it will no longer appear in the Prozesse list; any card already created keeps running" % pid
     if kind in ("add_step", "update_step", "remove_step", "move_step"):
         # Owner decree 2026-09-03 ("Henry soll den Prozess aendern koennen"):
         # chat is a FULL alternative to the (still limited) Prozesse UI, not
