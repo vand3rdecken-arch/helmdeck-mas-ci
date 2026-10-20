@@ -156,6 +156,8 @@ export interface PendingQuestion {
   kind: "tool" | "plan" | "question" | "mode";
   asked: string;
   ta?: number;
+  /** the worker's prose from the asking reply; set on the chat-mirror copy only */
+  context?: string;
   questions: AskQuestion[];
 }
 export interface AskQuestion {

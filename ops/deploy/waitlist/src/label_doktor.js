@@ -3,9 +3,9 @@
 // Why here: the Atlassian Marketplace requires a paid app to point at public
 // support, documentation, privacy and terms pages on the vendor's own domain.
 // The shape is the one this worker already uses for /datenschutz and /impressum:
-// a pathname route per page, one HTML string per page, no <script> and no
-// analytics on them, DE first and EN below the same #en anchor. Nothing here
-// needs JavaScript, so these pages inherit the worker's strict CSP for free.
+// a pathname route per page, one HTML string per page, English is the default; German is
+// switched by the toggle from app_i18n.js, which also holds the opt-in Google
+// Analytics consent.
 //
 // Every statement about what the app does is taken from the app source in
 // Documents/Private Project/jira-label-doktor/app/src (manifest scopes,
@@ -14,38 +14,28 @@
 // Do not add a claim here that the code does not back.
 
 // Mirrors LEGAL_STYLE in index.js so the app pages read as the same product.
+import { L, shell, navI18n } from "./app_i18n.js";
+
 const STYLE = `body{background:#0E0F10;color:#E4E6E6;font:16px/1.6 system-ui,sans-serif;
 max-width:720px;margin:0 auto;padding:40px 20px}h1{font-size:26px}h2{font-size:19px;
 margin-top:32px}h3{font-size:16px}a{color:#6CB2EC}hr{border:0;border-top:1px solid #222425;
 margin:40px 0}.muted{color:#959A9D}code{background:#1A1C1D;padding:1px 5px;border-radius:3px}
 ul{padding-left:22px}li{margin:4px 0}`;
 
-const NAV = `<p class=muted><a href="/label-doktor/">Label Doctor</a> &middot;
-<a href="/label-doktor/docs">Docs / Dokumentation</a> &middot;
-<a href="/label-doktor/support">Support</a> &middot;
-<a href="/label-doktor/privacy">Privacy / Datenschutz</a> &middot;
-<a href="/label-doktor/terms">Terms / Nutzungsbedingungen</a></p>`;
+const STAND_DE = "Stand: 10. Oktober 2026, App-Version 2.0.0.";
+const ASOF_EN = "Last updated: 10 October 2026, app version 2.0.0.";
 
-const STAND = "Stand: 10. Oktober 2026, App-Version 2.0.0.";
-const ASOF = "Last updated: 10 October 2026, app version 2.0.0.";
-
+// English default, German via the toggle (app_i18n.js); title = [en, de].
 function page(title, body) {
-  return `<!doctype html><html lang=en><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<title>${title}</title>
-<style>${STYLE}</style>
-${NAV}
-<hr>
-${body}
-</html>`;
+  return shell("label-doktor", title, STYLE, navI18n("label-doktor", "Label Doctor"), body);
 }
 
 // ---------------------------------------------------------------- overview
 
-const INDEX_HTML = page("Label Doctor for Jira Cloud: Overview / Übersicht", `
-<div lang=en>
+const INDEX_HTML = page(["Label Doctor for Jira Cloud: Overview", "Label Doctor für Jira Cloud: Übersicht"], `
+<div class=en lang=en>
 <h1>Label Doctor for Jira Cloud</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF_EN}</p>
 
 <p>Label Doctor finds Jira Cloud labels that mean the same thing and merges them
 after a Jira administrator confirms. The app is an Atlassian Forge app. It runs
@@ -71,10 +61,9 @@ for how long.</li>
 <li>Security reports: <a href="mailto:security@helmdeck.de">security@helmdeck.de</a></li>
 </ul>
 </div>
-<hr>
-<div lang=de>
-<h1 id=de>Label Doctor für Jira Cloud</h1>
-<p class=muted>${STAND}</p>
+<div class=de lang=de>
+<h1>Label Doctor für Jira Cloud</h1>
+<p class=muted>${STAND_DE}</p>
 
 <p>Label Doctor findet Labels in Jira Cloud, die dasselbe bedeuten, und führt sie
 nach Bestätigung durch eine Jira Administratorin oder einen Jira Administrator
@@ -105,10 +94,10 @@ verarbeitet und wie lange.</li>
 
 // ---------------------------------------------------------------- docs
 
-const DOCS_HTML = page("Label Doctor: Documentation / Dokumentation", `
-<div lang=en>
+const DOCS_HTML = page(["Label Doctor: Documentation", "Label Doctor: Dokumentation"], `
+<div class=en lang=en>
 <h1>Label Doctor, documentation</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF_EN}</p>
 
 <h2>1. What the app does</h2>
 <p>Over time a Jira site collects labels that mean the same thing: a different
@@ -218,10 +207,9 @@ lists, preview as a dialog, licence check for the AI suggestions.</li>
 <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a>, security
 <a href="mailto:security@helmdeck.de">security@helmdeck.de</a>.</p>
 </div>
-<hr>
-<div lang=de>
-<h1 id=de>Label Doctor, Dokumentation</h1>
-<p class=muted>${STAND}</p>
+<div class=de lang=de>
+<h1>Label Doctor, Dokumentation</h1>
+<p class=muted>${STAND_DE}</p>
 
 <h2>1. Was die App macht</h2>
 <p>In Jira sammeln sich über die Zeit Labels, die dasselbe meinen: andere
@@ -340,10 +328,10 @@ Sicherheit <a href="mailto:security@helmdeck.de">security@helmdeck.de</a>.</p>
 
 // ---------------------------------------------------------------- support
 
-const SUPPORT_HTML = page("Label Doctor: Support", `
-<div lang=en>
+const SUPPORT_HTML = page(["Label Doctor: Support", "Label Doctor: Support"], `
+<div class=en lang=en>
 <h1>Label Doctor, support</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF_EN}</p>
 
 <p>Support runs by email to
 <a href="mailto:support@helmdeck.de">support@helmdeck.de</a>. There is no ticket
@@ -383,10 +371,9 @@ site.</p>
 labels stay merged, because they live in your issues. The undo log is deleted
 with the app, so a run can no longer be taken back through the app.</p>
 </div>
-<hr>
-<div lang=de>
-<h1 id=de>Label Doctor, Support</h1>
-<p class=muted>${STAND}</p>
+<div class=de lang=de>
+<h1>Label Doctor, Support</h1>
+<p class=muted>${STAND_DE}</p>
 
 <p>Support läuft per E-Mail an
 <a href="mailto:support@helmdeck.de">support@helmdeck.de</a>. Es gibt kein
@@ -431,10 +418,10 @@ sich danach nicht mehr über die App zurücknehmen.</p>
 
 // ---------------------------------------------------------------- privacy
 
-const PRIVACY_HTML = page("Label Doctor: Privacy / Datenschutz", `
-<div lang=en>
+const PRIVACY_HTML = page(["Label Doctor: Privacy", "Label Doctor: Datenschutz"], `
+<div class=en lang=en>
 <h1>Label Doctor, privacy</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF_EN}</p>
 
 <p>This page covers the Jira Cloud app Label Doctor. For the helmdeck.de website
 see the <a href="/privacy">HelmDeck privacy policy</a>.</p>
@@ -495,13 +482,15 @@ requests to <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a>. You
 can achieve deletion of the data stored by the app immediately yourself by
 uninstalling the app.</p>
 
+<h2>Website measurement (Google Analytics)</h2>
+<p>This section covers this website only; the statements above about the app (no analytics, no cookies) are unchanged. The pages under <code>/label-doktor/</code> use Google Analytics 4 <strong>only if you consent</strong>. Until you click &quot;Accept&quot; no Google script is loaded and no data is sent to Google. Provider: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland. Purpose: measuring how the website is used (page views, approximate region, device type) to improve the documentation. Legal basis: your consent, Art. 6(1)(a) GDPR. Cookies set after consent: <code>_ga</code> and <code>_ga_8V1ZGSKD54</code>. Storage period: Google Analytics 4 default of 2 months for event data. IP addresses are anonymised by default in Google Analytics 4; Google signals and advertising features are not used. Transfer to the USA: Google LLC may process data in the USA under the EU-US Data Privacy Framework. Withdrawal: at any time via &quot;Cookie settings&quot; in the footer of every page; it applies from then on and the Google cookies are removed.</p>
+
 <h2>Security reports</h2>
 <p><a href="mailto:security@helmdeck.de">security@helmdeck.de</a></p>
 </div>
-<hr>
-<div lang=de>
-<h1 id=de>Label Doctor, Datenschutz</h1>
-<p class=muted>${STAND}</p>
+<div class=de lang=de>
+<h1>Label Doctor, Datenschutz</h1>
+<p class=muted>${STAND_DE}</p>
 
 <p>Diese Seite gilt für die Jira Cloud App Label Doctor. Für die Website
 helmdeck.de gilt die <a href="/datenschutz">Datenschutzerklärung von
@@ -564,6 +553,9 @@ Anfragen an <a href="mailto:privacy@helmdeck.de">privacy@helmdeck.de</a>. Eine
 Löschung der von der App gespeicherten Daten erreichen Sie sofort selbst, indem
 Sie die App deinstallieren.</p>
 
+<h2>Website-Messung (Google Analytics)</h2>
+<p>Dieser Abschnitt betrifft nur diese Website; die Aussagen oben zur App (keine Analyse, keine Cookies) bleiben unverändert. Die Seiten unter <code>/label-doktor/</code> nutzen Google Analytics 4 <strong>nur mit Ihrer Einwilligung</strong>. Solange Sie nicht auf „Akzeptieren“ klicken, wird kein Google-Skript geladen und es werden keine Daten an Google gesendet. Anbieter: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland. Zweck: Messung der Website-Nutzung (Seitenaufrufe, ungefähre Region, Gerätetyp), um die Dokumentation zu verbessern. Rechtsgrundlage: Ihre Einwilligung, Art. 6 Abs. 1 lit. a DSGVO. Nach der Einwilligung gesetzte Cookies: <code>_ga</code> und <code>_ga_8V1ZGSKD54</code>. Speicherdauer: Standard von Google Analytics 4, 2 Monate für Ereignisdaten. IP-Adressen werden in Google Analytics 4 standardmäßig anonymisiert; Google Signals und Werbefunktionen werden nicht genutzt. Übermittlung in die USA: Google LLC kann Daten in den USA verarbeiten, auf Grundlage des EU-US Data Privacy Framework. Widerruf: jederzeit über „Cookie-Einstellungen“ im Fußbereich jeder Seite; er gilt ab dann und die Google-Cookies werden entfernt.</p>
+
 <h2>Sicherheitsmeldungen</h2>
 <p><a href="mailto:security@helmdeck.de">security@helmdeck.de</a></p>
 </div>
@@ -571,10 +563,10 @@ Sie die App deinstallieren.</p>
 
 // ---------------------------------------------------------------- terms
 
-const TERMS_HTML = page("Label Doctor: Terms / Nutzungsbedingungen", `
-<div lang=en>
+const TERMS_HTML = page(["Label Doctor: Terms", "Label Doctor: Nutzungsbedingungen"], `
+<div class=en lang=en>
 <h1>Label Doctor, terms of use</h1>
-<p class=muted>${ASOF} <a href="#de">Deutsche Version unten</a></p>
+<p class=muted>${ASOF_EN}</p>
 
 <h2>1. Governing agreement</h2>
 <p>Label Doctor is licensed under the Atlassian Marketplace Standard End User
@@ -617,10 +609,9 @@ The date above states the current version.</p>
 <h2>7. Privacy</h2>
 <p>See the <a href="/label-doktor/privacy">privacy page</a>.</p>
 </div>
-<hr>
-<div lang=de>
-<h1 id=de>Label Doctor, Nutzungsbedingungen</h1>
-<p class=muted>${STAND}</p>
+<div class=de lang=de>
+<h1>Label Doctor, Nutzungsbedingungen</h1>
+<p class=muted>${STAND_DE}</p>
 
 <h2>1. Vertragsgrundlage</h2>
 <p>Für Label Doctor gilt die Atlassian Marketplace Standard End User License

@@ -264,6 +264,9 @@ def fake_machine(cwd, task, actor="owner", priority="medium", **kw):
     return t
 sessions.new_direct_task = fake_direct
 sessions.new_machine_task = fake_machine
+from cells.copilot.chat import copilot_actions as _ca
+real_bg = _ca._start_in_background
+_ca._start_in_background = lambda t, actor: None      # the broker starts cards detached - never a real turn here
 try:
     prop = {"id": "p-x"}
     with processes._lock:
@@ -302,6 +305,7 @@ try:
     nb = [t for t in sessions._load() if t.get("task") == "Nebenbei"]
     check(nb and not nb[0].get("process"), "without goal=true it is not goal work")
 finally:
+    _ca._start_in_background = real_bg
     sessions.new_direct_task = real_direct
     sessions.new_machine_task = real_machine
     events.settings = real_settings

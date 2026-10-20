@@ -8,6 +8,8 @@
 // response target are the values the live /impressum and the Label-Doktor
 // pages use. Open lawyer notes in the source are left visible on purpose.
 
+import { L, B, shell, navI18n } from "./app_i18n.js";
+
 const STYLE = `body{background:#0E0F10;color:#E4E6E6;font:16px/1.6 system-ui,sans-serif;
 max-width:720px;margin:0 auto;padding:40px 20px}h1{font-size:26px}h2{font-size:19px;
 margin-top:32px}h3{font-size:16px}a{color:#6CB2EC}hr{border:0;border-top:1px solid #222425;
@@ -16,12 +18,17 @@ ul,ol{padding-left:22px}li{margin:4px 0}table{border-collapse:collapse;width:100
 td,th{border:1px solid #222425;padding:6px 10px;vertical-align:top;text-align:left}
 blockquote{margin:16px 0;padding:4px 16px;border-left:3px solid #222425;color:#959A9D}`;
 
+// readproof + label-doktor: English default, German via toggle (app_i18n.js).
+// The other two apps keep their old single shell until they get the same treatment.
+const I18N_SLUGS = new Set(["readproof", "label-doktor"]);
+
 function page(slug, name, title, body) {
+  if (I18N_SLUGS.has(slug)) return shell(slug, title, STYLE, navI18n(slug, name), body);
   const nav = `<p class=muted><a href="/${slug}/">${name}</a> &middot;
-<a href="/${slug}/docs">Doku / Docs</a> &middot;
+<a href="/${slug}/docs">Docs / Doku</a> &middot;
 <a href="/${slug}/support">Support</a> &middot;
-<a href="/${slug}/privacy">Datenschutz / Privacy</a> &middot;
-<a href="/${slug}/terms">Nutzungsbedingungen / Terms</a></p>`;
+<a href="/${slug}/privacy">Privacy / Datenschutz</a> &middot;
+<a href="/${slug}/terms">Terms / Nutzungsbedingungen</a></p>`;
   return `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>${title}</title>
@@ -32,24 +39,30 @@ ${body}
 </html>`;
 }
 
-const LESENACHWEIS_INDEX = page("readproof", "ReadProof", "ReadProof for Confluence Cloud", `<h1>ReadProof</h1>
-<p><strong>EN:</strong> Who confirmed which page version by when: deadlines, escalation, CSV and PDF export. An Atlassian Forge app for Confluence Cloud.</p>
-<p><strong>DE:</strong> Wer hat welche Seitenversion bis wann bestätigt: Frist, Eskalation, Export als CSV und PDF. Eine Atlassian-Forge-App für Confluence Cloud.</p>
+const LESENACHWEIS_INDEX = page("readproof", "ReadProof", ["ReadProof for Confluence Cloud", "ReadProof für Confluence Cloud"], `<h1>ReadProof</h1>
+${B(
+  "<p>Who confirmed which page version by when: deadlines, escalation, CSV and PDF export. An Atlassian Forge app for Confluence Cloud.</p>",
+  "<p>Wer hat welche Seitenversion bis wann bestätigt: Frist, Eskalation, Export als CSV und PDF. Eine Atlassian-Forge-App für Confluence Cloud.</p>"
+)}
 <ul>
-<li>Evidence per person and page version / Nachweis je Person und Seitenversion</li>
-<li>Assign a whole page tree in one step, with preview / Ganzen Seitenbaum zuweisen, mit Vorschau</li>
-<li>Deadline per assignment, re-confirmation after every page change / Frist je Zuweisung, Neu-Bestätigung nach jeder Änderung</li>
-<li>List of overdue people and escalation targets (no e-mails are sent) / Liste der Überfälligen mit Eskalationsziel (es werden keine E-Mails versendet)</li>
-<li>Stores only IDs and timestamps; names are looked up live / Gespeichert werden nur IDs und Zeitstempel</li>
+<li>${L("Evidence per person and page version", "Nachweis je Person und Seitenversion")}</li>
+<li>${L("Assign a whole page tree in one step, with preview", "Ganzen Seitenbaum zuweisen, mit Vorschau")}</li>
+<li>${L("Deadline per assignment, re-confirmation after every page change", "Frist je Zuweisung, Neu-Bestätigung nach jeder Änderung")}</li>
+<li>${L("List of overdue people and escalation targets (no e-mails are sent)", "Liste der Überfälligen mit Eskalationsziel (es werden keine E-Mails versendet)")}</li>
+<li>${L("Stores only IDs and timestamps; names are looked up live", "Gespeichert werden nur IDs und Zeitstempel")}</li>
 </ul>
-<h2>Price / Preis</h2>
-<p>Free up to 10 users. From 11 users USD 0.50 per user and month, 30-day trial via the Atlassian Marketplace. / Gratis bis 10 Nutzer. Ab 11 Nutzern 0,50 USD je Nutzer und Monat, 30 Tage Testphase über den Atlassian Marketplace.</p>
-<p><a href="/readproof/compare">Price comparison, checked 18 October 2026 / Preisvergleich, Stand 18.10.2026</a></p>
-<p>The app records confirmations; whether a regulation is met is for the organisation to decide. / Die App hält Bestätigungen fest; ob eine Vorschrift erfüllt ist, entscheidet die Organisation.</p>`);
-const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadProof", `<h1>Documentation / Dokumentation</h1>
-<p>English first, deutsch darunter.</p>
-
-<h2>English</h2>
+<h2>${L("Price", "Preis")}</h2>
+${B(
+  "<p>Free up to 10 users. Then per user and month: 1 to 100 users USD 0.28, 101 to 250 users USD 0.20, 251 to 1000 users USD 0.10, above 1000 users USD 0.09 down to 0.04. 30-day trial via the Atlassian Marketplace.</p>",
+  "<p>Bis 10 Nutzer gratis. Danach je Nutzer und Monat: 1 bis 100 Nutzer 0,28 USD, 101 bis 250 Nutzer 0,20 USD, 251 bis 1000 Nutzer 0,10 USD, ab 1000 Nutzern 0,09 bis 0,04 USD. 30 Tage Testphase über den Atlassian Marketplace.</p>"
+)}
+<p><a href="/readproof/compare">${L("Price comparison, checked 18 October 2026", "Preisvergleich, Stand 18.10.2026")}</a></p>
+${B(
+  "<p>The app records confirmations; whether a regulation is met is for the organisation to decide.</p>",
+  "<p>Die App hält Bestätigungen fest; ob eine Vorschrift erfüllt ist, entscheidet die Organisation.</p>"
+)}`);
+const LESENACHWEIS_DOCS = page("readproof", "ReadProof", ["Documentation, ReadProof", "Dokumentation, ReadProof"], `<h1>${L("Documentation", "Dokumentation")}</h1>
+<div class=en lang=en>
 <h3>1. What the app does</h3>
 <p>ReadProof records one confirmation per person and page version. Administrators assign pages to a Confluence group with a deadline; people confirm at the very bottom of the page (ReadProof macro, required tick); when the page changes, everyone confirms the new version. Requires Confluence Cloud and at least one Confluence group.</p>
 <h3>2. Installation and permissions</h3>
@@ -86,11 +99,19 @@ const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadPro
 </ul>
 <h3>11. Privacy, deletion, troubleshooting</h3>
 <p>See the <a href="/readproof/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/readproof/support">Support</a>.</p>
-
-<h2>Deutsch</h2>
+</div>
+<div class=de lang=de>
 <h3>1. Was die App tut</h3>
 <p>ReadProof speichert eine Bestätigung je Person und Seitenversion. Administratoren weisen Seiten einer Confluence-Gruppe mit Frist zu; alle bestätigen ganz unten auf der Seite (Makro „ReadProof“, Pflicht-Haken); ändert sich die Seite, bestätigt jede Person die neue Version. Voraussetzung: Confluence Cloud und mindestens eine Gruppe.</p>
 <h3>2. Installation und Berechtigungen</h3>
+<table>
+<tr><th>Berechtigung</th><th>Wofür</th></tr>
+<tr><td>Seiten und Bereiche lesen</td><td>Version einer Seite und ihren Titel zur Anzeige lesen</td></tr>
+<tr><td>Seitenbaum lesen</td><td>Ganzen Seitenbaum zuweisen</td></tr>
+<tr><td>Gruppen lesen</td><td>Gruppe wählen und ihre Mitglieder finden</td></tr>
+<tr><td>Nutzer lesen</td><td>Namen in Übersicht und Exporten anzeigen</td></tr>
+<tr><td>App-Speicher</td><td>Zuweisungen und Bestätigungen speichern</td></tr>
+</table>
 <p>Installation über den Atlassian Marketplace. Die App fragt nur Leserechte ab; sie schreibt nichts in Seiten und versendet keine E-Mails. Die Tabelle oben nennt, wofür jede Berechtigung gebraucht wird (Seiten und Bereiche lesen, Seitenbaum, Gruppen, Nutzernamen, App-Speicher).</p>
 <h3>3. Eine Seite zuweisen</h3>
 <p><em>Apps → ReadProof</em> öffnen (Administratoren, ReadProof-Manager, Space-Administratoren für ihren Space). Seite, Gruppe und Frist wählen. Optional: Neu-Bestätigung nach N Tagen, Eskalation nach N Tagen mit Eskalationsgruppe.</p>
@@ -115,9 +136,10 @@ const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadPro
 <li>Keine E-Mail-Erinnerungen. Die App belegt keine Konformität mit NIS2 oder ISO 27001; sie hält Bestätigungen fest.</li>
 </ul>
 <h3>11. Datenschutz, Löschung, Fehlersuche</h3>
-<p>Siehe <a href="/readproof/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/readproof/support">Support</a>.</p>`);
-const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof", `<h1>Support</h1>
-<h2>English</h2>
+<p>Siehe <a href="/readproof/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/readproof/support">Support</a>.</p>
+</div>`);
+const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", ["Support, ReadProof", "Support, ReadProof"], `<h1>Support</h1>
+<div class=en lang=en>
 <p>E-mail: <strong>support@helmdeck.de</strong></p>
 <p>Please include: your Confluence site name, what you clicked, what you expected and what happened, and the language of your profile. Please do not send page content or personal data.</p>
 <table>
@@ -127,7 +149,8 @@ const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof"
 </table>
 <p>Security issues: <strong>security@helmdeck.de</strong>. Data processing agreement on request: privacy@helmdeck.de.</p>
 <p>First read the <a href="/readproof/docs">documentation</a>, especially "Known limits".</p>
-<h2>Deutsch</h2>
+</div>
+<div class=de lang=de>
 <p>E-Mail: <strong>support@helmdeck.de</strong></p>
 <p>Bitte angeben: Name deiner Confluence-Seite, was du geklickt hast, was du erwartet hast und was passiert ist, Sprache deines Profils. Bitte keine Seiteninhalte oder personenbezogenen Daten senden.</p>
 <table>
@@ -135,125 +158,175 @@ const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof"
 <tr><td>Zahlende Seiten (ab 11 Nutzern)</td><td>Antwort innerhalb von zwei Werktagen (Ziel, keine Zusage). </td></tr>
 <tr><td>Gratis-Stufe (bis 10 Nutzer)</td><td>Nur Dokumentation; keine Antwortzeit zugesagt.</td></tr>
 </table>
-<p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>`);
-const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Datenschutz / Privacy, ReadProof", `<h1>Datenschutzerklärung / Privacy Policy – ReadProof</h1>
-<blockquote><strong>ENTWURF – JURISTISCH UNGEPRÜFT.</strong> KI-Entwurf, aus Code (<code>app/src</code>, <code>app/manifest.yml</code>) und <code>docs/04-datenmodell.md</code> abgeleitet. Kein Anwalt hat ihn gelesen. Vor der Veröffentlichung fachlich prüfen lassen (DSGVO, Impressum, Angaben als Privatperson). <code>[[ECKIGE KLAMMERN]]</code> sind Platzhalter, die der Owner füllt.  <strong>DRAFT – NOT LEGALLY REVIEWED.</strong> Derived from the code. Placeholders: <code>[[...]]</code>.</blockquote>
-<p>Stand / Version: <code>[[DATUM]]</code></p>
-<h1>Deutsch</h1>
-<h2>1. Verantwortlicher</h2>
-<p><code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland – E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
-<h2>2. Was die App ist</h2>
-<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
-<h2>3. Wo die Daten verarbeitet werden</h2>
-<p>Die App läuft auf Atlassian Forge. Alle Daten liegen im Forge-Speicher (Key-Value-Store) deiner eigenen Confluence-Installation, also auf Atlassian-Infrastruktur. Es gibt <strong>keine eigenen Server, keine eigene Datenbank, kein Tracking, keine Analyse, keine Drittdienste</strong>. Das Manifest deklariert keine externen Hosts (<code>permissions.external</code> fehlt); die App ruft nur die Confluence-Schnittstelle auf. Der Anbieter erhält und speichert keine Daten deiner Seite bei sich.</p>
-<h2>4. Welche Daten die App verarbeitet</h2>
-<table>
-<tr><th>Daten</th><th>Zweck</th><th>Wo</th><th>Wie lange</th></tr>
-<tr><td>Zuweisung: Seiten-ID, Gruppen-ID und Gruppenname, Frist, Tage bis zur Neu-Bestätigung, Eskalationstage und -gruppe, Basisversion, Konto-ID des Erstellers, Zeitstempel</td><td>Wer muss was bis wann bestätigen</td><td>Forge-Speicher deiner Seite</td><td>Bis ein Administrator die Zuweisung entfernt oder die App deinstalliert wird</td></tr>
-<tr><td>Bestätigung: Seiten-ID, Version, Atlassian-Konto-ID der Person, Zeitpunkt</td><td>Nachweis</td><td>Forge-Speicher</td><td><strong>Keine automatische Löschung.</strong> Bestätigungen älterer Versionen bleiben absichtlich als Nachweis. Die Aufbewahrungsdauer entscheidest du; exportiere vorher</td></tr>
-<tr><td>Eskalationsvermerk: Seiten-ID, Version, Zeitpunkt</td><td>Eskalation je Seite und Version nur einmal melden</td><td>Forge-Speicher</td><td>wie oben</td></tr>
-<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>–</td></tr>
-<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>–</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>–</td></tr>
-</table>
-<p>Ausgetretene Personen: Ihr Name ist unter Umständen nicht mehr abrufbar; ihre Konto-ID bleibt im Nachweis. Exporte (CSV/PDF) enthalten Namen und Konto-IDs und werden von der App nicht gespeichert; sie landen in deinem Download-Ordner.</p>
-<h2>5. Berechtigungen (Scopes)</h2>
-<p>Nur lesend auf Confluence: Seiten, Bereiche, Seitenbaum (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), Gruppen und deren Mitglieder (<code>read:group</code>, <code>read:confluence-groups</code>), Nutzer-Namen (<code>read:user</code>, <code>read:confluence-user</code>), dazu <code>storage:app</code>. Die App schreibt <strong>nichts</strong> in Seiten und verschickt <strong>keine E-Mails</strong>.</p>
-<h2>6. Keine KI</h2>
-<p>Die App nutzt keine KI und kein Forge LLM.</p>
-<h2>7. Rechtsgrundlage und Rollen (DSGVO)</h2>
-<p><code>[[ANWALT PRÜFEN]]</code> Verantwortlicher für die Daten deiner Mitarbeitenden bist du als Kunde. Soweit der Anbieter personenbezogene Daten (Konto-ID, Bestätigungszeitpunkt) im Auftrag verarbeitet, geschieht das nur im Forge-Speicher deiner Seite; der Anbieter hat keinen eigenen Zugriff darauf. Hinweise zum Auftragsverarbeitungsvertrag: <code>docs/legal/avv-hinweis.md</code>.</p>
-<h2>8. Weitergabe</h2>
-<p>Keine Weitergabe durch den Anbieter. Atlassian verarbeitet als Plattformbetreiber nach eigenen Bedingungen.</p>
-<h2>9. Löschung und Deinstallation</h2>
-<p>Du kannst Zuweisungen in der App entfernen. Bestätigungen werden von der App nicht gelöscht (Nachweis). Was Forge bei der Deinstallation mit den Daten tut, haben wir <strong>nicht geprüft</strong> <code>[[PRÜFEN: Forge-Doku zur Datenlöschung nach Deinstallation; erst dann eine Aussage ergänzen]]</code>. Auf Anfrage klären wir die Löschung mit Atlassian.</p>
-<h2>10. Deine Rechte</h2>
-<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an <code>privacy@helmdeck.de</code>. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
-<h2>11. Sicherheit</h2>
-<p>Anmeldung und Hosting liefert Atlassian Forge. Die App fragt nur die oben genannten Berechtigungen ab. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
-<h2>12. Änderungen</h2>
-<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>[[https://helmdeck.de/readproof/privacy]]</code>.</p>
-<h1>English</h1>
+<p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>
+</div>`);
+const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", ["Privacy, ReadProof", "Datenschutz, ReadProof"], `<h1>${L("Privacy Policy: ReadProof", "Datenschutzerklärung: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
 <h2>1. Who is responsible</h2>
-<p><code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany – e-mail <code>privacy@helmdeck.de</code>. The provider is a natural person, not a company.</p>
+<p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, e-mail <code>privacy@helmdeck.de</code>. The provider is a natural person, not a company.</p>
 <h2>2. What the app is</h2>
 <p>ReadProof is an Atlassian Forge app for Confluence Cloud. It records which person confirmed which version of a page and produces overviews, deadline lists and CSV/PDF exports. Administration is limited to Confluence administrators.</p>
 <h2>3. Where data is processed</h2>
-<p>The app runs on Atlassian Forge. All data is in Forge storage (key-value store) of your own Confluence installation, on Atlassian infrastructure. There are <strong>no own servers, no own database, no tracking, no analytics and no third-party services</strong>. The manifest declares no external hosts (no <code>permissions.external</code>); the app only calls the Confluence API. The provider does not receive or store your site's data.</p>
+<p>The app runs on Atlassian Forge. All data is in Forge storage (key-value store) of your own Confluence installation, on Atlassian infrastructure. There are <strong>no own servers, no own database, no tracking, no analytics and no third-party services</strong>. The app only calls the Confluence API. The only external permission is for profile pictures, which your browser loads from <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> and <code>secure.gravatar.com</code>. The provider does not receive or store your site's data.</p>
 <h2>4. Data the app handles</h2>
 <table>
 <tr><th>Data</th><th>Purpose</th><th>Where</th><th>How long</th></tr>
 <tr><td>Assignment: page ID, group ID and group name, deadline, days until re-confirmation, escalation days and group, base version, creator's account ID, timestamps</td><td>Who must confirm what by when</td><td>Forge storage of your site</td><td>Until an administrator removes the assignment or the app is uninstalled</td></tr>
 <tr><td>Confirmation: page ID, version, the person's Atlassian account ID, time</td><td>Evidence</td><td>Forge storage</td><td><strong>No automatic deletion.</strong> Confirmations of older versions are kept on purpose as evidence. You decide how long to keep them; export first</td></tr>
 <tr><td>Escalation note: page ID, version, time</td><td>Report an escalation only once per page and version</td><td>Forge storage</td><td>as above</td></tr>
-<tr><td>People's names</td><td>Display and export</td><td><strong>Not stored.</strong> Looked up live from Confluence</td><td>–</td></tr>
-<tr><td>Page titles, page content, e-mail addresses</td><td>–</td><td><strong>Not stored.</strong> The app reads page metadata (version, position in the page tree, title for display), not content</td><td>–</td></tr>
+<tr><td>Mention lock: page ID, version, the person's account ID, time</td><td>Mention the same person only once per page version</td><td>Forge storage</td><td>as above</td></tr>
+<tr><td>Mention comment on the page: account IDs of the newly assigned people (as @-mention), due date, fixed notice text</td><td>Notify assigned people</td><td><strong>Stored in Confluence</strong> (as a comment on the page), not in Forge storage</td><td>Stays as a comment until it is deleted in Confluence. The app does not delete it</td></tr>
+<tr><td>People's names</td><td>Display and export</td><td><strong>Not stored.</strong> Looked up live from Confluence</td><td>n/a</td></tr>
+<tr><td>Page titles, page content, e-mail addresses</td><td>n/a</td><td><strong>Not stored.</strong> The app reads page metadata (version, position in the page tree, title for display), not content</td><td>n/a</td></tr>
 </table>
 <p>Departed people: their name may no longer be available; their account ID stays in the evidence. Exports (CSV/PDF) contain names and account IDs and are not stored by the app; they go to your download folder.</p>
 <h2>5. Permissions (scopes)</h2>
-<p>Read-only on Confluence: pages, spaces, page tree (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), groups and members (<code>read:group</code>, <code>read:confluence-groups</code>), user names (<code>read:user</code>, <code>read:confluence-user</code>), plus <code>storage:app</code>. The app writes <strong>nothing</strong> into pages and sends <strong>no e-mails</strong>.</p>
+<p>Read access to Confluence: pages, spaces, page tree (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), ancestors of a page for the subtree rule (<code>read:content.metadata</code>), page events 'created' and 'moved' (<code>read:confluence-content.summary</code>), groups and members (<code>read:group</code>, <code>read:confluence-groups</code>), user names (<code>read:user</code>, <code>read:confluence-user</code>), search (<code>search:confluence</code>), plus <code>storage:app</code>.</p>
+<p>There are two write purposes. First, the app adds its own confirmation macro at the end of an assigned page and removes it again when the assignment is removed (<code>write:page:confluence</code>). Second, when people are assigned, the app writes one footer comment on the page that @-mentions them (<code>write:comment:confluence</code>). The comment contains the account IDs of the assigned people as a mention, the due date and a fixed notice text. Confluence itself sends the notification, according to each person's settings. The app sends no e-mails and uses no server or service of its own for this. An administrator can switch the comment off in the app; then none is written. The comment stays stored in Confluence until it is deleted there. The app changes no other page content.</p>
 <h2>6. No AI</h2>
 <p>The app uses no AI and no Forge LLM.</p>
 <h2>7. Legal basis and roles (GDPR)</h2>
-<p><code>[[LAWYER TO REVIEW]]</code> You, the customer, are the controller of your staff's data. Where the provider processes personal data (account ID, confirmation time) on your behalf, this happens only in your site's Forge storage; the provider has no access of its own. Notes on a data processing agreement: <code>docs/legal/avv-hinweis.md</code>.</p>
+<p>You, the customer, are the controller of your staff's data. Where the provider processes personal data (account ID, confirmation time) on your behalf, this happens only in your site's Forge storage; the provider has no access of its own. Notes on a data processing agreement: <code>docs/legal/avv-hinweis.md</code>.</p>
 <h2>8. Sharing</h2>
 <p>No sharing by the provider. Atlassian processes data as platform operator under its own terms.</p>
 <h2>9. Deletion and uninstall</h2>
-<p>You can remove assignments in the app. The app does not delete confirmations (evidence). What Forge does with the data on uninstall has <strong>not been verified</strong> <code>[[CHECK: Forge documentation on data deletion after uninstall before adding a claim]]</code>. On request we clarify deletion with Atlassian.</p>
+<p>You can remove assignments in the app. The app does not delete confirmations (evidence). After uninstallation, Atlassian deletes the Forge storage data of the installation automatically after 28 days; a reinstallation does not restore it. On request, we confirm deletion.</p>
 <h2>10. Your rights</h2>
 <p>Access, rectification, erasure, restriction, objection, portability, complaint to a supervisory authority. Write to <code>privacy@helmdeck.de</code>. Because the provider holds no data itself, most requests are handled in your Confluence site or with Atlassian.</p>
 <h2>11. Security</h2>
-<p>Authentication and hosting are provided by Atlassian Forge. The app asks only for the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: <code>security@helmdeck.de</code>.</p>
+<p>Authentication and hosting are provided by Atlassian Forge. The app uses only the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: <code>security@helmdeck.de</code>.</p>
 <h2>12. Changes</h2>
-<p>We may update this policy. The current version is at <code>[[https://helmdeck.de/readproof/privacy]]</code>.</p>`);
-const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "AGB / Terms, ReadProof", `<h1>Nutzungsbedingungen / Terms of Use (EULA) – ReadProof</h1>
-<blockquote><strong>ENTWURF – JURISTISCH UNGEPRÜFT.</strong> Gerüst, nach dem Muster des Label-Doktors. Der Originaltext der Atlassian-Standardvereinbarung für Marketplace-Apps ist <strong>nicht</strong> eingebunden. Einfachste und sicherste Variante: in der Listung die <strong>Atlassian-Standard-EULA</strong> (Marketplace End User Agreement) als Basis wählen und dieses Dokument nur als Ergänzung veröffentlichen <code>[[PRÜFEN: aktuelle Optionen im Partnerprofil]]</code>.  <strong>DRAFT – NOT LEGALLY REVIEWED.</strong> Skeleton only. Placeholders: <code>[[...]]</code>.</blockquote>
-<p>Version: <code>[[DATUM]]</code></p>
-<h1>English</h1>
+<p>We may update this policy. The current version is at <code>https://helmdeck.de/readproof/privacy</code>.</p>
+<h2>13. Website measurement (Google Analytics)</h2>
+<p>This applies to this website only, not to the app (see section 3 for the app). The pages under <code>/readproof/</code> use Google Analytics 4 <strong>only if you consent</strong>. Until you click &quot;Accept&quot; no Google script is loaded and no data is sent to Google. Provider: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland. Purpose: measuring how the website is used (page views, approximate region, device type) to improve the documentation. Legal basis: your consent, Art. 6(1)(a) GDPR. Cookies set after consent: <code>_ga</code> and <code>_ga_8V1ZGSKD54</code>. Storage period: Google Analytics 4 default of 2 months for event data. IP addresses are anonymised by default in Google Analytics 4; Google signals and advertising features are not used. Transfer to the USA: Google LLC may process data in the USA under the EU-US Data Privacy Framework. Withdrawal: at any time via &quot;Cookie settings&quot; in the footer of every page; it applies from then on and the Google cookies are removed.</p>
+</div>
+<div class=de lang=de>
+<h2>1. Verantwortlicher</h2>
+<p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland, E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
+<h2>2. Was die App ist</h2>
+<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie hält fest, welche Person welche Version einer Seite bestätigt hat, und erzeugt daraus Übersichten, Fristenlisten sowie CSV- und PDF-Exporte. Die Verwaltung ist Confluence-Administratoren vorbehalten.</p>
+<h2>3. Wo die Daten verarbeitet werden</h2>
+<p>Die App läuft auf Atlassian Forge. Alle Daten liegen im Forge-Speicher (Key-Value-Store) deiner eigenen Confluence-Installation, also auf Atlassian-Infrastruktur. Es gibt <strong>keine eigenen Server, keine eigene Datenbank, kein Tracking, keine Analyse, keine Drittdienste</strong>. Die App ruft nur die Confluence-Schnittstelle auf. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Der Anbieter erhält und speichert keine Daten deiner Seite bei sich.</p>
+<h2>4. Welche Daten die App verarbeitet</h2>
+<table>
+<tr><th>Daten</th><th>Zweck</th><th>Wo</th><th>Wie lange</th></tr>
+<tr><td>Zuweisung: Seiten-ID, Gruppen-ID und Gruppenname, Frist, Tage bis zur Neu-Bestätigung, Eskalationstage und -gruppe, Basisversion, Konto-ID des Erstellers, Zeitstempel</td><td>Wer muss was bis wann bestätigen</td><td>Forge-Speicher deiner Seite</td><td>Bis ein Administrator die Zuweisung entfernt oder die App deinstalliert wird</td></tr>
+<tr><td>Bestätigung: Seiten-ID, Version, Atlassian-Konto-ID der Person, Zeitpunkt</td><td>Nachweis</td><td>Forge-Speicher</td><td><strong>Keine automatische Löschung.</strong> Bestätigungen älterer Versionen bleiben absichtlich als Nachweis. Die Aufbewahrungsdauer entscheidest du; exportiere vorher</td></tr>
+<tr><td>Eskalationsvermerk: Seiten-ID, Version, Zeitpunkt</td><td>Eskalation je Seite und Version nur einmal melden</td><td>Forge-Speicher</td><td>wie oben</td></tr>
+<tr><td>Erwähnungs-Sperre: Seiten-ID, Version, Konto-ID der Person, Zeitpunkt</td><td>Dieselbe Person je Seitenversion nur einmal per Kommentar erwähnen</td><td>Forge-Speicher</td><td>wie oben</td></tr>
+<tr><td>Erwähnungs-Kommentar auf der Seite: Konto-IDs der neu Zugewiesenen (als @-Erwähnung), Frist, fester Hinweistext</td><td>Zugewiesene benachrichtigen</td><td><strong>In Confluence gespeichert</strong> (als Kommentar der Seite), nicht im Forge-Speicher</td><td>Bleibt als Kommentar bestehen, bis er in Confluence gelöscht wird. Die App löscht ihn nicht</td></tr>
+<tr><td>Namen von Personen</td><td>Anzeige und Export</td><td><strong>Nicht gespeichert.</strong> Werden bei Anzeige und Export live aus Confluence abgerufen</td><td>n/a</td></tr>
+<tr><td>Seitentitel, Seiteninhalte, E-Mail-Adressen</td><td>n/a</td><td><strong>Nicht gespeichert.</strong> Die App liest Seiten-Metadaten (Version, Ort im Seitenbaum, Titel zur Anzeige), keine Inhalte</td><td>n/a</td></tr>
+</table>
+<p>Ausgetretene Personen: Ihr Name ist unter Umständen nicht mehr abrufbar; ihre Konto-ID bleibt im Nachweis. Exporte (CSV/PDF) enthalten Namen und Konto-IDs und werden von der App nicht gespeichert; sie landen in deinem Download-Ordner.</p>
+<h2>5. Berechtigungen (Scopes)</h2>
+<p>Lesend auf Confluence: Seiten, Bereiche, Seitenbaum (<code>read:page</code>, <code>read:space</code>, <code>read:hierarchical-content</code>), Vorfahren einer Seite für die Teilbaum-Regel (<code>read:content.metadata</code>), Seiten-Ereignisse „angelegt“ und „verschoben“ (<code>read:confluence-content.summary</code>), Gruppen und deren Mitglieder (<code>read:group</code>, <code>read:confluence-groups</code>), Nutzer-Namen (<code>read:user</code>, <code>read:confluence-user</code>), Suche (<code>search:confluence</code>), dazu <code>storage:app</code>.</p>
+<p>Schreibend auf Confluence gibt es zwei Zwecke. Erstens fügt die App ihr eigenes Bestätigungs-Makro ans Ende einer zugewiesenen Seite ein und entfernt es beim Entzug wieder (<code>write:page:confluence</code>). Zweitens schreibt die App bei einer Zuweisung einen Fußzeilen-Kommentar auf die Seite, der die Zugewiesenen mit @ erwähnt (<code>write:comment:confluence</code>). Der Kommentar enthält die Konto-IDs der Zugewiesenen als Erwähnung, die Frist und einen festen Hinweistext. Die Benachrichtigung selbst versendet Confluence nach den Einstellungen der jeweiligen Person. Die App verschickt keine E-Mails und nutzt dafür keinen eigenen Server oder Dienst. Ein Administrator kann den Kommentar in der App abschalten; dann wird keiner geschrieben. Der Kommentar bleibt in Confluence gespeichert, bis er dort gelöscht wird. Weiteren Seiteninhalt ändert die App nicht.</p>
+<h2>6. Keine KI</h2>
+<p>Die App nutzt keine KI und kein Forge LLM.</p>
+<h2>7. Rechtsgrundlage und Rollen (DSGVO)</h2>
+<p>Verantwortlicher für die Daten deiner Mitarbeitenden bist du als Kunde. Soweit der Anbieter personenbezogene Daten (Konto-ID, Bestätigungszeitpunkt) im Auftrag verarbeitet, geschieht das nur im Forge-Speicher deiner Seite; der Anbieter hat keinen eigenen Zugriff darauf. Hinweise zum Auftragsverarbeitungsvertrag: <code>docs/legal/avv-hinweis.md</code>.</p>
+<h2>8. Weitergabe</h2>
+<p>Keine Weitergabe durch den Anbieter. Atlassian verarbeitet als Plattformbetreiber nach eigenen Bedingungen.</p>
+<h2>9. Löschung und Deinstallation</h2>
+<p>Du kannst Zuweisungen in der App entfernen. Bestätigungen werden von der App nicht gelöscht (Nachweis). Nach der Deinstallation löscht Atlassian die Forge-Speicherdaten der Installation automatisch nach 28 Tagen; eine Neuinstallation stellt sie nicht wieder her. Auf Anfrage bestätigen wir die Löschung.</p>
+<h2>10. Deine Rechte</h2>
+<p>Auskunft, Berichtigung, Löschung, Einschränkung, Widerspruch, Datenübertragbarkeit, Beschwerde bei einer Aufsichtsbehörde. Schreibe an <code>privacy@helmdeck.de</code>. Weil der Anbieter selbst keine Daten hält, werden die meisten Anfragen in deiner Confluence-Seite oder bei Atlassian erledigt.</p>
+<h2>11. Sicherheit</h2>
+<p>Anmeldung und Hosting liefert Atlassian Forge. Die App nutzt nur die oben genannten Berechtigungen. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
+<h2>12. Änderungen</h2>
+<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>https://helmdeck.de/readproof/privacy</code>.</p>
+<h2>13. Website-Messung (Google Analytics)</h2>
+<p>Das gilt nur für diese Website, nicht für die App (zur App siehe Abschnitt 3). Die Seiten unter <code>/readproof/</code> nutzen Google Analytics 4 <strong>nur mit deiner Einwilligung</strong>. Solange du nicht auf „Akzeptieren“ klickst, wird kein Google-Skript geladen und es werden keine Daten an Google gesendet. Anbieter: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland. Zweck: Messung der Website-Nutzung (Seitenaufrufe, ungefähre Region, Gerätetyp), um die Dokumentation zu verbessern. Rechtsgrundlage: deine Einwilligung, Art. 6 Abs. 1 lit. a DSGVO. Nach der Einwilligung gesetzte Cookies: <code>_ga</code> und <code>_ga_8V1ZGSKD54</code>. Speicherdauer: Standard von Google Analytics 4, 2 Monate für Ereignisdaten. IP-Adressen werden in Google Analytics 4 standardmäßig anonymisiert; Google Signals und Werbefunktionen werden nicht genutzt. Übermittlung in die USA: Google LLC kann Daten in den USA verarbeiten, auf Grundlage des EU-US Data Privacy Framework. Widerruf: jederzeit über „Cookie-Einstellungen“ im Fußbereich jeder Seite; er gilt ab dann und die Google-Cookies werden entfernt.</p>
+</div>`);
+const LESENACHWEIS_TERMS = page("readproof", "ReadProof", ["Terms, ReadProof", "AGB, ReadProof"], `<h1>${L("Terms of Use (EULA): ReadProof", "Nutzungsbedingungen: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
 <h2>1. Parties</h2>
-<p>Provider: <code>Project Kaiser</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, <code>support@helmdeck.de</code> (natural person).</p>
+<p>Provider: <code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, <code>support@helmdeck.de</code> (natural person).</p>
 <p>Customer: the person or organization that installs the app on a Confluence Cloud site.</p>
 <h2>2. Base agreement</h2>
-<p><code>[[Option A: "The Atlassian Standard EULA (Marketplace End User Agreement) in its current version applies, with the additions below."]]</code></p>
-<p><code>[[Option B: full text of an own EULA, based on the Atlassian template, inserted by owner/lawyer.]]</code></p>
+<p>The Atlassian Standard EULA (Marketplace End User Agreement) in its current version applies, with the additions below.</p>
 <h2>3. Additions</h2>
 <h3>3.1 Licence and scope</h3>
 <ul>
 <li>The app is licensed through the Atlassian Marketplace. Licence status is determined by Atlassian (Forge licence context). The provider runs no licence server.</li>
-<li>Sites with 1 to 10 users use the app at no charge (a 0 USD price tier). Sites with more users pay the price shown on the Marketplace listing per user and month.</li>
-<li><strong>Without an active licence</strong> (for example an expired trial or a cancelled subscription): creating <strong>new</strong> assignments (single page and page tree) is blocked. Existing assignments, confirmations by readers, the overview, deadline lists and CSV/PDF exports keep working. <code>[[LAWYER: make this binding or drop it]]</code></li>
+<li>Sites with 1 to 10 users use the app at no charge (a 0 USD price tier). Sites with more users pay the price shown on the Marketplace listing per user and month: USD 0.28 for 1 to 100 users, USD 0.20 for 101 to 250 users, USD 0.10 for 251 to 1000 users, USD 0.09 down to 0.04 above 1000 users.</li>
+<li><strong>Without an active licence</strong> (for example an expired trial or a cancelled subscription): creating <strong>new</strong> assignments (single page and page tree) is blocked. Existing assignments, confirmations by readers, the overview, deadline lists and CSV/PDF exports keep working.</li>
 </ul>
 <h3>3.2 Evidence, not legal advice</h3>
-<p>The app records confirmations and produces exports with a checksum. It does <strong>not</strong> make an organisation compliant with NIS2, ISO 27001 or any other regulation, and the provider gives no assurance that an auditor will accept an export. The customer decides whom to assign, which deadline applies and how long to keep data.</p>
+<p>The app records confirmations and produces exports with a checksum. It does <strong>not</strong> bring an organisation into line with NIS2, ISO 27001 or any other regulation, and the provider gives no assurance that an auditor will accept an export. The customer decides whom to assign, which deadline applies and how long to keep data.</p>
 <h3>3.3 Customer responsibility</h3>
-<p>The administrator checks the preview before a bulk assignment. The app lists overdue people and escalation targets; it does not send e-mails or notifications. The customer is responsible for acting on the lists. Group membership is read from Confluence at the time of the call.</p>
+<p>The administrator checks the preview before a bulk assignment. The app lists overdue people and escalation targets; it sends no deadline reminders and no e-mails of its own. When people are assigned, the app writes one footer comment on the page that @-mentions them (administrators can switch this off), and Confluence sends the notification. The comment stays in Confluence until it is deleted there. The customer is responsible for acting on the lists. Group membership is read from Confluence at the time of the call.</p>
 <h3>3.4 Data</h3>
-<p>See the Privacy Policy. The app stores account IDs, page IDs, versions and timestamps in the customer's Forge storage and does not delete confirmations automatically.</p>
+<p>See the Privacy Policy. The app stores account IDs, page IDs, versions and timestamps in the customer's Forge storage and does not delete confirmations automatically. The mention comment on the page (account IDs of assigned people, due date) is stored in Confluence.</p>
 <h3>3.5 Warranty and liability</h3>
-<p><code>[[LAWYER: review the limitation of liability under German law. Liability for intent, gross negligence, injury to life, body or health and for essential contractual duties cannot be excluded. Do not use any proposed wording unreviewed.]]</code></p>
+<p>Liability for intent, gross negligence, injury to life, body or health, under mandatory product liability rules and for breach of essential contractual duties is not limited.</p>
 <p>The app is provided "as is" to the extent permitted by law.</p>
 <h3>3.6 Support</h3>
-<p>Support via <code>[[https://helmdeck.de/readproof/support]]</code>. Target response for paying customers: two business days, no guaranteed availability. For the free tier (1–10 users): documentation only, no response time promised. \`\`</p>
+<p>Support via <code>https://helmdeck.de/readproof/support</code>. Target response for paying customers: two business days, no availability commitment. For the free tier (1-10 users): documentation only, no response time promised.</p>
 <h3>3.7 Term and termination</h3>
 <p>Subscription as per the Atlassian Marketplace. After uninstall the app processes nothing further.</p>
 <h3>3.8 Governing law and venue</h3>
-<p><code>[[LAWYER: governing law, venue, consumer protection rules.]]</code></p>
+<p>Governing law and venue follow the Atlassian EULA that applies to the installation. These additions do not set a separate choice of law or venue. Mandatory consumer protection rules remain unaffected.</p>
 <h3>3.9 Changes</h3>
-<p>The provider may update these terms for future versions. Material changes are announced at <code>[[https://helmdeck.de/readproof/terms]]</code>.</p>
+<p>The provider may update these terms for future versions. Material changes are announced at <code>https://helmdeck.de/readproof/terms</code>.</p>
 <h3>3.10 Contact / legal notice</h3>
-<p><code>[[Impressum is required for a public page: name, postal address, e-mail. As a private person the home address becomes public; see OWNER-CHECKLISTE.]]</code></p>
-<h1>Deutsch (Kurzfassung der Ergänzungen, nicht rechtsverbindlich)</h1>
+<p>Provider: Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany. E-mail: support@helmdeck.de. The provider is a natural person, not a company.</p>
+</div>
+<div class=de lang=de>
+<h2>Kurzfassung der Ergänzungen, nicht rechtsverbindlich</h2>
 <ul>
-<li>Basis: Atlassian-Standard-EULA <code>[[PRÜFEN]]</code>; dieses Dokument ergänzt sie.</li>
-<li><strong>Lizenz:</strong> Läuft über den Atlassian Marketplace. Seiten mit 1 bis 10 Nutzern nutzen die App gratis; ab 11 Nutzern gilt der Preis der Listung je Nutzer und Monat.</li>
+<li>Basis: Atlassian-Standard-EULA; dieses Dokument ergänzt sie.</li>
+<li><strong>Lizenz:</strong> Läuft über den Atlassian Marketplace. Seiten mit 1 bis 10 Nutzern nutzen die App gratis; ab 11 Nutzern gilt der Preis der Listung je Nutzer und Monat (0,28 USD bis 100 Nutzer, 0,20 USD für 101 bis 250, 0,10 USD für 251 bis 1000, darüber 0,09 bis 0,04 USD).</li>
 <li><strong>Ohne aktive Lizenz</strong> (Testphase abgelaufen, Abo beendet): <strong>neue</strong> Zuweisungen sind gesperrt (einzelne Seite und Seitenbaum). Bestehende Zuweisungen, Bestätigungen der Leser, Übersicht, Fristenliste und CSV/PDF-Export laufen weiter.</li>
 <li><strong>Nachweis, keine Rechtsberatung:</strong> Die App macht keine Organisation "NIS2- oder ISO-27001-konform" und sichert nicht zu, dass ein Prüfer einen Export annimmt.</li>
-<li><strong>Verantwortung des Kunden:</strong> Vorschau vor der Massenzuweisung prüfen; die App listet Überfällige, versendet aber keine E-Mails.</li>
+<li><strong>Verantwortung des Kunden:</strong> Vorschau vor der Massenzuweisung prüfen; die App listet Überfällige, versendet aber keine Fristerinnerungen und keine eigenen E-Mails. Bei einer Zuweisung schreibt sie einen Fußzeilen-Kommentar mit @-Erwähnung der Zugewiesenen auf die Seite (durch Administratoren abschaltbar); die Benachrichtigung versendet Confluence. Der Kommentar bleibt in Confluence gespeichert, bis er dort gelöscht wird.</li>
 <li><strong>Daten:</strong> siehe Datenschutzerklärung; Bestätigungen werden nicht automatisch gelöscht.</li>
-<li><strong>Haftung, Recht, Gerichtsstand:</strong> <code>[[ANWALT PRÜFEN]]</code>.</li>
+<li><strong>Haftung, Recht, Gerichtsstand:</strong> Es gilt die Atlassian-Standard-EULA; zwingende Haftung und Verbraucherrechte bleiben unberührt.</li>
 <li><strong>Support:</strong> zahlende Kunden Ziel zwei Werktage; Gratis-Stufe nur Dokumentation.</li>
-<li><strong>Impressum:</strong> <code>[[nötig, siehe OWNER-CHECKLISTE]]</code>.</li>
-</ul>`);
-
+<li><strong>Impressum:</strong> Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, E-Mail: support@helmdeck.de.</li>
+</ul>
+</div>`);
+const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", ["Security, ReadProof", "Sicherheit, ReadProof"], `<h1>${L("Security: ReadProof", "Sicherheit: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
+<h2>Architecture</h2>
+<p>ReadProof is an Atlassian Forge app for Confluence Cloud. It runs on the Atlassian platform. There are no servers, no database and no third-party services of our own. All app data is stored in the Forge storage of your own Confluence installation. The provider has no access to it.</p>
+<h2>Data</h2>
+<p>Only IDs and timestamps are stored (page ID, version, Atlassian account ID, time, deadlines and settings). Names are looked up live from Confluence for display and export. The app does not store e-mail addresses, page content or IP addresses. Details: <a href="/readproof/privacy">Privacy Policy</a>.</p>
+<h2>Permissions</h2>
+<p>The app requests only the Confluence permissions it needs: read access to pages, spaces, groups, user names and search, plus two write purposes (its own confirmation macro on assigned pages, and one footer comment with an @-mention when people are assigned). The full list is in the Privacy Policy, section 5.</p>
+<h2>Access control</h2>
+<p>Permissions are checked in the app backend for every action, not only in the user interface. Administration is limited to Confluence administrators, ReadProof managers and space administrators (for their space).</p>
+<h2>Input and exports</h2>
+<p>Input is validated in the backend. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection).</p>
+<h2>Outside connections</h2>
+<p>The app calls no servers other than your Confluence site. The only external permission is for profile pictures, which your browser loads from <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> and <code>secure.gravatar.com</code>. No tracking, no analytics, no AI.</p>
+<h2>Reporting a vulnerability</h2>
+<p>Write to <code>security@helmdeck.de</code> with "Security" in the subject. Please do not send credentials or customer data. We usually acknowledge a report within two business days (a target, not a commitment) and get back to you once we have assessed it.</p>
+<h2>Provider</h2>
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany.</p>
+</div>
+<div class=de lang=de>
+<h2>Architektur</h2>
+<p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie läuft auf der Atlassian-Plattform. Es gibt keine eigenen Server, keine eigene Datenbank und keine Drittdienste. Alle App-Daten liegen im Forge-Speicher deiner eigenen Confluence-Installation. Der Anbieter hat keinen Zugriff darauf.</p>
+<h2>Daten</h2>
+<p>Gespeichert werden nur IDs und Zeitstempel (Seiten-ID, Version, Atlassian-Konto-ID, Zeitpunkt, Fristen und Einstellungen). Namen werden bei Anzeige und Export live aus Confluence abgerufen. E-Mail-Adressen, Seiteninhalte und IP-Adressen speichert die App nicht. Details: <a href="/readproof/privacy">Datenschutzerklärung</a>.</p>
+<h2>Berechtigungen</h2>
+<p>Die App fordert nur die Confluence-Berechtigungen an, die sie braucht: Lesen von Seiten, Bereichen, Gruppen, Nutzernamen und Suche sowie zwei Schreibzwecke (eigenes Bestätigungs-Makro auf zugewiesenen Seiten, ein Fußzeilen-Kommentar mit @-Erwähnung bei einer Zuweisung). Die vollständige Liste steht in der Datenschutzerklärung, Abschnitt 5.</p>
+<h2>Zugriffskontrolle</h2>
+<p>Die Rechte werden bei jeder Aktion im Backend der App geprüft, nicht nur in der Oberfläche. Verwaltung ist Confluence-Administratoren, ReadProof-Managern und Space-Administratoren (für ihren Space) vorbehalten.</p>
+<h2>Eingaben und Exporte</h2>
+<p>Eingaben werden im Backend geprüft. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung).</p>
+<h2>Externe Verbindungen</h2>
+<p>Die App ruft keine anderen Server auf als deine Confluence-Seite. Einzige externe Berechtigung: Profilbilder, die dein Browser von <code>*.atlassian.net</code>, <code>*.atl-paas.net</code> und <code>secure.gravatar.com</code> lädt. Kein Tracking, keine Analyse, keine KI.</p>
+<h2>Sicherheitslücke melden</h2>
+<p>Schreibe an <code>security@helmdeck.de</code> mit "Security" im Betreff. Bitte keine Zugangsdaten oder Kundendaten mitsenden. Wir bestätigen den Eingang in der Regel innerhalb von zwei Werktagen (Ziel, keine Zusage) und melden uns, sobald wir die Meldung bewertet haben.</p>
+<h2>Anbieter</h2>
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland.</p>
+</div>`);
 const SEITEN_REVIEW_INDEX = page("seiten-review", "Seiten-Review", "Overview, Page Review / Seiten-Review", `
 <blockquote><p><b>DRAFT / ENTWURF, not published, not legally reviewed. Placeholders in [[ ]] are open.</b></p></blockquote>
 <h1>Page Review for Confluence</h1><h2>English</h2><p>Give pages an owner and a review date. One reminder per owner, confirm with one click. Runs on Atlassian Forge, no external servers.</p><p>Free up to 10 users, then US$0.50 per user per month (proposal, not final).</p><h2>Deutsch</h2><p>Seiten bekommen Besitzer und Prüftermin. Eine Erinnerung je Besitzer, Bestätigung mit einem Klick. Läuft auf Atlassian Forge, keine externen Server.</p><p>Bis 10 Nutzer kostenlos, danach 0,50 US-$ je Nutzer und Monat [[Preis nicht entschieden]].</p>
@@ -675,18 +748,19 @@ const PRICE_DATE_EN = "18 October 2026";
 const PRICE_DATE_DE = "18. Oktober 2026";
 const TIERS = [10, 50, 100, 500];
 const money = (v) => v.toFixed(2).replace(/\.00$/, "");
+const moneyL = (v) => (money(v).includes(".") ? L(money(v), money(v).replace(".", ",")) : money(v));
 
 function compareTable(own, others, free) {
   const rows = [own, ...others];
   const best = TIERS.map((_, i) => Math.min(...rows.map((r) => r.p[i])));
-  const tr = (r) => `<tr><td>${r.n}${r === own ? " (this app / diese App)" : ""}</td>` +
-    r.p.map((v, i) => `<td>${v === best[i] ? `<strong>${money(v)}</strong>` : money(v)}</td>`).join("") + "</tr>";
+  const tr = (r) => `<tr><td>${r.n}${r === own ? ` (${L("this app", "diese App")})` : ""}</td>` +
+    r.p.map((v, i) => `<td>${v === best[i] ? `<strong>${moneyL(v)}</strong>` : moneyL(v)}</td>`).join("") + "</tr>";
   return `<table>
-<tr><th>App</th>${TIERS.map((t) => `<th>${t} users / Nutzer</th>`).join("")}</tr>
+<tr><th>App</th>${TIERS.map((t) => `<th>${t} ${L("users", "Nutzer")}</th>`).join("")}</tr>
 ${rows.map(tr).join("\n")}
 </table>
-<p class=muted>USD per month / USD pro Monat. Bold = lowest price in that column among the apps listed, ties included. / Fett = niedrigster Preis der Spalte unter den gelisteten Apps, Gleichstände eingeschlossen.</p>` +
-    (free ? `<p>Free apps, not in the table / Kostenlose Apps, nicht in der Tabelle: ${free}.</p>` : "");
+<p class=muted>${L("USD per month. Bold = lowest price in that column among the apps listed, ties included.", "USD pro Monat. Fett = niedrigster Preis der Spalte unter den gelisteten Apps, Gleichstände eingeschlossen.")}</p>` +
+    (free ? `<p>${L("Free apps, not in the table", "Kostenlose Apps, nicht in der Tabelle")}: ${free}.</p>` : "");
 }
 
 const RP_OTHERS = [
@@ -707,23 +781,19 @@ const LD_OTHERS = [
   { n: "Labele", p: [0, 14, 28, 107.5] },
 ];
 
-const RP_COMPARE = page("readproof", "ReadProof", "Price comparison, ReadProof", `<h1>Price comparison / Preisvergleich</h1>
-<p><strong>EN:</strong> Monthly list prices of ReadProof and seven read-and-confirm apps for Confluence Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
-<p><strong>DE:</strong> Monatliche Listenpreise von ReadProof und sieben Lesebestätigungs-Apps für Confluence Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
-${compareTable({ n: "ReadProof", p: [0, 25, 50, 200] }, RP_OTHERS)}
-<h2>What the numbers say / Was die Zahlen sagen</h2>
-<p>EN: ReadProof is free up to 10 users, like most of the others. At 50 and 100 users several apps are cheaper (Clearlane and Read &amp; Understood Acknowledgement cost 15 and 30). At 500 users ReadProof is cheaper than Comala, Ackdesk and Read &amp; Confirm, but dearer than Read Receipts, QC, Clearlane and Read &amp; Understood Acknowledgement. We are not the cheapest app from 50 users up. Compare features and price together.</p>
-<p>DE: ReadProof ist bis 10 Nutzer gratis, wie die meisten anderen. Bei 50 und 100 Nutzern sind mehrere Apps günstiger (Clearlane und Read &amp; Understood Acknowledgement: 15 und 30). Bei 500 Nutzern ist ReadProof günstiger als Comala, Ackdesk und Read &amp; Confirm, aber teurer als Read Receipts, QC, Clearlane und Read &amp; Understood Acknowledgement. Ab 50 Nutzern sind wir nicht die günstigste App. Vergleiche Funktionen und Preis zusammen.</p>
-<p><a href="/readproof/">Back to ReadProof / Zurück zu ReadProof</a></p>`);
+const RP_COMPARE = page("readproof", "ReadProof", ["Price comparison, ReadProof", "Preisvergleich, ReadProof"], `<h1>${L("Price comparison", "Preisvergleich")}</h1>
+${B(`<p>Monthly list prices of ReadProof and seven read-and-confirm apps for Confluence Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>`, `<p>Monatliche Listenpreise von ReadProof und sieben Lesebestätigungs-Apps für Confluence Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>`)}
+${compareTable({ n: "ReadProof", p: [0, 28, 28, 100] }, RP_OTHERS)}
+<h2>${L("What the numbers say", "Was die Zahlen sagen")}</h2>
+${B(`<p>ReadProof is free up to 10 users, like most of the others. The ReadProof price is the Atlassian tier price (rate times the top of the tier: USD 0.28 up to 100 users, USD 0.10 for 251 to 1000 users). At 100 users ReadProof is the cheapest of the apps listed (28 against 30 for Clearlane and Read &amp; Understood Acknowledgement). At 50 users Clearlane and Read &amp; Understood Acknowledgement (15) and QC (16.5) are cheaper, because our tier is not full yet. At 500 users Clearlane (87.5) and QC (97.5) are cheaper; ReadProof is cheaper than the other five. Compare features and price together.</p>`, `<p>ReadProof ist bis 10 Nutzer gratis, wie die meisten anderen. Der ReadProof-Preis ist der Atlassian-Stufenpreis (Satz mal Obergrenze der Stufe: 0,28 USD bis 100 Nutzer, 0,10 USD für 251 bis 1000 Nutzer). Bei 100 Nutzern ist ReadProof die günstigste der gelisteten Apps (28 gegen 30 bei Clearlane und Read &amp; Understood Acknowledgement). Bei 50 Nutzern sind Clearlane und Read &amp; Understood Acknowledgement (15) sowie QC (16,5) günstiger, weil unsere Stufe noch nicht voll ist. Bei 500 Nutzern sind Clearlane (87,5) und QC (97,5) günstiger; ReadProof ist günstiger als die anderen fünf. Vergleiche Funktionen und Preis zusammen.</p>`)}
+<p><a href="/readproof/">${L("Back to ReadProof", "Zurück zu ReadProof")}</a></p>`);
 
-const LD_COMPARE = page("label-doktor", "Label Doctor", "Price comparison, Label Doctor", `<h1>Price comparison / Preisvergleich</h1>
-<p><strong>EN:</strong> Monthly list prices of Label Doctor and six label apps for Jira Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
-<p><strong>DE:</strong> Monatliche Listenpreise von Label Doctor und sechs Label-Apps für Jira Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
+const LD_COMPARE = page("label-doktor", "Label Doctor", ["Price comparison, Label Doctor", "Preisvergleich, Label Doctor"], `<h1>${L("Price comparison", "Preisvergleich")}</h1>
+${B(`<p>Monthly list prices of Label Doctor and six label apps for Jira Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>`, `<p>Monatliche Listenpreise von Label Doctor und sechs Label-Apps für Jira Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>`)}
 ${compareTable({ n: "Label Doctor", p: [0, 12.5, 25, 108] }, LD_OTHERS, "Label It, Smart Label Manager, Label Ledger")}
-<h2>What the numbers say / Was die Zahlen sagen</h2>
-<p>EN: Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>
-<p>DE: Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>
-<p><a href="/label-doktor/">Back to Label Doctor / Zurück zu Label Doctor</a></p>`);
+<h2>${L("What the numbers say", "Was die Zahlen sagen")}</h2>
+${B(`<p>Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>`, `<p>Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>`)}
+<p><a href="/label-doktor/">${L("Back to Label Doctor", "Zurück zu Label Doctor")}</a></p>`);
 
 export const APP_PAGES = {
   "/readproof/compare": RP_COMPARE,
@@ -734,6 +804,7 @@ export const APP_PAGES = {
   "/readproof/support": LESENACHWEIS_SUPPORT,
   "/readproof/privacy": LESENACHWEIS_PRIVACY,
   "/readproof/terms": LESENACHWEIS_TERMS,
+  "/readproof/security": LESENACHWEIS_SECURITY,
   "/seiten-review": SEITEN_REVIEW_INDEX,
   "/seiten-review/": SEITEN_REVIEW_INDEX,
   "/seiten-review/docs": SEITEN_REVIEW_DOCS,

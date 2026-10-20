@@ -61,6 +61,19 @@ def _clean_template_step(s):
     return out
 
 
+MAX_STEPS = 12      # one chain's size bound (a ten-step app chain was silently cut to 8)
+
+
+def proposed_steps(raw):
+    """Raw step dicts (title/desc/mode/days/desktop) -> the shape create() takes:
+    the closed template shape plus the not-yet-a-card fields. The ONE
+    conversion, shared by the chat verb and template-born processes."""
+    raw = [s for s in (raw or []) if isinstance(s, dict) and str(s.get("title", "")).strip()]
+    if len(raw) > MAX_STEPS:
+        raise ValueError("at most %d steps per process (got %d)" % (MAX_STEPS, len(raw)))
+    return [dict(_clean_template_step(s), status="proposed", track=None, due="") for s in raw]
+
+
 def _slugify(name, existing):
     base = re.sub(r"[^a-z0-9]+", "-", (name or "template").lower()).strip("-") or "template"
     tid, n = base, 2
@@ -90,7 +103,9 @@ def save_template(name, description, steps, tid=None, actor="owner"):
     from spine.storage import db, events
     if not (name or "").strip():
         raise ValueError("name required")
-    clean_steps = [_clean_template_step(s) for s in (steps or [])[:8]]
+    if len(steps or []) > MAX_STEPS:
+        raise ValueError("at most %d steps per template" % MAX_STEPS)
+    clean_steps = [_clean_template_step(s) for s in (steps or [])]
     if not clean_steps:
         raise ValueError("at least one step required")
     if not tid:
@@ -183,8 +198,7 @@ def create(request_text, client="", due="", actor="owner", steps=None, template_
         tmpl = get_template(template_id)
         if not tmpl:
             raise RuntimeError("no such template")
-        steps = [dict(_clean_template_step(s), status="proposed", track=None, due="")
-                 for s in tmpl["steps"]]
+        steps = proposed_steps(tmpl["steps"])
     # Millisecond disambiguator (mirrors checkpoints.py): a bare per-SECOND id
     # collides when two processes are filed in the same wall-clock second - the
     # second INSERT then hits `UNIQUE constraint failed: processes.id` and the
