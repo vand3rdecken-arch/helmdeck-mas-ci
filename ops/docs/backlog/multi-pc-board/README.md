@@ -28,7 +28,10 @@ A combined view: cards from several PCs on one board, without switching.
 3. A board column/filter "PC" and per-card routing of every action to the
    card's own daemon.
 
-## Open question for the owner
+## Decision
 
-Is a combined board wanted at all, or is "switch + pushes from every PC"
-enough? Paseo has no multi-host board either.
+Owner 2026-10-20: **not now** ("erstmal nein"). Switch + pushes from every
+PC is enough while work runs mainly on one PC. Revisit when work runs in
+parallel on several PCs. Same day, same answer for publishing the
+helmdeck-mcp shim to PyPI: not now - the shim stays served by the relay,
+checked against the sha256 in the share link.
