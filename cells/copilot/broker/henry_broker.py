@@ -1125,7 +1125,8 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False, 
             if action == "machine_task":
                 import os as _os
                 nt = sessions.new_machine_task(_os.path.expanduser("~"), text,
-                                               actor="henry", priority="high")
+                                               actor="henry", priority="high",
+                                               dispatch=False)
             else:
                 # the judgement names it, else the card's or the process's own project - never default_repo
                 from cells.engineer.chains import processes as _procs
@@ -1136,7 +1137,8 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False, 
                     escalations.record_note(esc["id"], "direct_task: kein Projekt bekannt - "
                                                        "Henry fragt den Owner, wo die Arbeit hingehört")
                     return False
-                nt = sessions.new_direct_task(repo, text, actor="henry", priority="high")
+                nt = sessions.new_direct_task(repo, text, actor="henry", priority="high",
+                                              dispatch=False)
         except Exception as e:
             escalations.record_note(esc["id"], "%s: Start fehlgeschlagen: %s" % (action, str(e)[:250]))
             return False
@@ -1150,6 +1152,13 @@ def _execute(action, card, lane, text, esc, kind="", why="", at="", goal=False, 
             except Exception as e:                           # noqa: BLE001
                 escalations.record_note(esc["id"], "Prozess-Link fehlgeschlagen: %s"
                                         % str(e)[:200])
+        # The card's first turn runs on its OWN thread. dispatch=True ran it
+        # inline here - minutes on the broker's only thread, so every other
+        # escalation (the empty-process wakes, deliveries) waited behind one
+        # card (measured 2026-10-20 21:53-22:09, py-spy: _execute ->
+        # new_direct_task -> _await_turn). Same fix the chat verbs got on 10-10.
+        from cells.copilot.chat.copilot_actions import _start_in_background
+        _start_in_background(nt, "henry")
         escalations.record_note(esc["id"], "%s: Karte %s gestartet" % (action, nt["id"]))
         return True
     return False

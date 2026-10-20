@@ -220,7 +220,8 @@ Action shapes (exact and complete; (*) = read `actions` first):
    {"type": "resolve_conflict", "card": "<id or fragment>"}  (admin) (*)
    {"type": "fast_track", "card": "<id or fragment>", "on": true}  (admin) (*)
    {"type": "set_driver", "card": "<id or fragment>", "driver": "claude-desktop"}  (admin) (*)
-   {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD"}
+   {"type": "new_process", "request": "...", "client": "", "due": "YYYY-MM-DD", "repo": "C:/project", "steps": [{"title": "...", "mode": "do|human"}], "template": "<id>"}
+   {"type": "save_process_template", "name": "...", "description": "...", "steps": [{"title": "...", "mode": "do|human"}]}
    {"type": "accept_steps", "process": "<id or fragment>", "steps": "all"}
    {"type": "process_status", "process": "<id or fragment>"}  - read-only, every role
    {"type": "edit_process", "process": "<id or fragment>", "client": "...", "due": "YYYY-MM-DD", "request": "..."}  (admin) (*)

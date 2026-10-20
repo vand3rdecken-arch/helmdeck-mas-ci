@@ -43,7 +43,7 @@ ACTION_KINDS = frozenset((
     "configure", "apply_template", "set_station", "machine_task", "direct_task", "file_card",
     "move", "steer", "delete", "archive", "hands", "agent", "stop", "answer_card", "follow_up", "resolve_blocker", "resolve_conflict",
     "fast_track", "set_driver", "build_integration", "run_connector", "rollback_connector",
-    "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "accept_steps",
+    "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "save_process_template", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "finish_process", "process_status",
     "share_note", "delete_project", "attach_process", "set_goal", "mark_goal", "set_next",
     # ALIASES that name their object. Paseo's catalog names the object in
@@ -986,8 +986,23 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         # (owner 2026-09-30, "alles zusammen legen").
         return "Notiert: „%s“" % text[:150]
     if kind == "new_process":
-        p = processes.create(a["request"], client=a.get("client", ""),
-                             due=a.get("due", ""), actor=actor)
+        # `steps` / `template` make the chain exist at BIRTH: each step becomes a
+        # card at once (processes.create -> accept_all) and the chain poller runs
+        # them. Without them the process is born empty - and a chat turn ends
+        # with its actions block, so "file the first card next" never happens in
+        # the same turn (2026-10-20: three empty plans, "laufen von allein weiter").
+        repo = (a.get("repo") or "").strip()
+        tid = (a.get("template") or "").strip()
+        try:
+            steps = processes.proposed_steps(a.get("steps")) if a.get("steps") else None
+            if tid and not steps and not processes.get_template(tid):
+                return "new_process: Vorlage '%s' kenne ich nicht. Es gibt: %s." % (
+                    tid, ", ".join(processes.list_templates()) or "keine")
+            p = processes.create(a["request"], client=a.get("client", ""),
+                                 due=a.get("due", ""), actor=actor, steps=steps,
+                                 template_id=tid or None, repo=repo or None)
+        except (ValueError, RuntimeError) as e:
+            return "new_process: %s" % e
         # cards that already exist for this theme join it right away
         joined = []
         for ref in a.get("cards") or []:
@@ -995,15 +1010,36 @@ def _run_action(a, actor, role="operator", owner_msg=""):
             if ct and not isinstance(ct, list):
                 processes.attach_card(p["id"], ct["id"], actor=actor)
                 joined.append(ct["id"])
-        # No proposer exists any more (processes.create): an empty process
-        # only runs once YOU file its first card. The old line here said an
-        # agent was proposing steps, and Henry believed it and stopped (owner
-        # 2026-10-10: "startet Prozesse, aber keine Karten").
+        made = [s.get("track") for s in p.get("steps") or [] if s.get("track")]
+        if made:
+            return "process %s filed - %d Schritt-Karten laufen an: %s%s" % (
+                p["id"], len(made), ", ".join(made),
+                ("; bestehende Karten drin: " + ", ".join(joined)) if joined else "")
+        if p.get("steps"):
+            return ("process %s filed with %d steps, but NO project named - they stay "
+                    "proposed. Ask the owner where the work belongs, then accept_steps "
+                    "with \"repo\"." % (p["id"], len(p["steps"])))
         if joined:
             return "process %s filed - Karten drin: %s" % (p["id"], ", ".join(joined))
+        # No proposer exists any more (processes.create): an empty process
+        # only runs once YOU file its first card.
         return ("process %s filed, still EMPTY - nobody proposes steps. File its first "
                 "card now (machine_task / direct_task with \"process\": \"%s\")"
                 % (p["id"], p["id"]))
+    if kind == "save_process_template":
+        # The reusable chain ("mach daraus eine feste Schrittkette"). Owner-only
+        # like the HTTP route: templates.manage - a template is workspace config.
+        from spine.auth import permissions
+        if not permissions.can({"role": role}, "templates.manage"):
+            return _denied("save_process_template", role, ["owner"], "templates.manage")
+        try:
+            doc = processes.save_template(a.get("name", ""), a.get("description", ""),
+                                          a.get("steps") or [], actor=actor)
+        except ValueError as e:
+            return "save_process_template: %s" % e
+        return ("Vorlage '%s' gespeichert (%d Schritte). Neuer Prozess daraus: "
+                "new_process mit \"template\": \"%s\" und \"repo\"."
+                % (doc["name"], len(doc["steps"]), doc["id"]))
     if kind == "accept_steps":
         frag = (a.get("process") or "").lower()
         ps = [p for p in processes.list_processes()
