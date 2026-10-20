@@ -8,6 +8,8 @@
 // response target are the values the live /impressum and the Label-Doktor
 // pages use. Open lawyer notes in the source are left visible on purpose.
 
+import { L, B, shell, navI18n } from "./app_i18n.js";
+
 const STYLE = `body{background:#0E0F10;color:#E4E6E6;font:16px/1.6 system-ui,sans-serif;
 max-width:720px;margin:0 auto;padding:40px 20px}h1{font-size:26px}h2{font-size:19px;
 margin-top:32px}h3{font-size:16px}a{color:#6CB2EC}hr{border:0;border-top:1px solid #222425;
@@ -16,13 +18,17 @@ ul,ol{padding-left:22px}li{margin:4px 0}table{border-collapse:collapse;width:100
 td,th{border:1px solid #222425;padding:6px 10px;vertical-align:top;text-align:left}
 blockquote{margin:16px 0;padding:4px 16px;border-left:3px solid #222425;color:#959A9D}`;
 
+// readproof + label-doktor: English default, German via toggle (app_i18n.js).
+// The other two apps keep their old single shell until they get the same treatment.
+const I18N_SLUGS = new Set(["readproof", "label-doktor"]);
+
 function page(slug, name, title, body) {
+  if (I18N_SLUGS.has(slug)) return shell(slug, title, STYLE, navI18n(slug, name), body);
   const nav = `<p class=muted><a href="/${slug}/">${name}</a> &middot;
 <a href="/${slug}/docs">Docs / Doku</a> &middot;
 <a href="/${slug}/support">Support</a> &middot;
 <a href="/${slug}/privacy">Privacy / Datenschutz</a> &middot;
-<a href="/${slug}/terms">Terms / Nutzungsbedingungen</a>${slug === "readproof" ? ` &middot;
-<a href="/readproof/security">Security / Sicherheit</a>` : ""}</p>`;
+<a href="/${slug}/terms">Terms / Nutzungsbedingungen</a></p>`;
   return `<!doctype html><html lang=de><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>${title}</title>
@@ -33,24 +39,30 @@ ${body}
 </html>`;
 }
 
-const LESENACHWEIS_INDEX = page("readproof", "ReadProof", "ReadProof for Confluence Cloud", `<h1>ReadProof</h1>
-<p><strong>EN:</strong> Who confirmed which page version by when: deadlines, escalation, CSV and PDF export. An Atlassian Forge app for Confluence Cloud.</p>
-<p><strong>DE:</strong> Wer hat welche Seitenversion bis wann bestätigt: Frist, Eskalation, Export als CSV und PDF. Eine Atlassian-Forge-App für Confluence Cloud.</p>
+const LESENACHWEIS_INDEX = page("readproof", "ReadProof", ["ReadProof for Confluence Cloud", "ReadProof für Confluence Cloud"], `<h1>ReadProof</h1>
+${B(
+  "<p>Who confirmed which page version by when: deadlines, escalation, CSV and PDF export. An Atlassian Forge app for Confluence Cloud.</p>",
+  "<p>Wer hat welche Seitenversion bis wann bestätigt: Frist, Eskalation, Export als CSV und PDF. Eine Atlassian-Forge-App für Confluence Cloud.</p>"
+)}
 <ul>
-<li>Evidence per person and page version / Nachweis je Person und Seitenversion</li>
-<li>Assign a whole page tree in one step, with preview / Ganzen Seitenbaum zuweisen, mit Vorschau</li>
-<li>Deadline per assignment, re-confirmation after every page change / Frist je Zuweisung, Neu-Bestätigung nach jeder Änderung</li>
-<li>List of overdue people and escalation targets (no e-mails are sent) / Liste der Überfälligen mit Eskalationsziel (es werden keine E-Mails versendet)</li>
-<li>Stores only IDs and timestamps; names are looked up live / Gespeichert werden nur IDs und Zeitstempel</li>
+<li>${L("Evidence per person and page version", "Nachweis je Person und Seitenversion")}</li>
+<li>${L("Assign a whole page tree in one step, with preview", "Ganzen Seitenbaum zuweisen, mit Vorschau")}</li>
+<li>${L("Deadline per assignment, re-confirmation after every page change", "Frist je Zuweisung, Neu-Bestätigung nach jeder Änderung")}</li>
+<li>${L("List of overdue people and escalation targets (no e-mails are sent)", "Liste der Überfälligen mit Eskalationsziel (es werden keine E-Mails versendet)")}</li>
+<li>${L("Stores only IDs and timestamps; names are looked up live", "Gespeichert werden nur IDs und Zeitstempel")}</li>
 </ul>
-<h2>Price / Preis</h2>
-<p>Free up to 10 users. Then per user and month: 1 to 100 users USD 0.28, 101 to 250 users USD 0.20, 251 to 1000 users USD 0.10, above 1000 users USD 0.09 down to 0.04. 30-day trial via the Atlassian Marketplace. / Danach je Nutzer und Monat: 1 bis 100 Nutzer 0,28 USD, 101 bis 250 Nutzer 0,20 USD, 251 bis 1000 Nutzer 0,10 USD, ab 1000 Nutzern 0,09 bis 0,04 USD. 30 Tage Testphase über den Atlassian Marketplace.</p>
-<p><a href="/readproof/compare">Price comparison, checked 18 October 2026 / Preisvergleich, Stand 18.10.2026</a></p>
-<p>The app records confirmations; whether a regulation is met is for the organisation to decide. / Die App hält Bestätigungen fest; ob eine Vorschrift erfüllt ist, entscheidet die Organisation.</p>`);
-const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadProof", `<h1>Documentation / Dokumentation</h1>
-<p>English first, deutsch darunter.</p>
-
-<h2>English</h2>
+<h2>${L("Price", "Preis")}</h2>
+${B(
+  "<p>Free up to 10 users. Then per user and month: 1 to 100 users USD 0.28, 101 to 250 users USD 0.20, 251 to 1000 users USD 0.10, above 1000 users USD 0.09 down to 0.04. 30-day trial via the Atlassian Marketplace.</p>",
+  "<p>Bis 10 Nutzer gratis. Danach je Nutzer und Monat: 1 bis 100 Nutzer 0,28 USD, 101 bis 250 Nutzer 0,20 USD, 251 bis 1000 Nutzer 0,10 USD, ab 1000 Nutzern 0,09 bis 0,04 USD. 30 Tage Testphase über den Atlassian Marketplace.</p>"
+)}
+<p><a href="/readproof/compare">${L("Price comparison, checked 18 October 2026", "Preisvergleich, Stand 18.10.2026")}</a></p>
+${B(
+  "<p>The app records confirmations; whether a regulation is met is for the organisation to decide.</p>",
+  "<p>Die App hält Bestätigungen fest; ob eine Vorschrift erfüllt ist, entscheidet die Organisation.</p>"
+)}`);
+const LESENACHWEIS_DOCS = page("readproof", "ReadProof", ["Documentation, ReadProof", "Dokumentation, ReadProof"], `<h1>${L("Documentation", "Dokumentation")}</h1>
+<div class=en lang=en>
 <h3>1. What the app does</h3>
 <p>ReadProof records one confirmation per person and page version. Administrators assign pages to a Confluence group with a deadline; people confirm at the very bottom of the page (ReadProof macro, required tick); when the page changes, everyone confirms the new version. Requires Confluence Cloud and at least one Confluence group.</p>
 <h3>2. Installation and permissions</h3>
@@ -87,11 +99,19 @@ const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadPro
 </ul>
 <h3>11. Privacy, deletion, troubleshooting</h3>
 <p>See the <a href="/readproof/privacy">privacy policy</a>. Confirmations are not deleted automatically; export before you remove data. For problems see <a href="/readproof/support">Support</a>.</p>
-
-<h2>Deutsch</h2>
+</div>
+<div class=de lang=de>
 <h3>1. Was die App tut</h3>
 <p>ReadProof speichert eine Bestätigung je Person und Seitenversion. Administratoren weisen Seiten einer Confluence-Gruppe mit Frist zu; alle bestätigen ganz unten auf der Seite (Makro „ReadProof“, Pflicht-Haken); ändert sich die Seite, bestätigt jede Person die neue Version. Voraussetzung: Confluence Cloud und mindestens eine Gruppe.</p>
 <h3>2. Installation und Berechtigungen</h3>
+<table>
+<tr><th>Berechtigung</th><th>Wofür</th></tr>
+<tr><td>Seiten und Bereiche lesen</td><td>Version einer Seite und ihren Titel zur Anzeige lesen</td></tr>
+<tr><td>Seitenbaum lesen</td><td>Ganzen Seitenbaum zuweisen</td></tr>
+<tr><td>Gruppen lesen</td><td>Gruppe wählen und ihre Mitglieder finden</td></tr>
+<tr><td>Nutzer lesen</td><td>Namen in Übersicht und Exporten anzeigen</td></tr>
+<tr><td>App-Speicher</td><td>Zuweisungen und Bestätigungen speichern</td></tr>
+</table>
 <p>Installation über den Atlassian Marketplace. Die App fragt nur Leserechte ab; sie schreibt nichts in Seiten und versendet keine E-Mails. Die Tabelle oben nennt, wofür jede Berechtigung gebraucht wird (Seiten und Bereiche lesen, Seitenbaum, Gruppen, Nutzernamen, App-Speicher).</p>
 <h3>3. Eine Seite zuweisen</h3>
 <p><em>Apps → ReadProof</em> öffnen (Administratoren, ReadProof-Manager, Space-Administratoren für ihren Space). Seite, Gruppe und Frist wählen. Optional: Neu-Bestätigung nach N Tagen, Eskalation nach N Tagen mit Eskalationsgruppe.</p>
@@ -116,9 +136,10 @@ const LESENACHWEIS_DOCS = page("readproof", "ReadProof", "Documentation, ReadPro
 <li>Keine E-Mail-Erinnerungen. Die App belegt keine Konformität mit NIS2 oder ISO 27001; sie hält Bestätigungen fest.</li>
 </ul>
 <h3>11. Datenschutz, Löschung, Fehlersuche</h3>
-<p>Siehe <a href="/readproof/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/readproof/support">Support</a>.</p>`);
-const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof", `<h1>Support</h1>
-<h2>English</h2>
+<p>Siehe <a href="/readproof/privacy">Datenschutzerklärung</a>. Bestätigungen werden nicht automatisch gelöscht; vor dem Entfernen exportieren. Bei Problemen: <a href="/readproof/support">Support</a>.</p>
+</div>`);
+const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", ["Support, ReadProof", "Support, ReadProof"], `<h1>Support</h1>
+<div class=en lang=en>
 <p>E-mail: <strong>support@helmdeck.de</strong></p>
 <p>Please include: your Confluence site name, what you clicked, what you expected and what happened, and the language of your profile. Please do not send page content or personal data.</p>
 <table>
@@ -128,7 +149,8 @@ const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof"
 </table>
 <p>Security issues: <strong>security@helmdeck.de</strong>. Data processing agreement on request: privacy@helmdeck.de.</p>
 <p>First read the <a href="/readproof/docs">documentation</a>, especially "Known limits".</p>
-<h2>Deutsch</h2>
+</div>
+<div class=de lang=de>
 <p>E-Mail: <strong>support@helmdeck.de</strong></p>
 <p>Bitte angeben: Name deiner Confluence-Seite, was du geklickt hast, was du erwartet hast und was passiert ist, Sprache deines Profils. Bitte keine Seiteninhalte oder personenbezogenen Daten senden.</p>
 <table>
@@ -136,10 +158,11 @@ const LESENACHWEIS_SUPPORT = page("readproof", "ReadProof", "Support, ReadProof"
 <tr><td>Zahlende Seiten (ab 11 Nutzern)</td><td>Antwort innerhalb von zwei Werktagen (Ziel, keine Zusage). </td></tr>
 <tr><td>Gratis-Stufe (bis 10 Nutzer)</td><td>Nur Dokumentation; keine Antwortzeit zugesagt.</td></tr>
 </table>
-<p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>`);
-const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Privacy / Datenschutz, ReadProof", `<h1>Privacy Policy / Datenschutzerklärung: ReadProof</h1>
-<p>Version / Stand: 20.10.2026</p>
-<h1>English</h1>
+<p>Sicherheitsprobleme: <strong>security@helmdeck.de</strong>. Auftragsverarbeitungsvertrag auf Anfrage: privacy@helmdeck.de.</p>
+</div>`);
+const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", ["Privacy, ReadProof", "Datenschutz, ReadProof"], `<h1>${L("Privacy Policy: ReadProof", "Datenschutzerklärung: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
 <h2>1. Who is responsible</h2>
 <p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, e-mail <code>privacy@helmdeck.de</code>. The provider is a natural person, not a company.</p>
 <h2>2. What the app is</h2>
@@ -175,7 +198,10 @@ const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Privacy / Datenschu
 <p>Authentication and hosting are provided by Atlassian Forge. The app uses only the permissions listed above. CSV exports neutralise cells that start with <code>=</code>, <code>+</code>, <code>-</code> or <code>@</code> (formula-injection protection). Security issues: <code>security@helmdeck.de</code>.</p>
 <h2>12. Changes</h2>
 <p>We may update this policy. The current version is at <code>https://helmdeck.de/readproof/privacy</code>.</p>
-<h1>Deutsch</h1>
+<h2>13. Website measurement (Google Analytics)</h2>
+<p>This applies to this website only, not to the app (see section 3 for the app). The pages under <code>/readproof/</code> use Google Analytics 4 <strong>only if you consent</strong>. Until you click &quot;Accept&quot; no Google script is loaded and no data is sent to Google. Provider: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Ireland. Purpose: measuring how the website is used (page views, approximate region, device type) to improve the documentation. Legal basis: your consent, Art. 6(1)(a) GDPR. Cookies set after consent: <code>_ga</code> and <code>_ga_8V1ZGSKD54</code>. Storage period: Google Analytics 4 default of 2 months for event data. IP addresses are anonymised by default in Google Analytics 4; Google signals and advertising features are not used. Transfer to the USA: Google LLC may process data in the USA under the EU-US Data Privacy Framework. Withdrawal: at any time via &quot;Cookie settings&quot; in the footer of every page; it applies from then on and the Google cookies are removed.</p>
+</div>
+<div class=de lang=de>
 <h2>1. Verantwortlicher</h2>
 <p><code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Deutschland, E-Mail: <code>privacy@helmdeck.de</code>. Der Anbieter ist eine Privatperson, kein Unternehmen.</p>
 <h2>2. Was die App ist</h2>
@@ -210,10 +236,13 @@ const LESENACHWEIS_PRIVACY = page("readproof", "ReadProof", "Privacy / Datenschu
 <h2>11. Sicherheit</h2>
 <p>Anmeldung und Hosting liefert Atlassian Forge. Die App nutzt nur die oben genannten Berechtigungen. CSV-Exporte entschärfen Zellen, die mit <code>=</code>, <code>+</code>, <code>-</code> oder <code>@</code> beginnen (Schutz vor Formel-Einschleusung). Sicherheitsprobleme bitte an <code>security@helmdeck.de</code>.</p>
 <h2>12. Änderungen</h2>
-<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>https://helmdeck.de/readproof/privacy</code>.</p>`);
-const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "Terms / AGB, ReadProof", `<h1>Terms of Use (EULA) / Nutzungsbedingungen: ReadProof</h1>
-<p>Version: 20.10.2026</p>
-<h1>English</h1>
+<p>Wir können diese Erklärung ändern. Die aktuelle Fassung steht unter <code>https://helmdeck.de/readproof/privacy</code>.</p>
+<h2>13. Website-Messung (Google Analytics)</h2>
+<p>Das gilt nur für diese Website, nicht für die App (zur App siehe Abschnitt 3). Die Seiten unter <code>/readproof/</code> nutzen Google Analytics 4 <strong>nur mit deiner Einwilligung</strong>. Solange du nicht auf „Akzeptieren“ klickst, wird kein Google-Skript geladen und es werden keine Daten an Google gesendet. Anbieter: Google Ireland Limited, Gordon House, Barrow Street, Dublin 4, Irland. Zweck: Messung der Website-Nutzung (Seitenaufrufe, ungefähre Region, Gerätetyp), um die Dokumentation zu verbessern. Rechtsgrundlage: deine Einwilligung, Art. 6 Abs. 1 lit. a DSGVO. Nach der Einwilligung gesetzte Cookies: <code>_ga</code> und <code>_ga_8V1ZGSKD54</code>. Speicherdauer: Standard von Google Analytics 4, 2 Monate für Ereignisdaten. IP-Adressen werden in Google Analytics 4 standardmäßig anonymisiert; Google Signals und Werbefunktionen werden nicht genutzt. Übermittlung in die USA: Google LLC kann Daten in den USA verarbeiten, auf Grundlage des EU-US Data Privacy Framework. Widerruf: jederzeit über „Cookie-Einstellungen“ im Fußbereich jeder Seite; er gilt ab dann und die Google-Cookies werden entfernt.</p>
+</div>`);
+const LESENACHWEIS_TERMS = page("readproof", "ReadProof", ["Terms, ReadProof", "AGB, ReadProof"], `<h1>${L("Terms of Use (EULA): ReadProof", "Nutzungsbedingungen: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
 <h2>1. Parties</h2>
 <p>Provider: <code>Tien Duy Vo</code>, <code>{{ADDR_STREET}}</code>, <code>{{ADDR_ZIP}} Frankfurt am Main</code>, Germany, <code>support@helmdeck.de</code> (natural person).</p>
 <p>Customer: the person or organization that installs the app on a Confluence Cloud site.</p>
@@ -245,7 +274,9 @@ const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "Terms / AGB, ReadProo
 <p>The provider may update these terms for future versions. Material changes are announced at <code>https://helmdeck.de/readproof/terms</code>.</p>
 <h3>3.10 Contact / legal notice</h3>
 <p>Provider: Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany. E-mail: support@helmdeck.de. The provider is a natural person, not a company.</p>
-<h1>Deutsch (Kurzfassung der Ergänzungen, nicht rechtsverbindlich)</h1>
+</div>
+<div class=de lang=de>
+<h2>Kurzfassung der Ergänzungen, nicht rechtsverbindlich</h2>
 <ul>
 <li>Basis: Atlassian-Standard-EULA; dieses Dokument ergänzt sie.</li>
 <li><strong>Lizenz:</strong> Läuft über den Atlassian Marketplace. Seiten mit 1 bis 10 Nutzern nutzen die App gratis; ab 11 Nutzern gilt der Preis der Listung je Nutzer und Monat (0,28 USD bis 100 Nutzer, 0,20 USD für 101 bis 250, 0,10 USD für 251 bis 1000, darüber 0,09 bis 0,04 USD).</li>
@@ -256,10 +287,11 @@ const LESENACHWEIS_TERMS = page("readproof", "ReadProof", "Terms / AGB, ReadProo
 <li><strong>Haftung, Recht, Gerichtsstand:</strong> Es gilt die Atlassian-Standard-EULA; zwingende Haftung und Verbraucherrechte bleiben unberührt.</li>
 <li><strong>Support:</strong> zahlende Kunden Ziel zwei Werktage; Gratis-Stufe nur Dokumentation.</li>
 <li><strong>Impressum:</strong> Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, E-Mail: support@helmdeck.de.</li>
-</ul>`);
-const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherheit, ReadProof", `<h1>Security / Sicherheit: ReadProof</h1>
-<p>Version / Stand: 20.10.2026</p>
-<h1>English</h1>
+</ul>
+</div>`);
+const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", ["Security, ReadProof", "Sicherheit, ReadProof"], `<h1>${L("Security: ReadProof", "Sicherheit: ReadProof")}</h1>
+<p>${L("Version: 20.10.2026", "Stand: 20.10.2026")}</p>
+<div class=en lang=en>
 <h2>Architecture</h2>
 <p>ReadProof is an Atlassian Forge app for Confluence Cloud. It runs on the Atlassian platform. There are no servers, no database and no third-party services of our own. All app data is stored in the Forge storage of your own Confluence installation. The provider has no access to it.</p>
 <h2>Data</h2>
@@ -276,8 +308,8 @@ const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherh
 <p>Write to <code>security@helmdeck.de</code> with "Security" in the subject. Please do not send credentials or customer data. We usually acknowledge a report within two business days (a target, not a commitment) and get back to you once we have assessed it.</p>
 <h2>Provider</h2>
 <p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany.</p>
-
-<h1>Deutsch</h1>
+</div>
+<div class=de lang=de>
 <h2>Architektur</h2>
 <p>ReadProof ist eine Atlassian-Forge-App für Confluence Cloud. Sie läuft auf der Atlassian-Plattform. Es gibt keine eigenen Server, keine eigene Datenbank und keine Drittdienste. Alle App-Daten liegen im Forge-Speicher deiner eigenen Confluence-Installation. Der Anbieter hat keinen Zugriff darauf.</p>
 <h2>Daten</h2>
@@ -293,7 +325,8 @@ const LESENACHWEIS_SECURITY = page("readproof", "ReadProof", "Security / Sicherh
 <h2>Sicherheitslücke melden</h2>
 <p>Schreibe an <code>security@helmdeck.de</code> mit "Security" im Betreff. Bitte keine Zugangsdaten oder Kundendaten mitsenden. Wir bestätigen den Eingang in der Regel innerhalb von zwei Werktagen (Ziel, keine Zusage) und melden uns, sobald wir die Meldung bewertet haben.</p>
 <h2>Anbieter</h2>
-<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland.</p>`);
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Deutschland.</p>
+</div>`);
 const SEITEN_REVIEW_INDEX = page("seiten-review", "Seiten-Review", "Overview, Page Review / Seiten-Review", `
 <blockquote><p><b>DRAFT / ENTWURF, not published, not legally reviewed. Placeholders in [[ ]] are open.</b></p></blockquote>
 <h1>Page Review for Confluence</h1><h2>English</h2><p>Give pages an owner and a review date. One reminder per owner, confirm with one click. Runs on Atlassian Forge, no external servers.</p><p>Free up to 10 users, then US$0.50 per user per month (proposal, not final).</p><h2>Deutsch</h2><p>Seiten bekommen Besitzer und Prüftermin. Eine Erinnerung je Besitzer, Bestätigung mit einem Klick. Läuft auf Atlassian Forge, keine externen Server.</p><p>Bis 10 Nutzer kostenlos, danach 0,50 US-$ je Nutzer und Monat [[Preis nicht entschieden]].</p>
@@ -715,18 +748,19 @@ const PRICE_DATE_EN = "18 October 2026";
 const PRICE_DATE_DE = "18. Oktober 2026";
 const TIERS = [10, 50, 100, 500];
 const money = (v) => v.toFixed(2).replace(/\.00$/, "");
+const moneyL = (v) => (money(v).includes(".") ? L(money(v), money(v).replace(".", ",")) : money(v));
 
 function compareTable(own, others, free) {
   const rows = [own, ...others];
   const best = TIERS.map((_, i) => Math.min(...rows.map((r) => r.p[i])));
-  const tr = (r) => `<tr><td>${r.n}${r === own ? " (this app / diese App)" : ""}</td>` +
-    r.p.map((v, i) => `<td>${v === best[i] ? `<strong>${money(v)}</strong>` : money(v)}</td>`).join("") + "</tr>";
+  const tr = (r) => `<tr><td>${r.n}${r === own ? ` (${L("this app", "diese App")})` : ""}</td>` +
+    r.p.map((v, i) => `<td>${v === best[i] ? `<strong>${moneyL(v)}</strong>` : moneyL(v)}</td>`).join("") + "</tr>";
   return `<table>
-<tr><th>App</th>${TIERS.map((t) => `<th>${t} users / Nutzer</th>`).join("")}</tr>
+<tr><th>App</th>${TIERS.map((t) => `<th>${t} ${L("users", "Nutzer")}</th>`).join("")}</tr>
 ${rows.map(tr).join("\n")}
 </table>
-<p class=muted>USD per month / USD pro Monat. Bold = lowest price in that column among the apps listed, ties included. / Fett = niedrigster Preis der Spalte unter den gelisteten Apps, Gleichstände eingeschlossen.</p>` +
-    (free ? `<p>Free apps, not in the table / Kostenlose Apps, nicht in der Tabelle: ${free}.</p>` : "");
+<p class=muted>${L("USD per month. Bold = lowest price in that column among the apps listed, ties included.", "USD pro Monat. Fett = niedrigster Preis der Spalte unter den gelisteten Apps, Gleichstände eingeschlossen.")}</p>` +
+    (free ? `<p>${L("Free apps, not in the table", "Kostenlose Apps, nicht in der Tabelle")}: ${free}.</p>` : "");
 }
 
 const RP_OTHERS = [
@@ -747,23 +781,19 @@ const LD_OTHERS = [
   { n: "Labele", p: [0, 14, 28, 107.5] },
 ];
 
-const RP_COMPARE = page("readproof", "ReadProof", "Price comparison, ReadProof", `<h1>Price comparison / Preisvergleich</h1>
-<p><strong>EN:</strong> Monthly list prices of ReadProof and seven read-and-confirm apps for Confluence Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
-<p><strong>DE:</strong> Monatliche Listenpreise von ReadProof und sieben Lesebestätigungs-Apps für Confluence Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
+const RP_COMPARE = page("readproof", "ReadProof", ["Price comparison, ReadProof", "Preisvergleich, ReadProof"], `<h1>${L("Price comparison", "Preisvergleich")}</h1>
+${B(`<p>Monthly list prices of ReadProof and seven read-and-confirm apps for Confluence Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>`, `<p>Monatliche Listenpreise von ReadProof und sieben Lesebestätigungs-Apps für Confluence Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>`)}
 ${compareTable({ n: "ReadProof", p: [0, 28, 28, 100] }, RP_OTHERS)}
-<h2>What the numbers say / Was die Zahlen sagen</h2>
-<p>EN: ReadProof is free up to 10 users, like most of the others. The ReadProof price is the Atlassian tier price (rate times the top of the tier: USD 0.28 up to 100 users, USD 0.10 for 251 to 1000 users). At 100 users ReadProof is the cheapest of the apps listed (28 against 30 for Clearlane and Read &amp; Understood Acknowledgement). At 50 users Clearlane and Read &amp; Understood Acknowledgement (15) and QC (16.5) are cheaper, because our tier is not full yet. At 500 users Clearlane (87.5) and QC (97.5) are cheaper; ReadProof is cheaper than the other five. Compare features and price together.</p>
-<p>DE: ReadProof ist bis 10 Nutzer gratis, wie die meisten anderen. Der ReadProof-Preis ist der Atlassian-Stufenpreis (Satz mal Obergrenze der Stufe: 0,28 USD bis 100 Nutzer, 0,10 USD für 251 bis 1000 Nutzer). Bei 100 Nutzern ist ReadProof die günstigste der gelisteten Apps (28 gegen 30 bei Clearlane und Read &amp; Understood Acknowledgement). Bei 50 Nutzern sind Clearlane und Read &amp; Understood Acknowledgement (15) sowie QC (16,5) günstiger, weil unsere Stufe noch nicht voll ist. Bei 500 Nutzern sind Clearlane (87,5) und QC (97,5) günstiger; ReadProof ist günstiger als die anderen fünf. Vergleiche Funktionen und Preis zusammen.</p>
-<p><a href="/readproof/">Back to ReadProof / Zurück zu ReadProof</a></p>`);
+<h2>${L("What the numbers say", "Was die Zahlen sagen")}</h2>
+${B(`<p>ReadProof is free up to 10 users, like most of the others. The ReadProof price is the Atlassian tier price (rate times the top of the tier: USD 0.28 up to 100 users, USD 0.10 for 251 to 1000 users). At 100 users ReadProof is the cheapest of the apps listed (28 against 30 for Clearlane and Read &amp; Understood Acknowledgement). At 50 users Clearlane and Read &amp; Understood Acknowledgement (15) and QC (16.5) are cheaper, because our tier is not full yet. At 500 users Clearlane (87.5) and QC (97.5) are cheaper; ReadProof is cheaper than the other five. Compare features and price together.</p>`, `<p>ReadProof ist bis 10 Nutzer gratis, wie die meisten anderen. Der ReadProof-Preis ist der Atlassian-Stufenpreis (Satz mal Obergrenze der Stufe: 0,28 USD bis 100 Nutzer, 0,10 USD für 251 bis 1000 Nutzer). Bei 100 Nutzern ist ReadProof die günstigste der gelisteten Apps (28 gegen 30 bei Clearlane und Read &amp; Understood Acknowledgement). Bei 50 Nutzern sind Clearlane und Read &amp; Understood Acknowledgement (15) sowie QC (16,5) günstiger, weil unsere Stufe noch nicht voll ist. Bei 500 Nutzern sind Clearlane (87,5) und QC (97,5) günstiger; ReadProof ist günstiger als die anderen fünf. Vergleiche Funktionen und Preis zusammen.</p>`)}
+<p><a href="/readproof/">${L("Back to ReadProof", "Zurück zu ReadProof")}</a></p>`);
 
-const LD_COMPARE = page("label-doktor", "Label Doctor", "Price comparison, Label Doctor", `<h1>Price comparison / Preisvergleich</h1>
-<p><strong>EN:</strong> Monthly list prices of Label Doctor and six label apps for Jira Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>
-<p><strong>DE:</strong> Monatliche Listenpreise von Label Doctor und sechs Label-Apps für Jira Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>
+const LD_COMPARE = page("label-doktor", "Label Doctor", ["Price comparison, Label Doctor", "Preisvergleich, Label Doctor"], `<h1>${L("Price comparison", "Preisvergleich")}</h1>
+${B(`<p>Monthly list prices of Label Doctor and six label apps for Jira Cloud. Source: public Atlassian Marketplace API, checked ${PRICE_DATE_EN}. Prices change; check the listing before you buy.</p>`, `<p>Monatliche Listenpreise von Label Doctor und sechs Label-Apps für Jira Cloud. Quelle: öffentliche Atlassian-Marketplace-API, Stand ${PRICE_DATE_DE}. Preise ändern sich; prüfe die Listung vor dem Kauf.</p>`)}
 ${compareTable({ n: "Label Doctor", p: [0, 12.5, 25, 108] }, LD_OTHERS, "Label It, Smart Label Manager, Label Ledger")}
-<h2>What the numbers say / Was die Zahlen sagen</h2>
-<p>EN: Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>
-<p>DE: Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>
-<p><a href="/label-doktor/">Back to Label Doctor / Zurück zu Label Doctor</a></p>`);
+<h2>${L("What the numbers say", "Was die Zahlen sagen")}</h2>
+${B(`<p>Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>`, `<p>Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>`)}
+<p><a href="/label-doktor/">${L("Back to Label Doctor", "Zurück zu Label Doctor")}</a></p>`);
 
 export const APP_PAGES = {
   "/readproof/compare": RP_COMPARE,

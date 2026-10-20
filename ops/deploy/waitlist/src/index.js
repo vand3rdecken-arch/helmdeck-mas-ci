@@ -1641,7 +1641,8 @@ function fill(body, env) {
   return body.replace(/\{\{ADDR_(STREET|ZIP)\}\}/g, (m, k) => env["ADDR_" + k] || m);
 }
 
-function html(body, status = 200) {
+// ga = the opt-in Google Analytics pages (app_i18n.js): only they may reach Google.
+function html(body, status = 200, ga = false) {
   return new Response(body, {
     status,
     headers: {
@@ -1652,9 +1653,9 @@ function html(body, status = 200) {
         "default-src 'none'; base-uri 'none'; form-action 'self'; " +
         "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
         "font-src https://fonts.gstatic.com; " +
-        "script-src 'unsafe-inline' https://eu-assets.i.posthog.com; " +
-        "connect-src 'self' https://eu.i.posthog.com; " +
-        "img-src 'self' data:; media-src 'self'; frame-ancestors 'none'",
+        "script-src 'unsafe-inline' https://eu-assets.i.posthog.com" + (ga ? " https://www.googletagmanager.com" : "") + "; " +
+        "connect-src 'self' https://eu.i.posthog.com" + (ga ? " https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com" : "") + "; " +
+        "img-src 'self' data:" + (ga ? " https://*.google-analytics.com https://www.googletagmanager.com" : "") + "; media-src 'self'; frame-ancestors 'none'",
     },
   });
 }
@@ -1874,8 +1875,8 @@ export default {
     if (oldApp && (req.method === "GET" || req.method === "HEAD")) {
       return Response.redirect(url.origin + "/" + (oldApp[1] === "lesenachweis" ? "readproof" : oldApp[1]) + (oldApp[2] || "/"), 301);
     }
-    if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(fill(LABEL_DOKTOR_PAGES[p], env));
-    if (req.method === "GET" && APP_PAGES[p]) return html(fill(APP_PAGES[p], env));
+    if (req.method === "GET" && LABEL_DOKTOR_PAGES[p]) return html(fill(LABEL_DOKTOR_PAGES[p], env), 200, true);
+    if (req.method === "GET" && APP_PAGES[p]) return html(fill(APP_PAGES[p], env), 200, p.startsWith("/readproof") || p.startsWith("/label-doktor"));
     if (p === "/api/join" && req.method === "POST") return handleJoin(req, env);
     if (p === "/api/ev" && req.method === "POST") return handleEvent(req, env, ctx);
     if (p === "/export.csv" && req.method === "GET") return handleExport(req, env);
