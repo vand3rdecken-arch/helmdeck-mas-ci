@@ -570,6 +570,11 @@ class H(BaseHTTPRequestHandler):
             # grant (hdm_ bearer), never a session - spine/http/mcp.py.
             if p == "/mcp":
                 return mcp_door.mcp_post(self, body)
+            # Henry's verbs as a tool: authorized ONLY by a per-process token
+            # from this machine, never a session - cells/copilot/chat/henry_act.py.
+            if p == "/henry/act":
+                from cells.copilot.chat import henry_act
+                return henry_act.act_post(self, body)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate (see do_GET): a POST path owned by a DISABLED agentic

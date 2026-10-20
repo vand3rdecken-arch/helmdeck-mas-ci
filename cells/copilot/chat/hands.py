@@ -188,12 +188,21 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
     # is the scratch folder (the brief says the same in prose; this is code)
     env["HELMDECK_WORKTREE"] = scratch
     env["MCP_TIMEOUT"] = env.get("MCP_TIMEOUT") or "60000"
+    # the board verbs as a tool (henry_act): without them a hands/agent run that
+    # was told to "fill the processes" wrote the store directly (2026-10-20).
+    # Not for a team-room run: that Henry acts for a room, not for this account.
+    act_tok = ""
+    if not room:
+        from cells.copilot.chat import henry_act
+        act_tok = henry_act.new_token()
+        env.update(henry_act.env_for(act_tok))
     with _lock:
         ahead = 0 if agent else len(_queue) + (1 if _active else 0)
         _tasks[hid] = {"title": title, "status": "running", "since": time.time(), "updated": time.time(),
                        "detail": task.strip()[:600], "pid": None, "user": user, "skey": skey, "card": card,
                        "kind": kind, "room": room, "resume": resume,
                        "stdin": task.strip() if room else "", "argv": drivers._cmd_line(argv), "cwd": scratch, "env": env,
+                       "act_tok": act_tok,
                        "result": ("wartet: %d Hände-Lauf(e) davor (ein Desktop, ein Browser)" % ahead) if ahead else ""}
         if not agent:
             _queue.append(hid)
@@ -292,6 +301,12 @@ def _run(hid, desktop=True):
         if stop_now:
             proctable._tree_kill(p)
         proctable._record_pid(p.pid, time.time())
+        if t.get("act_tok"):
+            from cells.copilot.chat import henry_act
+            from spine.auth import auth
+            _u = t.get("user") or ""
+            _role = next((x.get("role") for x in auth.list_users() if x.get("name") == _u), None) or "operator"
+            henry_act.register(t["act_tok"], _u, t.get("skey") or "", "hands", p.pid, role=_role)
         _pump(hid, p)
     except Exception as e:                               # noqa: BLE001
         with _lock:

@@ -46,6 +46,7 @@ ACTION_KINDS = frozenset((
     "schedule_connector", "import_url", "import_jira", "clarify_goal", "new_process", "save_process_template", "accept_steps",
     "edit_process", "cancel_process", "delete_process", "finish_process", "process_status",
     "share_note", "delete_project", "attach_process", "set_goal", "mark_goal", "set_next",
+    "add_step", "update_step", "remove_step", "move_step", "audit_query",
     # ALIASES that name their object. Paseo's catalog names the object in
     # every verb (archive_agent BESIDE archive_workspace), which is what makes
     # "wrong object" unreachable there rather than merely discouraged. We add
@@ -1003,6 +1004,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
                                  template_id=tid or None, repo=repo or None)
         except (ValueError, RuntimeError) as e:
             return "new_process: %s" % e
+        a["_process"] = p["id"]      # recorded for henry_act's $N.process (never parsed from prose)
         # cards that already exist for this theme join it right away
         joined = []
         for ref in a.get("cards") or []:
@@ -1037,6 +1039,7 @@ def _run_action(a, actor, role="operator", owner_msg=""):
                                           a.get("steps") or [], actor=actor)
         except ValueError as e:
             return "save_process_template: %s" % e
+        a["_template"] = doc["id"]
         return ("Vorlage '%s' gespeichert (%d Schritte). Neuer Prozess daraus: "
                 "new_process mit \"template\": \"%s\" und \"repo\"."
                 % (doc["name"], len(doc["steps"]), doc["id"]))

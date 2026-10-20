@@ -427,6 +427,12 @@ def _state_dir():
 
 
 def _inline_budget(tool, ti):
+    # henry_act IS the harness's own verb door (file a card, attach, steer): the
+    # daemon runs it in seconds and starts any work detached. It is the thing the
+    # budget tells him to hand off TO, so it must not count against it - the
+    # daemon bounds it itself (henry_act.MAX_CALLS_PER_TURN / MAX_BATCH).
+    if tool == "Bash" and "henry_act.py" in str((ti or {}).get("command") or ""):
+        return
     user = os.environ.get("HELMDECK_CHAT_USER") or ""
     sd = _state_dir()
     try:

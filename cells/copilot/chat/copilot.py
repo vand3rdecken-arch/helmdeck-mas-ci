@@ -417,6 +417,8 @@ def _actions_in_shell(steps):
             continue
         det = st.get("detail") if isinstance(st.get("detail"), dict) else {}
         cmd = str(det.get("command") or "")
+        if "henry_act.py" in cmd:
+            continue          # the real door: the daemon ran it (henry_act.py), it is not an echo
         for k in _ACTION_JSON_RE.findall(cmd):
             if k in ACTION_KINDS and k not in kinds:
                 kinds.append(k)
@@ -839,10 +841,14 @@ def _persist_get(skey, cli_model, sid, system):
     # whose turns this process serves - the guard hook's inline budget reads
     # that user's turn stamp in state/chat_turns.json (card_tool_guard)
     _env["HELMDECK_CHAT_USER"] = skey.split("\x00", 1)[0] if isinstance(skey, str) else str(skey)
+    from cells.copilot.chat import henry_act
+    _act_tok = henry_act.new_token()
+    _env.update(henry_act.env_for(_act_tok))
     p = subprocess.Popen(_cmd_line(argv), cwd=ROOT, stdin=subprocess.PIPE, env=_env,
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                          text=True, encoding="utf-8", errors="replace", bufsize=1, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     proctable.own(p)
+    henry_act.register(_act_tok, _acct, skey, "chat", p.pid)
     with _persist_lock:
         _persist[skey] = {"p": p, "key": key}
     _ports_update(lambda cur: cur.__setitem__(str(p.pid), time.time()))
@@ -2162,12 +2168,16 @@ def _judge_lean_run(prompt, cwd, perm, model, timeout, user, tools=None, max_out
     env = tool_path()
     if max_output:
         env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(max_output)
+    from cells.copilot.chat import henry_act
+    _act_tok = henry_act.new_token()
+    env.update(henry_act.env_for(_act_tok))
     p = subprocess.Popen(drivers._cmd_line(argv), cwd=cwd,
                          stdin=subprocess.PIPE, env=env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          text=True, encoding="utf-8", errors="replace",
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     proctable.own_turn(p)
+    henry_act.register(_act_tok, user, _skey(user), "judge", p.pid, role="owner")
     _judge_preempted.discard(user)
     _judge_proc[user] = p
     try:
@@ -2513,6 +2523,19 @@ _turn_started = {}       # user -> epoch the running turn began (live()["since"]
 # spinner). user -> thread id of the chat() call whose turn is concluding;
 # set where the turn registers, cleared when that chat() call returns.
 _concluding = {}
+
+
+def _act_turn(skey, on, role="operator", allow_actions=True, card=None, card_run_dir=None, owner_msg=""):
+    """The turn henry_act's tool calls run under: set where the turn starts,
+    cleared where it ends - the same two places as _note_turn (one owner)."""
+    try:
+        from cells.copilot.chat import henry_act
+        if on:
+            henry_act.set_turn(skey, role, allow_actions, card, card_run_dir, owner_msg)
+        else:
+            henry_act.clear_turn(skey)
+    except Exception:                                        # noqa: BLE001
+        pass                                                 # the tool is an extra, never a gate on the turn
 
 
 def _note_turn(user, on):
@@ -3484,6 +3507,7 @@ def _chat(user, message, role="operator", model="", thinking="", attachments=Non
         _my_start = _turn_started[user]
         _note_turn(user, True)
         _running_card[user] = card or None
+        _act_turn(skey, True, role, allow_actions, card, card_run_dir, "" if harness_note else message)
         _sup_quiet = False
         _eng = None
         try:
@@ -3493,6 +3517,7 @@ def _chat(user, message, role="operator", model="", thinking="", attachments=Non
             _h.done = True
             _running.pop(user, None)
             _note_turn(user, False)
+            _act_turn(skey, False)
             _running_card.pop(user, None)
             if _superseded.get(user) == _my_start:
                 _superseded.pop(user, None)
@@ -3554,6 +3579,7 @@ def _chat(user, message, role="operator", model="", thinking="", attachments=Non
     _my_start = _turn_started[user]      # this turn's identity (see _superseded)
     _note_turn(user, True)
     _running_card[user] = card or None
+    _act_turn(skey, True, role, allow_actions, card, card_run_dir, "" if harness_note else message)
     parts, think, result, session_id, ctx_usage = [], [], {}, sid, {}
     _blocks = []          # every assistant TEXT block of this turn, in order (see txt below)
     _tail_blocks = []     # TEXT blocks since the last tool_use = the answer (see txt below)
@@ -3827,6 +3853,7 @@ def _chat(user, message, role="operator", model="", thinking="", attachments=Non
             _inject.pop(user, None)
         _running.pop(user, None)
         _note_turn(user, False)
+        _act_turn(skey, False)
         _running_card.pop(user, None)
         if persistable and (user in _cancelled or p.poll() is not None):
             # a cancelled or dead process must not be reused - next turn
