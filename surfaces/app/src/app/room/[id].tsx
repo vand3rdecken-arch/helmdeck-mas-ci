@@ -145,6 +145,11 @@ export default function RoomScreen() {
       return { role: "assistant", kind: x.error ? "error" : "text", text: x.text, ts: x.ts, seq: x.seq,
                by: "Henry", byKind: "henry", to: x.to, quote: x.reply_to };
     }
+    if (x.byKind === "agent") {
+      // an external AI tool under an access grant: its own name, for whom it acts
+      return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "agent",
+               onBehalf: x.on_behalf, quote: x.reply_to };
+    }
     return { role: "user", kind: "text", text: x.text, ts: x.ts, seq: x.seq, by: x.by, byKind: "human", quote: x.reply_to };
   });
   // The live turn, drawn with the SAME rows the board chat uses: tool rows, then

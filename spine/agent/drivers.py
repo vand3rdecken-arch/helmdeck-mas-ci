@@ -600,7 +600,7 @@ def autocompact_tokens(cfg):
     return 0 if v <= 0 else max(_AUTOCOMPACT_MIN, min(_AUTOCOMPACT_MAX, v))
 
 
-def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None):
+def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None, account=None):
     """THE assembly point for a card/machine `claude` argv. ONE owner.
 
     This is a function rather than inline code in _spawn() because /harness's
@@ -655,6 +655,20 @@ def build_argv(agent, cfg, brief, session_id=None, adopted_source=None, exe=None
     # token-burn-hardening capper (Karte A): they are the ones actually
     # driving windows-mcp's Snapshot/Screenshot at volume.
     argv += _mcp_config_arg(cfg, capper=(agent == MACHINE_AGENT))
+    # The dispatching ACCOUNT's connections to other HelmDeck instances
+    # (spine/comms/peers.py): a card works for that person, so it reads and
+    # writes the rooms/cards other teams shared with THEM - never anyone
+    # else's. A second --mcp-config is additive; tools pre-authorised by name.
+    if account:
+        try:
+            from spine.comms import peers
+            servers = peers.mcp_servers(account)
+        except Exception:                                    # noqa: BLE001
+            servers = {}
+        if servers:
+            argv += ["--mcp-config", json.dumps({"mcpServers": servers})]
+            for name in servers:
+                argv += ["--allowedTools", "mcp__%s__*" % name]
     if session_id:
         argv += ["--resume", session_id]
         # An adopted card still pointing at its SOURCE session must not write
@@ -798,6 +812,8 @@ class _ClaudeSession:
         self.sig = _opts_sig(cfg, t)
         self.session_id = t.get("session_id")
         self.adopted_source = t.get("adopted_source")
+        # whose card this is: their connections to other instances ride along
+        self.account = t.get("dispatched_by") or t.get("client") or ""
         self.run_dir = t.get("run_dir") or ""
         self.proc = None
         self._drop_results = 0           # stale-result suppression after an interrupt
@@ -874,7 +890,7 @@ class _ClaudeSession:
         # driver honours the same key in its own build_argv.
         argv = build_argv(self.agent, self.cfg, self.brief,
                           self.session_id, self.adopted_source,
-                          exe=self.cfg.get("exe"))
+                          exe=self.cfg.get("exe"), account=self.account)
         # SPAWN FORENSICS: audit whether this worker resumes or starts fresh.
         # A card once answered with a fresh mind despite a valid session_id and
         # a CLI-verified resumable transcript ("Voellig falscher Kontext") - and

@@ -166,9 +166,13 @@ def post(rid, author, text, by_kind="human", extra=None):
         raise ValueError("unknown room")
     if by_kind == "human" and author not in (r.get("members") or []):
         raise PermissionError("not a member of this room")
+    if by_kind == "agent" and (extra or {}).get("on_behalf") not in (r.get("members") or []):
+        # an EXTERNAL agent (spine/http/mcp.py) is its own author, but only ever
+        # inside a room the member who granted it is in
+        raise PermissionError("the granting member is not in this room")
     mentioned, henry = parse_mentions(text, r.get("members") or [])
     date, hhmm = _now_parts()
-    entry = {"role": "user" if by_kind == "human" else "assistant", "kind": "text",
+    entry = {"role": "user" if by_kind in ("human", "agent") else "assistant", "kind": "text",
              "text": text, "by": author, "byKind": by_kind, "date": date, "ts": hhmm,
              "mentions": mentioned, "henry": bool(henry), "room_id": rid}
     if extra:

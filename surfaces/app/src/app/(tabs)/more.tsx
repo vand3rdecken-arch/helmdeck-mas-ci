@@ -6,7 +6,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, AuthRequired } from "@/data/client";
-import { useConfig } from "@/data/config";
+import { switchDaemon, useConfig } from "@/data/config";
 import { FEEDBACK_BOARD_URL, openFeedbackBoard } from "@/data/feedback";
 import type { Me } from "@/data/types";
 import { can } from "@/kernel";
@@ -50,7 +50,10 @@ export default function MoreTab() {
   const tr = useT();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { baseUrl, token, set, applyPairing, relayMode } = useConfig();
+  const { baseUrl, token, set, applyPairing, relayMode, saved, activeId, forget } = useConfig();
+  // several paired PCs (data/config.ts saved): the active one + the others to switch to
+  const activeName = saved?.[activeId]?.label ?? "";
+  const otherDaemons = Object.entries(saved ?? {}).filter(([id]) => id !== activeId);
   const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: api.me, staleTime: 60000 });
   const qc = useQueryClient();
   const [url, setUrl] = useState(baseUrl);
@@ -65,7 +68,9 @@ export default function MoreTab() {
   // Once paired, the two big connection panels collapse to one status line -
   // they were the top half of the screen on a phone that is long since paired.
   const [connOpen, setConnOpen] = useState(false);
-  const showConn = !paired || connOpen;
+  // linked = paired over the relay OR a saved LAN pairing (data/config.ts saved)
+  const linked = paired || !!activeName;
+  const showConn = !linked || connOpen;
 
   // Apply the code, then PROVE the connection with a real round-trip before
   // claiming success — a parsed-but-dead code (expired window, relay down,
@@ -99,17 +104,43 @@ export default function MoreTab() {
         {tr("nav.more")}
       </Text>
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 120, gap: 10 }}>
-        {paired ? (
+        {linked ? (
           <Panel>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: t.ok }} />
-              <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }}>{tr("more.conn.connectedRelay")}</Text>
+              <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>
+                {activeName ? tr("daemons.active", { name: activeName }) : tr("more.conn.connectedRelay")}
+              </Text>
               <Pressable onPress={() => setConnOpen((o) => !o)}>
                 <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>
                   {connOpen ? tr("more.conn.hide") : tr("more.conn.edit")}
                 </Text>
               </Pressable>
             </View>
+            {otherDaemons.length > 0 ? (
+              <View style={{ marginTop: 10, gap: 6 }}>
+                <Text style={{ color: t.txtTertiary, fontSize: 11, letterSpacing: 0.6 }}>{tr("daemons.others").toUpperCase()}</Text>
+                {otherDaemons.map(([id, d]) => (
+                  <View key={id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="desktop-outline" size={15} color={t.txtSecondary} />
+                    <Text style={{ color: t.txtPrimary, fontSize: 13, flex: 1 }} numberOfLines={1}>{d.label}</Text>
+                    <Pressable onPress={() => forget(id)} style={{ paddingHorizontal: 8, paddingVertical: 5 }}>
+                      <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("daemons.forget")}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => void switchDaemon(id)}
+                      style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8, backgroundColor: t.accent + "26" }}>
+                      <Text style={{ color: t.accent, fontSize: 12.5, fontWeight: "600" }}>{tr("daemons.switch")}</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {!connOpen ? (
+              <Pressable onPress={() => setConnOpen(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+                <Ionicons name="add-circle-outline" size={15} color={t.accent} />
+                <Text style={{ color: t.accent, fontSize: 12.5, fontWeight: "600" }}>{tr("daemons.add")}</Text>
+              </Pressable>
+            ) : null}
           </Panel>
         ) : null}
         {showConn ? (

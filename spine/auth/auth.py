@@ -87,10 +87,14 @@ def is_restricted(user):
 # Per-card routes still call owns_card on the id; this is the outer fence.
 _RESTRICTED_POST = {
     "client": ("/tracks/new", "/processes/new", "/presence", "/push/register",
-               "/rooms/post", "/rooms/read", "/rooms/card"),
+               "/rooms/post", "/rooms/read", "/rooms/card",
+               "/access/grants", "/access/grants/revoke",
+               "/peers", "/peers/remove", "/peers/refresh", "/peers/room/post"),
     "operator": ("/tracks/new", "/tracks/share", "/presence", "/push/register",
                  "/rooms/post", "/rooms/read", "/rooms/card", "/rooms/new", "/rooms/members",
-                 "/henry/post", "/sign", "/sign/batch"),
+                 "/henry/post", "/sign", "/sign/batch",
+                 "/access/grants", "/access/grants/revoke",
+                 "/peers", "/peers/remove", "/peers/refresh", "/peers/room/post"),
 }
 _RESTRICTED_CARD_VERBS = {
     "client": ("steer", "cancel", "answer"),
@@ -484,6 +488,19 @@ def delete_user(name, actor=None):
     try:
         from spine.storage import usersecrets
         usersecrets.drop_user(name)
+    except Exception:
+        pass
+    # ...and their connections to other instances (a token THEY were given)
+    try:
+        from spine.comms import peers
+        peers.drop_user(name)
+    except Exception:
+        pass
+    # ...and the access grants they issued: a grant acts AS its issuer, so a
+    # later account of the same name must not inherit a stranger's door
+    try:
+        from spine.auth import access_grants
+        access_grants.drop_user(name)
     except Exception:
         pass
     # ...and what was probed with those keys (same name-keyed reuse hazard)

@@ -91,6 +91,9 @@ from spine.http.routes import routes_system
 from spine.http.routes import routes_cells
 from spine.http.routes import routes_devices
 from spine.http.routes import routes_gxp
+from spine.http.routes import routes_access
+from spine.http.routes import routes_peers
+from spine.http import mcp as mcp_door
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -182,6 +185,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path.split("?")[0]
+        if p.startswith(("/mcp/", "/.well-known/")) and self._mcp_oauth("GET"):
+            return
         try:
             if p in LEGACY_UI:
                 web = _web_url()
@@ -278,6 +283,10 @@ class H(BaseHTTPRequestHandler):
             # chat consent: the grant is the authorization (chat_grants.py)
             if p in routes_grants.GET_ROUTES:
                 return routes_grants.GET_ROUTES[p](self, user)
+            if p in routes_access.GET_ROUTES:
+                return routes_access.GET_ROUTES[p](self, user)
+            if p in routes_peers.GET_ROUTES:
+                return routes_peers.GET_ROUTES[p](self, user)
             if p in routes_henry.GET_ROUTES:        # private Henry (restricted roles)
                 return routes_henry.GET_ROUTES[p](self, user)
             # --- Wear OS watch: board summary (README.md §4.7) ---
@@ -488,8 +497,37 @@ class H(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, json.dumps({"error": str(e)}))
 
+    def _mcp_oauth(self, method, raw=""):
+        """OAuth 2.1 surface of the direct /mcp resource (spine/auth/mcp_oauth.py).
+        Returns True when it answered. Before auth by design: it IS the way in."""
+        from spine.auth import mcp_oauth
+        sub = mcp_oauth.split_path(self.path)
+        if not sub:
+            return False
+        base = "http://%s/mcp" % (self.headers.get("Host") or "127.0.0.1:8140")
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        out = mcp_oauth.route(method, sub, query, raw, base)
+        if out is None:
+            self._send(405, json.dumps({"error": "method not allowed"}))
+            return True
+        code, ctype, body, headers = out
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        for k, v in headers.items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+        return True
+
     def do_POST(self):
         p = self.path.split("?")[0]
+        if p.startswith(("/mcp/", "/.well-known/")):
+            n = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(n).decode("utf-8", "replace") if n else ""
+            if self._mcp_oauth("POST", raw):
+                return
+            return self._send(404, json.dumps({"error": "not found"}))
         try:
             n = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(n) or b"{}") if n else {}
@@ -528,6 +566,10 @@ class H(BaseHTTPRequestHandler):
             # gate for the same reason (no session by design) - routes_relay.
             if p == "/relay/direct":
                 return routes_relay.relay_direct_post(self, body)
+            # MCP door for external harnesses: authorized ONLY by an access
+            # grant (hdm_ bearer), never a session - spine/http/mcp.py.
+            if p == "/mcp":
+                return mcp_door.mcp_post(self, body)
             if not user:
                 return self._send(401, json.dumps({"error": "auth required"}))
             # Cell gate (see do_GET): a POST path owned by a DISABLED agentic
@@ -587,6 +629,10 @@ class H(BaseHTTPRequestHandler):
                 return routes_rooms.POST_ROUTES[p](self, user, body)
             if p in routes_grants.POST_ROUTES:
                 return routes_grants.POST_ROUTES[p](self, user, body)
+            if p in routes_access.POST_ROUTES:
+                return routes_access.POST_ROUTES[p](self, user, body)
+            if p in routes_peers.POST_ROUTES:
+                return routes_peers.POST_ROUTES[p](self, user, body)
             if p in routes_henry.POST_ROUTES:
                 return routes_henry.POST_ROUTES[p](self, user, body)
             if p in routes_wear.POST_ROUTES:
@@ -822,6 +868,8 @@ def serve(port=8140, takeover=False):
     cells.start_enabled()
     relay_client.serve_inproc(H)   # relay frames run H in-process, no loopback hop
     relay_client.start(port)   # reverse tunnel for mobile (spine, not a cell) - idle until settings.relay is set
+    from spine.comms import mcp_door
+    mcp_door.start()           # public /mcp door for external agents - idle until an access grant exists
     # Transport (pays debt [single-secret-transport]): with TLS material
     # present, network traffic goes through the https listener and the plain
     # listener retreats to LOOPBACK ONLY - local tooling (relay bridge,

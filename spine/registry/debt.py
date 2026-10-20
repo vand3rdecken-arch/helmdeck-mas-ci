@@ -5777,6 +5777,107 @@ DEBT = [
         "order": 83,
     },
     {
+        "id": "access-grant-acts-as-issuer",
+        "title": "An MCP access grant acted AS its issuer, not as its own identity",
+        "status": "paid",
+        "what": "External agents used to post and steer under the issuer's name.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. The agent "
+                        "is its own principal now: room posts byKind 'agent' under the "
+                        "grant label with on_behalf=issuer, audit actor 'agent:<grant>', "
+                        "labels may not be an account name or Henry; spend still lands "
+                        "on the issuer's plan share BY DESIGN (it acts for them).",
+        "trigger": "-",
+        "fix": "spine/auth/access_grants.py agent_name/agent_actor, rooms.post by_kind "
+               "'agent', room_henry._line, app transcript byKind 'agent'.",
+    },
+    {
+        "id": "mcp-server-minimal-transport",
+        "title": "/mcp had no push and no way to hand in work",
+        "status": "paid",
+        "what": "Clients polled room_read; an outside agent could not submit a change.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. room_wait "
+                        "holds a request until the room moves, woken at event time by the "
+                        "chat cursor (db.wait_chat <- bump_chat) - the long-poll the app's "
+                        "own /stream/wait uses, no SSE server needed. card_propose hands a "
+                        "checked patch to the card's worker, so work lands through the gate. "
+                        "OAuth 2.1 exists (mcp_oauth.py). Rate limit / pending OAuth codes / "
+                        "replay set live in memory BY DESIGN: a restart resets a window or "
+                        "costs one in-flight login, nothing persistent depends on them.",
+        "trigger": "-",
+        "fix": "mcp.py room_wait + card_propose; mcp_oauth.py.",
+    },
+    {
+        "id": "peer-rooms-polled",
+        "title": "A room of another instance was re-read every 10 s while open",
+        "status": "paid",
+        "what": "peer_room.tsx polled /peers/room on a timer.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. The open "
+                        "screen holds ONE request on /peers/room/wait, which the daemon "
+                        "forwards to the other instance's room_wait - woken there the "
+                        "moment a message lands; re-armed after each answer, no timer.",
+        "trigger": "-",
+        "fix": "routes_peers peers_room_wait_get + peer_room.tsx long-poll loop.",
+    },
+    {
+        "id": "peer-links-henry-only",
+        "title": "Connections to other instances reached Henry's chat, not card workers",
+        "status": "paid",
+        "what": "Only copilot._lean_mcp_args added the account's connections.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. "
+                        "drivers.build_argv(account=) adds the DISPATCHING account's "
+                        "connections to every card worker of theirs (peers.mcp_servers, the "
+                        "one owner shared with Henry), tools pre-authorised by name.",
+        "trigger": "-",
+        "fix": "spine/agent/drivers.py build_argv account + ClaudeDriver.account.",
+    },
+    {
+        "id": "daemon-switch-reloads",
+        "title": "Switching between paired PCs reloads the app; pushes from other PCs were lost",
+        "status": "paid",
+        "what": "A push sealed by a non-active paired PC could not be decrypted (only the "
+                "active daemonPub was tried), so it showed nothing and its tap went nowhere.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. decryptPush "
+                        "tries every saved pairing's key; a push from another PC is shown, "
+                        "and its tap switches to that PC and lands on the card/room after the "
+                        "reload (setPendingRoute/takePendingRoute). The reload itself is the "
+                        "design (one daemon per session, the workspace-switch pattern), not a "
+                        "shortcut. A combined board across PCs is a FEATURE: "
+                        "ops/docs/backlog/multi-pc-board.",
+        "trigger": "-",
+        "fix": "data/push.ts decryptPush + _layout.tsx tap routing + config.ts pending route.",
+    },
+    {
+        "id": "mcp-door-relay-plaintext",
+        "title": "MCP traffic through the relay door was readable by the relay",
+        "status": "paid",
+        "what": "The door forwarded JSON-RPC bodies and Bearer tokens in clear.",
+        "why_it_bites": "PAID - the end-to-end path exists: surfaces/mcp-shim seals "
+                        "every request (token inside) to the daemon key carried in the "
+                        "link fragment; mcp_door._sealed opens it, refuses replays and "
+                        "stale frames. The remaining plaintext options are tracked as "
+                        "mcp-direct-mode-relay-readable.",
+        "trigger": "-",
+        "fix": "spine/comms/mcp_door.py _sealed + surfaces/mcp-shim/helmdeck_mcp.py.",
+    },
+    {
+        "id": "mcp-direct-mode-relay-readable",
+        "title": "OAuth / Bearer MCP clients without the shim were readable by the relay",
+        "status": "paid",
+        "what": "Direct HTTPS through the relay ends TLS at Cloudflare; the shim download "
+                "came from the same relay that served its checksum.",
+        "why_it_bites": "PAID - kept for why the code looks the way it does. Grants are "
+                        "SEALED-ONLY by default (access_grants.sealed_only, m26): mcp.py "
+                        "refuses any request that did not arrive through mcp_door._sealed "
+                        "(thread-local proof, never a header), a plain claim is refused "
+                        "without burning the code. Readable modes exist only when the issuer "
+                        "unticks 'Nur Ende-zu-Ende', labelled 'relay can read'. The share link "
+                        "carries the shim's sha256 (&s=, mcp_door.shim_sha) - a value the "
+                        "relay never sees - and the page checks the download against it.",
+        "trigger": "-",
+        "fix": "access_grants sealed_only + mcp.SEALED + routes_access shim_sha + "
+               "mcp_page.js; PyPI publication of the shim stays an owner decision.",
+    },
+    {
         "id": "plan-spend-not-split-per-account",
         "title": "All accounts spend the owner's plan; no per-account cost view",
         "status": "open",

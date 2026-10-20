@@ -101,6 +101,7 @@ export class Room {
       case "/push":  return this.push(request);
       case "/ws":    return this.ws(request);
       case "/client": return this.client(request, url);
+      case "/mcp":   return this.mcp(request);
       default:       return json(404, { error: "not found" });
     }
   }
@@ -352,6 +353,41 @@ export class Room {
     });
     if (frame === null) return new Response(null, { status: 204 });
     return json(200, frame);
+  }
+
+  // MCP door (index.js mcpCall): a PLAIN request forwarded to the daemon's
+  // socket, the reply comes back through routeReply like any other. No queue,
+  // no hold: an absent daemon is an honest 503 the MCP client can show.
+  async mcp(request) {
+    const sock = this.daemonSocket();
+    if (!sock) return json(503, { error: "HelmDeck is offline" });
+    if (this.waiting.size >= MAX_WAITING) return json(429, { error: "busy" });
+    let data;
+    try { data = await request.json(); } catch { return json(400, { error: "bad json" }); }
+    const id = crypto.randomUUID().replace(/-/g, "");
+    const reply = new Promise((resolve) => this.waiting.set(id, resolve));
+    const str = (v) => String(v || "");
+    try {
+      sock.send(JSON.stringify({ kind: "mcp", id, method: str(data.method), sub: str(data.sub),
+        query: str(data.query), auth: str(data.auth), origin: str(data.origin),
+        base: str(data.base), body: str(data.body) }));
+    } catch {
+      this.waiting.delete(id);
+      return json(503, { error: "HelmDeck is offline" });
+    }
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), REPLY_TIMEOUT_MS));
+    const resp = await Promise.race([reply, timeout]);
+    this.waiting.delete(id);
+    if (!resp) return json(504, { error: "HelmDeck did not answer" });
+    const status = Number(resp.status) || 502;
+    const headers = { "content-type": typeof resp.ctype === "string" && resp.ctype ? resp.ctype : "application/json" };
+    // only the headers OAuth/MCP need cross the door - never set-cookie & co
+    const PASS = ["location", "www-authenticate", "cache-control", "content-security-policy", "x-frame-options"];
+    for (const [k, v] of Object.entries(resp.headers || {})) {
+      if (PASS.includes(k.toLowerCase()) && typeof v === "string") headers[k.toLowerCase()] = v;
+    }
+    const empty = status === 202 || status === 204 || status === 302;
+    return new Response(empty ? null : String(resp.body || ""), { status, headers });
   }
 
   // phone -> queue a frame, wait for the daemon's reply

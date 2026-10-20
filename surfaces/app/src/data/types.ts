@@ -441,7 +441,8 @@ export interface RoomSummary {
 }
 export interface RoomMessage {
   seq: number; text: string; by: string;
-  byKind: "human" | "henry" | "system";
+  /** "agent" = an external AI tool under an access grant; on_behalf = the member it acts for */
+  byKind: "human" | "henry" | "system" | "agent"; on_behalf?: string;
   date?: string; ts?: string;
   mentions?: string[]; to?: string; card?: string; error?: boolean;
   reply_to?: { text: string; by?: string; seq?: number };
@@ -476,6 +477,33 @@ export interface ChatGrant {
   active: boolean; reads?: ChatGrantRead[];
 }
 export interface ChatGrants { given: ChatGrant[]; received: ChatGrant[] }
+/** levels: read < write (post/steer/answer) < code (cards only: read files is read; propose patches is code) */
+export interface AccessScope { kind: "room" | "card"; id: string; write: boolean; code?: boolean }
+export interface AccessUse { ts: number; tool: string; target: string; ok: number }
+export interface AccessGrant {
+  id: string; label: string; hint: string; scope: AccessScope[];
+  created: number; expires: number; revoked: number | null; active: boolean;
+  /** false until the share link's one-time code was redeemed */
+  claimed: boolean; uses?: AccessUse[];
+  /** only end-to-end use (helmdeck-mcp bridge / another HelmDeck), never direct HTTPS via the relay */
+  sealed_only?: boolean;
+}
+/** the one-time claim code exists ONLY in this response; url = the public MCP door ("" without an https relay) */
+export interface AccessGrantIssued extends AccessGrant {
+  code: string; url: string;
+  /** the daemon's public key: the share link carries it (&k=) so the end-to-end shim seals to it */
+  key: string;
+  /** sha256 of the bridge this daemon ships: the link carries it (&s=), out of the relay's reach */
+  shim_sha?: string;
+}
+/** a connection to ANOTHER HelmDeck instance: what its share link opened (never the token) */
+export interface PeerLink {
+  id: string; label: string; url: string; hint: string; created: number;
+  checked: number | null; err: string;
+  info: { as?: string; for?: string; expires?: number;
+          scope?: { kind: "room" | "card"; id: string; name: string; write: boolean; code?: boolean }[] };
+}
+export interface AccessGrants { grants: AccessGrant[]; door: { up: boolean; url: string; err: string } }
 export interface GrantedChat {
   account: string; grant: string; expires: number;
   entries: { role?: string; kind?: string; text?: string; ts?: string; date?: string }[];

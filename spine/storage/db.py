@@ -229,6 +229,21 @@ def wait_any(board_last, chat_last, timeout=22):
 def current_version():
     return _version
 
+
+def current_chat_version():
+    return _chat_version
+
+
+def wait_chat(last, timeout=20):
+    """Block until the chat cursor (every room message bumps it - room_message_add
+    -> bump_chat) passes `last`, or timeout. Returns the current value; the
+    caller re-reads what it cares about, so a spurious wake loses nothing."""
+    with _version_cond:
+        if _chat_version > last:
+            return _chat_version
+        _version_cond.wait(timeout)
+        return _chat_version
+
 # The store's change signal for read-side caches (events.metrics): the newest
 # event that is not relay telemetry + this process' write counter.
 #
@@ -2530,6 +2545,197 @@ def _m21(c):
         user TEXT NOT NULL, model_id TEXT NOT NULL, status TEXT NOT NULL,
         reason TEXT NOT NULL DEFAULT '', ms INTEGER NOT NULL DEFAULT 0,
         tested_at REAL NOT NULL, PRIMARY KEY(user, model_id))""")
+
+
+@_migration(22, "access-grants")
+def _m22(c):
+    """External-agent access (spine/auth/access_grants.py has the why): an
+    account hands ANOTHER harness (Claude Code, Cursor, Codex ... over MCP) a
+    bearer token scoped to named rooms/cards. Own table, not users.tokens (a
+    device token IS the whole account) and not chat_grants (account->admin,
+    read-only, no token). `th` is the sha256 of the token, never the token;
+    `scope` is JSON [{kind, id, write}]. ACTIVE is derived at every call from
+    expires/revoked - no open flag. Every tool call is its own row in
+    access_grant_uses."""
+    c.execute("""CREATE TABLE IF NOT EXISTS access_grants(
+        id TEXT PRIMARY KEY, issuer TEXT NOT NULL, label TEXT NOT NULL,
+        th TEXT NOT NULL UNIQUE, hint TEXT NOT NULL, scope TEXT NOT NULL,
+        created REAL NOT NULL, expires REAL NOT NULL, revoked REAL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS access_grants_issuer ON access_grants(issuer)")
+    c.execute("""CREATE TABLE IF NOT EXISTS access_grant_uses(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, grant_id TEXT NOT NULL,
+        ts REAL NOT NULL, tool TEXT NOT NULL, target TEXT NOT NULL, ok INTEGER NOT NULL)""")
+    c.execute("CREATE INDEX IF NOT EXISTS access_grant_uses_grant ON access_grant_uses(grant_id, id)")
+
+
+@_migration(23, "access-grant-claim")
+def _m23(c):
+    """A grant is shared as a ONE-TIME claim code, not as its token
+    (spine/auth/access_grants.py claim()): `claim_th` is the sha256 of that code
+    until it is redeemed, then NULL. An unclaimed grant's `th` is a random
+    placeholder that no token hashes to."""
+    if not _has_column(c, "access_grants", "claim_th"):
+        c.execute("ALTER TABLE access_grants ADD COLUMN claim_th TEXT")
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS access_grants_claim ON access_grants(claim_th)")
+
+
+@_migration(24, "mcp-oauth-clients")
+def _m24(c):
+    """OAuth 2.1 dynamic client registration for the MCP door
+    (spine/auth/mcp_oauth.py). home: its own table - a client is a PUBLIC
+    record (an MCP app's name + redirect URIs, no secret: PKCE public clients),
+    belongs to no account and grants nothing by itself; the access grant
+    claimed during /authorize is what carries reach. Bounded (oldest rows are
+    pruned at registration)."""
+    c.execute("""CREATE TABLE IF NOT EXISTS mcp_oauth_clients(
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL,
+        created REAL NOT NULL)""")
+
+
+def mcp_client_put(cid, name, uris, keep=500):
+    with conn() as c:
+        c.execute("INSERT INTO mcp_oauth_clients(id,name,redirect_uris,created) VALUES(?,?,?,?)",
+                  (cid, name, json.dumps(uris), time.time()))
+        c.execute("DELETE FROM mcp_oauth_clients WHERE id NOT IN "
+                  "(SELECT id FROM mcp_oauth_clients ORDER BY created DESC LIMIT ?)", (keep,))
+
+
+def mcp_client_get(cid):
+    r = conn().execute("SELECT id,name,redirect_uris FROM mcp_oauth_clients WHERE id=?",
+                       (cid,)).fetchone()
+    return {"id": r[0], "name": r[1], "redirect_uris": json.loads(r[2])} if r else None
+
+
+@_migration(25, "peer-links")
+def _m25(c):
+    """Connections to OTHER HelmDeck instances (spine/comms/peers.py): an
+    account pasted a share link another instance issued. home: its own table,
+    keyed per ACCOUNT - the link was given to a person, so what it opens is
+    theirs, never the workspace's. Not user_secret (closed provider whitelist,
+    model keys), not user_config (exported view prefs), not access_grants (the
+    grants THIS instance issues; this is the other side). `token_enc` is the
+    remote grant token, DPAPI-encrypted per account (usersecrets.encrypt) -
+    never plaintext, never returned by a route. Dropped with the account."""
+    c.execute("""CREATE TABLE IF NOT EXISTS peer_links(
+        id TEXT PRIMARY KEY, account TEXT NOT NULL, label TEXT NOT NULL,
+        url TEXT NOT NULL, door_pub TEXT NOT NULL, token_enc TEXT NOT NULL,
+        hint TEXT NOT NULL DEFAULT '', info TEXT NOT NULL DEFAULT '{}',
+        created REAL NOT NULL, checked REAL, err TEXT NOT NULL DEFAULT '')""")
+    c.execute("CREATE INDEX IF NOT EXISTS peer_links_account ON peer_links(account)")
+
+
+_PL_COLS = ("id", "account", "label", "url", "door_pub", "token_enc", "hint", "info",
+            "created", "checked", "err")
+
+
+def _pl_row(r):
+    d = dict(zip(_PL_COLS, r))
+    d["info"] = json.loads(d["info"] or "{}")
+    return d
+
+
+def peer_put(d):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO peer_links(%s) VALUES(%s)"
+                  % (",".join(_PL_COLS), ",".join("?" * len(_PL_COLS))),
+                  tuple(json.dumps(d[k]) if k == "info" else d.get(k) for k in _PL_COLS))
+
+
+def peers_of(account):
+    return [_pl_row(r) for r in conn().execute(
+        "SELECT %s FROM peer_links WHERE account=? ORDER BY created" % ",".join(_PL_COLS),
+        (account,)).fetchall()]
+
+
+def peer_get(account, pid):
+    r = conn().execute("SELECT %s FROM peer_links WHERE account=? AND id=?" % ",".join(_PL_COLS),
+                       (account, pid)).fetchone()
+    return _pl_row(r) if r else None
+
+
+def peer_delete(account, pid):
+    with conn() as c:
+        return c.execute("DELETE FROM peer_links WHERE account=? AND id=?", (account, pid)).rowcount
+
+
+def peers_drop_user(account):
+    with conn() as c:
+        return c.execute("DELETE FROM peer_links WHERE account=?", (account,)).rowcount
+
+
+@_migration(26, "access-grant-sealed-only")
+def _m26(c):
+    """`sealed_only`: the grant answers ONLY requests that arrived sealed to this
+    daemon's key (the helmdeck-mcp shim / a connected HelmDeck), never direct
+    HTTPS through the relay, where TLS ends at Cloudflare. New grants default
+    to it (access_grants.grant); rows from before stay as they were issued."""
+    if not _has_column(c, "access_grants", "sealed_only"):
+        c.execute("ALTER TABLE access_grants ADD COLUMN sealed_only INTEGER NOT NULL DEFAULT 0")
+
+
+_AG_COLS = ("id", "issuer", "label", "th", "hint", "scope", "created", "expires", "revoked", "claim_th",
+            "sealed_only")
+
+
+def _ag_row(r):
+    g = dict(zip(_AG_COLS, r))
+    g["scope"] = json.loads(g["scope"])
+    return g
+
+
+def access_grant_put(g):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO access_grants(%s) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+                  % ",".join(_AG_COLS),
+                  tuple(json.dumps(g[k]) if k == "scope" else (1 if g.get(k) else 0) if k == "sealed_only"
+                        else g.get(k) for k in _AG_COLS))
+
+
+def access_grant_by_th(th):
+    r = conn().execute("SELECT %s FROM access_grants WHERE th=?" % ",".join(_AG_COLS),
+                       (th,)).fetchone()
+    return _ag_row(r) if r else None
+
+
+def access_grant_by_claim(cth):
+    r = conn().execute("SELECT %s FROM access_grants WHERE claim_th=?" % ",".join(_AG_COLS),
+                       (cth,)).fetchone()
+    return _ag_row(r) if r else None
+
+
+def access_grant_redeem(cth, th, hint, now):
+    """Swap a claim code for a token hash - ONCE: the WHERE clause is the lock,
+    a second redeem of the same code updates nothing."""
+    with conn() as c:
+        return c.execute("UPDATE access_grants SET th=?, hint=?, claim_th=NULL "
+                         "WHERE claim_th=? AND revoked IS NULL AND expires>?",
+                         (th, hint, cth, now)).rowcount
+
+
+def access_grants_of(issuer):
+    return [_ag_row(r) for r in conn().execute(
+        "SELECT %s FROM access_grants WHERE issuer=? ORDER BY created DESC" % ",".join(_AG_COLS),
+        (issuer,)).fetchall()]
+
+
+def access_grants_drop_user(issuer):
+    with conn() as c:
+        ids = [r[0] for r in c.execute("SELECT id FROM access_grants WHERE issuer=?", (issuer,))]
+        for i in ids:
+            c.execute("DELETE FROM access_grant_uses WHERE grant_id=?", (i,))
+        return c.execute("DELETE FROM access_grants WHERE issuer=?", (issuer,)).rowcount
+
+
+def access_grant_use_add(grant_id, tool, target, ok):
+    with conn() as c:
+        c.execute("INSERT INTO access_grant_uses(grant_id,ts,tool,target,ok) VALUES(?,?,?,?,?)",
+                  (grant_id, time.time(), tool, target, 1 if ok else 0))
+
+
+def access_grant_uses_of(grant_id, limit=50):
+    return [dict(zip(("ts", "tool", "target", "ok"), r)) for r in conn().execute(
+        "SELECT ts,tool,target,ok FROM access_grant_uses WHERE grant_id=? "
+        "ORDER BY id DESC LIMIT ?", (grant_id, limit)).fetchall()]
 
 
 def chat_grant_put(g):

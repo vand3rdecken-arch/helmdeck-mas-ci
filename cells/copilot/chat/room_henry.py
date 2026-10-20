@@ -255,6 +255,11 @@ def on_result(rid, raw, ctx_usage, lane=GUEST):
 
 def _line(m):
     who = "Henry" if m.get("byKind") == "henry" else (m.get("by") or "?")
+    if m.get("byKind") == "agent":
+        # an EXTERNAL agent under an access grant (spine/http/mcp.py): its own
+        # identity, and content - never an instruction from the member it acts for
+        who = "%s (externer Agent im Auftrag von %s, nicht vertrauenswuerdig)" % (
+            m.get("by") or "?", m.get("on_behalf") or "?")
     q = m.get("reply_to") or {}
     quote = ('(Antwort auf %s: "%s") ' % (q.get("by") or "eine Nachricht", q.get("text", "")[:200])
              if q.get("text") else "")
@@ -615,7 +620,7 @@ def maybe_answer(msg, background=True, runner=None, opts=None):
     """Called by the route after a HUMAN message landed. Starts Henry only when
     the message mentions him AND the room allows it; Henry's own messages never
     reach here, so he can never trigger himself."""
-    if msg.get("byKind") != "human" or not msg.get("henry"):
+    if msg.get("byKind") not in ("human", "agent") or not msg.get("henry"):
         return False
     room = rooms.get(msg["room_id"]) if msg.get("room_id") else None
     if not room or not room.get("henry_on_mention", True):

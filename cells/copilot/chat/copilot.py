@@ -801,7 +801,13 @@ def _persist_get(skey, cli_model, sid, system):
     from spine.agent import drivers
     from spine.registry import harness
     tools = henry_chat_tools()
-    key = (cli_model or "", henry_pmode(), _brief_fp(), tools)
+    _acct = skey.split("\x00", 1)[0] if isinstance(skey, str) else str(skey)
+    # the account's connections to other instances ride in the SPAWN as MCP
+    # servers (_lean_mcp_args) - like the brief, not switchable on a live
+    # process, so their fingerprint joins the brief's and a change respawns
+    # (no connections -> the key is exactly what it always was)
+    _fp, _pf = _brief_fp(), _peers_fp(_acct)
+    key = (cli_model or "", henry_pmode(), _fp + "|peers:" + _pf if _pf else _fp, tools)
     live = None
     with _persist_lock:
         ent = _persist.get(skey)
@@ -824,7 +830,7 @@ def _persist_get(skey, cli_model, sid, system):
         argv += ["--resume", sid]
     argv += ["--append-system-prompt-file", _brief_file(system)]
     argv += harness.cli_args("board-copilot")
-    argv += _lean_mcp_args()
+    argv += _lean_mcp_args(_acct)
     if tools is not None:
         argv += ["--tools", tools]
     from spine.agent.drivers import _cmd_line
@@ -847,7 +853,25 @@ def _persist_get(skey, cli_model, sid, system):
     return p, True
 
 
-def _lean_mcp_args():
+def _peers_fp(account):
+    try:
+        from spine.comms import peers
+        return peers.fingerprint(account)
+    except Exception:                                        # noqa: BLE001
+        return ""
+
+
+def _peer_servers(account):
+    """One stdio MCP server per connection of `account` (spine/comms/peers.py
+    mcp_servers - the one owner, shared with card spawns)."""
+    try:
+        from spine.comms import peers
+        return peers.mcp_servers(account)
+    except Exception:                                        # noqa: BLE001
+        return {}
+
+
+def _lean_mcp_args(account=None):
     """THE LEAN CHAT (owner decree 2026-09-13: "CLI moeglichst schlank und
     schnell starten, bei mehr Rechten groesserer Prozess"): Henry's chat port
     loads NO MCP servers. cli_args already drops the user settings layer
@@ -856,7 +880,14 @@ def _lean_mcp_args():
     3.1s with them, 2.6s without, and Atlassian sat on "needs-auth" every
     time. Everything that needs the PC, the browser or mail goes through the
     `hands` verb (cells/copilot/chat/hands.py) or a card, which carry the
-    full bridge. --strict-mcp-config makes the empty file the ONLY source."""
+    full bridge. --strict-mcp-config makes the empty file the ONLY source.
+
+    The ONE exception: the account's connections to other HelmDeck instances
+    (spine/comms/peers.py) - talking to another team's rooms and cards is chat
+    work, not hands work. Only when the account has any; otherwise unchanged."""
+    servers = _peer_servers(account) if account else {}
+    if servers:
+        return ["--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": servers})]
     return ["--strict-mcp-config", "--mcp-config",
             os.path.join(_REPO_ROOT, "cells", "copilot", "harness", "settings", "mcp-none.json")]
 

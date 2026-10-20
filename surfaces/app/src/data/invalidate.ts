@@ -38,7 +38,7 @@ export const TOPIC_KEYS: Record<string, readonly string[]> = {
   project_config: ["harnessConfig", "harness", "harnessBrief", "projectsShared", "settings", "loopmap"],
   workspace_config: ["settings", "me", "cells", "engines", "models", "modelsProbe", "harness",
     "harnessBrief", "harnessConfig", "gxpState", "devices", "automation", "daemonStatus", "usage",
-    "connectors", "invites", "users", "roomAccounts", "chatGrants", "repoTemplates", "takeout",
+    "connectors", "invites", "users", "roomAccounts", "chatGrants", "accessGrants", "peers", "repoTemplates", "takeout",
     "foreignMemory"],
   policy: ["settings", "harness", "harnessConfig", "harnessBrief", "gxpState"],
   user_config: ["me", "settings", "cells"],

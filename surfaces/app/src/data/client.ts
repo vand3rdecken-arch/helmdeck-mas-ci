@@ -289,7 +289,8 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
   // Shared by both transports (chat-load-latency phase A.3): /stream/wait and
   // /tracks/:id/transcript/live are held server-side for ~22-25s by design
   // (spine/http/server.py, routes_tracks.py - "22s < relay REPLY_TIMEOUT").
-  const isLongPoll = path.startsWith("/stream/wait") || path.includes("/transcript/live");
+  const isLongPoll = path.startsWith("/stream/wait") || path.includes("/transcript/live")
+    || path.startsWith("/peers/room/wait");   // held ~20 s by the OTHER instance (mcp room_wait)
   let status: number, txt: string;
   try {
     if (cfg.relayMode()) {
@@ -1150,6 +1151,25 @@ export const api = {
   chatGrantCreate: (grantee: string, hours: number) =>
     req<import("./types").ChatGrant>("POST", "/chat/grants", { grantee, hours }),
   chatGrantRevoke: (id: string) => req<import("./types").ChatGrant>("POST", "/chat/grants/revoke", { id }),
+  // external-agent access over MCP (spine/auth/access_grants.py)
+  accessGrants: () => req<import("./types").AccessGrants>("GET", "/access/grants"),
+  accessGrantCreate: (label: string, hours: number, scope: import("./types").AccessScope[], sealedOnly = true) =>
+    req<import("./types").AccessGrantIssued>("POST", "/access/grants", { label, hours, scope, sealed_only: sealedOnly }),
+  accessGrantRevoke: (id: string) => req<import("./types").AccessGrant>("POST", "/access/grants/revoke", { id }),
+  // connections to OTHER HelmDeck instances (spine/comms/peers.py)
+  peers: () => req<{ peers: import("./types").PeerLink[] }>("GET", "/peers"),
+  peerAdd: (link: string, label: string) => req<import("./types").PeerLink>("POST", "/peers", { link, label }),
+  peerRemove: (id: string) => req<{ removed: boolean }>("POST", "/peers/remove", { id }),
+  peerRefresh: (id: string) => req<import("./types").PeerLink>("POST", "/peers/refresh", { id }),
+  peerRoom: (peer: string, room: string) =>
+    req<{ room: string; messages: import("./types").RoomMessage[] }>("GET",
+      `/peers/room?peer=${encodeURIComponent(peer)}&room=${encodeURIComponent(room)}`),
+  /** held until the remote room has messages after `after` (~20 s max), then answers */
+  peerRoomWait: (peer: string, room: string, after: number, signal?: AbortSignal) =>
+    req<{ room: string; messages: import("./types").RoomMessage[] }>("GET",
+      `/peers/room/wait?peer=${encodeURIComponent(peer)}&room=${encodeURIComponent(room)}&after=${after}`, undefined, signal),
+  peerRoomPost: (peer: string, room: string, text: string) =>
+    req<{ seq: number }>("POST", "/peers/room/post", { peer, room, text }),
   chatAdminRead: (account: string) =>
     req<import("./types").GrantedChat>("GET", `/chat/admin?account=${encodeURIComponent(account)}`),
   // MY OWN profile rows (accounts-boards-prd phase 1). PUT, not POST: the

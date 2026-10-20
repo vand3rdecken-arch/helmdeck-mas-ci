@@ -42,6 +42,15 @@ export const GROUPS: readonly [string, readonly (readonly [string, string, strin
     ["recordings", "nav.recordings", "videocam-outline", "more.sub.recordings", "recordings.view"],    // routes_runs.py runs_get: capability-gated (card 2)
     ["audit", "nav.audit", "file-tray-full-outline", "more.sub.audit", "audit.read"],   // routes_audit.py audit_get: capability-gated (card 2), screen built card 5
   ]],
+  // Connections beyond this instance - a VISIBLE group (logs/control are
+  // hidden in the Mehr tab). Every role: what they open never reaches further
+  // than the account itself.
+  ["more.grp.connect", [
+    // which outside AI tools may reach which of MY rooms/cards over MCP (access_grants.py)
+    ["agent_access", "nav.agentAccess", "key-outline", "more.sub.agentAccess", undefined],
+    // the other direction: rooms/cards OTHER instances shared with me (peers.py)
+    ["peers", "nav.peers", "git-merge-outline", "more.sub.peers", undefined],
+  ]],
   ["more.grp.system", [
     // No cap since accounts-boards-prd phase 4: the hub is every role's (door 1
     // is the ACCOUNT's profile, door 2 their boards) and the owner-only doors

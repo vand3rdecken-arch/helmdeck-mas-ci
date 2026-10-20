@@ -24,7 +24,8 @@
  * and never touches anything but its own bundled assets.
  */
 import { Room } from "./room.js";
-import { PAIR_HTML, PRIVACY_HTML, ASSETLINKS } from "./static.js";
+import { PAIR_HTML, PRIVACY_HTML, ASSETLINKS, MCP_SHIM, MCP_SHIM_SHA256 } from "./static.js";
+import { MCP_PAGE } from "./mcp_page.js";
 export { Room };
 
 // per-isolate id (relay.py's _INSTANCE); random values are not allowed at
@@ -171,6 +172,77 @@ async function otaAsset(request, env, url) {
     "cache-control": "public, max-age=31536000, immutable" } });
 }
 
+// ---- MCP door (spine/comms/mcp_door.py) -------------------------------------
+// External MCP clients cannot seal frames, so they get their OWN room, named
+// by an alias the WORKER derives from a key only the daemon holds. The alias is
+// public (it is in the shared URL); without the key nobody can be the daemon
+// behind it. Must match mcp_door.alias_of(). Requests here are readable by the
+// relay (TLS ends at Cloudflare) - debt mcp-door-relay-plaintext.
+const MCP_ALIAS_RE = /^[A-Za-z0-9_-]{32}$/;
+const MCP_KEY_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const MCP_MAX_BODY = 1024 * 1024;
+
+async function mcpAlias(key) {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)));
+  let b = btoa(String.fromCharCode(...d)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return b.slice(0, 32);
+}
+
+function mcpStub(env, alias) {
+  return env.ROOMS.get(env.ROOMS.idFromName("mcp:" + alias));
+}
+
+async function mcpDaemon(request, env, url) {
+  const key = url.searchParams.get("key") || "";
+  if (!MCP_KEY_RE.test(key)) return json(400, { error: "key required" });
+  if (request.headers.get("Upgrade") !== "websocket") return json(426, { error: "expected websocket" });
+  return mcpStub(env, await mcpAlias(key)).fetch(new Request("https://room/ws", request));
+}
+
+// The resource URL as the client sees it (OAuth issuer + audience). https
+// always, except a loopback dev relay (wrangler dev) - mcp_door._usable.
+function mcpBase(url, alias) {
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  return (local ? url.origin : "https://" + url.host) + "/mcp/" + alias;
+}
+
+// One request to the door: the MCP resource itself (sub "") or its OAuth
+// surface (spine/auth/mcp_oauth.py). The daemon decides; we only carry.
+async function mcpCall(request, env, url, alias, sub) {
+  if (!MCP_ALIAS_RE.test(alias)) return json(404, { error: "not found" });
+  const len = Number(request.headers.get("content-length") || 0);
+  if (len > MCP_MAX_BODY) return json(413, { error: "too large" });
+  const body = request.method === "POST" ? await request.text() : "";
+  if (body.length > MCP_MAX_BODY) return json(413, { error: "too large" });
+  // Origin is judged by the daemon (mcp._origin_ok). Our OWN pages (the setup
+  // page redeeming a code, the /authorize form) are the browser callers we
+  // vouch for, so a same-origin Origin is dropped here; any other is passed on.
+  const origin = request.headers.get("origin") || "";
+  const fwdOrigin = origin && origin === url.origin ? "" : origin;
+  return mcpStub(env, alias).fetch(new Request("https://room/mcp", {
+    // the /authorize answer is a 302 to the CLIENT's redirect_uri: hand it back,
+    // never follow it here (a stub fetch follows redirects by default)
+    method: "POST", redirect: "manual", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ method: request.method, sub, query: url.search.slice(1),
+      auth: request.headers.get("authorization") || "", origin: fwdOrigin,
+      base: mcpBase(url, alias), body }) }));
+}
+
+// Path -> [alias, sub] for everything the door serves, or null.
+const MCP_SUBS = new Set(["authorize", "token", "register"]);
+function mcpRoute(p) {
+  let m = /^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)\/mcp\/([A-Za-z0-9_-]{32})$/.exec(p);
+  if (m) return [m[2], m[1] === "oauth-protected-resource" ? "wk/prm" : "wk/as"];
+  m = /^\/mcp\/([A-Za-z0-9_-]{32})(?:\/(.*))?$/.exec(p);
+  if (!m) return null;
+  const rest = m[2] || "";
+  if (rest === "") return [m[1], ""];
+  if (MCP_SUBS.has(rest)) return [m[1], rest];
+  if (rest === ".well-known/oauth-protected-resource") return [m[1], "wk/prm"];
+  if (rest === ".well-known/oauth-authorization-server" || rest === ".well-known/openid-configuration") return [m[1], "wk/as"];
+  return null;
+}
+
 // ---- relay core ------------------------------------------------------------
 function roomStub(env, url) {
   const room = url.searchParams.get("room") || "";
@@ -234,6 +306,25 @@ const route = {
     if (m === "POST" && p === "/relay")        return toRoom(request, env, url, "/relay");
     if (m === "GET"  && p === "/tunnel/pull")  return toRoom(request, env, url, "/pull");
     if (m === "POST" && p === "/tunnel/push")  return toRoom(request, env, url, "/push");
+    if (m === "GET"  && p === "/tunnel/mcpd") return mcpDaemon(request, env, url);
+    const mr = (p.startsWith("/mcp/") || p.startsWith("/.well-known/")) ? mcpRoute(p) : null;
+    if (mr) {
+      const [alias, sub] = mr;
+      if (sub === "" && m === "GET") {
+        // Streamable HTTP: a client may open GET for server push; we offer none.
+        // A browser (the shared link) gets the setup page instead.
+        if ((request.headers.get("accept") || "").includes("text/event-stream"))
+          return new Response(null, { status: 405, headers: { allow: "POST" } });
+        const host = (url.hostname === "localhost" || url.hostname === "127.0.0.1") ? url.origin : "https://" + url.host;
+        return new Response(MCP_PAGE.replaceAll("__URL__", esc(mcpBase(url, alias)))
+            .replaceAll("__SHIM_URL__", esc(host + "/helmdeck_mcp.py"))
+            .replaceAll("__SHIM_SHA__", esc(MCP_SHIM_SHA256)), { status: 200, headers: {
+          "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
+          "referrer-policy": "no-referrer" } });
+      }
+      if (m !== "GET" && m !== "POST") return new Response(null, { status: 405, headers: { allow: "GET, POST" } });
+      return mcpCall(request, env, url, alias, sub);
+    }
     if (m === "GET"  && p === "/tunnel/ws") {
       // NOT toRoom(): that rebuilds the request with a content-type only and
       // would drop the Upgrade header. The upgrade must reach the room intact.
@@ -270,6 +361,9 @@ const route = {
         .replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
       return html(PAIR_HTML.replace("__C_ATTR__", esc(c)).replace("__C_JS__", js));
     }
+    if (m === "GET" && p === "/helmdeck_mcp.py")
+      return new Response(MCP_SHIM, { headers: { "content-type": "text/x-python; charset=utf-8",
+        "content-disposition": 'attachment; filename="helmdeck_mcp.py"', "x-content-sha256": MCP_SHIM_SHA256 } });
     if (m === "GET" && p === "/.well-known/assetlinks.json") return json(200, ASSETLINKS);
     if (m === "GET" && (p === "/privacy" || p === "/datenschutz")) return html(PRIVACY_HTML);
     return json(404, { error: "not found" });

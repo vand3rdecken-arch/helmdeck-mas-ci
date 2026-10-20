@@ -25,7 +25,7 @@ import { applyPushedPatch, TRACKS_KEY } from "@/data/tracks_sync";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
 import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
-import { useConfig, useNeedsPairing } from "@/data/config";
+import { setPendingRoute, switchDaemon, takePendingRoute, useConfig, useNeedsPairing } from "@/data/config";
 import { useDemo } from "@/data/demo";
 import { armDiagCapture } from "@/data/diag";
 import { useSilentOta } from "@/data/ota";
@@ -249,6 +249,8 @@ function usePushWiring() {
       const data = n.request.content.data as Record<string, string>;
       if (!data?.cipher) return;
       const m = decryptPush(data);
+      // from ANOTHER paired PC: show it, but it says nothing about this PC's chat
+      if (m?.daemon) { presentDecrypted(data); return; }
       const { wake, present } = decideChatPush(
         m?.kind, usePresence.getState().focusedCard, CHAT_FOCUS,
         AppState.currentState === "active", m?.room);
@@ -285,16 +287,29 @@ function usePushWiring() {
       // this on the track alone made every trackless tap a no-op. The bundled-
       // summary case the paragraph above protects is unaffected: it delivers
       // EMPTY data, so neither field is set and we still return.
+      let from: string | undefined = data?.daemon || undefined;
       if (!track && !kind && data?.cipher) {
         await hydration;
         const m = decryptPush(data);
-        if (m) { track = m.track; kind = m.kind; body = m.body; room = m.room; }
+        if (m) { track = m.track; kind = m.kind; body = m.body; room = m.room; from = m.daemon ?? from; }
+      }
+      // a push from another paired PC: switch to it, land there after the reload
+      if (from && from !== useConfig.getState().activeId) {
+        await setPendingRoute({ track, kind, body, room });
+        await switchDaemon(from);
+        return;
       }
       // WHERE it lands is pushRoute's decision, not this listener's: it is pure
       // and tested (test_push_route.js), and it returns null for exactly the
       // unreadable tap above. This hook keeps only what needs the runtime -
       // decrypting and navigating.
       const dest = pushRoute({ track, kind, body, room });
+      if (dest) router.push(dest as never);
+    });
+    // the landing of a tap that switched PCs (setPendingRoute before the reload)
+    void hydration.then(async () => {
+      const pending = await takePendingRoute();
+      const dest = pending ? pushRoute(pending) : null;
       if (dest) router.push(dest as never);
     });
     return () => { recv.remove(); resp.remove(); stopPushReg(); };
