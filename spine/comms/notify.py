@@ -475,7 +475,13 @@ def chat_reply(text):
     # (surfaces/app/src/app/_layout.tsx). The watch needs no change at all -
     # PushService renders title/body from the same sealed payload and opens the
     # app; it never looked at `kind`.
-    return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat")
+    # `c` = the chat cursor this reply moved to, sealed in the box: the app's
+    # socket usually delivered the same cursor 1-3 s earlier and refetched
+    # already; a push carrying exactly that cursor then wakes nothing (diag
+    # 2026-10-20: every Henry reply loaded the history twice, "delta +0").
+    from spine.storage import db
+    return push_fcm(i18n.t("push.henry"), body, "", urgent=True, kind="chat",
+                    extra={"c": db.current_chat_version()})
 
 
 def room_event(account, room, text, by):

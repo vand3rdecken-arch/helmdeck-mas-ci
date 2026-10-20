@@ -24,12 +24,26 @@ type StreamCaps = {
   /** null = not yet known (no successful stream reply). */
   chatEvents: boolean | null;
   setChatEvents: (v: boolean) => void;
+  /** The chat cursor the event stream last delivered (and woke the chat for).
+   *  A Henry push carrying exactly this cursor brings nothing new. */
+  chatCursor: number | null;
+  setChatCursor: (c: number) => void;
 };
 
 export const useStreamCaps = create<StreamCaps>((set) => ({
   chatEvents: null,
   setChatEvents: (v) => set((s) => (s.chatEvents === v ? s : { chatEvents: v })),
+  chatCursor: null,
+  setChatCursor: (c) => set((s) => (s.chatCursor === c ? s : { chatCursor: c })),
 }));
+
+/** Does a Henry push still need to wake the chat? Only an EXACT match with the
+ *  cursor the stream already delivered is skipped; a higher one is news, a
+ *  lower one may come from a restarted daemon (cursors restart at 0) - both
+ *  wake. A push without a cursor (older daemon) always wakes. */
+export function pushStillNews(pushC: unknown, streamC: number | null): boolean {
+  return !(typeof pushC === "number" && streamC !== null && pushC === streamC);
+}
 
 /**
  * How often the chat may fall back to asking, in ms, or `false` for never.

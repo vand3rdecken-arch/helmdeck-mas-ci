@@ -197,6 +197,11 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
     if (d === undefined && method === "GET") throw new ApiError(404, t("net.httpError", { status: 404, method, path }));
     return (d === undefined ? {} : d) as T;
   }
+  // Transport is chosen from the PAIRING, so never before it is loaded: until
+  // hydrate() resolves, relayMode() is false and baseUrl is the emulator default
+  // (10.0.2.2) - requests fired at app start went there and failed as "Direct
+  // (LAN) connection failed" on a relay-paired phone (diag 2026-10-20 07:09).
+  if (!useConfig.getState().hydrated) await useConfig.getState().hydrate();
   const cfg = useConfig.getState();
   const bodyStr = method === "GET" ? "" : JSON.stringify(body ?? {});
   // Shared by both transports (chat-load-latency phase A.3): /stream/wait and

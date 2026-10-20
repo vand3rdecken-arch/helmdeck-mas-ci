@@ -108,7 +108,18 @@ export const useConfig = create<ConfigState>((set, get) => ({
     return { ok: true, mode: "relay" };
   },
 
-  hydrate: async () => {
+  // Single flight: every caller (the root layout, the push task, req() itself)
+  // awaits the SAME load, and a second call never re-reads storage over values
+  // set after the first one finished.
+  hydrate: () => (hydrating ??= loadOnce()),
+}));
+
+let hydrating: Promise<void> | null = null;
+
+async function loadOnce(): Promise<void> {
+  const set = useConfig.setState;
+  const get = useConfig.getState;
+  {
     try {
       if (isWeb) {
         // Desktop (Electron) hands the daemon URL via the URL hash
@@ -143,8 +154,8 @@ export const useConfig = create<ConfigState>((set, get) => ({
     // device in the panel, which is exactly what it is.
     if (!get().deviceId) get().set({ deviceId: newDeviceId() });
     set({ hydrated: true });
-  },
-}));
+  }
+}
 
 // Native pairing gate (2026-08-26). Desktop/web has useShowOnboard (setup.ts,
 // Platform.OS==="web" only) - native had NOTHING: a fresh install (or a

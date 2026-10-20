@@ -8,6 +8,7 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 
 import { keysFor, makeInvalidator } from "./invalidate";
+import { pushStillNews } from "./stream";
 import { _resetTimingForTest, recordTiming, slowestPaths, timingSummary } from "./net_timing";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -108,7 +109,16 @@ function timingRun() {
         "slowest path grouped without its query string: " + slowestPaths(1)[0]);
 }
 
+// a Henry push wakes the chat only if the stream did not already bring its cursor
+function pushRun() {
+  check(!pushStillNews(42, 42), "push with the cursor the socket already delivered: no second load");
+  check(pushStillNews(43, 42), "a newer cursor is news");
+  check(pushStillNews(3, 42), "a lower one (daemon restarted, cursors from 0) still wakes");
+  check(pushStillNews(undefined, 42) && pushStillNews(42, null), "no cursor / no stream yet: wake");
+}
+
 (async () => {
+  pushRun();
   timingRun();
   await topicsRun();
   const old = await run("old");

@@ -153,7 +153,7 @@ export function watchPushRegistration(): () => void {
 /** Decrypt a sealed data-only push {cipher} -> {title, body, track}. The daemon
  *  (notify.push_fcm) seals with its sk + the pinned phone pub; we open with our
  *  sk + the daemon pub. */
-export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string; kind?: string; room?: string; ask?: Ask } | null {
+export function decryptPush(data?: Record<string, string>): { title: string; body: string; track?: string; kind?: string; room?: string; ask?: Ask; c?: number } | null {
   const { mySec, daemonPub } = useConfig.getState();
   if (!data?.cipher || !mySec || !daemonPub) return null;
   try { return JSON.parse(open(data.cipher, mySec, daemonPub)); } catch { return null; }

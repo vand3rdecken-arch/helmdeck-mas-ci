@@ -20,7 +20,7 @@ import { api } from "@/data/client";
 import { useHealth } from "@/data/health";
 import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
-import { ensureChatFresh, useStreamCaps } from "@/data/stream";
+import { ensureChatFresh, pushStillNews, useStreamCaps } from "@/data/stream";
 import { applyPushedPatch, TRACKS_KEY } from "@/data/tracks_sync";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
 import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
@@ -115,6 +115,7 @@ function useGlobalStream() {
         // ensureChatFresh - the owner's "Antwort erst nach Neustart").
         if (r.c !== c) void ensureChatFresh(queryClient);
         c = r.c;
+        useStreamCaps.getState().setChatCursor(r.c);
       }
     };
     const offEvent = relaySocket.onEvent(apply);
@@ -248,7 +249,9 @@ function usePushWiring() {
       const { wake, present } = decideChatPush(
         m?.kind, usePresence.getState().focusedCard, CHAT_FOCUS,
         AppState.currentState === "active", m?.room);
-      if (wake) void ensureChatFresh(queryClient);
+      // the socket usually brought this very cursor already - then the push is
+      // only the banner, not a second history load
+      if (wake && pushStillNews(m?.c, useStreamCaps.getState().chatCursor)) void ensureChatFresh(queryClient);
       if (present) { presentDecrypted(data); announceDecrypted(data); }
     });
     // tap: deep-link to the card (or the PM chat if the push has no card). The
