@@ -272,9 +272,13 @@ if [ "$WORKER" = "1" ]; then
   # this run did not touch simply ship again unchanged.
   bash ops/deploy/publish_relay_worker.sh || { echo "!!! WORKER DEPLOY FAILED - nothing went live"; exit 1; }
   phone_verify
-  DCHAN="desktop${CHANNEL:+-$CHANNEL}"
-  CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN")
-  echo "  desktop.json ($DCHAN): HTTP $CODE"
+  # a --runtime publish leaves the desktop untouched (above) - there is no
+  # desktop-rt-X channel, so checking one only printed a scary 404
+  if [ -z "$RUNTIME" ]; then
+    DCHAN="desktop${CHANNEL:+-$CHANNEL}"
+    CODE=$(curl -s -m20 -o /dev/null -w '%{http_code}' "https://$RELAY_DOMAIN/updates/assets?path=desktop.json&channel=$DCHAN")
+    echo "  desktop.json ($DCHAN): HTTP $CODE"
+  fi
 fi
 # STRANDED RUNTIMES - the phones whose binary is not the current one.
 #  - iOS on its own runtime (IOS_SPLIT, the 1.0.53 incident above);
