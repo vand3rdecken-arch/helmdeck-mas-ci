@@ -542,6 +542,16 @@ def card_event(track, status):
             "done": "push.done", "question": "push.question"}
     if status not in keys:
         return
+    if status == "needs_you":
+        from cells.engineer.cards import lifecycle
+        if lifecycle.card_phase(track) != "ready":
+            # A worker handing back in `working` is Henry's to judge, not the
+            # owner's (owner 2026-10-20: "ich muss nicht über fertige Karten
+            # informiert werden, aber Henry muss follow up machen"). The buzz
+            # comes when the card actually waits for him: review (push.ready),
+            # a question, or Henry's own decision line.
+            print("notify: %s/needs_you not pushed - delivered, Henry judges" % track.get("id", "?"))
+            return
     ok, why = should_push(track, status)
     if not ok:
         print("notify: %s/%s suppressed - %s" % (track.get("id", "?"), status, why))
@@ -561,11 +571,7 @@ def card_event(track, status):
     # `kind` rides in the sealed payload so a tap on a DONE push can open the
     # voice mode and have Henry SPEAK the result (owner 2026-08-22) instead of
     # deep-linking into the card.
-    title_key = keys[status]
-    if status == "needs_you":
-        from cells.engineer.cards import lifecycle
-        if lifecycle.card_phase(track) == "ready":
-            title_key = "push.ready"
+    title_key = "push.ready" if status == "needs_you" else keys[status]
     push_fcm(i18n.t(title_key), body, track.get("id", ""),
              urgent=(track.get("priority") == "urgent"), kind=status,
              ask=ask_block)

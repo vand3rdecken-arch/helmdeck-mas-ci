@@ -632,10 +632,19 @@ def _evidence_lines(t, meta):
             refs = sorted({l.strip() for l in f if l.strip()})
     except OSError:
         refs = []
+    # 2026-10-20 17:37: Henry ignored 162731 because its reply said "waiting for
+    # my background build" - the build had died with the turn, nothing was
+    # registered, so nothing ever woke the card until the owner asked. The
+    # worker's prose is a claim; the registry is the fact Henry judges on.
+    from cells.engineer.cards.sessions_bg import running_bg
+    bg = running_bg(t)
+    bg_line = ("%d laufend (%s) - ihre Meldung weckt die Karte" % (len(bg), ", ".join(bg[:3])) if bg
+               else "keiner laeuft - ein 'ich warte' im Text weckt die Karte NICHT, nur ein Anstoss")
     return ("\nApp-Dateien geaendert: %s (Pfad-Heuristik: surfaces/app/, /ui/), .shots/: %d Dateien\nWebSearch/WebFetch im Turn: %d"
-            "\nVorbild-Code gelesen (laut .refs.log): %s"
+            "\nVorbild-Code gelesen (laut .refs.log): %s\nHintergrund-Tasks (Registry): %s"
             % ("ja" if app else "nein", n_shots, int((meta or {}).get("turn_web") or 0),
-               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner eingetragen"))
+               ", ".join(refs[:6]) + (" (+%d)" % (len(refs) - 6) if len(refs) > 6 else "") if refs else "keiner eingetragen",
+               bg_line))
 
 
 

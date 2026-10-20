@@ -1360,6 +1360,10 @@ def _move_lane(tid, lane, actor="owner", _autopark=True, note=""):
             tt.pop("merge_report", None); tt.pop("gate_report", None)
             tt["merge_kind"] = kind
             tt["status"] = "accepted"; tt["mode"] = mode
+            # lane WITH status: the ship decision, reclaim and hooks below take
+            # minutes, and an accepted card sat in "In Arbeit" for all of them
+            # (measured 2026-10-20: accepted 19:35:33, lane done 19:39:02)
+            tt["lane"] = "done"
             tt["done_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _record_outcome(tt)
         t = _mutate(tid, _accepted) or t
