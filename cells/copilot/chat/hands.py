@@ -169,6 +169,10 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
     brief = (brief_text if brief_text is not None else harness.brief("delegate" if agent else "hands"))
     if not room:
         brief += "\n\nTASK (from Henry" + (", because: " + why if why else "") + "):\n" + task.strip() + "\n"
+        if not agent:
+            brief += ("\nVERB TOOL (board changes, see BOARD CHANGES above): py -3.12 \"%s\" '<json>'\n"
+                      % os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+                          os.path.abspath(__file__))))), "ops", "tools", "henry_act.py").replace("\\", "/"))
     argv = [copilot.CLAUDE, "-p", "--output-format", "stream-json", "--verbose",
             "--permission-mode", copilot.henry_pmode(),
             "--append-system-prompt-file", copilot._brief_file(brief)]
@@ -192,7 +196,7 @@ def spawn(user, task, skey, card=None, why="", kind="hands", brief_text=None, ro
     # was told to "fill the processes" wrote the store directly (2026-10-20).
     # Not for a team-room run: that Henry acts for a room, not for this account.
     act_tok = ""
-    if not room:
+    if not room and not agent:      # a research agent reads; only a hands run may change the board
         from cells.copilot.chat import henry_act
         act_tok = henry_act.new_token()
         env.update(henry_act.env_for(act_tok))

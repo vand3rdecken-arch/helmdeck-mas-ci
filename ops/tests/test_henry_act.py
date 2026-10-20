@@ -140,5 +140,14 @@ for node in ast.walk(fn):
 missing = sorted(handled - set(copilot_actions.ACTION_KINDS))
 check(not missing, "ACTION_KINDS covers every verb _run_action handles (missing: %s)" % missing)
 
+# 8. the briefs teach it (and only where it is allowed)
+from spine.registry import harness
+check("henry_act.py" in harness.brief("board-copilot"), "Henry's brief teaches the in-turn tool")
+check("BOARD CHANGES" in harness.brief("hands") and "never by" in harness.brief("hands"),
+      "the hands brief says: board changes only through the verb tool, never the store")
+check("BOARD CHANGES" not in harness.brief("delegate"), "a research agent's brief does not offer it")
+check(os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "henry_act.py")),
+      "the CLI the briefs name exists")
+
 print("PASS test_henry_act" if not fails else "FAIL (%d)" % len(fails))
 sys.exit(1 if fails else 0)

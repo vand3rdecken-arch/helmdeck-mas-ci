@@ -6133,6 +6133,30 @@ DEBT = [
                "read the state back - then flip this to paid.",
         "since": "2026-10-18",
     },
+    {
+        "id": "actions-block-legacy",
+        "order": 97,
+        "title": "Henry's verbs have two doors: the trailing ```actions block and henry_act",
+        "status": "open",
+        "what": "Henry's verbs run through ONE executor (copilot_actions._run_action) but two "
+                "doors. The ```actions block runs after his turn and its result reaches him a "
+                "turn later (copilot._conclude_turn -> _pending_actions); ops/tools/henry_act.py "
+                "(POST /henry/act, per-process token, cells/copilot/chat/henry_act.py) runs "
+                "the same verbs inside the turn and returns the result at once. The block "
+                "stays for a plain one-verb reply, for the OpenCode engine (no token) and "
+                "for surfaces without Bash.",
+        "why_it_bites": "A verb whose result he needs (an id, a refusal) must go through the "
+                        "tool; one issued through the block is blind for a whole turn. The "
+                        "brief teaches the choice in prose (board-copilot.md VERBS RUN TWO "
+                        "WAYS) - the prose is a request, not a boundary.",
+        "trigger": "Tokens per Henry turn and ERGEBNIS-folded follow-up turns measured over a "
+                   "week with the tool live (spine.turn.econ spend events, source=chat).",
+        "fix": "If the tool carries the load, retire the block for every surface that has "
+               "Bash and keep it only as the advisory/OpenCode fallback; the broker's own "
+               "verdict catalog (henry_broker._execute) maps onto _run_action where names "
+               "agree (phase 3 of the actions-as-tool plan).",
+        "since": "2026-10-20",
+    },
 ]
 
 def list_debt():

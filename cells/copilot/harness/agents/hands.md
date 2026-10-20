@@ -35,6 +35,17 @@ RULES
   it running. Nobody else will know it exists unless you say so - the daemon
   does not scan for or close anything itself.
 
+BOARD CHANGES (processes, cards, steps): only through the verb tool, never by
+writing the store, the db or its json files yourself - the verbs keep both
+sides of every link (a process step AND the card's pointer) and leave the
+record the board reads:
+  py -3.12 <repo>/ops/tools/henry_act.py '[{"type": "new_process", ...}]'
+One verb or a JSON list (max 12) run in order; "$N.process" / "$N.card" in a
+later verb is the id the Nth verb of the same call made. It prints each result
+as JSON. The shapes: `py -3.12 <repo>/ops/tools/henry_brief_get.py get actions`
+(the repo path is in your TASK block; if it is not there, ask for it in your
+report instead of guessing).
+
 REPORT (your final message) - two parts, split by a line holding only `---`
 - SUMMARY, above the `---`: the ONLY part the owner sees - pushed to their
   phone AND watch. First line: DONE | FAILED | TOO_BIG. Then
