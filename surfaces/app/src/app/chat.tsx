@@ -802,6 +802,24 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
           : (f.result || "").split("\n")[0].replace(/^(DONE|FAILED|TOO_BIG)\s*[-:]\s*/i, "").slice(0, 120) || undefined } };    }
     return st;
   }
+  // The PERSISTED rows (older pages + the live window), folded once per change
+  // of their inputs - NOT per render. Before this the whole list was rebuilt
+  // inside render while Henry streamed (every 500 ms), each row a fresh object,
+  // so every Markdown bubble in the history re-laid-out per tick and keystrokes
+  // in the question panel queued behind it (owner 2026-10-20). `withLive` is
+  // what the React Compiler memoizes on threadById/followups/tr; listing it
+  // keeps the dependency honest without the compiler.
+  const persistedSteps = useMemo<TStep[]>(() => {
+    const inWindow = new Set(msgs.map((m) => m.seq).filter((x) => typeof x === "number"));
+    const all = [...older.filter((m) => !(typeof m.seq === "number" && inWindow.has(m.seq))), ...msgs];
+    const s = foldCompaction(all.map((m): TStep => ({ ...withLive(toStep(m, me?.name, tr)), date: m.date })));
+    // STATIC, local-only greeting (no daemon call, no turn, no cost) - never
+    // persisted, so it renders again every time this stays true and
+    // disappears the moment either half (the sample card, an actual message)
+    // goes away.
+    if (showWelcome) s.unshift({ role: "assistant", kind: "text", text: tr("chat.welcome"), by: "Henry", byKind: "henry" });
+    return s;
+  }, [msgs, older, me?.name, tr, showWelcome, withLive]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Typed WHILE Henry's turn runs: the daemon folds it into that turn when a
    *  tool call is open (copilot.try_inject - measured: the CLI takes a stdin
@@ -996,15 +1014,11 @@ export function ChatBody({ onClose, wide, tab, tabClear }: { onClose?: () => voi
   }
 
   // The rows the shared transcript draws: the persisted log + the live turn.
+  // Only the TAIL is rebuilt here; the persisted rows keep their identity
+  // across the 500 ms live poll (see persistedSteps) so Transcript's memoized
+  // rows skip them and a stream tick costs one bubble, not the whole history.
   const surfaceSteps: TStep[] = (() => {
-                const inWindow = new Set(msgs.map((m) => m.seq).filter((x) => typeof x === "number"));
-                const all = [...older.filter((m) => !(typeof m.seq === "number" && inWindow.has(m.seq))), ...msgs];
-                const s = foldCompaction(all.map((m): TStep => ({ ...withLive(toStep(m, me?.name, tr)), date: m.date })));
-                // STATIC, local-only greeting (no daemon call, no turn, no
-                // cost) - never persisted, so it renders again every time
-                // this stays true and disappears the moment either half
-                // (the sample card, an actual message) goes away.
-                if (showWelcome) s.unshift({ role: "assistant", kind: "text", text: tr("chat.welcome"), by: "Henry", byKind: "henry" });
+                const s = [...persistedSteps];
                 // while streaming, append the board agent's live typing as a
                 // streaming bot step - the SAME row a card worker streams into.
                 if (busy) {

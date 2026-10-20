@@ -48,7 +48,9 @@ export interface TStep extends Omit<CompactionFields, "event"> {
   agent?: boolean;   // a board-Agent (copilot) message, not a Worker one — legacy,
                       // superseded by byKind but still folded for old timeline rows
   by?: string;        // display name of the sender ("Tien", "Henry")
-  byKind?: "human" | "henry" | "worker";
+  byKind?: "human" | "henry" | "worker" | "agent";
+  /** byKind "agent": the member an external agent acts for (access grant) */
+  onBehalf?: string;
   to?: string;         // on a user step: the resolved recipient ("henry" | "worker")
   streaming?: boolean; detail?: ToolDetail;
   run?: string;        // kind "run": the delegated run's id (hands id / "bg:<uid>")
@@ -474,53 +476,67 @@ function ReplySwipe({ onReply, t, children }: { onReply: () => void; t: ThemeTok
   );
 }
 
-export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, onJump }: {
-  steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number;
-  /** answer THIS message (messenger-style); absent = the surface has no replies */
-  onReply?: (s: TStep) => void;
-  /** scroll the chat to content offset y (a quote jumping back to its message) */
-  onJump?: (y: number) => void;
+/** The kinds Row draws through a dedicated branch; everything else is prose
+ *  (a text bubble) and takes part in the Slack-style sender grouping. Kept in
+ *  ONE place so the grouping computed by Transcript and the branch taken by
+ *  Row can never disagree. */
+function isProse(s: TStep): boolean {
+  const k = s.kind;
+  if (k === "image" && s.url) return false;
+  if (k === "answered" && s.answered) return false;
+  return !(k === "day" || k === "turn" || k === "error" || k === "compaction" || k === "system" || k === "note"
+    || k === "usage" || k === "card" || k === "run" || k === "tool" || k === "todos" || k === "plan"
+    || k === "thinking" || k === "result");
+}
+
+type RowCallbacks = { onRewind?: (text: string) => void; onReply?: (s: TStep) => void; onJump?: (y: number) => void };
+type RowPositions = { rowY: Map<number, number>; rootY: number };
+
+/** ONE transcript row, memoized on its step OBJECT. The board chat polls the
+ *  live turn every 500 ms while Henry streams and the card chat re-renders on
+ *  every event tick; before this, each tick re-laid-out EVERY historical row
+ *  through the Markdown renderer, which blocked the JS thread long enough that
+ *  typing in the question panel (same tree) showed up in bursts (owner
+ *  2026-10-20: "typing in desktop question box is sometimes slow"). The
+ *  callbacks ride in a ref so a parent's fresh closure never breaks the memo;
+ *  only the step, the two booleans and the scalars are compared. The memo
+ *  only pays off when the caller keeps step identity across renders - see
+ *  chat.tsx `persistedSteps` (the live tail is appended separately). */
+const Row = memo(function Row({ s, lastTool, showHeader, me, ctxWindow, cbs, pos, hasReply, hasRewind }: {
+  s: TStep; lastTool: boolean; showHeader: boolean; me?: string; ctxWindow?: number;
+  cbs: React.MutableRefObject<RowCallbacks>; pos: React.MutableRefObject<RowPositions>;
+  hasReply: boolean; hasRewind: boolean;
 }) {
   const t = useTheme();
   const tr = useT();
   const router = useRouter();
-  // where each message with a seq sits, relative to this list - for the jump
-  const rowY = useRef(new Map<number, number>());
-  const rootY = useRef(0);
+  const lang = useLang();
+  const onReply = hasReply ? (x: TStep) => cbs.current.onReply?.(x) : undefined;
+  const onRewind = hasRewind ? (text: string) => cbs.current.onRewind?.(text) : undefined;
   const jumpTo = (seq?: number) => {
-    if (seq == null || !onJump) return undefined;
-    return () => { const y = rowY.current.get(seq); if (y != null) onJump(rootY.current + y - 12); };
+    if (seq == null || !cbs.current.onJump) return undefined;
+    return () => { const y = pos.current.rowY.get(seq); if (y != null) cbs.current.onJump?.(pos.current.rootY + y - 12); };
   };
-  const wrap = (s: TStep, key: string, el: React.ReactElement) => (
-    <View key={key} onLayout={s.seq != null ? (e) => { rowY.current.set(s.seq as number, e.nativeEvent.layout.y); } : undefined}>
+  const wrap = (el: React.ReactElement) => (
+    <View onLayout={s.seq != null ? (e) => { pos.current.rowY.set(s.seq as number, e.nativeEvent.layout.y); } : undefined}>
       {onReply && !s.streaming ? <ReplySwipe onReply={() => onReply(s)} t={t}>{el}</ReplySwipe> : el}
     </View>
   );
-  const replyBtn = (s: TStep) => onReply ? (
-    <Pressable hitSlop={8} onPress={() => onReply(s)} accessibilityLabel={tr("chat.reply")} testID="reply-btn">
+  const replyBtn = (x: TStep) => onReply ? (
+    <Pressable hitSlop={8} onPress={() => onReply(x)} accessibilityLabel={tr("chat.reply")} testID="reply-btn">
       <Ionicons name="return-up-back-outline" size={13} color={t.txtTertiary} />
     </Pressable>) : null;
-  const lang = useLang();
-  const steps = withDays(readable(rawSteps));
-  const keyFor = keyFactory();
-  let lastToolIdx = -1;
-  for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
-  let lastTextSender: string | null = null;   // consecutive-run grouping (Slack-style)
-  return (
-    <View style={{ gap: 8 }} onLayout={(e) => { rootY.current = e.nativeEvent.layout.y; }}>
-      {steps.map((s, i) => {
         const kind = s.kind;
-        const key = keyFor(s, i);
         // Turn lifecycle as first-class items (Phase 3.2/3.3): `started` renders
         // nothing (the owner's message right above it already marks the turn),
         // `completed` is a quiet usage line, `canceled` a centered marker,
         // `failed` a real error card with the error text + usage.
-        if (kind === "image" && s.url) return wrap(s, key, (
+        if (kind === "image" && s.url) return wrap((
           <View style={{ alignSelf: s.byKind === "human" ? "flex-end" : "flex-start", gap: 3 }}>
             <ChatImage url={s.url} alt={s.name} />
             {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
           </View>));
-        if (kind === "answered" && s.answered) return wrap(s, key, (
+        if (kind === "answered" && s.answered) return wrap((
           <View testID="answered-question" style={{ alignSelf: s.byKind === "henry" ? "flex-start" : "flex-end", maxWidth: "88%", borderWidth: 1,
             borderColor: s.byKind === "henry" ? t.accent2 + "66" : t.borderSubtle, borderRadius: 12, padding: 10, gap: 8, backgroundColor: t.surface1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -550,7 +566,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
             ))}
           </View>));
         if (kind === "day") return (
-          <View key={`day-${s.text}`} accessibilityRole="header" testID="day-separator"
+          <View accessibilityRole="header" testID="day-separator"
             style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: t.borderSubtle }} />
             <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600" }}>{dayLabel(s.text || "", lang, tr)}</Text>
@@ -558,7 +574,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
           </View>);
         if (kind === "turn") {
           if (s.event === "failed") return (
-            <View key={key} style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12", gap: 4 }}>
+            <View style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12", gap: 4 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                 <Ionicons name="alert-circle" size={13} color={t.danger} />
                 <Text style={{ color: t.danger, fontSize: 12, fontWeight: "700", flex: 1 }}>{tr("transcript.turnFailed")}</Text>
@@ -570,11 +586,11 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
               ) : null}
             </View>);
           if (s.event === "canceled") return (
-            <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
+            <View style={{ alignItems: "center", paddingVertical: 4 }}>
               <Text style={{ color: t.warn, fontSize: 11 }}>⏹ {tr("transcript.turnCanceled")}{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
             </View>);
           if (s.event === "completed" && usageLabel(s.usage)) return (
-            <View key={key} style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 4, paddingVertical: 1 }}>
+            <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 4, paddingVertical: 1 }}>
               <Ionicons name="checkmark-circle-outline" size={10} color={t.txtTertiary} />
               <Text style={{ color: t.txtTertiary, fontSize: 10 }}>
                 {tr("transcript.turnDone")} · {usageLabel(s.usage)}{costLabel(s.cost)}{s.ts ? ` · ${tsLabel(s)}` : ""}
@@ -584,7 +600,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         }
         // A stream/runtime error as its own item (Phase 3.3), never a prose bubble.
         if (kind === "error") return (
-          <View key={key} style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12" }}>
+          <View style={{ borderWidth: 1, borderColor: t.danger + "66", borderRadius: 8, padding: 9, backgroundColor: t.danger + "12" }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Ionicons name="alert-circle" size={13} color={t.danger} />
               <Text style={{ color: t.danger, fontSize: 12, flex: 1 }}>{s.text || s.error || ""}</Text>
@@ -593,9 +609,9 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
           </View>);
         // a typed compaction item (event set) is Paseo's CompactionMarker; the
         // event-less step is the session-chain break divider (`prev`) below
-        if (kind === "compaction" && s.event) return <CompactionMarker key={key} s={s} />;
+        if (kind === "compaction" && s.event) return <CompactionMarker s={s} />;
         if (kind === "compaction") return (
-          <View key={key} style={{ alignItems: "center", paddingVertical: 4 }}>
+          <View style={{ alignItems: "center", paddingVertical: 4 }}>
             <Text style={{ color: t.txtTertiary, fontSize: 11 }}>⟳ {tr("transcript.compacted")}{s.ts ? ` · ${tsLabel(s)}` : ""}</Text>
           </View>);
         if (kind === "system" || kind === "note") {
@@ -603,34 +619,31 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
           const bad = /\b(FAILED|BOUNCED|conflict)\b/i.test(s.text || "");
           const c = bad ? t.danger : good ? t.ok : t.txtTertiary;
           return (
-            <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 2 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 2 }}>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c }} />
               <Text style={{ color: c, fontSize: 11.5, flex: 1 }}>{s.text}</Text>
               {s.ts ? <Text style={{ color: t.txtTertiary, fontSize: 10 }}>{tsLabel(s)}</Text> : null}
               <CopyBtn text={s.text || ""} color={t.txtTertiary} />
             </View>);
         }
-        if (kind === "usage") return <UsageChip key={key} s={s} t={t} ctxWindow={ctxWindow} />;
-        if (kind === "card") return <RunTile key={key} kind="card" card={s.card} title={s.label || s.card || ""} live={s.live} t={t} />;
-        if (kind === "run") return <RunTile key={key} kind={s.runKind ?? "agent"} title={s.label || s.text || ""} live={s.live} t={t} />;
-        if (kind === "tool") return <ToolCard key={key} s={s} t={t} defaultOpen={i === lastToolIdx} />;
-        if (kind === "todos") return <Todos key={key} s={s} t={t} />;
+        if (kind === "usage") return <UsageChip s={s} t={t} ctxWindow={ctxWindow} />;
+        if (kind === "card") return <RunTile kind="card" card={s.card} title={s.label || s.card || ""} live={s.live} t={t} />;
+        if (kind === "run") return <RunTile kind={s.runKind ?? "agent"} title={s.label || s.text || ""} live={s.live} t={t} />;
+        if (kind === "tool") return <ToolCard s={s} t={t} defaultOpen={lastTool} />;
+        if (kind === "todos") return <Todos s={s} t={t} />;
         if (kind === "plan") return (
-          <View key={key} style={{ borderWidth: 1, borderColor: t.accent + "55", borderRadius: 8, padding: 9, backgroundColor: t.accent + "12" }}>
+          <View style={{ borderWidth: 1, borderColor: t.accent + "55", borderRadius: 8, padding: 9, backgroundColor: t.accent + "12" }}>
             <Text style={{ color: t.accent, fontSize: 11, fontWeight: "700", marginBottom: 4 }}>{tr("transcript.plan")}</Text>
             <Markdown>{s.text || ""}</Markdown>
           </View>);
-        if (kind === "thinking") return <Thought key={key} s={s} t={t} />;
-        if (kind === "result") return <Text key={key} style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
+        if (kind === "thinking") return <Thought s={s} t={t} />;
+        if (kind === "result") return <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{s.text}</Text>;
 
         const mine = s.by ? s.by === me : (s.role === "user" || s.cls === "user");
         // byKind is authoritative; `agent` is the legacy flag old timeline
         // rows carry (before this field existed) and still maps to "henry".
         const byKind = s.byKind ?? (s.agent ? "henry" : mine ? "human" : "worker");
         const ac = byKind === "henry" ? t.accent2 : byKind === "human" && !mine ? t.human : t.accent;
-        const senderKey = mine ? "me" : byKind + ":" + (s.by || "");
-        const showHeader = !mine && senderKey !== lastTextSender;
-        lastTextSender = senderKey;
         // A worker step normally has no `by` (drivers.py only stamps it on the
         // human's steer) and falls back to the generic "Worker". When one DOES
         // carry it - the board chat's mirrored card events, labelled
@@ -638,10 +651,12 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         // inbox reads as the same anonymous "Worker" and the owner cannot tell
         // WHICH card is asking.
         const senderLabel = byKind === "henry" ? tr("transcript.boardAgent")
-          : byKind === "worker" ? (s.by || tr("transcript.worker")) : (s.by || "?");
+          : byKind === "worker" ? (s.by || tr("transcript.worker"))
+          : byKind === "agent" ? tr("transcript.externalAgent", { name: s.by || "?", who: s.onBehalf || "?" })
+          : (s.by || "?");
         const senderIcon = byKind === "henry" ? "sparkles-outline"
-          : byKind === "worker" ? "construct-outline" : "person-outline";
-        if (mine) return wrap(s, key,
+          : byKind === "worker" ? "construct-outline" : byKind === "agent" ? "hardware-chip-outline" : "person-outline";
+        if (mine) return wrap(
           <View style={{ alignSelf: "flex-end", maxWidth: "88%", backgroundColor: ac + "22", borderRadius: 10, padding: 10 }}>
             {s.quote ? <QuoteBlock q={s.quote} color={t.accent2} t={t} onPress={jumpTo(s.quote.seq)} /> : null}
             <Collapsible text={s.text || ""} color={ac}
@@ -658,7 +673,7 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
         // not-mine text (Henry, the Worker, or another human) — a sender
         // header only on the first message of a consecutive run from them
         // (Slack-style grouping), colored/badged by who's speaking.
-        return wrap(s, key,
+        return wrap(
           <View style={{ backgroundColor: t.surface1, borderRadius: 10, padding: 10, borderWidth: 1, borderColor: byKind !== "worker" ? ac + "66" : t.borderSubtle }}>
             {showHeader ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 }}>
@@ -693,6 +708,41 @@ export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, 
               </View>
             ) : null}
           </View>);
+});
+
+export function Transcript({ steps: rawSteps, onRewind, me, ctxWindow, onReply, onJump }: {
+  steps: TStep[]; onRewind?: (text: string) => void; me?: string; ctxWindow?: number;
+  /** answer THIS message (messenger-style); absent = the surface has no replies */
+  onReply?: (s: TStep) => void;
+  /** scroll the chat to content offset y (a quote jumping back to its message) */
+  onJump?: (y: number) => void;
+}) {
+  // where each message with a seq sits, relative to this list - for the jump
+  const pos = useRef<RowPositions>({ rowY: new Map(), rootY: 0 });
+  // latest callbacks, read at call time - see Row
+  const cbs = useRef<RowCallbacks>({ onRewind, onReply, onJump });
+  cbs.current = { onRewind, onReply, onJump };
+  const steps = withDays(readable(rawSteps));
+  const keyFor = keyFactory();
+  let lastToolIdx = -1;
+  for (let i = steps.length - 1; i >= 0; i--) { if (steps[i].kind === "tool") { lastToolIdx = i; break; } }
+  let lastTextSender: string | null = null;   // consecutive-run grouping (Slack-style)
+  return (
+    <View style={{ gap: 8 }} onLayout={(e) => { pos.current.rootY = e.nativeEvent.layout.y; }}>
+      {steps.map((s, i) => {
+        const key = s.kind === "day" ? `day-${s.text}` : keyFor(s, i);
+        // a sender header only on the first message of a consecutive run from
+        // the same not-me sender (Slack-style grouping); prose rows only
+        let showHeader = false;
+        if (isProse(s)) {
+          const mine = s.by ? s.by === me : (s.role === "user" || s.cls === "user");
+          const byKind = s.byKind ?? (s.agent ? "henry" : mine ? "human" : "worker");
+          const senderKey = mine ? "me" : byKind + ":" + (s.by || "");
+          showHeader = !mine && senderKey !== lastTextSender;
+          lastTextSender = senderKey;
+        }
+        return <Row key={key} s={s} lastTool={i === lastToolIdx} showHeader={showHeader} me={me} ctxWindow={ctxWindow}
+          cbs={cbs} pos={pos} hasReply={!!onReply} hasRewind={!!onRewind} />;
       })}
     </View>
   );
