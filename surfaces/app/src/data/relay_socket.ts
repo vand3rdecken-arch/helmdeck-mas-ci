@@ -28,7 +28,11 @@
 
 /** v = board version, c = chat cursor, t = topics that moved since the previous
  *  event (spine/storage/db.py topics_since) - absent = unknown, refetch all. */
-export type RelayEvent = { v?: number; c?: number; t?: string[] };
+import type { DaemonTiming } from "./net_timing";
+
+export type RelayEvent = { v?: number; c?: number; t?: string[];
+  /** the card patch since `from` (routes_tracks.tracks_patch) - tracks_sync.applyPushedPatch */
+  tp?: { from: string; cookie: string; patch: import("./tracks_sync").PatchOp[] } };
 
 export interface SocketDeps {
   /** wss://…/tunnel/client?room=…&pub=… - or null when not in relay mode. */
@@ -57,7 +61,7 @@ const BACKOFF_MAX_MS = 30_000;
  *  a socket message is meant to stay small). */
 export const SOCKET_MAX_REQUEST = 900 * 1024;
 
-type Pending = { resolve: (r: { status: number; body: string }) => void; reject: (e: Error) => void; timer?: ReturnType<typeof setTimeout> };
+type Pending = { resolve: (r: { status: number; body: string; tm?: DaemonTiming }) => void; reject: (e: Error) => void; timer?: ReturnType<typeof setTimeout> };
 
 export class RelaySocket {
   private deps: SocketDeps | null = null;
@@ -138,7 +142,7 @@ export class RelaySocket {
 
   /** One sealed request over the socket. `inner` is the plaintext
    *  {method, path, headers, body} JSON - the exact shape the HTTP path seals. */
-  request(inner: string, timeoutMs: number): Promise<{ status: number; body: string }> {
+  request(inner: string, timeoutMs: number): Promise<{ status: number; body: string; tm?: DaemonTiming }> {
     const ws = this.ws;
     const deps = this.deps;
     if (!ws || !deps || this.state !== "open") return Promise.reject(new SocketRetryHttp("socket not open"));
@@ -215,9 +219,9 @@ export class RelaySocket {
         if (d.retry === "http") return p.reject(new SocketRetryHttp("room asked for http"));
         if (d.status === 503) return p.reject(new SocketError("offline", d.error));
         if (typeof d.cipher !== "string" || !d.cipher) return p.reject(new SocketError("closed", "empty reply"));
-        let resp: { status?: number; body?: string };
+        let resp: { status?: number; body?: string; tm?: DaemonTiming };
         try { resp = JSON.parse(deps.open(d.cipher)); } catch { return p.reject(new SocketError("keys")); }
-        p.resolve({ status: resp.status ?? 200, body: resp.body ?? "" });
+        p.resolve({ status: resp.status ?? 200, body: resp.body ?? "", tm: resp.tm });
       }
     };
     ws.onclose = () => {

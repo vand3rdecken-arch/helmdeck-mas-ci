@@ -97,8 +97,19 @@ def tracks_list_get(self, user):
     # The view is the NON-archived board, so a card that got archived or
     # deleted is a `del`. A cookie from another daemon process (epoch), a
     # malformed one or the empty one gets `clear` + every card = re-baseline.
+    return self._send(200, json.dumps(tracks_patch(user, q["cookie"][0])))
+
+
+def tracks_patch(user, cookie):
+    """{cookie, patch[, older_done]} for `user` since `cookie` - THE one
+    computation behind the pull (GET /tracks?cookie=) and the socket push
+    (relay_client._EventPublisher), so both say the same thing about a card.
+    A cookie from another daemon process (epoch), a malformed one or the empty
+    one gets `clear` + every card = re-baseline."""
+    from cells.engineer.cards import sessions
+    from spine.storage import db
     try:
-        epoch, since = (int(x) for x in q["cookie"][0].split("."))
+        epoch, since = (int(x) for x in str(cookie).split("."))
     except ValueError:
         epoch, since = 0, 0
     full = epoch != db.TRACK_EPOCH
@@ -116,7 +127,7 @@ def tracks_list_get(self, user):
             patch.append({"op": "put", "key": t["id"], "value": _view(sessions.present(t), user)})
         else:
             patch.append({"op": "del", "key": t["id"]})
-    return self._send(200, json.dumps({"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch, **older}))
+    return {"cookie": "%d.%d" % (db.TRACK_EPOCH, v), "patch": patch, **older}
 
 
 def tracks_get(self, user, tid):

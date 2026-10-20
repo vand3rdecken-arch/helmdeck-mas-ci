@@ -130,6 +130,29 @@ check(rc._held_disarm(token) and "held-2" not in delivered, "fast route: no held
 time.sleep(0.3)
 check("held-2" not in delivered, "a disarmed request never fires later")
 
+# _serve_one end to end, sealed both ways (the path every phone frame takes):
+# in-process answer, decryptable by the phone, carrying the timing split.
+from spine.comms import e2ee                    # noqa: E402
+rc.serve_inproc(H)
+d_sk, d_pk = e2ee.generate_keypair()
+p_sk, p_pk = e2ee.generate_keypair()
+phone_pub = e2ee.export_pub(p_pk)
+events.save_settings({"relay": {"phone_pubs": [phone_pub]}}, actor="test")
+inner = frame("GET", "/me", who="owner1")
+fr = {"id": "f1", "pub": phone_pub, "t": time.time() - 0.25,
+      "cipher": e2ee.seal_b64(json.dumps(inner).encode(), p_sk, d_pk)}
+got = []
+rc._serve_one("http://relay.invalid", "room", e2ee.export_sec(d_sk), PORT, fr,
+              send=lambda fid, cipher, to: got.append((fid, cipher, to)))
+check(len(got) == 1 and got[0][0] == "f1" and got[0][2] == phone_pub, "one sealed reply, to the asking phone")
+if got:
+    reply = json.loads(e2ee.open_b64(got[0][1], p_sk, d_pk))
+    check(reply.get("status") == 200 and json.loads(reply["body"]).get("name") == "owner1",
+          "the phone opens it: 200, its own /me")
+    tm = reply.get("tm") or {}
+    check(200 <= tm.get("q", -1) <= 2000, "tm.q = the relay queue wait (%s ms, frame was 250 ms old)" % tm.get("q"))
+    check(0 <= tm.get("h", -1) < 2000, "tm.h = the handler time (%s ms)" % tm.get("h"))
+
 _srv.shutdown()
 print("RESULT:", "PASS" if not _fails else "FAIL (%d)" % len(_fails))
 sys.exit(1 if _fails else 0)

@@ -6,6 +6,7 @@ import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 
 import { useConfig } from "@/data/config";
 import { diagClear, diagEntries, dumpDiag, useDiagSeqValue, type DiagEntry } from "@/data/diag";
+import { slowestPaths, timingSummary } from "@/data/net_timing";
 import { useDemo } from "@/data/demo";
 import { setupAvailable } from "@/data/setup";
 import { useT } from "@/i18n";
@@ -55,6 +56,10 @@ function env(): string[] {
     `token     ${cfg.token ? "present" : "none"}`,
     `setup     ${setupAvailable() ? "available" : "not available"}`,
     `demo      ${useDemo.getState().active ? "on" : "off"}`,
+    // where a relay request's time goes (data/net_timing.ts): medians of the
+    // last 100, split by the daemon's own queue/handler figures
+    ...timingSummary().map((l) => `timing    ${l}`),
+    ...slowestPaths(),
   ];
 }
 

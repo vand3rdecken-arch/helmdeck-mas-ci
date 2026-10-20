@@ -1,3 +1,4 @@
+import { recordTiming, type DaemonTiming } from "./net_timing";
 import { track } from "./analytics";
 import { queryClient } from "./query";
 import { syncTracks, type PullResponse } from "./tracks_sync";
@@ -100,7 +101,7 @@ function authHeaders(): Record<string, string> {
 // "do not abort" - the ONLY caller that passes it is req()'s POST /chat, since
 // a client abort there leaves the send un-acked, which is exactly what drives
 // the chat_dedupe replay-duplicate path (already paid for once, see req()).
-async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string }> {
+async function relayReq(method: string, path: string, bodyStr: string, timeoutMs?: number): Promise<{ status: number; body: string; tm?: DaemonTiming; via: "socket" | "http" }> {
   const { relayUrl, room, daemonPub, mySec, myPub } = useConfig.getState();
   const inner = JSON.stringify({ method, path, headers: authHeaders(), body: bodyStr });
   // THE SOCKET FIRST (2026-09-24): the same sealed inner request, but over the
@@ -120,7 +121,7 @@ async function relayReq(method: string, path: string, bodyStr: string, timeoutMs
       // The chat POST is unbounded on HTTP; the socket needs SOME bound so a
       // lost reply cannot leak a pending entry. The daemon's held leg answers
       // by 115 s (relay_client LOCAL_TIMEOUT), so 180 s never cuts a real one.
-      return await relaySocket.request(inner, timeoutMs ?? 180_000);
+      return { ...(await relaySocket.request(inner, timeoutMs ?? 180_000)), via: "socket" };
     } catch (e) {
       if (e instanceof SocketRetryHttp) {
         // fall through to HTTP
@@ -164,13 +165,13 @@ async function relayReq(method: string, path: string, bodyStr: string, timeoutMs
   if (!r.ok) throw new TransportError(t("net.relayError", { status: r.status }));
   const out = JSON.parse(await r.text());
   if (!out.cipher) throw new TransportError(t("net.desktopSilent"));
-  let resp: { status?: number; body?: string };
+  let resp: { status?: number; body?: string; tm?: DaemonTiming };
   try {
     resp = JSON.parse(open(out.cipher, mySec, daemonPub));
   } catch {
     throw new TransportError(t("net.badKeys"));
   }
-  return { status: resp.status ?? 200, body: resp.body ?? "" };
+  return { status: resp.status ?? 200, body: resp.body ?? "", tm: resp.tm, via: "http" };
 }
 
 async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal, skipAuthGate = false): Promise<T> {
@@ -209,8 +210,12 @@ async function req<T>(method: string, path: string, body?: unknown, signal?: Abo
       // margin), 20s for a normal request, and POST /chat left UNBOUNDED
       // (timeoutMs undefined) - see relayReq's docstring for why a chat abort
       // is worse than the hang it would fix.
-      ({ status, body: txt } = await relayReq(method, path, bodyStr,
-        path === "/chat" ? undefined : isLongPoll ? 35_000 : 20_000));
+      const t0 = Date.now();
+      const rr = await relayReq(method, path, bodyStr,
+        path === "/chat" ? undefined : isLongPoll ? 35_000 : 20_000);
+      ({ status, body: txt } = rr);
+      // a long-poll's round trip is its hold time, not the path's - leave it out
+      if (!isLongPoll) recordTiming(path, Date.now() - t0, rr.tm, rr.via);
     } else {
       // Bare fetch has NO default timeout (Paseo's daemon client bounds every
       // probe to 6-10s; this had none). Measured failure: a fresh install's

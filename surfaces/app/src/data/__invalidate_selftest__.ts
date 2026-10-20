@@ -8,6 +8,7 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 
 import { keysFor, makeInvalidator } from "./invalidate";
+import { _resetTimingForTest, recordTiming, slowestPaths, timingSummary } from "./net_timing";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
@@ -93,7 +94,22 @@ async function topicsRun() {
   burst.dispose();
 }
 
+// where a relay request's time goes: network = total - queue - daemon (medians)
+function timingRun() {
+  _resetTimingForTest();
+  recordTiming("/tracks?cookie=1.2", 900, { q: 100, h: 50 }, "socket");
+  recordTiming("/tracks?cookie=1.3", 800, { q: 100, h: 50 }, "socket");
+  recordTiming("/me", 300, { q: 20, h: 10 }, "socket");
+  recordTiming("/old", 999, undefined, "socket");                 // older daemon: no split, not counted
+  const line = timingSummary()[0] ?? "";
+  check(line.includes("n=3") && line.includes("total 800 ms") && line.includes("network 650"),
+        "timing splits the round trip: " + line);
+  check((slowestPaths(1)[0] ?? "").includes("/tracks") && !(slowestPaths(1)[0] ?? "").includes("cookie"),
+        "slowest path grouped without its query string: " + slowestPaths(1)[0]);
+}
+
 (async () => {
+  timingRun();
   await topicsRun();
   const old = await run("old");
   const neu = await run("new");

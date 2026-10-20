@@ -21,6 +21,7 @@ import { useHealth } from "@/data/health";
 import { makeInvalidator } from "@/data/invalidate";
 import { useAuthGate } from "@/data/authgate";
 import { ensureChatFresh, useStreamCaps } from "@/data/stream";
+import { applyPushedPatch, TRACKS_KEY } from "@/data/tracks_sync";
 import { clientSocketUrl, relaySocket, type RelayEvent } from "@/data/relay_socket";
 import { open as e2eeOpen, seal as e2eeSeal } from "@/data/e2ee";
 import { useConfig, useNeedsPairing } from "@/data/config";
@@ -90,7 +91,12 @@ function useGlobalStream() {
     const inv = makeInvalidator(queryClient, 2000);
     const apply = (r: RelayEvent | undefined) => {
       if (typeof r?.v === "number") {
-        if (r.v !== v) inv.changed(Array.isArray(r.t) ? r.t : undefined);
+        if (r.v !== v) {
+          // the event may carry the card patch itself: then the board needs no
+          // /tracks request, only the views derived from it refetch
+          const settled = applyPushedPatch(queryClient, r.tp) ? [TRACKS_KEY] : [];
+          inv.changed(Array.isArray(r.t) ? r.t : undefined, settled);
+        }
         v = r.v;
       }
       // Guarded on `typeof`, not on truthiness: a daemon older than this

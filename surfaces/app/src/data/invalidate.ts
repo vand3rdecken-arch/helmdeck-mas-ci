@@ -73,24 +73,36 @@ export function makeInvalidator(qc: Pick<QueryClient, "invalidateQueries">, ever
   // what the pending wave refreshes: null = everything, else the union of the
   // events' keys since the last wave (a burst of different topics never loses one)
   let pending: Set<string> | null | undefined;
+  // EXACT query keys the wave's events already brought the data for (a pushed
+  // card patch fills ["tracks"] - but not ["tracks", id], the full card the
+  // detail screen holds). Only what EVERY event in the wave settled counts:
+  // one event whose patch could not apply means the pull must still run.
+  let settledAll: Set<string> | undefined;
   const fire = () => {
     timer = null;
     last = Date.now();
     const keys = pending;
+    const settled = settledAll ?? new Set<string>();
     pending = undefined;
+    settledAll = undefined;
     if (keys === null || keys === undefined) {
       void qc.invalidateQueries(undefined, { cancelRefetch: false });
     } else if (keys.size) {
-      void qc.invalidateQueries({ predicate: (q) => keys.has(String(q.queryKey[0])) }, { cancelRefetch: false });
+      void qc.invalidateQueries({
+        predicate: (q) => keys.has(String(q.queryKey[0])) && !settled.has(JSON.stringify(q.queryKey)),
+      }, { cancelRefetch: false });
     }
   };
   return {
     /** Something moved: schedule one refetch wave (coalesced). `topics` = what
-     *  the daemon said moved; omitted = unknown, refetch everything. */
-    changed(topics?: readonly string[]) {
+     *  the daemon said moved; omitted = unknown, refetch everything. `settled`
+     *  = exact query keys this event already filled (never refetched for it). */
+    changed(topics?: readonly string[], settled: readonly (readonly unknown[])[] = []) {
       const keys = keysFor(topics);
       if (keys === null || pending === null) pending = null;
       else pending = new Set([...(pending ?? []), ...keys]);
+      const mine = new Set(settled.map((k) => JSON.stringify(k)));
+      settledAll = settledAll === undefined ? mine : new Set([...settledAll].filter((k) => mine.has(k)));
       if (timer) return;
       timer = setTimeout(fire, Math.max(0, last + everyMs - Date.now()));
     },

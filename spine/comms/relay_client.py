@@ -187,7 +187,32 @@ class _EventPublisher:
     def stop(self):
         self._stop.set()
 
-    def _send(self, pub, v, c, topics=None):
+    # The card patch rides the event (Paseo's agent_update carries the agent,
+    # messages.ts AgentUpdateMessageSchema): a card write then costs the phone
+    # no /tracks request at all. Bounded - a bigger patch (a bulk write) is
+    # left to the pull the topic already triggers.
+    TRACKS_PUSH_MAX = 48 * 1024
+
+    def _tracks_patch(self, pub, from_v):
+        """The /tracks patch since board version `from_v` for the account that
+        registered this device key (push.devices[pub].account - written at the
+        authenticated /push/register, so it is evidence, not a guess). None =
+        no payload: unknown device, unknown account, or too big."""
+        from spine.auth import auth
+        from spine.storage import db, events
+        dev = ((events.settings().get("push") or {}).get("devices") or {}).get(pub) or {}
+        u = auth.get_user(dev.get("account") or "")
+        if not u:
+            return None
+        from cells.engineer.routes import routes_tracks
+        frm = "%d.%d" % (db.TRACK_EPOCH, from_v)
+        tp = routes_tracks.tracks_patch({"name": u["name"], "role": u["role"]}, frm)
+        if any(op.get("op") == "clear" for op in tp["patch"]):
+            return None                       # never ship a baseline over the event
+        tp["from"] = frm
+        return tp if len(json.dumps(tp)) <= self.TRACKS_PUSH_MAX else None
+
+    def _send(self, pub, v, c, topics=None, from_v=None):
         from spine.comms import e2ee
         ev = {"v": v, "c": c}
         if topics is not None:
@@ -195,6 +220,13 @@ class _EventPublisher:
             # refetches only those queries. Absent = "refetch what you hold"
             # (announce on join: we do not know which version that phone has).
             ev["t"] = topics
+            if "tracks" in topics and from_v is not None:
+                try:
+                    tp = self._tracks_patch(pub, from_v)
+                except Exception:                            # noqa: BLE001 - the pull still covers it
+                    tp = None
+                if tp:
+                    ev["tp"] = tp
         try:
             cipher = e2ee.seal_b64(json.dumps(ev).encode("utf-8"),
                                    e2ee.import_sec(self._sk_b64), e2ee.import_pub(pub))
@@ -220,7 +252,7 @@ class _EventPublisher:
             v, c = db.current_version(), db.current_chat_version()
             topics = db.topics_since(lv)
             for pub in _cfg()[3]:
-                self._send(pub, v, c, topics)
+                self._send(pub, v, c, topics, from_v=lv)
             lv, lc = v, c
 
 
@@ -825,6 +857,12 @@ def _serve_one(relay, room, sk_b64, port, frame, send=None):
         except Exception:                                # noqa: BLE001
             pass
     def _seal_deliver(resp):
+        # Where the time went, inside the sealed reply (2026-10-20, "wie kann
+        # man den Weg noch verkürzen"): q = ms the frame waited in the relay
+        # before we pulled it, h = ms in the handler. The app subtracts both
+        # from its own round trip; the rest is the network legs - the number
+        # that says whether a direct LAN path is worth building.
+        resp = dict(resp, tm={"q": int(_age * 1000), "h": int((time.time() - _t_local) * 1000)})
         try:
             cipher = e2ee.seal_b64(json.dumps(resp).encode("utf-8"), sk, peer)
         except Exception:
