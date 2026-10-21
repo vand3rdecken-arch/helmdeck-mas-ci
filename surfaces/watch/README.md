@@ -157,3 +157,17 @@ platforms agree, and diverging deliberately where they don't:
   behaviour is a `watchos-app.yml` CI run (compile-only) followed by a real
   TestFlight install once signing is exercised - nothing in this diff has
   been round-tripped against the daemon.
+
+## Daemon-described screens (2026-10-21, native-release-diet)
+
+`Data/Screen.swift` + `Views/ScreenHostView.swift` draw the screen descriptions the
+daemon sends (`screen` on GET /wear/board, GET /wear/card?id=; protocol v1 in
+spine/ops/wear_screen.py) - the Swift sibling of ScreenRenderer.kt. Board and card
+are then daemon changes, not a watchOS build. An older daemon (no `screen`) or a
+failed card fetch falls back to the native BoardView list / CardView. The chat and
+pairing stay native on purpose. The daemon kill switch `wear_screens=false` turns
+the descriptions off for every watch at once.
+
+**Unverified:** written without a Mac - not compiled, not run on a watch. The
+first `git push` of this path runs `.github/workflows/watchos-app.yml`, which is the
+compile check. Dictation from a card routes into the one ChatView (`cardContext`).
