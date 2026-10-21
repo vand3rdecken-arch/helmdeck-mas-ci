@@ -46,7 +46,16 @@ two Store variants it is a submission. That is what drives desktop releases.
 4. Release rhythm: direct installs via the Tauri updater whenever the Rust shell
    changes (rare); Store variants quarterly at most plus urgent.
 
-## Open / decisions
+## DECISION 2026-10-21: leave desktop as is
+
+Owner: "lassen wir Desktop so". No daemon-code OTA, no Windows Authenticode, no change
+to the channels. Both store listings (Microsoft Store, Mac App Store) are KEPT; their
+updates are urgent-only plus the yearly forced dates. Kept for later, not scheduled:
+signed daemon-code OTA for direct installs (plan above), Windows Authenticode for the
+direct download (certificate or cloud signing, cost not checked). Python stays the
+daemon language (measured problems were design, not language; rewrite refused).
+
+## Open / decisions (historical, superseded by the decision above)
 
 - Build step 1 (signed daemon-code OTA)? It touches the update path of a
   load-bearing process and the signing flow; needs the key on this PC.
