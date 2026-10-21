@@ -11,6 +11,19 @@ An agent on a ops/deploy/fast-track card should follow THIS, not guess.
   `app.json` plugin, a `runtimeVersion` bump) → **APK rebuild**. ~10 min. You
   CANNOT ship native code over OTA.
 
+**Native releases are BATCHED (owner decree 2026-10-21): a handful of store
+submissions per year, not one per card.** `ship.sh` no longer builds on a
+detected native change - it reports `native change PENDING (batched)` with the
+files changed since the last native release (ref
+`refs/helmdeck/last-native-commit`) and ships nothing. Native changes pile up.
+Cut a release deliberately with `SHIP_KIND=native bash ops/deploy/ship.sh`;
+ship JS that does not depend on the pending native part with `SHIP_KIND=ota`.
+`SHIP_NATIVE_AUTO=1` restores the old build-on-every-native-change behaviour.
+Forced native moments: Google `targetSdkVersion` (summer), Apple Xcode/SDK
+(spring), Expo SDK upgrades (schedule them on those dates), security fixes in
+native deps. Everything else should be OTA or daemon-side: see
+`ops/docs/backlog/native-release-diet/`.
+
 ---
 
 ## 1) OTA update (JS-only) — the fast path

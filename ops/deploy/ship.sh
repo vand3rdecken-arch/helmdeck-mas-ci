@@ -290,8 +290,30 @@ elif [ "${SHIP_KIND:-}" = "native" ]; then
   SHIP_OTA_ONLY=0
 elif [ -n "$LAST" ] && [ "$CUR" = "$LAST" ]; then
   SHIP_OTA_ONLY=1
-else
+elif [ "${SHIP_NATIVE_AUTO:-}" = "1" ]; then
   SHIP_OTA_ONLY=0
+else
+  # BATCHED NATIVE (owner decree 2026-10-21: a handful of store submissions per
+  # year, not one per card). The hash fallback used to answer "native changed"
+  # with an immediate 15-20 min APK build + runtimeVersion bump + store
+  # resubmission. Now it only REPORTS the pending native diff and ships
+  # nothing: native changes pile up until someone decides to cut a native
+  # release (SHIP_KIND=native). It is derived, not a stored flag - "pending"
+  # is simply fingerprint != last native fingerprint. JS that is independent
+  # of the pending native part can still go out with SHIP_KIND=ota (the
+  # decider's call; the hash cannot know). SHIP_NATIVE_AUTO=1 restores the old
+  # build-on-every-native-change behaviour.
+  BASE="$(git cat-file -p refs/helmdeck/last-native-commit 2>/dev/null || true)"
+  echo "HOOK-NOTE: native change PENDING (batched) - no APK build; cut a native release with SHIP_KIND=native"
+  echo "[ship] native change detected but BATCHED - not building (SHIP_KIND=native cuts the release, SHIP_KIND=ota ships JS only)"
+  if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+    echo "[ship] native files changed since the last native release ($(git rev-parse --short "$BASE")):"
+    git diff --name-only "$BASE" HEAD -- surfaces/app/plugins surfaces/app/modules surfaces/app/app.json surfaces/app/package.json | sed 's/^/[ship]   /'
+  else
+    echo "[ship] (no last-native-commit ref yet - it is recorded at the next native release)"
+  fi
+  echo "[ship] done"
+  exit 0
 fi
 
 # SHIP_DRY_RUN=1: resolve the branch, report it, change nothing. Two reasons it
@@ -342,6 +364,7 @@ else
   BLOB="$(printf '%s' "$NEWFP" | git hash-object -w --stdin)" \
     && git update-ref refs/helmdeck/last-native-fp "$BLOB" \
     || echo "[ship] WARN: could not record the native fingerprint ref - the next accept may re-detect this as a native change"
+  BCOMMIT="$(git rev-parse HEAD | git hash-object -w --stdin)"     && git update-ref refs/helmdeck/last-native-commit "$BCOMMIT"     || echo "[ship] WARN: could not record the last-native-commit ref (diagnostic only)"
 fi
 # Report what ACTUALLY ran, from the branch we actually took. This line used to
 # re-derive it from the hash ($LAST/$CUR), which was harmless while the hash was
