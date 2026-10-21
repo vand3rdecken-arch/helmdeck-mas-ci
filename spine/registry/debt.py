@@ -6167,8 +6167,9 @@ DEBT = [
         "status": "open",
         "what": "GET /wear/board (`screen`) and GET /wear/card describe the board and card "
                 "screens (spine/ops/wear_screen.py); plugins/wear/ScreenRenderer.kt draws them. "
-                "BoardScreen.kt and LegacyCardScreen (CardScreen.kt) still carry the native "
-                "layout as the fallback for a daemon without the field/route. The chat "
+                "BoardScreen.kt and LegacyCardScreen (CardScreen.kt) - and on the Apple Watch "
+                "(surfaces/watch: ScreenHostView.swift draws, BoardView/CardView fall back) - "
+                "still carry the native layout as the fallback for a daemon without the field/route. The chat "
                 "(HenryScreen) and the pairing screen stay native on purpose: scroll anchor, "
                 "stream, audio and setup are mechanics, not layout.",
         "why_it_bites": "A wording or order change must be made in wear_screen.py; the native "

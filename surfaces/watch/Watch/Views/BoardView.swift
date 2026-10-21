@@ -11,8 +11,29 @@ struct BoardView: View {
 
     @State private var payload: BoardPayload?
     @State private var status = "Lade…"
+    /// The daemon's own description of this screen (GET /wear/board `screen`); nil = an older
+    /// daemon, and the native list below is drawn instead.
+    @State private var blocks: [ScreenBlock]?
 
     var body: some View {
+        Group {
+            if let blocks {
+                ScreenHostView(blocks: blocks, cardFor: { id in knownCards.first(where: { $0.id == id }) },
+                               onReload: { Task { await reload() } })
+            } else {
+                legacyList
+            }
+        }
+        .navigationTitle("HelmDeck")
+        .task { await reload() }
+    }
+
+    private var knownCards: [BoardCard] {
+        (payload?.needsYou.map(\.card) ?? []) + (payload?.yours ?? [])
+            + (payload?.working.cards ?? []) + (payload?.backlog.cards ?? [])
+    }
+
+    private var legacyList: some View {
         List {
             Section(status) {
                 ForEach(payload?.needsYou.map(\.card) ?? []) { card in
@@ -58,8 +79,6 @@ struct BoardView: View {
                 Button("Aktualisieren") { Task { await reload() } }
             }
         }
-        .navigationTitle("HelmDeck")
-        .task { await reload() }
     }
 
     private var summary: BoardSummary? { payload?.summary }
@@ -85,6 +104,7 @@ struct BoardView: View {
             return
         }
         payload = parsed
+        blocks = parseScreen(Data(result.body.utf8))
         let n = parsed.needsYou.count
         status = n == 0 ? "Nichts wartet auf dich" : (n == 1 ? "1 wartet auf dich" : "\(n) warten auf dich")
     }
