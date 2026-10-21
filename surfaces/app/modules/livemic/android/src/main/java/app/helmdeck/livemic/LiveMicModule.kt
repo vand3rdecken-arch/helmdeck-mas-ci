@@ -55,13 +55,16 @@ class LiveMicModule : Module() {
     private const val TAG = "LiveMic"
     private const val SR = 16000
     private const val FRAME = 320                 // 20 ms @ 16 kHz
-    private const val PREROLL_FRAMES = 15         // 300 ms kept before speech starts
-    private const val MIN_SPEECH_FRAMES = 15      // 300 ms to count as speech at all
-    private const val END_SILENCE_FRAMES = 35     // 700 ms of quiet closes the utterance
-    private const val MAX_UTTERANCE_FRAMES = 750  // 15 s hard cap
-    private const val ABS_FLOOR = 250.0           // RMS below this is never speech
-    private const val SNR = 2.5                   // speech = rms > noiseFloor * SNR
-    private const val CHUNK_SAMPLES = 8000        // dictation: 0.5 s per onChunk
+    // The six VAD/chunk tunables are VARS with these defaults, set from JS via
+    // configure() (src/data/native_tuning.ts) - tuning the voice feel is then an OTA,
+    // not a native release (ops/docs/backlog/native-release-diet).
+    @Volatile private var PREROLL_FRAMES = 15         // 300 ms kept before speech starts
+    @Volatile private var MIN_SPEECH_FRAMES = 15      // 300 ms to count as speech at all
+    @Volatile private var END_SILENCE_FRAMES = 35     // 700 ms of quiet closes the utterance
+    @Volatile private var MAX_UTTERANCE_FRAMES = 750  // 15 s hard cap
+    @Volatile private var ABS_FLOOR = 250.0           // RMS below this is never speech
+    @Volatile private var SNR = 2.5                   // speech = rms > noiseFloor * SNR
+    @Volatile private var CHUNK_SAMPLES = 8000        // dictation: 0.5 s per onChunk
   }
 
   @Volatile private var rec: AudioRecord? = null
@@ -79,6 +82,20 @@ class LiveMicModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("LiveMic")
     Events("onSegment", "onState", "onChunk", "onLevel")
+
+    /** Override the VAD / chunk tunables (unknown keys ignored, out-of-range values
+     *  clamped so a bad config can never wedge capture). Takes effect at the next
+     *  utterance; safe to call while capturing. */
+    Function("configure") { m: Map<String, Double> ->
+      m["preroll_frames"]?.let { PREROLL_FRAMES = it.toInt().coerceIn(0, 100) }
+      m["min_speech_frames"]?.let { MIN_SPEECH_FRAMES = it.toInt().coerceIn(1, 200) }
+      m["end_silence_frames"]?.let { END_SILENCE_FRAMES = it.toInt().coerceIn(5, 300) }
+      m["max_utterance_frames"]?.let { MAX_UTTERANCE_FRAMES = it.toInt().coerceIn(50, 3000) }
+      m["abs_floor"]?.let { ABS_FLOOR = it.coerceIn(10.0, 5000.0) }
+      m["snr"]?.let { SNR = it.coerceIn(1.1, 20.0) }
+      m["chunk_samples"]?.let { CHUNK_SAMPLES = it.toInt().coerceIn(1600, 32000) }
+      true
+    }
 
     /** Open the mic and start cutting utterances. Idempotent. Waits (bounded)
      *  for a still-draining previous capture to actually exit first, so two

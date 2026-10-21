@@ -113,6 +113,20 @@ class GlassesBridgeModule : Module() {
     }
 
     /** True when the DAT camera can run at all on this handset (API >= 29). */
+    /**
+     * Tunables for the services (they run outside React): one JSON object, stored
+     * whole under "tuning" in the same prefs file configure() writes. Services
+     * read their keys with the old constants as defaults, so an absent or bad
+     * blob changes nothing. This is how thresholds and timeouts become OTA.
+     */
+    Function("tune") { json: String ->
+      runCatching { org.json.JSONObject(json) }.getOrNull()?.let {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+          .edit().putString("tuning", it.toString()).apply()
+        true
+      } ?: false
+    }
+
     Function("cameraSupported") {
       Build.VERSION.SDK_INT >= DAT_MIN_SDK
     }

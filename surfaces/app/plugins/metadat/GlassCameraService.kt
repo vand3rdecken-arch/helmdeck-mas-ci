@@ -103,6 +103,12 @@ class GlassCameraService : Service() {
         private const val CAPTURE_TIMEOUT_MS = 30_000L
     }
 
+    /** JS-set tunable (GlassesBridge.tune -> prefs "tuning"); default is CAPTURE_TIMEOUT_MS. */
+    private fun captureTimeoutMs(): Long = runCatching {
+        org.json.JSONObject(getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("tuning", "{}") ?: "{}").optLong("glass_capture_timeout_ms", CAPTURE_TIMEOUT_MS)
+    }.getOrDefault(CAPTURE_TIMEOUT_MS).coerceIn(5_000L, 120_000L)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: DeviceSession? = null
     private var camera: Camera? = null
@@ -237,7 +243,7 @@ class GlassCameraService : Service() {
             // is bad (§3.1: "the API never tells you WHY a transition
             // happened"), and a foreground service that waits forever is a
             // battery bug the owner will blame on the glasses.
-            val shot = withTimeoutOrNull(CAPTURE_TIMEOUT_MS) { stream.capturePhoto() }
+            val shot = withTimeoutOrNull(captureTimeoutMs()) { stream.capturePhoto() }
             if (shot == null) {
                 fail("Zeitüberschreitung")
                 return

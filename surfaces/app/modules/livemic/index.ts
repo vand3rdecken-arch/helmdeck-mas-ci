@@ -19,6 +19,9 @@ export interface LiveMicModule {
    *  the mic is unavailable or the live mode holds it. ABSENT on an APK built
    *  before this existed - callers must feature-check, not assume. */
   startStream?(voiceComm: boolean): Promise<boolean>;
+  /** Override the VAD / dictation-chunk tunables (see spine/ops/native_tuning.py for
+   *  the keys). ABSENT on an APK built before this existed - feature-check. */
+  configure?(m: Record<string, number>): boolean;
   /** Resolves once capture has actually stopped AND any utterance still
    *  mid-flight has been flushed as a final segment - await this before
    *  tearing down onSegment listeners so a trailing segment isn't dropped

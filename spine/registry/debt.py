@@ -6160,6 +6160,27 @@ DEBT = [
                "agree (phase 3 of the actions-as-tool plan).",
         "since": "2026-10-20",
     },
+    {
+        "id": "wear-screen-dual-path",
+        "order": 98,
+        "title": "The watch board and card exist twice: daemon-described and native",
+        "status": "open",
+        "what": "GET /wear/board (`screen`) and GET /wear/card describe the board and card "
+                "screens (spine/ops/wear_screen.py); plugins/wear/ScreenRenderer.kt draws them. "
+                "BoardScreen.kt and LegacyCardScreen (CardScreen.kt) still carry the native "
+                "layout as the fallback for a daemon without the field/route. The chat "
+                "(HenryScreen) and the pairing screen stay native on purpose: scroll anchor, "
+                "stream, audio and setup are mechanics, not layout.",
+        "why_it_bites": "A wording or order change must be made in wear_screen.py; the native "
+                        "copy silently keeps the old text on a watch that falls back, so the "
+                        "two can drift. Until a native release carries the renderer, every "
+                        "watch is on the fallback.",
+        "trigger": "The first native release that includes ScreenRenderer.kt is on the watch "
+                   "and the board/card screens were judged on the Wear emulator and a real watch.",
+        "fix": "Delete the native board body in BoardScreen.kt and LegacyCardScreen once that "
+               "release is the oldest watch build still in use; keep only the renderer.",
+        "since": "2026-10-21",
+    },
 ]
 
 def list_debt():

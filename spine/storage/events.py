@@ -28,6 +28,19 @@ SET = os.path.join(ROOT, "settings.json")
 RELAY_FEED = os.path.join(ROOT, "relay_feed.json")
 
 DEFAULTS = {
+    # NATIVE TUNING (home: workspace settings, owner-write - device-behaviour POLICY,
+    # not a secret, not a per-account view pref, not per-project; decree 2026-10-08
+    # data-model-first). Thresholds and timeouts the native code used to hardcode;
+    # the app pushes them into LiveMic.configure / GlassesBridge.tune at launch, so
+    # tuning the voice feel is an OTA/daemon change, never a store submission
+    # (ops/docs/backlog/native-release-diet). Keys, bounds: spine/ops/native_tuning.py.
+    "native_tuning": {
+        "vad_preroll_frames": 15, "vad_min_speech_frames": 15,
+        "vad_end_silence_frames": 35, "vad_max_utterance_frames": 750,
+        "vad_abs_floor": 250.0, "vad_snr": 2.5, "dictation_chunk_samples": 8000,
+        "glass_max_empty_turns": 2, "glass_decide_total_ms": 150000,
+        "glass_capture_timeout_ms": 30000,
+    },
     # screen recordings (wincap/ffmpeg) on cards, browser runs and teach mode;
     # off saves a gdigrab+libx264 process per run. See spine/media/wincap.py.
     "screen_capture": True,

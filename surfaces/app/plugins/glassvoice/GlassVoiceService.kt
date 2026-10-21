@@ -126,7 +126,12 @@ class GlassVoiceService : Service() {
      *  distinguishes "running, waiting for the lens" from "stopped". */
     private var parked = false
     private var emptyTurns = 0
-    private val MAX_EMPTY = 2
+    /** JS-set tunable (GlassesBridge.tune -> prefs "tuning"); the default is the old constant. */
+    private fun tuneLong(key: String, default: Long): Long = runCatching {
+        org.json.JSONObject(getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("tuning", "{}") ?: "{}").optLong(key, default)
+    }.getOrDefault(default)
+    private val MAX_EMPTY: Int get() = tuneLong("glass_max_empty_turns", 2L).toInt().coerceIn(1, 20)
 
     /**
      * How long we keep asking whether the owner has accepted a draft, in total.
@@ -137,7 +142,7 @@ class GlassVoiceService : Service() {
      * see awaitDecision); this is the human budget spent across however many of
      * those it takes. Long enough to read a sentence, look up, think, and tap.
      */
-    private val TOTAL_WAIT_MS = 150_000L
+    private val TOTAL_WAIT_MS: Long get() = tuneLong("glass_decide_total_ms", 150_000L).coerceIn(10_000L, 600_000L)
     private val main = Handler(Looper.getMainLooper())
 
     private val audio: AudioManager

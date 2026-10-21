@@ -167,6 +167,11 @@ def harness_config_post(self, user, body):
 
 def settings_post(self, user, body):
     from spine.storage import events
+    if "native_tuning" in body:
+        from spine.ops import native_tuning
+        bad = native_tuning.validate(body["native_tuning"])
+        if bad:
+            return self._send(400, json.dumps({"error": bad}))
     rel = body.get("relay")
     if isinstance(rel, dict) and rel.get("url"):
         from spine.comms import relay_client

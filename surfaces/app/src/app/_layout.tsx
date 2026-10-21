@@ -436,6 +436,31 @@ function useGlassesArm() {
   }, []);
 }
 
+// Push the workspace's native tuning (settings.native_tuning) into the native
+// modules at launch and whenever the app comes back to the foreground. Silent by
+// construction: every step no-ops on iOS, web, old APKs and old daemons.
+function useNativeTuning() {
+  useEffect(() => {
+    let cancelled = false;
+    async function apply() {
+      try {
+        const { api } = await import("@/data/client");
+        const s = await api.settings().catch(() => null);
+        if (cancelled || !s) return;
+        const { applyNativeTuning } = await import("@/data/native_tuning");
+        await applyNativeTuning((s as any).native_tuning);
+      } catch {
+        // never reach the launch path
+      }
+    }
+    apply();
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") apply();
+    });
+    return () => { cancelled = true; sub.remove(); };
+  }, []);
+}
+
 // Hydrate the persisted board BEFORE the screens mount, so a cold start paints
 // last-known data instead of an empty spinner (then queries revalidate in the
 // background). Gated with a short timeout so a slow/blocked AsyncStorage read can
@@ -474,6 +499,7 @@ export default function RootLayout() {
   useResumeRefetch();
   useNetworkChange();
   useGlassesArm();
+  useNativeTuning();
   useSilentOta();
   usePresenceHeartbeat();
   const restored = useCacheGate();

@@ -101,6 +101,17 @@ export function configure(baseUrl: string, token: string): boolean {
   }
 }
 
+/** Push the service tunables (settings `native_tuning`, glass_* keys). A no-op on
+ *  a binary without the hook, on iOS and on web. */
+export function tune(json: string): boolean {
+  if (!Bridge || typeof Bridge.tune !== "function") return false;
+  try {
+    return Bridge.tune(json);
+  } catch {
+    return false;
+  }
+}
+
 /** Start listening. `useGlassMic` false keeps A2DP so the answer is not 8 kHz.
  *
  *  The trade is the owner's per turn, not a stored setting: the glasses' 5-mic

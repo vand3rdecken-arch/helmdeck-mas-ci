@@ -4,6 +4,10 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 export interface GlassesBridge {
   /** Persist where the services reach the daemon. Call at pairing time. */
   configure(baseUrl: string, token: string): boolean;
+  /** Service tunables as one JSON object (stored under "tuning"; the services read
+   *  their keys with the old constants as defaults). ABSENT on an APK built before
+   *  this existed - feature-check, never assume. */
+  tune?(json: string): boolean;
   /** Can this handset run the DAT camera at all (API >= 29)? */
   cameraSupported(): boolean;
   /** `useGlassMic=false` keeps A2DP so the reply is not 8 kHz. */
