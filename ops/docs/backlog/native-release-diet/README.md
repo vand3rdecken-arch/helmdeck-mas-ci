@@ -49,7 +49,8 @@ Target: 3-4 native builds per year, 2 of them forced by the stores.
    copy of the plugin sources until a prebuild; diff reviewed by hand).
    NOT done: texts/flows in the services stay native (they are mechanics).
    The chat (HenryScreen) and pairing stay native on purpose (see step 2).
-4. OWNER DECISION - capabilities on reserve. Currently declared (Android
+4. CLOSED 2026-10-21 (owner: "Lasst die Faehigkeiten so") - no capabilities on
+   reserve; the declared set stays as is. Analysis kept for later: capabilities on reserve. Currently declared (Android
    manifest): CAMERA, RECORD_AUDIO, INTERNET, MODIFY_AUDIO_SETTINGS, VIBRATE,
    storage; iOS: camera string only in app.json (mic/speech strings landed in
    17530b44). Reserving is NOT free: Play reviews sensitive permissions and
