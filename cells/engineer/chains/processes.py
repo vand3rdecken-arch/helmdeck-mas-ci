@@ -422,8 +422,44 @@ def update_step(pid, idx, patch):
                             raise RuntimeError("not_before must be YYYY-MM-DD or empty")
                     s["not_before"] = nb
                 _save(ps)
-                return s
-    raise RuntimeError("no such step")
+                out = dict(s)
+                break
+        else:
+            raise RuntimeError("no such step")
+    if ("title" in patch or "desc" in patch) and out.get("track"):
+        out["card_sync"] = _sync_card_task(out)
+    return out
+
+
+def _step_task(s):
+    """The task text of a step's card - ONE builder for accept_step (birth) and
+    update_step (rename), so the two can never drift apart."""
+    task = s["title"]
+    if s.get("desc"):
+        task += "\n\n" + s["desc"]
+    if step_mode(s.get("mode")) == "human":
+        task = "HUMAN STEP (tracked only): " + task
+    return task
+
+
+def _sync_card_task(s):
+    """A renamed/re-described step carries its NOT-YET-STARTED card along (lane
+    backlog, no turn, no session). A started or finished card is left alone -
+    its task is what the agent actually ran. Returns a one-line report."""
+    from spine.storage.trackstore import _mutate
+    state = []
+
+    def _t(t):
+        if t.get("lane") != "backlog" or t.get("turns") or t.get("session_id"):
+            state.append("started (lane %s, %s turns)" % (t.get("lane"), t.get("turns") or 0))
+            return False
+        t["task"] = _step_task(s)
+        state.append("updated")
+    if _mutate(s["track"], _t) is None:
+        return "card %s not found" % s["track"]
+    if state[0] == "updated":
+        return "card %s task updated" % s["track"]
+    return "card %s NOT touched: %s" % (s["track"], state[0])
 
 def add_step(pid, title, mode="do", desktop=False, repo=None, actor="owner"):
     """A new step STARTS: it becomes a card at once (accept_step) when the
@@ -845,12 +881,8 @@ def accept_step(pid, idx, repo, actor="owner"):
     if s.get("track"):
         return p
     mode = step_mode(s.get("mode"))
-    task = s["title"]
-    if s.get("desc"):
-        task += "\n\n" + s["desc"]
+    task = _step_task(s)
     prio = "high" if idx == 0 else "medium"
-    if mode == "human":
-        task = "HUMAN STEP (tracked only): " + task
     if mode == "do" and s.get("desktop"):
         # the owner's PC is the workplace: windows-mcp + browser (machine card)
         t = sessions.new_machine_task(os.path.expanduser("~"), task, actor=actor,

@@ -1157,8 +1157,9 @@ def _run_action(a, actor, role="operator", owner_msg=""):
         patch = {k: a[k] for k in ("title", "desc", "mode", "due", "days", "not_before") if k in a}
         if not patch:
             return "update_step: nothing to change (give title/desc/mode/due/days/not_before)"
-        processes.update_step(p["id"], idx, patch)
-        return "step updated in %s: %s" % (p["id"], json.dumps(patch)[:200])
+        r = processes.update_step(p["id"], idx, patch)
+        return "step updated in %s: %s%s" % (p["id"], json.dumps(patch)[:200],
+                                             (" - " + r["card_sync"]) if r.get("card_sync") else "")
     if kind == "audit_query":
         # Card 5 (ops/docs/backlog/rbac-gxp): Henry can answer questions about
         # the append-only audit trail - "wer hat GxP aktiviert", "letzte
