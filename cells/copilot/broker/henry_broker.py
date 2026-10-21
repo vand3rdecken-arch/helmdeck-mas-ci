@@ -392,6 +392,14 @@ def _snapshot():
             lines += gl.split("\n")
     except Exception as e:                                   # noqa: BLE001
         lines.append("GOAL: (unreadable: %s)" % str(e)[:120])
+    try:                               # the chat Henry's hands runs: one pair of hands, not two
+        from cells.copilot.chat import hands as _hands
+        ids = _hands.running_ids()
+        if ids:
+            lines.append("CHAT-HANDS LAUFEN GERADE (%d, dieselbe Arbeit nicht doppelt starten): %s"
+                         % (len(ids), ", ".join(ids[:5])))
+    except Exception:                                        # noqa: BLE001
+        pass
     cards = []
     try:
         from spine.storage.trackstore import _load
@@ -632,6 +640,41 @@ def _judgement_policy(t):
     return DEFAULT_POLICY
 
 
+# Henry has TWO pairs of hands: this broker round and the chat's hands runs
+# (cells.copilot.chat.hands). Neither saw the other: 2026-10-21 18:30 the broker
+# started ECOHELP-174959 and at 18:38 the chat Henry announced "den starte ich
+# jetzt". A broker round is a call in THIS process, so its liveness is exactly
+# "inside the try below" - ONE owner (these three functions), memory only, gone
+# with the process, never persisted and never stale.
+_HANDS_LIVE = {}
+_HANDS_LIVE_LOCK = threading.Lock()
+
+
+def _hands_live_add(esc, plan):
+    with _HANDS_LIVE_LOCK:
+        _HANDS_LIVE[esc["id"]] = {"esc": esc["id"], "kind": esc.get("kind") or "",
+                                  "card": esc.get("card") or "", "since": time.time(),
+                                  "plan": plan}
+
+
+def _hands_live_drop(esc):
+    with _HANDS_LIVE_LOCK:
+        _HANDS_LIVE.pop(esc["id"], None)
+
+
+def hands_live_line():
+    """One snapshot line for the chat Henry while a broker hands round runs, ""
+    otherwise. Evidence, not a rule - what he does with it is his judgement."""
+    with _HANDS_LIVE_LOCK:
+        runs = sorted(_HANDS_LIVE.values(), key=lambda r: r["since"])
+    if not runs:
+        return ""
+    return "BROKER-HANDS LAUFEN GERADE (dieselbe Arbeit nicht noch einmal starten): " + " | ".join(
+        "%s%s seit %s: %s" % (r["kind"], (" Karte " + r["card"]) if r["card"] else "",
+                              time.strftime("%H:%M", time.localtime(r["since"])), r["plan"][:140])
+        for r in runs)
+
+
 def _staged_ask(prompt, esc, privileged):
     """Round 1 without tools; up to NEED_ROUNDS `need` reloads (still no
     tools, each adds to what he already read); a `hands` round with
@@ -661,9 +704,11 @@ def _staged_ask(prompt, esc, privileged):
         plan = (d.get("text") or d.get("why") or "").strip() or "(kein Vorhaben genannt)"
         escalations.record_note(esc["id"], "Henry nimmt die Haende: %s" % plan[:200])
         _ROUND["tools"] = HANDS_TOOLS
+        _hands_live_add(esc, plan)
         try:
             d = _hands_on_ask(prompt + _HANDS_TAIL % plan)
         finally:
+            _hands_live_drop(esc)
             _ROUND["tools"] = None
     elif action == "hands":
         d["action"] = "did"          # the unprivileged refusal below handles it
@@ -1310,7 +1355,40 @@ def followup_tasks(closed_within_s=3600):
     return out
 
 
+def _overtaken(esc):
+    """Why a delivered-parked report no longer applies, or "". DERIVED from the
+    runtime at judging time, not a judgement: the report was true when the turn
+    ended, and 20 of 80 such judgements in two days were Henry saying "ueberholt"
+    (card already moved, a new turn running) - a model turn spent to read state
+    the harness already has. Only a state that can ONLY mean "nothing to land
+    any more" counts; everything else still goes to Henry."""
+    if esc.get("kind") != "delivered-parked" or not esc.get("card"):
+        return ""
+    t = _find_track(esc["card"])
+    if not t:
+        return "Karte existiert nicht mehr"
+    if t.get("archived"):
+        return "Karte ist archiviert"
+    if t.get("lane") != "working":
+        return "Karte liegt schon in %s" % t.get("lane")
+    from cells.engineer.cards.turnrunner import is_delivered
+    if not is_delivered(t):
+        return "Karte parkt nicht mehr als fertig (status %s)" % t.get("status")
+    try:
+        from spine.agent import drivers
+        if drivers.turn_inflight(esc["card"]):
+            return "auf der Karte laeuft schon ein neuer Turn"
+    except Exception:                                          # noqa: BLE001
+        pass
+    return ""
+
+
 def _decide_or_give_up(esc):
+    gone = _overtaken(esc)
+    if gone:
+        escalations.record_decision(esc["id"], "ignore", card=esc.get("card") or "",
+                                    why="ueberholt (Code, kein Urteil): " + gone)
+        return
     if esc["attempts"] >= _max_attempts():
         _give_up(esc)
         return

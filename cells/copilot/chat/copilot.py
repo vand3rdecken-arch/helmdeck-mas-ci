@@ -1191,6 +1191,13 @@ def _snapshot(full=False):
     quota = _quota_line()
     if quota:
         lines.append(quota)
+    try:                                 # the broker's hands are Henry's too - one pair, not two
+        from cells.copilot.broker import henry_broker
+        bl = henry_broker.hands_live_line()
+        if bl:
+            lines.append(bl)
+    except Exception as e:                                   # noqa: BLE001
+        lines.append("BROKER-HANDS: (unreadable: %s)" % str(e)[:120])
     try:
         from cells.copilot.planning import duration_forecast
         dl = duration_forecast.duration_line()
