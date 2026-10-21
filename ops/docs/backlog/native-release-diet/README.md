@@ -36,13 +36,36 @@ Target: 3-4 native builds per year, 2 of them forced by the stores.
    existing `WearStream`. Fold `wear-voice-stream-playback` and
    `wear-os-paritaets-audit` into it instead of patching them natively. Needs
    an emulator/watch to verify (no gradle/adb in card worktrees).
-3. OPEN - move hardcoded texts, thresholds, flows out of glasses bridge,
-   livemic, GlassVoice into JS-passed parameters. Native = mechanics only.
-4. OPEN - reserve native capabilities in ONE build: list what is foreseeable
-   (permissions, background modes, Meta SDK version, camera, BLE), ship them
-   dormant behind JS feature flags.
-5. OPEN - release rhythm: quarterly native release plus the forced dates
-   (Google targetSdk summer, Apple Xcode spring); Expo SDK upgrades land on
-   those dates only.
+3. DONE (code) 2026-10-21 - tunables out of Kotlin. Home: workspace settings key
+   `native_tuning` (owner-write, not a secret, exported with the harness; NOT
+   user_config = per-account view prefs, NOT project_config). Keys + bounds:
+   spine/ops/native_tuning.py (front door in settings_post). App: src/data/
+   native_tuning.ts, applied at launch and on foreground by useNativeTuning in
+   _layout.tsx -> LiveMic.configure (VAD, dictation chunk) and GlassesBridge.tune
+   (-> prefs "tuning" -> GlassVoice max-empty/decide-total, camera capture
+   timeout). Old constants stay as defaults, so old daemon / old APK / bad value
+   = no change. VERIFIED: tsc, python tests, :livemic and :glasses compile.
+   NOT compiled: GlassVoiceService.kt + GlassCameraService.kt (android/ holds no
+   copy of the plugin sources until a prebuild; diff reviewed by hand).
+   NOT done: texts/flows in the services stay native (they are mechanics).
+   The chat (HenryScreen) and pairing stay native on purpose (see step 2).
+4. OWNER DECISION - capabilities on reserve. Currently declared (Android
+   manifest): CAMERA, RECORD_AUDIO, INTERNET, MODIFY_AUDIO_SETTINGS, VIBRATE,
+   storage; iOS: camera string only in app.json (mic/speech strings landed in
+   17530b44). Reserving is NOT free: Play reviews sensitive permissions and
+   foreground-service types (the FGS-microphone declaration once needed a video),
+   Apple asks for a purpose per string. So reserve only what is (a) certain to
+   ship and (b) cheap to justify. Candidates to decide, none added blindly:
+   iOS NSLocalNetworkUsageDescription + Bonjour (the LAN direct path),
+   NSBluetoothAlwaysUsageDescription (glasses on iOS), UIBackgroundModes audio
+   (voice/glasses), Android POST_NOTIFICATIONS + BLUETOOTH_CONNECT, camera
+   already there. Rule for every new native capability: ship it dormant behind a
+   `native_tuning`-style flag so enabling it is an OTA.
+5. DONE (policy) - rhythm: native changes are batched by ship.sh (see DEPLOY.md);
+   cut a release deliberately (SHIP_KIND=native) about quarterly, plus the forced
+   dates: Google targetSdk (summer), Apple Xcode/SDK (spring), Expo SDK upgrades
+   only on those dates. The first release must carry, in one go: ScreenRenderer,
+   LiveMic.configure, GlassesBridge.tune (all already merged), then every
+   capability picked in step 4.
 6. OPTIONAL - native builds in CI (EAS / the Mac mirror). Does not reduce the
    count, makes the few builds painless.
