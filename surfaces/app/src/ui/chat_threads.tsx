@@ -101,7 +101,14 @@ export function ThreadList({ current, onPick, onClose, embedded, timeBuckets, bo
   const nowS = Math.floor(Date.now() / 1000);
 
   const groups = useMemo(() => {
-    const threads = data?.threads ?? [];
+    // A plan OWNS its steps: a step card still waiting in the backlog is part of
+    // the plan row above ("1/8"), not a second, flat "Planned" row of its own
+    // (owner 2026-10-21: three plans = 23 loose rows, "sieht chaotisch aus").
+    // Live steps (working / needs you / ready) stay - they ask for attention.
+    // Only a plan that is actually listed hides its steps; a card pointing at a
+    // finished or deleted plan keeps its row.
+    const openPlans = new Set((data?.processes ?? []).filter((p) => p.status !== "done" && p.status !== "cancelled").map((p) => p.id));
+    const threads = (data?.threads ?? []).filter((th) => !(th.bucket === "backlog" && th.process && openPlans.has(th.process)));
     if (!timeBuckets) {
       return GROUP_ORDER
         .map((b) => ({ key: b as string, title: tr("chat.threads." + b), items: threads.filter((th) => th.bucket === b) }))
