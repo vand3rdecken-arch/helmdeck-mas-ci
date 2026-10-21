@@ -60,6 +60,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
     var working by remember { mutableStateOf(BoardSection(emptyList(), 0)) }
     var backlog by remember { mutableStateOf(BoardSection(emptyList(), 0)) }
     var summary by remember { mutableStateOf<BoardSummary?>(null) }
+    var screenBlocks by remember { mutableStateOf<List<ScreenBlock>?>(null) }
     val scope = rememberCoroutineScope()
 
     fun reload() {
@@ -95,6 +96,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
             working = pipe.first
             backlog = pipe.second
             summary = parseBoardSummary(result.second)
+            screenBlocks = parseScreen(result.second)
             status = when {
                 parsed.isFailure -> "Antwort nicht lesbar"
                 cards.isEmpty() -> "Nichts wartet auf dich"
@@ -138,6 +140,23 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // The daemon's own screen description wins (spine/ops/wear_screen.py):
+                // layout and wording are then a daemon change. The native board below
+                // is the fallback for a daemon that predates it.
+                val described = screenBlocks
+                if (described != null) {
+                    val known = cards + yours + working.cards + backlog.cards
+                    renderScreen(described, spec,
+                        cardFor = { id -> known.firstOrNull { it.id == id } },
+                        onAction = { a ->
+                            when (a) {
+                                is ScreenAction.OpenCard -> known.firstOrNull { it.id == a.id }?.let(onOpenCard)
+                                is ScreenAction.Nav -> if (a.to == "henry") onAskHenry()
+                                ScreenAction.Reload -> reload()
+                            }
+                        })
+                    return@TransformingLazyColumn
+                }
                 item {
                     ListHeader(
                         modifier = Modifier
@@ -255,7 +274,7 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
 /** One board entry as Google's TitleCard: the task (max 2 lines) as title, the
  *  card's status as subtitle in its brand colour - a card, not a button. */
 @Composable
-private fun TransformingLazyColumnItemScope.CardEntry(
+internal fun TransformingLazyColumnItemScope.CardEntry(
     c: BoardCard, spec: TransformationSpec, onClick: () -> Unit,
 ) {
     TitleCard(

@@ -198,6 +198,10 @@ def wear_board_get(self, user):
             # through routes_glance, which never sees this object.
             if row.get("detail"):
                 row["detail"] = _wear_text(row["detail"], WEAR_DETAIL_MAX)
+    # The screen as DATA (spine/ops/wear_screen.py): lets the watch's layout and
+    # wording change without a native release. Additive - old watches skip it.
+    from spine.ops.wear_screen import board_screen
+    payload["screen"] = board_screen(payload)
     return self._send(200, json.dumps(payload))
 
 

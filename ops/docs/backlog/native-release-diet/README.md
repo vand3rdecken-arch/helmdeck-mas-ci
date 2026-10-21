@@ -22,6 +22,15 @@ Target: 3-4 native builds per year, 2 of them forced by the stores.
    screen-description protocol (rows, buttons, input, actions) interpreted by a
    generic renderer - an iterative job that needs the watch emulator in the
    loop (adb + sdk exist on this box), not a blind rewrite.
+   STARTED 2026-10-21: protocol v1 + board prototype. Daemon:
+   spine/ops/wear_screen.py (blocks header/text/age/card/button, actions
+   open_card/nav/reload) added as `screen` to GET /wear/board, test
+   ops/tests/test_wear_screen.py. Watch: plugins/wear/ScreenRenderer.kt, used by
+   BoardScreen when `screen` is present (old daemon -> native board fallback).
+   VERIFIED: python test + `:wear:compileReleaseKotlin`. NOT VERIFIED: rendering
+   on the Wear emulator (AVDs Wear_OS_*_API_30 exist; needs a paired demo
+   daemon). Next: emulator check, then Chat and Card screens, then drop the
+   native board fallback after one native release carries the renderer.
    Original scope: Kotlin keeps generic blocks (list, row,
    card, button, text, voice clip); the daemon describes screens over the
    existing `WearStream`. Fold `wear-voice-stream-playback` and

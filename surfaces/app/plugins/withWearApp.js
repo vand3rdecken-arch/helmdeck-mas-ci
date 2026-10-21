@@ -112,6 +112,8 @@ function installWearModule(androidDir) {
     // wearables talk to Henry, never the worker, lives in CardScreen.kt.
     ["BoardModel.kt", [...JAVA, "BoardModel.kt"]],
     ["BoardScreen.kt", [...JAVA, "BoardScreen.kt"]],
+    // Generic renderer for daemon-sent screen descriptions (spine/ops/wear_screen.py).
+    ["ScreenRenderer.kt", [...JAVA, "ScreenRenderer.kt"]],
     ["CardScreen.kt", [...JAVA, "CardScreen.kt"]],
     ["HelmDeckBox.kt", [...JAVA, "crypto", "HelmDeckBox.kt"]],
     ["DeviceStore.kt", [...JAVA, "data", "DeviceStore.kt"]],
