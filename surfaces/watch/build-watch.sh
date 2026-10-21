@@ -134,7 +134,12 @@ fastlane run get_provisioning_profile api_key_path:"$API_JSON" team_id:"$APPLE_T
   app_identifier:app.helmdeck.watchcompanion.watchkitapp provisioning_name:"HelmDeckWatch AppStore" \
   force:true output_path:"$TMP/profiles" || exit 1
 
-echo "==> xcodebuild archive (manual Release signing - identity + profiles pinned in project.yml)"
+# App Store Connect refuses a build number it has already seen, and project.yml's
+# fixed "1" is only right for the very first upload. A UTC timestamp is monotonic
+# without any state to keep (WATCH_BUILD_NUMBER overrides it); the same number goes
+# to BOTH targets, the watch app and its iOS host must agree.
+BN="${WATCH_BUILD_NUMBER:-$(date -u +%y%m%d%H%M)}"
+echo "==> xcodebuild archive (manual Release signing - identity + profiles pinned in project.yml; build $BN)"
 xcodebuild archive \
   -project HelmDeckWatch.xcodeproj \
   -scheme HelmDeckWatchCompanion \
@@ -142,6 +147,38 @@ xcodebuild archive \
   -destination "generic/platform=iOS" \
   -configuration Release \
   "DEVELOPMENT_TEAM=$APPLE_TEAM_ID" \
+  "CURRENT_PROJECT_VERSION=$BN" \
   OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
   || { echo "!!! archive failed"; exit 1; }
 echo "DONE. Archive -> surfaces/watch/build/HelmDeckWatchCompanion.xcarchive"
+
+# OPT-IN upload to App Store Connect / TestFlight (WATCH_UPLOAD=1). It stops THERE:
+# a TestFlight build is not a review submission. Submitting for App Review stays a
+# separate, owner-triggered act (ops/tools/asc_review_watch.py only observes).
+if [ "${WATCH_UPLOAD:-}" = "1" ]; then
+  echo "==> exportArchive -> App Store Connect (destination=upload, build $BN)"
+  cat > "$TMP/ExportOptions.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>upload</string>
+  <key>teamID</key><string>$APPLE_TEAM_ID</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>Apple Distribution</string>
+  <key>provisioningProfiles</key><dict>
+    <key>app.helmdeck.watchcompanion</key><string>HelmDeckWatchCompanion AppStore</string>
+    <key>app.helmdeck.watchcompanion.watchkitapp</key><string>HelmDeckWatch AppStore</string>
+  </dict>
+</dict></plist>
+PLIST
+  xcodebuild -exportArchive \
+    -archivePath build/HelmDeckWatchCompanion.xcarchive \
+    -exportOptionsPlist "$TMP/ExportOptions.plist" \
+    -exportPath build/export \
+    -authenticationKeyPath "$ASC_API_KEY_PATH" \
+    -authenticationKeyID "$ASC_KEY_ID" \
+    -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+    || { echo "!!! export/upload failed"; exit 1; }
+  echo "DONE. Uploaded build $BN to App Store Connect (TestFlight). NOT submitted for review."
+fi

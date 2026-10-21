@@ -22,7 +22,12 @@
 name: watchos-app
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "After the signed archive, upload to App Store Connect / TestFlight (never submits for review)"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -93,6 +98,8 @@ jobs:
       # build-watch.sh itself decides unsigned-build-vs-signed-archive from
       # whether the signing env above is complete - see its header comment.
       - name: Build
+        env:
+          WATCH_UPLOAD: ${{ inputs.upload && '1' || '' }}
         run: bash surfaces/watch/build-watch.sh
 
       - uses: actions/upload-artifact@v4
