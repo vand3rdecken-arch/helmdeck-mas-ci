@@ -35,7 +35,8 @@ import re
 import time
 
 STALL_AGE_S = 24 * 3600          # a needs_you card counts as parked after this
-MAX_ITEMS = 5                    # ask.MAX_OPTIONS is 6: five items + "Nichts davon"
+RETRY_S = 3600                   # after a failed ask, try again no sooner than this
+MAX_ITEMS = 5                   # ask.MAX_OPTIONS is 6: five items + "Nichts davon"
 
 
 def _epoch(s):
@@ -153,8 +154,10 @@ def derive(now=None, processes=None, tracks=None, goal_pid=None):
                 dead.append((i, _epoch((t or {}).get("updated") or p.get("created"))))
                 prev_done = False
                 continue
-            if (t and not done and s.get("mode") == "human" and prev_done
-                    and t.get("lane") == "backlog"):
+            # ANY lane: a human step is the owner's the moment its predecessors
+            # are done. The old backlog-only filter hid a review-lane
+            # "Owner-Review" card (bounced) from the owner for a day.
+            if t and not done and s.get("mode") == "human" and prev_done:
                 since = _epoch(t.get("created") or p.get("created"))
                 items.append({
                     "key": "human:%s:%d" % (p["id"], i), "kind": "human", "who": "owner",
@@ -212,11 +215,25 @@ def question(items, goal="", now=None):
     return line, "Vorantreiben", options
 
 
-def sweep(st, now=None, ask=None, feed=None, save=None):
+def _slot_busy():
+    """True while the chat already holds an unanswered question. _ask_owner
+    would then hand OUR question to Henry (owner-ask-deferred) and return
+    False - the owner never sees it, so the sweep must not ask (nor latch)."""
+    try:
+        from cells.copilot.chat import copilot
+        return bool(copilot.chat_question_open())
+    except Exception:                                        # noqa: BLE001
+        return False
+
+
+def sweep(st, now=None, ask=None, feed=None, save=None, busy=None):
     """At most ONE question per day, earlier only when a NEW stall appears.
-    Returns True when a question went out. `ask`/`feed`/`save` are injectable
-    for tests; the daemon wires pm_comm._ask_owner / _activity and the
-    loopstate writer."""
+    Returns True when a question went out. The latch is written ONLY for a
+    question that was really delivered: a busy slot or a failed ask leaves it
+    open and the next tick tries again (2026-10-21: an undelivered 00:40 ask
+    latched the whole day and the owner never saw three review steps).
+    `ask`/`feed`/`save`/`busy` are injectable for tests; the daemon wires
+    pm_comm._ask_owner / _activity and the loopstate writer."""
     now = now or time.time()
     items = [x for x in derive(now) if x.get("who") == "owner"]
     if not items:
@@ -227,22 +244,31 @@ def sweep(st, now=None, ask=None, feed=None, save=None):
     dig = _digest(items)
     last = st.get("push_asked") or {}
     day = time.strftime("%Y%m%d", time.localtime(now))
-    if last.get("day") == day and set(last.get("keys") or []) >= {x["key"] for x in items}:
+    if (last.get("sent") and last.get("day") == day
+            and set(last.get("keys") or []) >= {x["key"] for x in items}):
         return False                      # asked today, nothing new since
+    if not last.get("sent") and last.get("at") and now - last["at"] < RETRY_S:
+        return False                      # a try just failed: back off, don't re-escalate each tick
     goal = ""
     try:
         from cells.copilot.planning.pm import get_goal
         goal = get_goal() or ""
     except Exception:                                        # noqa: BLE001
         pass
+    if (busy or _slot_busy)():
+        return False                      # slot taken: retry next tick, nothing recorded
     line, header, options = question(items, goal, now)
+    sent = (ask or _ask)(line, options, header)
+    if not sent:                          # not delivered: record the TRY only, retry after RETRY_S
+        st["push_asked"] = {"day": day, "digest": dig, "keys": [], "at": now, "sent": False}
+        (save or _save)(st)
+        return False
     (feed or _feed)("blocked", "Vorantreiben: %d Stillstaende - %s" % (
         len(items), "; ".join(x["label"] for x in items[:MAX_ITEMS])))
-    sent = (ask or _ask)(line, options, header)
     st["push_asked"] = {"day": day, "digest": dig, "keys": [x["key"] for x in items],
-                        "at": now, "sent": bool(sent)}
+                        "at": now, "sent": True}
     (save or _save)(st)
-    return bool(sent)
+    return True
 
 
 def _ask(line, options, header):

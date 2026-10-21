@@ -129,9 +129,9 @@ st = {}
 pp.derive_real = pp.derive
 pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, PROCS, TRACKS, "p-goal")
 ok1 = pp.sweep(st, NOW, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-               feed=lambda k, m: feed.append(m), save=lambda s: None)
+               feed=lambda k, m: feed.append(m), save=lambda s: None, busy=lambda: False)
 ok2 = pp.sweep(st, NOW + 3600, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-               feed=lambda k, m: feed.append(m), save=lambda s: None)
+               feed=lambda k, m: feed.append(m), save=lambda s: None, busy=lambda: False)
 check(ok1 and not ok2 and len(sent) == 1, "asked once, not again an hour later")
 mine = [x for x in items if x["who"] == "owner"]
 check(st["push_asked"]["day"] == "20260923" and sorted(st["push_asked"]["keys"]) == sorted(x["key"] for x in mine),
@@ -144,24 +144,55 @@ more = PROCS + [{"id": "p-new", "status": "ready", "created": "2026-09-23 15:00:
                  "steps": [{"title": "a", "mode": "do", "state": "proposed", "track": None}]}]
 pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, more, TRACKS, "p-goal")
 check(not pp.sweep(st, NOW + 5400, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-                   feed=lambda k, m: None, save=lambda s: None) and len(sent) == 1,
+                   feed=lambda k, m: None, save=lambda s: None, busy=lambda: False) and len(sent) == 1,
       "a new proposal the same day does NOT re-ask the owner")
 # a new OWNER stall the same day -> asks again
 morec = TRACKS + [{"id": "c-parked2", "lane": "working", "status": "needs_you", "task": "neue Frage",
                    "created": "2026-09-21 10:00:00", "updated": "2026-09-21 12:00:00"}]
 pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, more, morec, "p-goal")
 ok3 = pp.sweep(st, NOW + 7200, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-               feed=lambda k, m: None, save=lambda s: None)
+               feed=lambda k, m: None, save=lambda s: None, busy=lambda: False)
 check(ok3 and len(sent) == 2, "a NEW stall the same day re-arms the question")
 # next day, same stalls -> asks again (daily heartbeat)
 ok4 = pp.sweep(st, NOW + D, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-               feed=lambda k, m: None, save=lambda s: None)
+               feed=lambda k, m: None, save=lambda s: None, busy=lambda: False)
 check(ok4 and len(sent) == 3, "next day -> asked again")
 # nothing stalls -> latch cleared, nothing asked
 pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: []
 ok5 = pp.sweep(st, NOW + 2 * D, ask=lambda l, o, h: sent.append((l, o, h)) or True,
-               feed=lambda k, m: None, save=lambda s: None)
+               feed=lambda k, m: None, save=lambda s: None, busy=lambda: False)
 check(not ok5 and "push_asked" not in st and len(sent) == 3, "no stalls -> silent, latch cleared")
+pp.derive = pp.derive_real
+
+# 7) the 2026-10-21 failure: the ask was NOT delivered (slot busy / ask False) and
+#    the old sweep latched the whole day anyway
+pp.derive = lambda now=None, processes=None, tracks=None, goal_pid=None: pp.derive_real(now, PROCS, TRACKS, "p-goal")
+sent2, st2 = [], {}
+okb = pp.sweep(st2, NOW, ask=lambda l, o, h: sent2.append(1) or True, feed=lambda k, m: None,
+               save=lambda s: None, busy=lambda: True)
+check(not okb and not sent2 and "push_asked" not in st2, "busy slot: no ask (nothing handed to Henry), no latch")
+okf = pp.sweep(st2, NOW + 10, ask=lambda l, o, h: False, feed=lambda k, m: None,
+               save=lambda s: None, busy=lambda: False)
+check(not okf and st2["push_asked"]["sent"] is False, "failed ask records the try, not a delivered latch")
+tries = []
+pp.sweep(st2, NOW + 600, ask=lambda l, o, h: tries.append(1) or False, feed=lambda k, m: None,
+         save=lambda s: None, busy=lambda: False)
+check(not tries, "failed ask: backs off, no re-escalation on the next tick")
+okr = pp.sweep(st2, NOW + 10 + pp.RETRY_S + 1, ask=lambda l, o, h: sent2.append(1) or True,
+               feed=lambda k, m: None, save=lambda s: None, busy=lambda: False)
+check(okr and len(sent2) == 1 and st2["push_asked"]["sent"] is True, "retry after the back-off delivers and latches")
+# the live latch of 00:40 (sent False, all keys) must not suppress the day
+st3 = {"push_asked": {"day": "20260923", "keys": [x["key"] for x in mine], "at": NOW - 3 * 3600, "sent": False}}
+okl = pp.sweep(st3, NOW, ask=lambda l, o, h: True, feed=lambda k, m: None, save=lambda s: None, busy=lambda: False)
+check(okl, "an old undelivered latch (sent False) never blocks the day")
+# a human step whose card sits in the REVIEW lane is the owner's too
+RP = [{"id": "p-r", "status": "running", "created": "2026-10-20 22:30:09", "request": "Sub",
+       "steps": [{"title": "done", "mode": "do", "state": "done", "track": "c-done"},
+                 {"title": "Owner-Review", "mode": "human", "state": "working", "track": "c-rev"}]}]
+RT = [{"id": "c-done", "lane": "done"},
+      {"id": "c-rev", "lane": "review", "status": "bounced", "created": "2026-10-20 22:30:10"}]
+rv = pp.derive_real(NOW, RP, RT, "")
+check([x["kind"] for x in rv] == ["human"] and rv[0]["who"] == "owner", "human step in the review lane is derived for the owner")
 pp.derive = pp.derive_real
 
 print("\n%d FAIL" % len(_fails) if _fails else "\nall ok")
