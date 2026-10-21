@@ -168,114 +168,139 @@ function StepEditor({ idx, total, step, act, onClose, onOpenCard }: {
   );
 }
 
-// One pipeline node: a coloured circle (checkmark when done, else a mode icon),
-// the step title, and its state label. "ready" pulses amber; "proposed" is dashed.
-// EVERY node is tappable (fixed 2026-09-03 - a step already turned into a
-// card used to render with `if (!interactive) return node` skipping the
-// Pressable wrapper entirely, so a step WITH a card - the case that most
-// needs a tap-through to its card's transcript - was the one case you could
-// never reach; the "Card oeffnen" link built for exactly that lived inside
-// an editor nothing could open). `interactive` now drives styling ONLY -
-// the raised ring + pencil badge for a still-editable (no card yet) step -
-// never whether the node responds to a tap.
-function PipeNode({ step, interactive, selected, onPress }: {
-  step: Step; interactive: boolean; selected: boolean; onPress?: () => void;
-}) {
+// ---- reading a plan: WHERE ARE WE, WHAT IS DONE, WHAT IS NEXT ---------------
+// (owner 2026-10-21: the old horizontal pipeline of tiny circles hid the current
+// step, the result of finished ones and the way to their cards.) One plan reads
+// top-down: title + progress bar, a NOW block for the step it is on, then the
+// finished steps (with what they delivered) and the ones still to come. The
+// step's card facts come from GET /processes (`step.card`, derived at read time).
+
+interface StepCard { id: string; lane?: string; status?: string; summary?: string; ask?: string; owner?: boolean; at?: string }
+type StepV = Step & { card?: StepCard | null };
+
+const isDone = (s: Step) => !!(s.done || s.state === "done");
+
+/** "Title (Repo): rest of the sentence ..." -> ["Title (Repo)", "rest ..."]. */
+function splitRequest(request: string): [string, string] {
+  const first = (request || "").split("\n")[0].trim();
+  const cut = first.indexOf(": ");
+  if (cut >= 8 && cut <= 90) return [first.slice(0, cut), first.slice(cut + 2) + (request.includes("\n") ? "\n" + request.split("\n").slice(1).join("\n") : "")];
+  return [first.length > 90 ? first.slice(0, 88) + "…" : first, first.length > 90 ? first : (request.includes("\n") ? request.split("\n").slice(1).join("\n") : "")];
+}
+
+function agoOf(at?: string): string {
+  if (!at) return "";
+  const ms = Date.now() - new Date(at.replace(" ", "T")).getTime();
+  if (!isFinite(ms) || ms < 0) return "";
+  const m = Math.floor(ms / 60000);
+  if (m < 2) return "";
+  if (m < 60) return `${m} min`;
+  if (m < 1440) return `${Math.floor(m / 60)} h`;
+  return `${Math.floor(m / 1440)} d`;
+}
+
+/** What a step is doing right now, in the owner's words: [label, colour]. */
+function stepNow(t: ThemeTokens, st: StepV): [string, string] {
+  const tr = i18nT;
+  if (isDone(st)) return [tr("processes.stateDone"), t.ok];
+  if (st.card?.owner || (st.state === "ready" && (st.mode === "human" || st.mode === "cowork" || st.mode === "teach")))
+    return [tr("processes.waitsOnYou"), t.warn];
+  if (st.state === "working") return [tr("processes.stateWorking"), t.ai];
+  if (st.state === "ready") return [tr("processes.stateReady"), t.accent];
+  if (!st.track) return [tr("processes.noCardYet"), t.txtTertiary];
+  return [tr("processes.stateWaiting"), t.txtTertiary];
+}
+
+/** 1 when the plan's current step waits on the owner (a question, a review, a human step). */
+function waitsOnOwner(p: Process): number {
+  const steps = (p.steps ?? []) as StepV[];
+  const cur = steps.find((x) => !isDone(x));
+  return cur && (cur.card?.owner || (cur.state === "ready" && (cur.mode === "human" || cur.mode === "cowork" || cur.mode === "teach"))) ? 1 : 0;
+}
+
+function StepGlyph({ st, current }: { st: StepV; current: boolean }) {
   const t = useTheme();
-  const tr = useT();
-  const state = step.state ?? "proposed";
-  const [colour] = stateStyle(t, state);
-  const label = state === "proposed" ? tr("processes.stateProposed")
-    : step.lane === "review" ? tr("processes.inReview") : stateStyle(t, state)[1];
-  const done = step.done || state === "done";
-  const proposed = state === "proposed";
-
-  // Subtle pulse on the step the chain is waiting on (up next / waiting-for-human).
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (state !== "ready" || isWeb) return;   // web: webMotion.wait (CSS) below
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 800, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [state, pulse]);
-  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 0.45] });
-
-  const node = (
-    <View style={{ width: 96, alignItems: "center" }}>
-      <View style={{
-        width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
-        borderWidth: selected ? 2.5 : 0,
-        borderColor: t.accent,
-        backgroundColor: selected ? t.accent + "22" : "transparent",
-      }}>
-        <Animated.View style={[{
-          width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center",
-          borderWidth: interactive ? 2.5 : 1.5, borderStyle: proposed && interactive ? "dashed" : "solid",
-          borderColor: interactive ? (proposed ? t.borderStrong : colour) : t.borderSubtle,
-          backgroundColor: interactive ? colour + "2E" : colour + "14",
-          opacity: state === "ready" ? (isWeb ? 1 : opacity) : (interactive ? 1 : 0.62),
-          ...(isWeb && interactive ? ({ boxShadow: `0 1px 4px ${colour}55` } as any) : null),
-        }, isWeb && state === "ready" ? webMotion.wait : null]}>
-          <Ionicons name={done ? "checkmark" : (MODE_ICON[step.mode ?? "do"] ?? "ellipse")}
-            size={18} color={interactive ? (proposed ? t.borderStrong : colour) : t.txtTertiary} />
-        </Animated.View>
-        {interactive ? (
-          <View style={{
-            position: "absolute", right: -2, bottom: -2, width: 16, height: 16, borderRadius: 8,
-            alignItems: "center", justifyContent: "center", backgroundColor: t.accent, borderWidth: 1.5, borderColor: t.canvas,
-          }}>
-            <Ionicons name="create" size={9} color="#fff" />
-          </View>
-        ) : null}
-      </View>
-      <Text numberOfLines={2} style={{
-        fontSize: 10.5, lineHeight: 13, marginTop: 4, textAlign: "center",
-        color: interactive ? t.txtSecondary : t.txtTertiary,
-      }}>
-        {step.title}
-      </Text>
-      <Text style={{ fontSize: 9.5, fontWeight: "600", color: interactive ? (proposed ? t.txtTertiary : colour) : t.txtTertiary }}>
-        {label}
-      </Text>
+  const [, colour] = stepNow(t, st);
+  const done = isDone(st);
+  return (
+    <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center",
+      backgroundColor: done ? t.ok + "26" : current ? colour + "26" : "transparent",
+      borderWidth: done ? 0 : 1.5, borderColor: current ? colour : t.borderStrong }}>
+      {done ? <Ionicons name="checkmark" size={14} color={t.ok} />
+        : current ? <Ionicons name={(MODE_ICON[st.mode ?? "do"] ?? "ellipse") as never} size={12} color={colour} />
+        : null}
     </View>
   );
+}
 
+/** One step: glyph, title, "state · result", a chevron to its card. */
+function StepRow({ st, current, selected, onPress }: { st: StepV; current?: boolean; selected: boolean; onPress: () => void }) {
+  const t = useTheme();
+  const [label, colour] = stepNow(t, st);
+  // opened: the detail below carries the whole text - not the same words twice
+  const result = selected ? "" : (st.card?.ask || st.card?.summary || "");
+  const age = !isDone(st) && st.card?.owner ? agoOf(st.card?.at) : "";
+  // A step that is merely waiting its turn says nothing about itself: the same
+  // "waiting" under every row was noise that hid the ones with something to say.
+  const quiet = !current && !result && !isDone(st) && (st.state === "waiting" || st.state === "proposed");
   return (
-    <Pressable onPress={onPress} hitSlop={4}
-      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
-      {node}
+    <Pressable onPress={onPress} accessibilityLabel={st.title}
+      style={({ pressed }) => ({ flexDirection: "row", gap: 10, alignItems: "flex-start", paddingVertical: 8, paddingHorizontal: 4,
+        borderRadius: 10, backgroundColor: selected || pressed ? t.surface2 : "transparent" })}>
+      <View style={{ paddingTop: 1 }}><StepGlyph st={st} current={!!current} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: isDone(st) ? t.txtSecondary : quiet ? t.txtSecondary : t.txtPrimary, fontSize: 14, lineHeight: 19, fontWeight: current ? "600" : "400" }}>{st.title}</Text>
+        {quiet ? null : (
+          <Text style={{ fontSize: 12, lineHeight: 16, color: t.txtTertiary }} numberOfLines={selected ? undefined : 2}>
+            <Text style={{ color: colour, fontWeight: "600" }}>{label}{age ? ` · ${age}` : ""}</Text>
+            {result ? `  ·  ${result}` : ""}
+          </Text>
+        )}
+      </View>
+      {st.track ? <Ionicons name="chevron-forward" size={14} color={t.txtTertiary} style={{ marginTop: 3 }} /> : null}
     </Pressable>
   );
 }
 
-// Horizontal n8n-style read of the chain: one node per step joined by connector
-// arrows. Scrolls sideways when it overflows. Tapping ANY node expands its
-// editor below - a step without a card yet gets the full editor, a step with
-// one gets a read-only summary + a link to that card's own transcript.
-function Pipeline({ p, expanded, onToggle }: { p: Process; expanded: number | null; onToggle: (i: number) => void }) {
+/** Segmented progress: one bar piece per step, done = green, the current one = accent. */
+function Progress({ steps, cur }: { steps: StepV[]; cur: number }) {
   const t = useTheme();
-  const steps = p.steps ?? [];
-  if (steps.length === 0) return null;
+  const tr = useT();
+  const n = steps.length;
+  const done = steps.filter(isDone).length;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ alignItems: "flex-start", paddingVertical: 8, paddingHorizontal: 2 }}>
-      {steps.map((st, i) => (
-        <View key={i} style={{ flexDirection: "row", alignItems: "flex-start" }}>
-          <PipeNode step={st} interactive={!st.track} selected={expanded === i} onPress={() => onToggle(i)} />
-          {i < steps.length - 1 ? (
-            <View style={{ width: 22, height: 48, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="chevron-forward" size={14}
-                color={(st.done || st.state === "done") ? t.ok : t.borderStrong} />
-            </View>
-          ) : null}
-        </View>
-      ))}
-    </ScrollView>
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: "row", gap: 3 }}>
+        {steps.map((st, i) => (
+          <View key={i} style={{ flex: 1, height: 5, borderRadius: 3,
+            backgroundColor: isDone(st) ? t.ok : i === cur ? t.accent : t.surface2 }} />
+        ))}
+      </View>
+      <Text style={{ color: t.txtTertiary, fontSize: 12 }}>
+        {n === 0 ? tr("processes.noSteps") : done === n ? tr("processes.allDone") : tr("processes.progress", { done: String(done), n: String(n) })}
+      </Text>
+    </View>
+  );
+}
+
+function StepDetail({ st, onOpenCard, onEdit }: { st: StepV; onOpenCard: () => void; onEdit: () => void }) {
+  const t = useTheme();
+  const tr = useT();
+  return (
+    <View style={{ marginLeft: 36, marginBottom: 8, gap: 8 }}>
+      {st.card?.summary ? <Text selectable style={{ color: t.txtSecondary, fontSize: 12.5, lineHeight: 18 }}>{st.card.summary}</Text> : null}
+      {st.desc ? <Text style={{ color: t.txtTertiary, fontSize: 12, lineHeight: 17 }}>{st.desc}</Text> : null}
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        {st.track ? (
+          <Pressable onPress={onOpenCard} style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
+            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.openCardLink")}</Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={onEdit} style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+          <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editStep")}</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -294,11 +319,12 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       if (v.action === "accept" || v.action === "accept_all")
         Alert.alert(tr("processes.done"),
           v.action === "accept_all" ? tr("processes.cardsCreated") : tr("processes.cardCreated"));
-      if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") setExpanded(null);
+      if (v.action === "accept" || v.action === "accept_all" || v.action === "remove") { setExpanded(null); setEditIdx(null); }
       // follow the SAME step to its new position, so repeated up/down taps
       // keep working on the step the owner is actually looking at.
       if (v.action === "move" && r && !r.error) {
         setExpanded(v.direction === "up" ? v.idx - 1 : v.idx + 1);
+        setEditIdx(v.direction === "up" ? v.idx - 1 : v.idx + 1);
       }
       invalidate();
     },
@@ -307,6 +333,10 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   const act = (idx: number, action: string, patch?: Record<string, unknown>, title?: string, direction?: string) =>
     stepMut.mutate({ idx, action, patch, title, direction });
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [editIdx, setEditIdx] = useState<number | null>(null);   // the StepEditor (title/mode/due), apart from the read-only detail
+  const [showDone, setShowDone] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [manage, setManage] = useState(false);
 
   async function addStep() {
     // Was: isWeb ? window.prompt : (Alert as any).prompt(...) - Alert.prompt's
@@ -370,9 +400,29 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
   }
 
 
-  const steps = p.steps ?? [];
+  const steps = (p.steps ?? []) as StepV[];
   const [headerOpen, setHeaderOpen] = useState(false);
-  const truncated = (p.request?.length ?? 0) > 120;
+  const [title, rest] = splitRequest(p.request ?? p.id);
+  const cur = steps.findIndex((x) => !isDone(x));                       // the step the plan is on (-1 = all done)
+  const doneIdx = steps.map((x, i) => (isDone(x) ? i : -1)).filter((i) => i >= 0);
+  const upIdx = steps.map((x, i) => (!isDone(x) && i !== cur ? i : -1)).filter((i) => i >= 0);
+  const upShown = showAll ? upIdx : upIdx.slice(0, 3);
+  const nowColour = cur >= 0 ? stepNow(t, steps[cur])[1] : t.ok;
+  const row = (i: number, current = false) => (
+    <View key={i}>
+      <StepRow st={steps[i]} current={current} selected={expanded === i} onPress={() => setExpanded(expanded === i ? null : i)} />
+      {expanded === i ? (
+        <StepDetail st={steps[i]} onOpenCard={() => router.push(`/card/${steps[i].track}` as never)}
+          onEdit={() => setEditIdx(editIdx === i ? null : i)} />
+      ) : null}
+      {editIdx === i ? (
+        <View style={{ marginBottom: 8 }}>
+          <StepEditor idx={i} total={steps.length} step={steps[i]} act={act} onClose={() => setEditIdx(null)}
+            onOpenCard={(id) => router.push(`/card/${id}` as never)} />
+        </View>
+      ) : null}
+    </View>
+  );
   return (
     <Panel style={glass(t)}>
       {editingHeader ? (
@@ -424,15 +474,11 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
               it was the one thing you could never fully read. Tap to
               expand/collapse; only shows the affordance when there is
               actually more to read. */}
-          <Pressable onPress={() => truncated && setHeaderOpen((v) => !v)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <Text style={{ color: t.txtPrimary, fontSize: 14, fontWeight: "600", flex: 1 }}
-              numberOfLines={headerOpen ? undefined : 2}>
-              {p.request ?? p.id}
-            </Text>
-            {truncated ? <Ionicons name={headerOpen ? "chevron-up" : "chevron-down"} size={16} color={t.txtTertiary} /> : null}
+          <Pressable onPress={() => rest && setHeaderOpen((v) => !v)} style={{ gap: 3 }}>
+            <Text style={{ color: t.txtPrimary, fontSize: 16, fontWeight: "600", lineHeight: 21 }}>{title}</Text>
+            {rest ? <Text numberOfLines={headerOpen ? undefined : 2} style={{ color: t.txtTertiary, fontSize: 12.5, lineHeight: 17 }}>{rest}</Text> : null}
           </Pressable>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
             {p.status ? <Chip text={p.status} /> : null}
             {p.client ? <Chip text={tr("processes.clientChip", { name: p.client })} /> : null}
             {p.due ? <Chip text={tr("processes.dueChip", { due: p.due })} /> : null}
@@ -443,52 +489,71 @@ function ProcCard({ p, invalidate }: { p: Process; invalidate: () => void }) {
       {p.status === "proposing" ? <Text style={{ color: t.txtTertiary, fontSize: 12 }}>{tr("processes.proposing")}</Text> : null}
       {p.status === "failed" ? <Text style={{ color: t.danger, fontSize: 12 }}>{p.error ?? tr("processes.proposeFailed")}</Text> : null}
 
-      <Pipeline p={p} expanded={expanded} onToggle={(i) => setExpanded(expanded === i ? null : i)} />
-
-      {expanded !== null && steps[expanded] ? (
-        <View style={{ marginTop: 6 }}>
-          <StepEditor idx={expanded} total={steps.length} step={steps[expanded]} act={act} onClose={() => setExpanded(null)}
-            onOpenCard={(id) => router.push(`/card/${id}` as never)} />
-        </View>
-      ) : null}
-
       {steps.length > 0 ? (
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          <Pressable onPress={() => act(0, "accept_all")}
-            style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
-            <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.acceptAll")}</Text>
-          </Pressable>
-          <Pressable onPress={addStep}
-            style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.addStep")}</Text>
-          </Pressable>
+        <View style={{ marginTop: 12, gap: 12 }}>
+          <Progress steps={steps} cur={cur} />
+          {cur >= 0 ? (
+            <View style={{ borderRadius: 12, borderWidth: 1, borderColor: nowColour + "66", backgroundColor: nowColour + "12", paddingHorizontal: 8, paddingTop: 8, paddingBottom: 2 }}>
+              <Text style={{ color: t.txtTertiary, fontSize: 11, fontWeight: "600", letterSpacing: 0.6, paddingHorizontal: 4 }}>
+                {tr("processes.now").toUpperCase()} · {tr("processes.stepOf", { i: String(cur + 1), n: String(steps.length) })}
+              </Text>
+              {row(cur, true)}
+            </View>
+          ) : null}
+          <View>
+            {doneIdx.length > 0 ? (
+              <Pressable onPress={() => setShowDone((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 4 }}>
+                <Ionicons name={showDone ? "chevron-down" : "chevron-forward"} size={14} color={t.txtTertiary} />
+                <Text style={{ color: t.ok, fontSize: 12.5, fontWeight: "600" }}>{tr("processes.doneGroup", { n: String(doneIdx.length) })}</Text>
+              </Pressable>
+            ) : null}
+            {showDone ? doneIdx.map((i) => row(i)) : null}
+            {upShown.map((i) => row(i))}
+            {upIdx.length > upShown.length ? (
+              <Pressable onPress={() => setShowAll(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 4 }}>
+                <Ionicons name="chevron-forward" size={14} color={t.txtTertiary} />
+                <Text style={{ color: t.txtSecondary, fontSize: 12.5 }}>{tr("processes.moreSteps", { n: String(upIdx.length - upShown.length) })}</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
       ) : null}
-      {/* process-level actions - separate row so they read as a different
-          class of action from the step-level ones above. Was HIDDEN
-          entirely once done/cancelled - which is exactly the state the
-          owner's own "Accounts & Boards PRD" process was in when reporting
-          this, so the fix rendered as if nothing had changed at all.
-          Bearbeiten (rename/re-client, still legitimate after done) stays;
-          only Abbrechen (nothing left to stop) hides. Hidden while the
-          inline edit form itself is open - no point offering "Bearbeiten"
-          again on top of the form it opens. */}
+      {/* Everything that CHANGES the plan sits behind one "Manage" row: the
+          screen is for reading where the plan stands, not for a wall of
+          Edit / Cancel / Delete buttons (owner 2026-10-21: "haesslich"). */}
       {!editingHeader ? (
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-          <Pressable onPress={() => setEditingHeader(true)} disabled={processMut.isPending}
-            style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
-            <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
+        <View style={{ marginTop: 10 }}>
+          <Pressable onPress={() => setManage((v) => !v)} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 4 }}>
+            <Ionicons name={manage ? "chevron-down" : "chevron-forward"} size={14} color={t.txtTertiary} />
+            <Text style={{ color: t.txtTertiary, fontSize: 12.5 }}>{tr("processes.manage")}</Text>
           </Pressable>
-          {p.status !== "cancelled" && p.status !== "done" ? (
-            <Pressable onPress={cancelProcess} disabled={processMut.isPending}
-              style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
-              <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
-            </Pressable>
+          {manage ? (
+            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+              {steps.some((x) => !x.track) ? (
+                <Pressable onPress={() => act(0, "accept_all")}
+                  style={[s.btn, { backgroundColor: t.accent + "29", borderColor: t.accent + "80" }]}>
+                  <Text style={{ color: t.accent, fontSize: 12, fontWeight: "600" }}>{tr("processes.acceptAll")}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={addStep} style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+                <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.addStep")}</Text>
+              </Pressable>
+              <Pressable onPress={() => setEditingHeader(true)} disabled={processMut.isPending}
+                style={[s.btn, { backgroundColor: t.surface2, borderColor: t.borderSubtle }]}>
+                <Text style={{ color: t.txtSecondary, fontSize: 12, fontWeight: "600" }}>{tr("processes.editProcess")}</Text>
+              </Pressable>
+              {p.status !== "cancelled" && p.status !== "done" ? (
+                <Pressable onPress={cancelProcess} disabled={processMut.isPending}
+                  style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
+                  <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.cancelProcess")}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={deleteProcess} disabled={processMut.isPending}
+                style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
+                <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.deleteProcess")}</Text>
+              </Pressable>
+            </View>
           ) : null}
-          <Pressable onPress={deleteProcess} disabled={processMut.isPending}
-            style={[s.btn, { backgroundColor: t.danger + "1A", borderColor: t.danger + "80" }]}>
-            <Text style={{ color: t.danger, fontSize: 12, fontWeight: "600" }}>{tr("processes.deleteProcess")}</Text>
-          </Pressable>
         </View>
       ) : null}
     </Panel>
@@ -501,6 +566,7 @@ function NewProcess({ invalidate }: { invalidate: () => void }) {
   const [request, setRequest] = useState("");
   const [client, setClient] = useState("");
   const [due, setDue] = useState("");
+  const [open, setOpen] = useState(false);
 
   const mut = useMutation({
     mutationFn: () => api.post<{ error?: string }>("/processes/new", { request: request.trim(), client: client.trim(), due }),
@@ -513,6 +579,18 @@ function NewProcess({ invalidate }: { invalidate: () => void }) {
     onError: (e) => Alert.alert(tr("ui.error"), String((e as Error).message)),
   });
 
+  // Folded by default: the screen is for reading the plans that run; filing a
+  // new one is the rare act, not the first thing in view.
+  if (!open) {
+    return (
+      <Pressable onPress={() => setOpen(true)} accessibilityLabel={tr("processes.newProcess")}
+        style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingHorizontal: 12,
+          borderRadius: 12, borderWidth: 1, borderColor: t.borderSubtle, backgroundColor: pressed ? t.surface2 : "transparent" })}>
+        <Ionicons name="add" size={16} color={t.txtSecondary} />
+        <Text style={{ color: t.txtSecondary, fontSize: 14 }}>{tr("processes.newProcess")}</Text>
+      </Pressable>
+    );
+  }
   return (
     <Panel style={glass(t)}>
       <Text style={{ color: t.txtPrimary, fontSize: 15, fontWeight: "600" }}>{tr("processes.newProcess")}</Text>
@@ -564,7 +642,8 @@ export default function Processes() {
         {error ? <Text style={{ color: t.danger }}>{tr("health.unreachable")}</Text> : null}
         <NewProcess invalidate={invalidate} />
         {data && data.length === 0 ? <Empty text={tr("processes.empty")} /> : null}
-        {(data ?? []).map((p: Process) => <ProcCard key={p.id} p={p} invalidate={invalidate} />)}
+        {[...(data ?? [])].sort((a: Process, b: Process) => waitsOnOwner(b) - waitsOnOwner(a))
+          .map((p: Process) => <ProcCard key={p.id} p={p} invalidate={invalidate} />)}
       </ScrollView>
       {/* ONE floating chat entry, same as the board screen's FAB - not a
           "Henry fragen" button on every single process card (owner

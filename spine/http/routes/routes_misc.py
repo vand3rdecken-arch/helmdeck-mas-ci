@@ -19,7 +19,7 @@ def processes_get(self, user):
         processes.sync()
     except Exception:
         pass
-    return self._send(200, json.dumps(processes.list_processes(
+    return self._send(200, json.dumps(processes.view(
         client=user["name"] if is_restricted(user) else None)))
 
 

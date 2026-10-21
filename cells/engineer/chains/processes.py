@@ -160,6 +160,35 @@ def list_processes(client=None):
         ps = [p for p in ps if p.get("client") == client]
     return ps
 
+def _card_view(t):
+    """What the Prozesse screen shows of a step's card: derived from the card
+    at READ time (never stored on the step - the card is the one owner of its
+    lane/question/reply). `ask` = the pending owner question, `owner` = the
+    step waits on the owner (a question, or the card sits in review)."""
+    q = t.get("question") if isinstance(t.get("question"), dict) else None
+    first = ((q or {}).get("questions") or [{}])[0] if q else {}
+    reply = " ".join(str(t.get("last_reply") or "").replace("**", "").split())
+    return {"id": t["id"], "lane": t.get("lane"), "status": t.get("status"),
+            "summary": reply[:240],
+            "ask": (first.get("header") or first.get("question") or "")[:140] if q else "",
+            "owner": bool(q) or t.get("lane") == "review",
+            "at": t.get("turn_ended") or t.get("updated") or ""}
+
+
+def view(client=None):
+    """list_processes() + `card` on every step that has one - the read model of
+    GET /processes."""
+    from cells.engineer.cards import sessions
+    tmap = {t["id"]: t for t in sessions._load()}
+    out = []
+    for p in list_processes(client):
+        q = dict(p)
+        q["steps"] = [dict(st, card=_card_view(tmap[st["track"]]) if st.get("track") in tmap else None)
+                      for st in (p.get("steps") or [])]
+        out.append(q)
+    return out
+
+
 def get(pid):
     for p in _load():
         if p["id"] == pid:

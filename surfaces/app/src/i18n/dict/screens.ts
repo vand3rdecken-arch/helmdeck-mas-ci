@@ -341,6 +341,18 @@ export const screens: Dict = {
     en: "An agent is proposing the steps.",
   },
   "processes.empty": { de: "Keine Prozesse.", en: "No processes." },
+  "processes.now": { de: "Jetzt", en: "Now" },
+  "processes.stepOf": { de: "Schritt {i} von {n}", en: "step {i} of {n}" },
+  "processes.progress": { de: "{done} von {n} erledigt", en: "{done} of {n} done" },
+  "processes.allDone": { de: "Alles erledigt", en: "All done" },
+  "processes.noSteps": { de: "Noch keine Schritte", en: "No steps yet" },
+  "processes.waitsOnYou": { de: "Wartet auf dich", en: "Waiting for you" },
+  "processes.noCardYet": { de: "Noch keine Karte", en: "No card yet" },
+  "processes.openCardLink": { de: "Karte öffnen", en: "Open card" },
+  "processes.editStep": { de: "Schritt bearbeiten", en: "Edit step" },
+  "processes.doneGroup": { de: "{n} erledigt", en: "{n} done" },
+  "processes.moreSteps": { de: "{n} weitere", en: "{n} more" },
+  "processes.manage": { de: "Verwalten", en: "Manage" },
 
   // ---- recordings ---------------------------------------------------------
   "recordings.steps": { de: "{n} Schritte", en: "{n} steps" },
