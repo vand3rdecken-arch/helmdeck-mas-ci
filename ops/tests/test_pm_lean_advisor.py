@@ -67,8 +67,8 @@ def fake_ask(prompt, model=""):
 pm._ask = fake_ask
 
 asked = []
-pm._ask_owner = lambda text, options, header="", card=None, title="": asked.append(
-    {"text": text, "options": options, "header": header, "card": card}) or True
+pm._ask_owner = lambda text, options, header="", card=None, title="", context="": asked.append(
+    {"text": text, "options": options, "header": header, "card": card, "context": context}) or True
 
 
 print("\n[1] goal_check is GONE (struck 2026-09-13): Henry answers 'was fehlt' himself")
@@ -105,6 +105,30 @@ check(not pm._same_card(_F % "jsm-ticket-merge", _F % "confluence-seiten-review"
       "different project folders are not flagged")
 check(pm._same_card(_F % "jsm-ticket-merge", _F % "jsm-ticket-merge"), "same folder twice still is")
 
+print("\n[3c] one plan step filed for three apps (2026-10-21): other folder / other process = not a twin")
+_S = "HUMAN STEP (tracked only): Vergleich und Preis (Owner-Ja)\n\nTabelle gleich / besser / fehlt gegen die Konkurrenz."
+_a = {"id": "s1", "task": _S, "repo": "C:/P/space-kopie", "process": "p1"}
+check(pm._owns_apart(_a, dict(_a, id="s2", repo="C:/P/jsm-ticket-merge", process="p2")), "different app folders")
+check(pm._owns_apart(_a, dict(_a, id="s2", process="p2")), "same folder, different process")
+check(not pm._owns_apart(_a, dict(_a, id="s2")), "same folder + process: the title check decides")
+check(not pm._owns_apart({"id": "x"}, dict(_a)), "a card owning nothing is not vetoed")
+
+print("\n[3d] a tapped answer to a PM question carries the question's context to Henry")
+from cells.copilot.routes import routes_copilot
+from cells.copilot.chat import copilot as _cp
+from spine.ops import ask as _ask_mod
+_q, _ = _ask_mod.parse('<helmdeck-ask>{"questions":[{"question":"Zusammenlegen?","header":"Dup",'
+                       '"options":["Zusammenlegen","Beide behalten"]}]}</helmdeck-ask>')
+_q["context"] = "Gemeint: Karten s1 und s2."
+_orig_oq = _cp.open_question
+_cp.open_question = lambda u: _q
+try:
+    _txt, _err, _ = routes_copilot._answer_text({"name": "o"}, _q.get("id") or "", {"Dup": "Zusammenlegen"})
+finally:
+    _cp.open_question = _orig_oq
+check(not _err and _txt.startswith("Zusammenlegen") and "s1 und s2" in _txt and "Zusammenlegen?" in _txt,
+      "answer = label + question + context (%r %r)" % (_txt, _err))
+
 print("\n[4] duplicate_check_async asks once per pair, then cools down")
 pm.duplicate_check_async()
 for _ in range(20):
@@ -112,7 +136,9 @@ for _ in range(20):
         break
     _time.sleep(0.05)
 check(len(asked) == 1, "asked exactly once for the c1/c2 pair")
-check(asked[0]["options"] == ["Anzeigen", "Ignorieren"], "the duplicate-flow options are present")
+check(asked[0]["options"] == ["Zusammenlegen", "Beide behalten"], "the options answer the question asked")
+check("c1" in asked[0]["context"] and "c2" in asked[0]["context"],
+      "Henry gets WHICH cards the tapped answer is about")
 asked.clear()
 pm.duplicate_check_async()
 for _ in range(20):

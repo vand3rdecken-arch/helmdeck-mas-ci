@@ -222,6 +222,10 @@ def _answer_text(user, request_id, answers):
     text = ask.chat_answer_text(picks).strip()
     if not text:
         return "", "empty answer", 400
+    if q.get("context"):
+        # a PM question (pm_comm._ask_owner): Henry never saw it in his session,
+        # so the bare label would reach him with nothing to attach it to
+        text = "%s\n\n(Antwort auf: %s %s)" % (text, ask.summary(q), q["context"])
     return text, "", 0
 
 

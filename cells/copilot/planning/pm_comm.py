@@ -116,7 +116,7 @@ def _to_henry(kind, detail, card=None, feed=""):
         return ""
 
 
-def _ask_owner(text, options, header="", card=None, title=""):
+def _ask_owner(text, options, header="", card=None, title="", context=""):
     """The PM ASKS: ONE short line plus REAL TAP BUTTONS in the owner's chat.
 
     The owner's complaint was two-sided - too long AND "ich weiss nicht was ich
@@ -177,8 +177,9 @@ def _ask_owner(text, options, header="", card=None, title=""):
                   detail=("Diese Frage an den Owner konnte nicht gestellt werden - im Chat "
                           "wartet bereits eine unbeantwortete Frage, und eine zweite waere "
                           "ein totes Panel. Uebernimm sie: %s (Optionen: %s)"
-                          % (text, " / ".join(str(o.get("label") or o)
-                                              for o in (options or [])))),
+                          % (text + ((" " + context) if context else ""),
+                             " / ".join(str(o.get("label") or o)
+                                        for o in (options or [])))),
                   feed="Frage an Owner zurueckgestellt (andere Frage offen): %s" % line[:80])
         return False
     q = None
@@ -196,6 +197,10 @@ def _ask_owner(text, options, header="", card=None, title=""):
     if not q:
         _escalate(line, tid=card or "", title=title)
         return False
+    if context:
+        # rides on the question, read back by routes_copilot._answer_text: a
+        # tapped label is otherwise all Henry gets of a question he never asked
+        q["context"] = context
     try:
         from cells.copilot.chat import copilot
         copilot.say(line, cls="bot", card=card or None, extra={"question": q})

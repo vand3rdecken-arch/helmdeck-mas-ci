@@ -6038,7 +6038,9 @@ DEBT = [
         "id": "dup-title-identity-heuristic",
         "title": "Duplicate-card check tells 'different app' from 'twin' by quoted names and a Private Project folder in the title",
         "status": "open",
-        "what": "pm.duplicate_titles() compares card titles by word overlap; pm._same_card "
+        "what": "Since 2026-10-21 pm._owns_apart vetoes two cards in different project folders "
+                "or different processes first (what the card OWNS, observed). "
+                "For the rest, pm.duplicate_titles() compares card titles by word overlap; pm._same_card "
                 "now vetoes a pair when each title names something the other lacks "
                 "(a quoted product name, or the folder after 'Private Project/'). It is "
                 "an inference from title text, not an observation of what the cards build.",
@@ -6048,7 +6050,8 @@ DEBT = [
                         "missed. Both only cost one suggestion tap, never an automatic action.",
         "trigger": "an owner report of a wrong 'Zwei Karten sehen fast identisch aus' or a missed twin",
         "fix": "Compare what the cards own (their target folder/project id, set when filed) "
-               "instead of title text.",
+               "instead of title text - done for repo + process; cards owning neither "
+               "still fall back to the title.",
         "since": "2026-10-11",
         "order": 92,
     },

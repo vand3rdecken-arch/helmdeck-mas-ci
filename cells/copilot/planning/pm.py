@@ -566,6 +566,22 @@ def _same_card(a, b):
     return _same_question(a, b)
 
 
+def _owns_apart(a, b):
+    """Two cards that OWN different things are different work, whatever their
+    titles say: another project folder (repo) or another process. Measured
+    2026-10-21: one plan template filed for three Atlassian apps gave three
+    'Vergleich und Preis (Owner-Ja)' step cards, each in its own app folder
+    and process - the title check flagged them as twins and the owner was
+    asked to merge three different apps' price steps."""
+    def norm(r):
+        return os.path.normcase(os.path.normpath(r)) if r else ""
+    ra, rb = norm(a.get("repo")), norm(b.get("repo"))
+    if ra and rb and ra != rb:
+        return True
+    pa, pb = a.get("process") or "", b.get("process") or ""
+    return bool(pa and pb and pa != pb)
+
+
 def duplicate_titles():
     """PURE CODE, zero model cost: two ACTIVE cards whose titles are near-
     identical (same content-word set, via the same Jaccard machinery
@@ -582,6 +598,8 @@ def duplicate_titles():
     pairs = []
     for i, a in enumerate(tracks):
         for b in tracks[i + 1:]:
+            if _owns_apart(a, b):
+                continue
             if _same_card(a["task"], b["task"]):
                 pairs.append((a, b))
     return pairs
@@ -597,11 +615,19 @@ def duplicate_check_async():
                 sig = "dup:" + "|".join(sorted([a["id"], b["id"]]))
                 if not _suggestion_due(sig):
                     continue
+                ta, tb = (t["task"].strip().splitlines()[0][:70] for t in (a, b))
                 _ask_owner(
                     "Zwei Karten sehen fast identisch aus: „%s“ und „%s“. Zusammenlegen?"
-                    % (a["task"][:70], b["task"][:70]),
-                    ["Anzeigen", "Ignorieren"],
-                    header="Mögliches Duplikat", card=a["id"])
+                    % (ta, tb),
+                    ["Zusammenlegen", "Beide behalten"],
+                    header="Mögliches Duplikat", card=a["id"],
+                    # the tapped label alone reaches Henry as the owner's next
+                    # message - he never saw this PM question, so he gets WHICH
+                    # cards it was about (2026-10-21: a bare "Anzeigen" set off
+                    # something unrelated)
+                    context="Gemeint: PM-Duplikatcheck, Karten %s (%s, lane %s) und %s (%s, lane %s)."
+                            % (a["id"], a.get("repo") or "-", a.get("lane"),
+                               b["id"], b.get("repo") or "-", b.get("lane")))
                 return   # one at a time - never more than one open question, see _ask_owner
         except Exception as e:
             print("pm: duplicate_check failed:", e)
