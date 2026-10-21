@@ -30,6 +30,11 @@ p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
 try:
     proctable.own_turn(p)
     check(str(p.pid) in proctable._read_pids(), "a judge run shows up in driver_pids.json (what restart_daemon reads)")
+    # the run must SURVIVE being recorded: own_turn once adopted twice, the second
+    # adopt() terminated the first job (a "recycled pid") and killed the judge -
+    # rc 1, empty stdout, 0.1 s, every Henry judgement failed (2026-10-20 23:35)
+    time.sleep(0.5)
+    check(p.poll() is None, "the judge process is still alive after own_turn")
     proctable.forget_turn(p)
     check(str(p.pid) not in proctable._read_pids(), "forget_turn removes it when the run ends")
 finally:

@@ -241,9 +241,12 @@ def own_turn(p):
     process and reads driver_pids.json - so a turn is recorded there too, and
     forget_turn() removes it. 2026-10-20 22:30: a restart read "nothing running"
     while the broker was mid-way through filing a process's step cards."""
-    own(p)
     pid = getattr(p, "pid", None)
     if pid:
+        # _record_pid adopts. NOT own() first: a second adopt() of the same live
+        # pid reads as a recycled pid, terminates the job the first one made -
+        # and the judge process with it (rc 1, empty output, 0.1 s; every Henry
+        # judgement failed from 2026-10-20 23:35 until this fix).
         _record_pid(pid, _proc_start_epoch(pid))
     return p
 
