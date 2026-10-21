@@ -256,6 +256,22 @@ check(code == 200 and "Frage offen" in texts,
 check(any(i.get("detail_title") == "Antwort" and i.get("text") == "noch nie gelaufen"
           for i in cb["screen"]["items"]),
       "the card's body is the one matched BY ID, not another card's text")
+from spine.storage import events as _ev
+_real_settings = _ev.settings
+_ev.settings = lambda: {**_real_settings(), "wear_screens": False}
+try:
+    code_off, _ = _card("q-1")
+    sent.clear()
+    sessions.list_tracks = lambda: TRACKS
+    glances.glance_payload = lambda tracks, m: {"needs_you": [], "yours": [], "econ": {}, "ts": 0}
+    W.wear_board_get(_Stub(), {"role": "owner", "name": "owner"})
+    board_off = sent.get("body") or {}
+finally:
+    _ev.settings = _real_settings
+    sessions.list_tracks = _real_list
+    glances.glance_payload = _real_payload
+check(code_off == 404 and "screen" not in board_off,
+      "kill switch wear_screens=false: board omits `screen`, /wear/card is 404")
 code, cb = _card("nope")
 check(code == 404, "a card that is not on the board is a 404, never a guess")
 code, cb = _card("")

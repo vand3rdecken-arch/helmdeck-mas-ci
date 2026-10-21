@@ -199,6 +199,12 @@ def _wear_board_payload():
     return payload
 
 
+def _wear_screens_on():
+    """The owner's kill switch for daemon-described screens (settings `wear_screens`)."""
+    from spine.storage import events
+    return bool(events.settings().get("wear_screens", True))
+
+
 def wear_board_get(self, user):
     # Same bar as chat_post's own role check (routes_copilot.py) - a `client`
     # role has no board-wide view to be shown here, on any surface.
@@ -207,8 +213,9 @@ def wear_board_get(self, user):
     payload = _wear_board_payload()
     # The screen as DATA (spine/ops/wear_screen.py): lets the watch's layout and
     # wording change without a native release. Additive - old watches skip it.
-    from spine.ops.wear_screen import board_screen
-    payload["screen"] = board_screen(payload)
+    if _wear_screens_on():
+        from spine.ops.wear_screen import board_screen
+        payload["screen"] = board_screen(payload)
     return self._send(200, json.dumps(payload))
 
 
@@ -218,6 +225,8 @@ def wear_card_get(self, user):
     opened from."""
     if is_restricted(user):
         return self._send(403, json.dumps({"error": "owner only"}))
+    if not _wear_screens_on():
+        return self._send(404, json.dumps({"error": "screens off"}))
     from urllib.parse import parse_qs, urlparse
     want = (parse_qs(urlparse(self.path).query).get("id") or [""])[0].strip()
     if not want:

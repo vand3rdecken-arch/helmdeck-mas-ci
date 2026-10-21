@@ -28,6 +28,12 @@ SET = os.path.join(ROOT, "settings.json")
 RELAY_FEED = os.path.join(ROOT, "relay_feed.json")
 
 DEFAULTS = {
+    # Kill switch for the daemon-described watch screens (spine/ops/wear_screen.py).
+    # Home: workspace settings, owner-write - it is policy for what the daemon
+    # SENDS, not a view pref. False = /wear/board omits `screen` and /wear/card
+    # answers 404, so every watch falls back to its native screens at once,
+    # no release needed (debt wear-screen-dual-path).
+    "wear_screens": True,
     # NATIVE TUNING (home: workspace settings, owner-write - device-behaviour POLICY,
     # not a secret, not a per-account view pref, not per-project; decree 2026-10-08
     # data-model-first). Thresholds and timeouts the native code used to hardcode;
