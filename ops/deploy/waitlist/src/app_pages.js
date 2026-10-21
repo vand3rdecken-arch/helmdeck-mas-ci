@@ -795,7 +795,110 @@ ${compareTable({ n: "Label Doctor", p: [0, 12.5, 25, 108] }, LD_OTHERS, "Label I
 ${B(`<p>Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>`, `<p>Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>`)}
 <p><a href="/label-doktor/">${L("Back to Label Doctor", "Zurück zu Label Doctor")}</a></p>`);
 
+const SUBCOMPONENTS_INDEX = page("subcomponents", "Subcomponents for Jira", "Home", `<h1>Subcomponents for Jira</h1>
+<p>Nest Jira components in a tree and search a whole branch with one JQL function (Jira Cloud, Atlassian Forge, Runs on Atlassian).</p>
+<ul><li>Drag components into a tree, or use the row menu.</li><li><code>component in subcomponentsOf("Billing")</code> finds issues in a whole branch.</li><li>Changes are collected first, then saved together.</li><li>A history shows who changed what, with Undo.</li><li>Issue counts per component and per branch.</li><li>No external servers, no tracking.</li></ul>
+<blockquote>The app is for Jira project administrators. Price planned: free up to 10 users, then about USD 125 / 250 / 450 per year at 25 / 50 / 100 users.</blockquote>
+<p>The app is not yet listed on the Atlassian Marketplace. Working name.</p>`);
+const SUBCOMPONENTS_DOCS = page("subcomponents", "Subcomponents for Jira", "Documentation", `<h1>Documentation: Subcomponents for Jira</h1>
+<h2>Open the app</h2>
+<p>In Jira, open your project, then Project settings, then the page "Subcomponents for Jira" under Apps. Only project administrators and Jira administrators can change the tree. Everyone else is blocked from saving.</p>
+<h2>Arrange components</h2>
+<ol><li>Drag a component onto another one to make it a subcomponent, or open the row menu and choose "Move to".</li><li>Changes appear marked and are counted in the bar at the bottom: "N unsaved changes".</li><li>Click Save to apply them, or Discard to drop them.</li></ol>
+<h2>Create, rename, describe, set lead, delete</h2>
+<p>Use the inline fields in the tree. The lead field picks from people who can be assigned in the project. Clear the lead to remove it. Deleting a component also removes it from the tree.</p>
+<h2>Issue counts</h2>
+<p>The number next to a component opens Jira's issue search for that component, newest first. The second link "incl. subcomponents" searches the whole branch.</p>
+<h2>JQL</h2>
+<ul><li><code>component in subcomponentsOf("Billing")</code>: issues in Billing and everything below it.</li><li><code>component not in subcomponentsOf("Billing")</code>: issues outside that branch.</li><li><code>component in subcomponentsOf("Billing", "SAM1")</code>: only in project SAM1.</li></ul>
+<p>Without the project argument, components with the same name in several projects are merged. After every change the app refreshes the results Jira stores for the function.</p>
+<h2>History and Undo</h2>
+<p>Open History to see who changed what and when. Undo reverses one saved batch of changes. The history only covers changes made through the app, and keeps the last 500 entries per project.</p>
+<h2>Limits</h2>
+<p>Cloud only. The hierarchy exists only inside the app, Jira's own component list stays flat.</p>`);
+const SUBCOMPONENTS_PRICING = page("subcomponents", "Subcomponents for Jira", "Pricing", `<h1>Pricing: Subcomponents for Jira</h1>
+<p>Jira Cloud, billed yearly through the Atlassian Marketplace.</p>
+<table><tr><th>Users</th><th>Price per year</th></tr><tr><td>1 to 10</td><td>Free</td></tr><tr><td>25</td><td>about USD 125</td></tr><tr><td>50</td><td>about USD 250</td></tr><tr><td>100</td><td>about USD 450</td></tr></table>
+<ul><li>Free up to 10 users, with all features.</li><li>The exact tiers and amounts are shown on the Atlassian Marketplace listing and apply at purchase.</li><li>No fee per project, no extra charge for the JQL function or the history.</li></ul>
+<p>Questions: support@helmdeck.de.</p>`);
+const SUBCOMPONENTS_SUPPORT = page("subcomponents", "Subcomponents for Jira", "Support", `<h1>Support: Subcomponents for Jira</h1>
+<p>Write to <strong>support@helmdeck.de</strong>. Please include your Jira site name, the project key and what you did. Do not send passwords or issue content.</p>
+<ul><li>Paying customers: target first response within two business days (a target, not a commitment).</li><li>Free tier (up to 10 users): the documentation at https://helmdeck.de/subcomponents/docs.</li><li>Security reports: security@helmdeck.de.</li><li>Privacy requests: privacy@helmdeck.de.</li></ul>
+<p>Vendor: Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany.</p>
+<h2>Common questions</h2>
+<p><strong>I cannot move or edit components.</strong> Only project administrators and Jira administrators can change the tree. Ask one of them.</p>
+<p><strong>My JQL finds nothing.</strong> Check that the component name matches exactly. If the same name exists in several projects, add the project as second argument.</p>
+<p><strong>A change I made in Jira does not show in the history.</strong> The history only lists changes made through the app.</p>`);
+const SUBCOMPONENTS_PRIVACY = page("subcomponents", "Subcomponents for Jira", "Privacy", `<h1>Privacy Policy: Subcomponents for Jira</h1>
+<p>Version 21 October 2026.</p>
+<p>Effective date: 21 October 2026</p>
+<h2>1. Who we are</h2>
+<p>Subcomponents for Jira is provided by Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany, e-mail for privacy requests: privacy@helmdeck.de ("we").</p>
+<h2>2. What the app does</h2>
+<p>The app is for Atlassian Jira Cloud. It lets a project administrator arrange the components of a project in a tree, adds the JQL function <code>subcomponentsOf()</code> to search a whole branch, and keeps a history of changes made through the app.</p>
+<h2>3. Roles</h2>
+<p>The organisation that installs the app (the "customer") decides which projects and people use it. For personal data of the customer's staff, the customer is the controller. We process data only to run the app for the customer.</p>
+<h2>4. Where data lies</h2>
+<p>The app runs entirely on Atlassian Forge. All app data is stored in the Forge storage of the customer's own Jira site, on Atlassian infrastructure. We run no server and no database of our own and do not receive a copy of the data. We have no access to the stored data of a customer.</p>
+<h2>5. Data the app processes</h2>
+<table><tr><th>Data</th><th>Purpose</th><th>Storage</th></tr><tr><td>Hierarchy of a project: for each component its parent component, by component ID</td><td>Show the tree and answer <code>subcomponentsOf()</code></td><td>Forge storage of the customer, key per project</td></tr><tr><td>Change history of a project (up to 500 entries): type of change, component IDs and names, old and new values, account ID and display name of the person who made the change, time, batch ID for Undo</td><td>Traceability and Undo</td><td>Forge storage of the customer, key per project</td></tr><tr><td>Component data (name, description, lead, issue counts)</td><td>Show the tree</td><td>Read from Jira when needed, not stored by the app</td></tr><tr><td>Display names and profile picture paths of lead candidates</td><td>Show and pick a component lead</td><td>Read from Jira when needed, not stored by the app</td></tr></table>
+<p>The app does not store e-mail addresses, issue content or IP addresses. It reads components, issue counts per component and users that can be assigned from Jira. It writes to Jira only when an administrator saves a change: it creates, renames, describes or deletes a component, or sets the component lead. These writes run as the signed-in user, so Jira applies its own permission check and records the change under that user. After a change the app also refreshes the stored results of its JQL function inside Jira.</p>
+<p>Jira has no audit log for components. The app history therefore only covers changes made through the app.</p>
+<h2>6. Outside connections</h2>
+<p>The app makes no calls to servers other than the customer's Jira site. We use no analytics, no tracking, no advertising, no AI services and no other third parties.</p>
+<h2>7. Logs</h2>
+<p>Atlassian keeps technical function logs for Forge apps. Our code writes error messages to them and does not write names or content on purpose. Error messages from Jira calls can contain technical identifiers. The logs are on Atlassian's platform and are used by us for troubleshooting only.</p>
+<h2>8. How long data is kept</h2>
+<p>The history keeps the last 500 entries per project, older entries are dropped. The hierarchy of a deleted component is removed when the next change is saved. What Atlassian does with app data after uninstallation is described in Atlassian's Forge documentation. On request, we confirm deletion of anything we could hold.</p>
+<h2>9. Rights of individuals</h2>
+<p>People whose data is processed can ask the customer (their employer or organisation) for access, correction, erasure, restriction, objection and portability, and can complain to a supervisory authority. Because we hold no data of the customer, we forward requests to the customer or support the customer on request. Contact: privacy@helmdeck.de.</p>
+<h2>10. Legal bases</h2>
+<p>For the customer's staff: the customer's own basis. For our handling of contact requests and support: performance of a contract and legitimate interest.</p>
+<h2>11. Security</h2>
+<p>We rely on Atlassian's platform for sign-in, hosting and encryption. The app checks permissions in its backend for every change (project administrator or Jira administrator), limits itself to the Jira scopes it needs and validates input. No system is free of risk.</p>
+<h2>12. International transfers</h2>
+<p>The app itself transfers no data. Transfers by Atlassian follow Atlassian's terms and the customer's Atlassian agreement.</p>
+<h2>13. Changes</h2>
+<p>We may update this policy. The current version is at https://helmdeck.de/subcomponents/privacy. Material changes are announced there and in the Marketplace listing.</p>
+<h2>14. Contact</h2>
+<p>Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany, privacy@helmdeck.de, security reports: security@helmdeck.de.</p>`);
+const SUBCOMPONENTS_TERMS = page("subcomponents", "Subcomponents for Jira", "Terms", `<h1>End User Terms: Subcomponents for Jira Cloud</h1>
+<p>These terms are an addition to the Atlassian Marketplace End User Agreement (the "Atlassian EULA"). Recommended: choose the Atlassian standard EULA in the listing and publish this text as the vendor addendum.</p>
+<p>Version: 21 October 2026</p>
+<h2>1. Parties</h2>
+<p>Vendor: Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany, support@helmdeck.de. Customer: the person or organisation that installs the app on a Jira Cloud site.</p>
+<h2>2. Order of terms</h2>
+<p>If these terms conflict with the Atlassian EULA, the Atlassian EULA applies where it is mandatory, otherwise these additions apply.</p>
+<h2>3. Licence and pricing</h2>
+<p>The app is licensed through the Atlassian Marketplace. Atlassian determines the licence status; the vendor runs no licence server. Sites with up to 10 users use the app at no charge. Larger sites pay the price on the listing per year: about USD 125 for 25 users, about USD 250 for 50 users and about USD 450 for 100 users. The exact tiers and amounts shown in the Marketplace apply.</p>
+<h2>4. What the app does and does not do</h2>
+<p>The app arranges components in a tree, provides the JQL function <code>subcomponentsOf()</code> and keeps a history of changes made through the app. The hierarchy is an addition kept by the app. Jira itself still sees a flat list of components. The history does not include changes made directly in Jira. The app does not give legal advice and does not decide how a customer organises its projects. The customer is responsible for who may administer projects and for checking changes before saving.</p>
+<h2>5. Customer duties</h2>
+<p>The customer ensures it may process its staff's data in this way (the history stores the name of the person who changed a component) and informs them where required.</p>
+<h2>6. Data</h2>
+<p>See the Privacy Policy at https://helmdeck.de/subcomponents/privacy. App data lies in the customer's Forge storage.</p>
+<h2>7. Availability and support</h2>
+<p>The app depends on Atlassian Forge and Jira. The vendor makes no promise of uninterrupted operation. Support through https://helmdeck.de/subcomponents/support. Target first response for paying customers: two business days, a target and not a commitment. Free tier: documentation only.</p>
+<h2>8. Disclaimer and liability</h2>
+<p>The app is provided "as is" to the extent the law allows. Liability for intent, gross negligence, injury to life, body or health, under mandatory product liability rules and for breach of essential contractual duties is not limited.</p>
+<h2>9. Term and ending</h2>
+<p>The term follows the Marketplace subscription. After uninstalling, the app processes nothing further. Components in Jira stay as they are, because the app changes them only through Jira.</p>
+<h2>10. Changes</h2>
+<p>The vendor may change these terms for future versions. Changes are published at https://helmdeck.de/subcomponents/terms; the Atlassian EULA procedure applies where relevant.</p>
+<h2>11. Governing law and venue</h2>
+<p>Governing law and venue follow the Atlassian EULA that applies to the installation. These additions do not set a separate choice of law or venue. Mandatory consumer protection rules remain unaffected.</p>
+<h2>12. Legal notice</h2>
+<p>Provider: Tien Duy Vo, {{ADDR_STREET}}, {{ADDR_ZIP}} Frankfurt am Main, Germany. E-mail: support@helmdeck.de. The provider is a natural person, not a company.</p>`);
+
+
 export const APP_PAGES = {
+  "/subcomponents": SUBCOMPONENTS_INDEX,
+  "/subcomponents/": SUBCOMPONENTS_INDEX,
+  "/subcomponents/docs": SUBCOMPONENTS_DOCS,
+  "/subcomponents/pricing": SUBCOMPONENTS_PRICING,
+  "/subcomponents/support": SUBCOMPONENTS_SUPPORT,
+  "/subcomponents/privacy": SUBCOMPONENTS_PRIVACY,
+  "/subcomponents/terms": SUBCOMPONENTS_TERMS,
   "/readproof/compare": RP_COMPARE,
   "/label-doktor/compare": LD_COMPARE,
   "/readproof": LESENACHWEIS_INDEX,
