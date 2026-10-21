@@ -795,6 +795,50 @@ ${compareTable({ n: "Label Doctor", p: [0, 12.5, 25, 108] }, LD_OTHERS, "Label I
 ${B(`<p>Among the paid apps listed, Label Doctor has the lowest price at 50 and 100 users. At 500 users Label Pro and Label Organizer (85) and Labele (107.50) are cheaper than Label Doctor (108). Three apps are free, so Label Doctor is not the cheapest option overall; compare what each one does.</p>`, `<p>Unter den gelisteten Bezahl-Apps hat Label Doctor bei 50 und 100 Nutzern den niedrigsten Preis. Bei 500 Nutzern sind Label Pro und Label Organizer (85) und Labele (107,50) günstiger als Label Doctor (108). Drei Apps sind kostenlos, Label Doctor ist also insgesamt nicht die günstigste Wahl; vergleiche, was jede App leistet.</p>`)}
 <p><a href="/label-doktor/">${L("Back to Label Doctor", "Zurück zu Label Doctor")}</a></p>`);
 
+const LD_SECURITY = page("label-doktor", "Label Doctor", ["Security, Label Doctor", "Sicherheit, Label Doctor"], `<h1>${L("Security: Label Doctor", "Sicherheit: Label Doctor")}</h1>
+<p>${L("Version: 21.10.2026", "Stand: 21.10.2026")}</p>
+<div class=en lang=en>
+<h2>Architecture</h2>
+<p>Label Doctor is an Atlassian Forge app for Jira Cloud. It runs on the Atlassian platform. There are no servers, no database and no third-party services of our own.</p>
+<h2>Data</h2>
+<p>App data is stored only in the Forge storage of your own Jira installation: label names with ticket counts, a 30-day merge and undo log (ticket keys, previous labels, the Atlassian account ID of the admin), settings, AI usage counters and cached AI suggestions. The provider does not receive or copy your Jira data. The app reads and writes only the labels field of tickets, not titles, descriptions or comments. Details: <a href="/label-doktor/privacy">Privacy Policy</a>.</p>
+<h2>Permissions</h2>
+<p>The app requests only these scopes:</p>
+<ul>
+<li><code>read:jira-work</code>: search tickets and read their labels.</li>
+<li><code>write:jira-work</code>: change the labels field when an admin confirms a merge or an undo.</li>
+<li><code>read:label:jira</code>: read the list of labels of your site.</li>
+<li><code>storage:app</code>: Forge storage for the data listed above.</li>
+</ul>
+<h2>Outside connections</h2>
+<p>The app declares no external hosts and sends no data outside Atlassian. No tracking, no analytics.</p>
+<h2>AI</h2>
+<p>For labels its rules cannot decide, the app can ask an AI model through Atlassian Forge LLM, inside the Atlassian platform. The AI receives only label names and ticket counts, never ticket content or people. The AI only makes suggestions: an admin confirms every change. Admins can switch the AI off in the settings, and a daily limit applies.</p>
+<h2>Reporting a vulnerability</h2>
+<p>Write to <code>security@helmdeck.de</code> with "Security" in the subject. Please do not send credentials or customer data.</p>
+</div>
+<div class=de lang=de>
+<h2>Architektur</h2>
+<p>Label Doctor ist eine Atlassian-Forge-App für Jira Cloud. Sie läuft auf der Atlassian-Plattform. Es gibt keine eigenen Server, keine eigene Datenbank und keine Drittdienste.</p>
+<h2>Daten</h2>
+<p>App-Daten liegen nur im Forge-Speicher deiner eigenen Jira-Installation: Label-Namen mit Ticket-Anzahl, ein 30-Tage-Protokoll der Zusammenführungen und Rücknahmen (Ticket-Schlüssel, vorherige Labels, Atlassian-Konto-ID des Admins), Einstellungen, KI-Zähler und zwischengespeicherte KI-Vorschläge. Der Anbieter bekommt und kopiert deine Jira-Daten nicht. Die App liest und schreibt nur das Feld Labels, nicht Titel, Beschreibungen oder Kommentare. Details: <a href="/label-doktor/privacy">Datenschutzerklärung</a>.</p>
+<h2>Berechtigungen</h2>
+<p>Die App fordert nur diese Scopes an:</p>
+<ul>
+<li><code>read:jira-work</code>: Tickets suchen und ihre Labels lesen.</li>
+<li><code>write:jira-work</code>: das Feld Labels ändern, wenn ein Admin eine Zusammenführung oder Rücknahme bestätigt.</li>
+<li><code>read:label:jira</code>: die Liste der Labels deiner Seite lesen.</li>
+<li><code>storage:app</code>: Forge-Speicher für die oben genannten Daten.</li>
+</ul>
+<h2>Externe Verbindungen</h2>
+<p>Die App deklariert keine externen Hosts und sendet keine Daten aus Atlassian heraus. Kein Tracking, keine Analyse.</p>
+<h2>KI</h2>
+<p>Für Labels, die die Regeln nicht entscheiden können, kann die App ein KI-Modell über Atlassian Forge LLM fragen, innerhalb der Atlassian-Plattform. Die KI bekommt nur Label-Namen und Ticket-Anzahlen, nie Ticket-Inhalte oder Personen. Die KI macht nur Vorschläge: Ein Admin bestätigt jede Änderung. Admins können die KI in den Einstellungen abschalten, und es gilt ein Tageslimit.</p>
+<h2>Sicherheitslücke melden</h2>
+<p>Schreibe an <code>security@helmdeck.de</code> mit "Security" im Betreff. Bitte sende keine Zugangsdaten und keine Kundendaten.</p>
+</div>
+<p><a href="/label-doktor/">${L("Back to Label Doctor", "Zurück zu Label Doctor")}</a></p>`);
+
 const SUBCOMPONENTS_INDEX = page("subcomponents", "Subcomponents for Jira", "Home", `<h1>Subcomponents for Jira</h1>
 <p>Nest Jira components in a tree and search a whole branch with one JQL function (Jira Cloud, Atlassian Forge, Runs on Atlassian).</p>
 <ul><li>Drag components into a tree, or use the row menu.</li><li><code>component in subcomponentsOf("Billing")</code> finds issues in a whole branch.</li><li>Changes are collected first, then saved together.</li><li>A history shows who changed what, with Undo.</li><li>Issue counts per component and per branch.</li><li>No external servers, no tracking.</li></ul>
@@ -901,6 +945,7 @@ export const APP_PAGES = {
   "/subcomponents/terms": SUBCOMPONENTS_TERMS,
   "/readproof/compare": RP_COMPARE,
   "/label-doktor/compare": LD_COMPARE,
+  "/label-doktor/security": LD_SECURITY,
   "/readproof": LESENACHWEIS_INDEX,
   "/readproof/": LESENACHWEIS_INDEX,
   "/readproof/docs": LESENACHWEIS_DOCS,
