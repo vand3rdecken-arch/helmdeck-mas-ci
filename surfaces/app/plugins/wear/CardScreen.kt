@@ -61,7 +61,7 @@ import org.json.JSONObject
  * to any request_id a worker is waiting on).
  */
 @Composable
-fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
+fun LegacyCardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
     // SnapshotStateMap IS the observable object (unlike mutableStateOf's
     // MutableState<T>) - `val`, not `var ... by`, no property-delegate
     // getValue/setValue exists for it.
@@ -368,7 +368,7 @@ fun CardScreen(context: Context, card: BoardCard, onBack: () -> Unit) {
     }
 }
 
-private fun askHenry(
+internal fun askHenry(
     context: Context, scope: kotlinx.coroutines.CoroutineScope, cardId: String, message: String,
     onBusy: (Boolean) -> Unit, onReply: (String, QuestionBlock?) -> Unit,
 ) {

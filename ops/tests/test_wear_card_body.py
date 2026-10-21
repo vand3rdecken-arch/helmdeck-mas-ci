@@ -227,6 +227,40 @@ check("#" not in d and "*" not in d and "`" not in d,
 check(d == "DELIVERED fett und code",
       "and the words survive the flattening intact")
 
+# -- 9. the screen description rides on the board; /wear/card serves one card --
+check((body.get("screen") or {}).get("v") == 1,
+      "the board response carries its screen description (additive `screen`)")
+
+
+def _card(card_id):
+    class _S(_Stub):
+        path = "/wear/card?id=" + card_id
+    sent.clear()
+    sessions.list_tracks = lambda: TRACKS
+    glances.glance_payload = lambda tracks, m: {
+        "needs_you": [{"id": "q-1", "task": "wartende Karte", "detail": "warum",
+                       "reason": "question", "status": "needs_you"}],
+        "yours": [], "econ": {}, "ts": 0}
+    try:
+        W.wear_card_get(_S(), {"role": "owner", "name": "owner"})
+    finally:
+        sessions.list_tracks = _real_list
+        glances.glance_payload = _real_payload
+    return sent.get("code"), sent.get("body") or {}
+
+
+code, cb = _card("q-1")
+texts = [i.get("text") for i in (cb.get("screen") or {}).get("items", [])]
+check(code == 200 and "Frage offen" in texts,
+      "/wear/card?id= answers with that card's screen, reason label included")
+check(any(i.get("detail_title") == "Antwort" and i.get("text") == "noch nie gelaufen"
+          for i in cb["screen"]["items"]),
+      "the card's body is the one matched BY ID, not another card's text")
+code, cb = _card("nope")
+check(code == 404, "a card that is not on the board is a 404, never a guess")
+code, cb = _card("")
+check(code == 400, "no id is a 400")
+
 print()
 if _fails:
     print("FAILED (%d):" % len(_fails))

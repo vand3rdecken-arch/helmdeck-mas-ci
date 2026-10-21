@@ -162,11 +162,9 @@ def _wear_pipeline(tracks, taken_ids):
             "backlog": backlog[:WEAR_LIST_MAX], "backlog_total": len(backlog)}
 
 
-def wear_board_get(self, user):
-    # Same bar as chat_post's own role check (routes_copilot.py) - a `client`
-    # role has no board-wide view to be shown here, on any surface.
-    if is_restricted(user):
-        return self._send(403, json.dumps({"error": "owner only"}))
+def _wear_board_payload():
+    """The board as the watch gets it (before its screen description): one
+    assembly shared by /wear/board and /wear/card."""
     from cells.engineer.cards import sessions
     from spine.storage import events
     from spine.ops.glances import glance_payload
@@ -198,11 +196,48 @@ def wear_board_get(self, user):
             # through routes_glance, which never sees this object.
             if row.get("detail"):
                 row["detail"] = _wear_text(row["detail"], WEAR_DETAIL_MAX)
+    return payload
+
+
+def wear_board_get(self, user):
+    # Same bar as chat_post's own role check (routes_copilot.py) - a `client`
+    # role has no board-wide view to be shown here, on any surface.
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
+    payload = _wear_board_payload()
     # The screen as DATA (spine/ops/wear_screen.py): lets the watch's layout and
     # wording change without a native release. Additive - old watches skip it.
     from spine.ops.wear_screen import board_screen
     payload["screen"] = board_screen(payload)
     return self._send(200, json.dumps(payload))
+
+
+def wear_card_get(self, user):
+    """One card as a screen description (`?id=`). Built from the same board
+    assembly, so the card on the wrist can never disagree with the list it was
+    opened from."""
+    if is_restricted(user):
+        return self._send(403, json.dumps({"error": "owner only"}))
+    from urllib.parse import parse_qs, urlparse
+    want = (parse_qs(urlparse(self.path).query).get("id") or [""])[0].strip()
+    if not want:
+        return self._send(400, json.dumps({"error": "id required"}))
+    payload = _wear_board_payload()
+    pipe = payload.get("pipeline") or {}
+    buckets = (("needs_you", None), ("yours", "yours"),
+               ("working", "working"), ("backlog", "backlog"))
+    for name, fixed in buckets:
+        rows = payload.get(name) if name in ("needs_you", "yours") else pipe.get(name)
+        for row in rows or ():
+            if row.get("id") == want:
+                from spine.ops.wear_screen import card_screen
+                reason = row.get("reason") if name == "needs_you" else fixed
+                return self._send(200, json.dumps(
+                    {"screen": card_screen(row, reason or "")}))
+    return self._send(404, json.dumps({"error": "card not on the board"}))
+
+
+
 
 
 # How many transcript lines the watch may pull. The wrist is not where anyone
@@ -658,6 +693,6 @@ def wear_voice_get(self, user):
     return self._send(200, json.dumps(resp))
 
 
-GET_ROUTES = {"/wear/board": wear_board_get, "/wear/chat": wear_chat_get,
+GET_ROUTES = {"/wear/board": wear_board_get, "/wear/card": wear_card_get, "/wear/chat": wear_chat_get,
               "/wear/voice": wear_voice_get}
 POST_ROUTES = {"/wear/talk": wear_talk_post}

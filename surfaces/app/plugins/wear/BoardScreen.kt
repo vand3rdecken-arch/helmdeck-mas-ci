@@ -125,6 +125,21 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
     // reloads the board.
     LaunchedEffect(WearStream.board.value) { reload() }
 
+    // The daemon's own screen description wins (spine/ops/wear_screen.py): layout
+    // and wording are then a daemon change. The native board below is the
+    // fallback for a daemon that predates it.
+    val described = screenBlocks
+    if (described != null) {
+        val known = cards + yours + working.cards + backlog.cards
+        ScreenHost(
+            context, described,
+            cardFor = { id -> known.firstOrNull { it.id == id } },
+            onOpenCard = onOpenCard,
+            onNav = { to -> if (to == "henry") onAskHenry() },
+            onReload = { reload() },
+            onBack = {})
+        return
+    }
     MaterialTheme {
         val columnState = rememberTransformingLazyColumnState()
         // Google's Wear list pattern (developer.android.com/training/wearables/
@@ -140,23 +155,6 @@ fun BoardScreen(context: Context, onOpenCard: (BoardCard) -> Unit, onAskHenry: (
                 contentPadding = contentPadding,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // The daemon's own screen description wins (spine/ops/wear_screen.py):
-                // layout and wording are then a daemon change. The native board below
-                // is the fallback for a daemon that predates it.
-                val described = screenBlocks
-                if (described != null) {
-                    val known = cards + yours + working.cards + backlog.cards
-                    renderScreen(described, spec,
-                        cardFor = { id -> known.firstOrNull { it.id == id } },
-                        onAction = { a ->
-                            when (a) {
-                                is ScreenAction.OpenCard -> known.firstOrNull { it.id == a.id }?.let(onOpenCard)
-                                is ScreenAction.Nav -> if (a.to == "henry") onAskHenry()
-                                ScreenAction.Reload -> reload()
-                            }
-                        })
-                    return@TransformingLazyColumn
-                }
                 item {
                     ListHeader(
                         modifier = Modifier
