@@ -145,7 +145,12 @@ android {
         // vc1000011: TextDetailScreen + ScreenScaffold/TransformingLazyColumn
         // (Google Wear Compose M3 list pattern) replace the chunked rows,
         // endInset and FullText workarounds of vc1000010.
-        versionCode 1000011
+        // vc1000012: Board and card are drawn from the daemon's screen description
+        // (ScreenRenderer.kt, spine/ops/wear_screen.py) - same list pattern as
+        // vc1000011, so wording/layout of those two screens change daemon-side.
+        // Bumped because Play rejects a re-upload of a versionCode and the last
+        // uploaded one is not known from this repo.
+        versionCode 1000012
         versionName "1.0.0"
     }
 
