@@ -13,7 +13,16 @@ Target: 3-4 native builds per year, 2 of them forced by the stores.
 1. DONE 2026-10-21 - batching gate in `ship.sh`: a detected native change is
    reported (files since `refs/helmdeck/last-native-commit`), never built
    automatically. `SHIP_KIND=native` cuts a release. Documented in DEPLOY.md.
-2. OPEN, biggest - Wear UI data-driven. Kotlin keeps generic blocks (list, row,
+2. OPEN, biggest - Wear UI data-driven. MEASURED 2026-10-21 before starting:
+   CONTENT is already server-rendered (/wear/board, /wear/chat, /wear/voice,
+   routes_wear.py); only ~60 fixed labels sit in Kotlin (BoardScreen 14,
+   CardScreen 17, HenryScreen 15, PairingScreen 9). What forced the bumps is
+   LAYOUT and BEHAVIOUR (HenryScreen 920 lines, CardScreen 409). A labels
+   table alone would not have saved a single past bump, so the real work is a
+   screen-description protocol (rows, buttons, input, actions) interpreted by a
+   generic renderer - an iterative job that needs the watch emulator in the
+   loop (adb + sdk exist on this box), not a blind rewrite.
+   Original scope: Kotlin keeps generic blocks (list, row,
    card, button, text, voice clip); the daemon describes screens over the
    existing `WearStream`. Fold `wear-voice-stream-playback` and
    `wear-os-paritaets-audit` into it instead of patching them natively. Needs
